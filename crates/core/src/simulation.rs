@@ -130,8 +130,18 @@ impl FireSimulation {
         let max_search_radius_sq = self.max_search_radius * self.max_search_radius;
         
         // Parallel processing: collect heat transfer data for all elements
-        // OPTIMIZATION: Limit targets per source to prevent O(n²) explosion with many burning elements
-        const MAX_TARGETS_PER_SOURCE: usize = 100;
+        // OPTIMIZATION: Adaptive target limiting to balance performance and realism at large scale
+        // Research shows fire spreads primarily to nearest fuel, with diminishing returns beyond ~150 targets
+        // At very large fires (>5000 burning), we increase limits to maintain realism
+        let target_limit = if burning_ids.len() > 5000 {
+            200  // Large fires need more targets to maintain realistic spread patterns
+        } else if burning_ids.len() > 2000 {
+            150  // Medium-large fires
+        } else if burning_ids.len() > 1000 {
+            120  // Moderate fires - increased from 100 for better realism
+        } else {
+            usize::MAX  // Small fires - no limiting for maximum realism
+        };
         
         let heat_transfers: Vec<Vec<(u32, f32)>> = burning_ids.par_iter().map(|&element_id| {
             let mut transfers = Vec::new();
@@ -147,10 +157,10 @@ impl FireSimulation {
                 // Find nearby fuel
                 let nearby = self.spatial_index.query_radius(element_pos, self.max_search_radius);
                 
-                // OPTIMIZATION: When there are many burning elements (>1000), prioritize closest targets
-                let should_prioritize = burning_ids.len() > 1000;
+                // OPTIMIZATION: Apply limiting only when beneficial for performance
+                let should_limit = nearby.len() > target_limit;
                 let mut target_distances: Vec<(u32, f32)> = Vec::with_capacity(
-                    if should_prioritize { MAX_TARGETS_PER_SOURCE } else { nearby.len() }
+                    if should_limit { target_limit } else { nearby.len() }
                 );
                 
                 // First pass: collect valid targets with distances
@@ -179,10 +189,10 @@ impl FireSimulation {
                     }
                 }
                 
-                // OPTIMIZATION: Sort by distance and limit to closest targets only when under load
-                if should_prioritize && target_distances.len() > MAX_TARGETS_PER_SOURCE {
+                // OPTIMIZATION: Sort by distance and limit only when we have too many targets
+                if should_limit && target_distances.len() > target_limit {
                     target_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-                    target_distances.truncate(MAX_TARGETS_PER_SOURCE);
+                    target_distances.truncate(target_limit);
                 }
                 
                 // Second pass: calculate heat transfer
