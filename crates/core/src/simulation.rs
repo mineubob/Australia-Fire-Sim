@@ -130,6 +130,9 @@ impl FireSimulation {
         let max_search_radius_sq = self.max_search_radius * self.max_search_radius;
         
         // Parallel processing: collect heat transfer data for all elements
+        // OPTIMIZATION: Limit targets per source to prevent O(n²) explosion with many burning elements
+        const MAX_TARGETS_PER_SOURCE: usize = 100;
+        
         let heat_transfers: Vec<Vec<(u32, f32)>> = burning_ids.par_iter().map(|&element_id| {
             let mut transfers = Vec::new();
             
@@ -144,7 +147,13 @@ impl FireSimulation {
                 // Find nearby fuel
                 let nearby = self.spatial_index.query_radius(element_pos, self.max_search_radius);
                 
-                // Calculate heat transfer to each nearby element
+                // OPTIMIZATION: When there are many burning elements (>1000), prioritize closest targets
+                let should_prioritize = burning_ids.len() > 1000;
+                let mut target_distances: Vec<(u32, f32)> = Vec::with_capacity(
+                    if should_prioritize { MAX_TARGETS_PER_SOURCE } else { nearby.len() }
+                );
+                
+                // First pass: collect valid targets with distances
                 for &target_id in &nearby {
                     if target_id == element_id {
                         continue;
@@ -166,7 +175,19 @@ impl FireSimulation {
                             continue;
                         }
                         
-                        // Only compute sqrt when we know we need it
+                        target_distances.push((target_id, distance_sq));
+                    }
+                }
+                
+                // OPTIMIZATION: Sort by distance and limit to closest targets only when under load
+                if should_prioritize && target_distances.len() > MAX_TARGETS_PER_SOURCE {
+                    target_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                    target_distances.truncate(MAX_TARGETS_PER_SOURCE);
+                }
+                
+                // Second pass: calculate heat transfer
+                for (target_id, distance_sq) in target_distances {
+                    if let Some(target) = self.get_element(target_id) {
                         let distance = distance_sq.sqrt();
                         
                         // Calculate heat components
@@ -271,15 +292,22 @@ impl FireSimulation {
         });
         
         // 5. Check ember spot fires
+        // OPTIMIZATION: Limit ember checks to prevent performance degradation with many embers
+        const MAX_EMBER_CHECKS_PER_FRAME: usize = 200;
+        
         let embers_to_check: Vec<_> = self.embers.iter()
             .filter(|e| e.can_ignite())
+            .take(MAX_EMBER_CHECKS_PER_FRAME)
             .map(|e| (e.position, e.temperature, e.source_fuel_type))
             .collect();
         
         for (pos, temp, _fuel_type) in embers_to_check {
             let nearby = self.spatial_index.query_radius(pos, 2.0);
             
-            for &fuel_id in &nearby {
+            // OPTIMIZATION: Limit fuel checks per ember
+            let check_limit = nearby.len().min(10);
+            
+            for &fuel_id in nearby.iter().take(check_limit) {
                 if let Some(element) = self.get_element(fuel_id) {
                     if element.can_ignite() {
                         let ignition_prob = crate::ember::ember_ignition_probability(
@@ -289,6 +317,7 @@ impl FireSimulation {
                         
                         if rand::random::<f32>() < ignition_prob * dt {
                             self.ignite_element(fuel_id, temp * 0.8);
+                            break; // Only ignite one element per ember per frame
                         }
                     }
                 }
