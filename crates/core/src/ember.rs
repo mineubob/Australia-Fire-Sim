@@ -180,8 +180,6 @@ mod tests {
             1,
         );
         
-        let initial_z = ember.position.z;
-        
         // Hot ember should rise or at least not fall immediately
         // Update multiple times to allow buoyancy to overcome initial gravity
         for _ in 0..5 {
