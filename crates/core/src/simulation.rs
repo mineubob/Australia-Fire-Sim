@@ -123,21 +123,24 @@ impl FireSimulation {
         let wind_vector = self.weather.wind_vector();
         let ambient_temp = self.weather.temperature;
         
-        // 2. Process each burning element
+        // 2. Process each burning element (parallel processing)
         let burning_ids: Vec<u32> = self.burning_elements.iter().copied().collect();
         
-        for &element_id in &burning_ids {
+        // Parallel processing: collect heat transfer data for all elements
+        let heat_transfers: Vec<Vec<(u32, f32)>> = burning_ids.par_iter().map(|&element_id| {
+            let mut transfers = Vec::new();
+            
             if let Some(element) = self.get_element(element_id) {
                 if !element.ignited {
-                    continue;
+                    return transfers;
                 }
                 
                 let element_pos = element.position;
                 
-                // 3a. Find nearby fuel
+                // Find nearby fuel
                 let nearby = self.spatial_index.query_radius(element_pos, self.max_search_radius);
                 
-                // 3b. Calculate heat transfer to each nearby element
+                // Calculate heat transfer to each nearby element
                 for &target_id in &nearby {
                     if target_id == element_id {
                         continue;
@@ -153,90 +156,98 @@ impl FireSimulation {
                             continue;
                         }
                         
-                        // Get source element again for calculations
-                        if let Some(source) = self.get_element(element_id) {
-                            // Calculate heat components
-                            let radiation = calculate_radiation_flux(source, target, distance);
-                            let convection = calculate_convection_heat(source, target, distance);
-                            
-                            // Apply multipliers
-                            let wind_boost = wind_radiation_multiplier(
-                                source.position,
-                                target.position,
-                                wind_vector,
-                            );
-                            let vertical_factor = vertical_spread_factor(source, target);
-                            let slope_factor = slope_spread_multiplier(source, target);
-                            
-                            let total_heat = (radiation + convection)
-                                * wind_boost
-                                * vertical_factor
-                                * slope_factor
-                                * ffdi_multiplier
-                                * dt;
-                            
-                            // Apply heat to target
-                            if let Some(target_mut) = self.get_element_mut(target_id) {
-                                target_mut.apply_heat(total_heat, dt, ambient_temp);
-                                
-                                // Check if newly ignited
-                                if target_mut.ignited {
-                                    self.burning_elements.insert(target_id);
-                                }
-                            }
-                        }
+                        // Calculate heat components
+                        let radiation = calculate_radiation_flux(element, target, distance);
+                        let convection = calculate_convection_heat(element, target, distance);
+                        
+                        // Apply multipliers
+                        let wind_boost = wind_radiation_multiplier(
+                            element.position,
+                            target.position,
+                            wind_vector,
+                        );
+                        let vertical_factor = vertical_spread_factor(element, target);
+                        let slope_factor = slope_spread_multiplier(element, target);
+                        
+                        let total_heat = (radiation + convection)
+                            * wind_boost
+                            * vertical_factor
+                            * slope_factor
+                            * ffdi_multiplier
+                            * dt;
+                        
+                        transfers.push((target_id, total_heat));
+                    }
+                }
+            }
+            
+            transfers
+        }).collect();
+        
+        // Apply heat transfers sequentially (must be sequential to avoid race conditions)
+        for transfers in heat_transfers {
+            for (target_id, total_heat) in transfers {
+                if let Some(target_mut) = self.get_element_mut(target_id) {
+                    target_mut.apply_heat(total_heat, dt, ambient_temp);
+                    
+                    // Check if newly ignited
+                    if target_mut.ignited {
+                        self.burning_elements.insert(target_id);
+                    }
+                }
+            }
+        }
+        
+        // Process burning element state updates
+        for &element_id in &burning_ids {
+            // 3e. Burn fuel and update statistics
+            if let Some(element) = self.get_element_mut(element_id) {
+                let fuel_before = element.fuel_remaining;
+                element.burn_fuel(dt);
+                let fuel_consumed = fuel_before - element.fuel_remaining;
+                
+                // Update flame height
+                element.update_flame_height();
+                
+                // Store for later use
+                let should_generate_embers = element.ignited && element.fuel.ember_production > 0.0;
+                let ember_data = if should_generate_embers {
+                    Some((element.position, element.temperature, element.fuel_remaining, element.fuel.ember_production, element.fuel.id))
+                } else {
+                    None
+                };
+                
+                // Check for oil vapor explosion
+                let explosion = australian::update_oil_vaporization(element, dt);
+                
+                let still_burning = element.ignited;
+                
+                // Update stats after releasing borrow
+                self.total_fuel_consumed += fuel_consumed;
+                
+                // 3f. Generate embers (probabilistic)
+                if let Some((pos, temp, fuel_remaining, ember_prod, fuel_id)) = ember_data {
+                    if rand::random::<f32>() < 0.1 * dt {
+                        let new_embers = crate::ember::spawn_embers(
+                            pos,
+                            temp,
+                            fuel_remaining,
+                            ember_prod,
+                            fuel_id,
+                            &mut self.next_ember_id,
+                        );
+                        self.embers.extend(new_embers);
                     }
                 }
                 
-                // 3e. Burn fuel and update statistics
-                if let Some(element) = self.get_element_mut(element_id) {
-                    let fuel_before = element.fuel_remaining;
-                    element.burn_fuel(dt);
-                    let fuel_consumed = fuel_before - element.fuel_remaining;
-                    
-                    // Update flame height
-                    element.update_flame_height();
-                    
-                    // Store for later use
-                    let should_generate_embers = element.ignited && element.fuel.ember_production > 0.0;
-                    let ember_data = if should_generate_embers {
-                        Some((element.position, element.temperature, element.fuel_remaining, element.fuel.ember_production, element.fuel.id))
-                    } else {
-                        None
-                    };
-                    
-                    // Check for oil vapor explosion
-                    let explosion = australian::update_oil_vaporization(element, dt);
-                    
-                    let still_burning = element.ignited;
-                    
-                    // Update stats after releasing borrow
-                    self.total_fuel_consumed += fuel_consumed;
-                    
-                    // 3f. Generate embers (probabilistic)
-                    if let Some((pos, temp, fuel_remaining, ember_prod, fuel_id)) = ember_data {
-                        if rand::random::<f32>() < 0.1 * dt {
-                            let new_embers = crate::ember::spawn_embers(
-                                pos,
-                                temp,
-                                fuel_remaining,
-                                ember_prod,
-                                fuel_id,
-                                &mut self.next_ember_id,
-                            );
-                            self.embers.extend(new_embers);
-                        }
-                    }
-                    
-                    // 3g. Process explosion if occurred
-                    if let Some(explosion) = explosion {
-                        self.process_explosion(explosion);
-                    }
-                    
-                    // 3h. Remove if fuel depleted
-                    if !still_burning {
-                        self.burning_elements.remove(&element_id);
-                    }
+                // 3g. Process explosion if occurred
+                if let Some(explosion) = explosion {
+                    self.process_explosion(explosion);
+                }
+                
+                // 3h. Remove if fuel depleted
+                if !still_burning {
+                    self.burning_elements.remove(&element_id);
                 }
             }
         }
