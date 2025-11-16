@@ -3,28 +3,53 @@ use crate::element::{FuelElement, Vec3};
 /// Stefan-Boltzmann constant (W/(m²·K⁴))
 const STEFAN_BOLTZMANN: f32 = 5.67e-8;
 
-/// Calculate radiation heat flux from source to target
-pub fn calculate_radiation_flux(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
+/// Calculate radiation heat flux from source to target using Stefan-Boltzmann Law
+/// Q = σ * ε * A * F * (T_source^4 - T_target^4)
+/// where σ = Stefan-Boltzmann constant, ε = emissivity, A = area, F = view factor
+/// blocking_factor: 0-1, reduction due to intervening non-burnable objects
+pub fn calculate_radiation_flux_with_blocking(
+    source: &FuelElement, 
+    target: &FuelElement, 
+    distance: f32,
+    blocking_factor: f32,
+) -> f32 {
     if !source.ignited || distance <= 0.0 {
         return 0.0;
     }
     
-    // Convert temperature to Kelvin
-    let temp_k = source.temperature + 273.15;
+    // Convert temperatures to Kelvin
+    let source_temp_k = source.temperature + 273.15;
+    let target_temp_k = target.temperature + 273.15;
     
-    // View factor (simplified - assumes reasonable line of sight)
+    // Emissivity for flames and burning materials (typical: 0.9-0.95)
+    let emissivity = 0.95;
+    
+    // Calculate source radiating area based on fuel geometry
     let source_area = source.fuel.surface_area_to_volume * source.fuel_remaining.sqrt();
+    
+    // View factor calculation (geometric factor for radiation exchange)
+    // F = A_source / (4 * π * r²) for point source approximation
     let view_factor = source_area / (4.0 * std::f32::consts::PI * distance * distance);
     let view_factor = view_factor.min(1.0);
     
-    // Radiant flux (simplified (T/1000)^4 for performance)
-    let flux = STEFAN_BOLTZMANN * (temp_k / 1000.0).powi(4) * view_factor * 10000.0;
+    // Stefan-Boltzmann Law: radiant flux in W/m²
+    // Use full T^4 formula, not simplified version
+    let flux = STEFAN_BOLTZMANN * emissivity * view_factor * 
+               (source_temp_k.powi(4) - target_temp_k.powi(4));
     
-    // Convert W/m² to kJ delivered over target area
+    // Apply to target receiving area
     let target_area = target.fuel.surface_area_to_volume;
-    let heat_kj = flux * target_area * 0.001; // per second
     
-    heat_kj
+    // Convert W/m² to kJ/s (per second energy transfer)
+    let heat_kj = flux * target_area * 0.001;
+    
+    // Apply blocking factor (heat reduced by non-burnable obstacles)
+    (heat_kj * blocking_factor).max(0.0)
+}
+
+/// Calculate radiation heat flux (without blocking check, for compatibility)
+pub fn calculate_radiation_flux(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
+    calculate_radiation_flux_with_blocking(source, target, distance, 1.0)
 }
 
 /// Calculate convection heat transfer (for elements directly above)
@@ -131,22 +156,22 @@ pub fn wind_at_height(wind_10m: f32, height: f32) -> f32 {
 
 /// Check if crown fire transition should occur
 pub fn check_crown_transition(element: &FuelElement, fire_intensity: f32, wind_speed: f32) -> bool {
-    use crate::fuel::BarkType;
-    
     // Base threshold from fuel type
     let base_threshold = element.fuel.crown_fire_threshold;
     
-    // CRITICAL: Stringybark dramatically lowers threshold
-    let threshold = if matches!(element.fuel.bark_type, BarkType::Stringybark) {
+    // CRITICAL: High ladder fuel factor dramatically lowers threshold
+    let ladder_factor = element.fuel.bark_properties.ladder_fuel_factor;
+    let threshold = if ladder_factor > 0.8 {
+        // Extreme ladder fuels like Stringybark
         let bark_boost = element.fuel.bark_ladder_intensity; // 600-700 kW/m
         
         // Can cause crown fire at 30% normal intensity!
         if fire_intensity + bark_boost > 300.0 {
             return true; // GUARANTEED crown transition
         }
-        base_threshold * 0.3
+        base_threshold * (1.0 - ladder_factor * 0.7) // Up to 70% reduction
     } else {
-        base_threshold
+        base_threshold * (1.0 - ladder_factor * 0.3) // Moderate reduction
     };
     
     // Wind increases crown fire probability

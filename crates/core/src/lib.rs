@@ -14,7 +14,7 @@ pub mod australian;
 pub mod simulation;
 
 // Re-export main types
-pub use fuel::{Fuel, BarkType};
+pub use fuel::{Fuel, BarkProperties};
 pub use element::{FuelElement, FuelPart, Vec3};
 pub use weather::WeatherSystem;
 pub use ember::Ember;

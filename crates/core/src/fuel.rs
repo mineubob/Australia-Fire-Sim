@@ -1,13 +1,88 @@
 use serde::{Deserialize, Serialize};
 
-/// Australian bark types critical for fire behavior
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum BarkType {
-    Smooth,          // Less fire risk
-    Fibrous,         // Moderate ladder fuel
-    Stringybark,     // EXTREME ladder fuel (causes crown fires)
-    IronBark,        // Dense, slow burning
-    PaperBark,       // Highly flammable
+/// Bark properties that affect fire behavior
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BarkProperties {
+    pub bark_type_id: u8,           // Numeric ID for the bark type
+    pub ladder_fuel_factor: f32,    // 0-1 scale, how much it acts as ladder fuel
+    pub flammability: f32,          // 0-1 scale, ignition ease
+    pub shedding_rate: f32,         // 0-1 scale, how much bark sheds as embers
+    pub insulation_factor: f32,     // 0-1 scale, protection of inner wood
+    pub surface_roughness: f32,     // affects airflow and heat retention
+}
+
+impl BarkProperties {
+    /// Smooth bark - minimal ladder fuel
+    pub const SMOOTH: BarkProperties = BarkProperties {
+        bark_type_id: 0,
+        ladder_fuel_factor: 0.1,
+        flammability: 0.3,
+        shedding_rate: 0.1,
+        insulation_factor: 0.2,
+        surface_roughness: 0.2,
+    };
+    
+    /// Fibrous bark - moderate ladder fuel
+    pub const FIBROUS: BarkProperties = BarkProperties {
+        bark_type_id: 1,
+        ladder_fuel_factor: 0.5,
+        flammability: 0.6,
+        shedding_rate: 0.4,
+        insulation_factor: 0.5,
+        surface_roughness: 0.6,
+    };
+    
+    /// Stringybark - EXTREME ladder fuel (causes crown fires)
+    pub const STRINGYBARK: BarkProperties = BarkProperties {
+        bark_type_id: 2,
+        ladder_fuel_factor: 1.0,
+        flammability: 0.9,
+        shedding_rate: 0.8,
+        insulation_factor: 0.4,
+        surface_roughness: 0.9,
+    };
+    
+    /// Ironbark - dense, slow burning
+    pub const IRONBARK: BarkProperties = BarkProperties {
+        bark_type_id: 3,
+        ladder_fuel_factor: 0.2,
+        flammability: 0.4,
+        shedding_rate: 0.2,
+        insulation_factor: 0.8,
+        surface_roughness: 0.4,
+    };
+    
+    /// Paperbark - highly flammable
+    pub const PAPERBARK: BarkProperties = BarkProperties {
+        bark_type_id: 4,
+        ladder_fuel_factor: 0.7,
+        flammability: 0.95,
+        shedding_rate: 0.9,
+        insulation_factor: 0.3,
+        surface_roughness: 0.5,
+    };
+    
+    /// Non-bark (for non-tree fuels)
+    pub const NONE: BarkProperties = BarkProperties {
+        bark_type_id: 255,
+        ladder_fuel_factor: 0.0,
+        flammability: 0.0,
+        shedding_rate: 0.0,
+        insulation_factor: 0.0,
+        surface_roughness: 0.1,
+    };
+    
+    /// Get bark type name
+    pub fn name(&self) -> &'static str {
+        match self.bark_type_id {
+            0 => "Smooth",
+            1 => "Fibrous",
+            2 => "Stringybark",
+            3 => "Ironbark",
+            4 => "Paperbark",
+            _ => "None",
+        }
+    }
 }
 
 /// Comprehensive fuel type with scientifically accurate properties
@@ -42,7 +117,7 @@ pub struct Fuel {
     pub volatile_oil_content: f32,   // kg/kg (eucalypts: 0.02-0.05)
     pub oil_vaporization_temp: f32,  // °C (170 for eucalyptus)
     pub oil_autoignition_temp: f32,  // °C (232 for eucalyptus)
-    pub bark_type: BarkType,         // Critical for ladder fuels
+    pub bark_properties: BarkProperties, // Bark characteristics for ladder fuels
     pub bark_ladder_intensity: f32,  // kW/m for stringybark
     pub crown_fire_threshold: f32,   // kW/m intensity needed
 }
@@ -69,7 +144,7 @@ impl Fuel {
             volatile_oil_content: 0.04,
             oil_vaporization_temp: 170.0,
             oil_autoignition_temp: 232.0,
-            bark_type: BarkType::Stringybark,
+            bark_properties: BarkProperties::STRINGYBARK,
             bark_ladder_intensity: 650.0,  // Very high ladder fuel intensity
             crown_fire_threshold: 300.0,   // Low threshold (30% of normal)
         }
@@ -96,7 +171,7 @@ impl Fuel {
             volatile_oil_content: 0.02,
             oil_vaporization_temp: 170.0,
             oil_autoignition_temp: 232.0,
-            bark_type: BarkType::Smooth,
+            bark_properties: BarkProperties::SMOOTH,
             bark_ladder_intensity: 200.0,
             crown_fire_threshold: 1000.0,  // Normal threshold
         }
@@ -123,7 +198,7 @@ impl Fuel {
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
             oil_autoignition_temp: 0.0,
-            bark_type: BarkType::Smooth,
+            bark_properties: BarkProperties::NONE,
             bark_ladder_intensity: 0.0,
             crown_fire_threshold: 2000.0,
         }
@@ -150,7 +225,7 @@ impl Fuel {
             volatile_oil_content: 0.01,
             oil_vaporization_temp: 180.0,
             oil_autoignition_temp: 250.0,
-            bark_type: BarkType::Fibrous,
+            bark_properties: BarkProperties::FIBROUS,
             bark_ladder_intensity: 300.0,
             crown_fire_threshold: 1200.0,
         }
@@ -177,7 +252,7 @@ impl Fuel {
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
             oil_autoignition_temp: 0.0,
-            bark_type: BarkType::Smooth,
+            bark_properties: BarkProperties::NONE,
             bark_ladder_intensity: 0.0,
             crown_fire_threshold: 1500.0,
         }
@@ -204,7 +279,7 @@ impl Fuel {
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
             oil_autoignition_temp: 0.0,
-            bark_type: BarkType::Smooth,
+            bark_properties: BarkProperties::NONE,
             bark_ladder_intensity: 0.0,
             crown_fire_threshold: 2500.0,
         }
@@ -229,5 +304,81 @@ impl Fuel {
         let oil_bonus = self.volatile_oil_content * 3000.0;
         let moisture_penalty = moisture_fraction * 400.0;
         (base_temp + oil_bonus - moisture_penalty).clamp(600.0, 1500.0)
+    }
+    
+    /// Check if this fuel can burn
+    pub fn is_burnable(&self) -> bool {
+        self.heat_content > 0.0 && self.ignition_temperature > 0.0
+    }
+    
+    /// Get thermal transmissivity (0-1, how much heat passes through)
+    /// Non-burnable objects like water, rock, concrete block heat
+    pub fn thermal_transmissivity(&self) -> f32 {
+        if self.is_burnable() {
+            0.9 // Burnable fuels don't block much
+        } else {
+            // Non-burnable surfaces block heat
+            match self.name.as_str() {
+                "Water" => 0.1,      // Water blocks 90% of radiant heat
+                "Rock" => 0.3,       // Rock blocks 70%
+                "Concrete" => 0.2,   // Concrete blocks 80%
+                "Metal" => 0.4,      // Metal conducts but still blocks some
+                _ => 0.5,            // Default non-burnable
+            }
+        }
+    }
+    
+    /// Create non-burnable water fuel
+    pub fn water() -> Self {
+        Fuel {
+            id: 10,
+            name: "Water".to_string(),
+            heat_content: 0.0,
+            ignition_temperature: 0.0,
+            max_flame_temperature: 0.0,
+            specific_heat: 4.18, // Water has very high specific heat
+            bulk_density: 1000.0,
+            surface_area_to_volume: 0.0,
+            fuel_bed_depth: 0.0,
+            base_moisture: 1.0,
+            moisture_of_extinction: 1.0,
+            burn_rate_coefficient: 0.0,
+            ember_production: 0.0,
+            ember_receptivity: 0.0,
+            max_spotting_distance: 0.0,
+            volatile_oil_content: 0.0,
+            oil_vaporization_temp: 0.0,
+            oil_autoignition_temp: 0.0,
+            bark_properties: BarkProperties::NONE,
+            bark_ladder_intensity: 0.0,
+            crown_fire_threshold: 9999.0,
+        }
+    }
+    
+    /// Create non-burnable rock fuel
+    pub fn rock() -> Self {
+        Fuel {
+            id: 11,
+            name: "Rock".to_string(),
+            heat_content: 0.0,
+            ignition_temperature: 0.0,
+            max_flame_temperature: 0.0,
+            specific_heat: 0.84, // Rock specific heat
+            bulk_density: 2700.0,
+            surface_area_to_volume: 0.0,
+            fuel_bed_depth: 0.0,
+            base_moisture: 0.0,
+            moisture_of_extinction: 1.0,
+            burn_rate_coefficient: 0.0,
+            ember_production: 0.0,
+            ember_receptivity: 0.0,
+            max_spotting_distance: 0.0,
+            volatile_oil_content: 0.0,
+            oil_vaporization_temp: 0.0,
+            oil_autoignition_temp: 0.0,
+            bark_properties: BarkProperties::NONE,
+            bark_ladder_intensity: 0.0,
+            crown_fire_threshold: 9999.0,
+        }
     }
 }

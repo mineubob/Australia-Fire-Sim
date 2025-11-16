@@ -9,6 +9,15 @@ pub struct WeatherSystem {
     pub wind_speed: f32,       // km/h
     pub wind_direction: f32,   // degrees (0 = North, 90 = East)
     pub drought_factor: f32,   // 0-10 (Keetch-Byram Drought Index scaled)
+    
+    // Dynamic weather state
+    time_of_day: f32,          // Hours since midnight (0-24)
+    day_of_year: u16,          // Day number (1-365)
+    weather_front_progress: f32, // 0-1 for weather front passage
+    target_temperature: f32,   // Target for smooth transitions
+    target_humidity: f32,      // Target for smooth transitions
+    target_wind_speed: f32,    // Target for smooth transitions
+    target_wind_direction: f32, // Target for smooth transitions
 }
 
 impl WeatherSystem {
@@ -20,6 +29,13 @@ impl WeatherSystem {
             wind_speed,
             wind_direction,
             drought_factor,
+            time_of_day: 12.0,
+            day_of_year: 180,
+            weather_front_progress: 0.0,
+            target_temperature: temperature,
+            target_humidity: humidity,
+            target_wind_speed: wind_speed,
+            target_wind_direction: wind_direction,
         }
     }
     
@@ -31,6 +47,13 @@ impl WeatherSystem {
             wind_speed: 15.0,
             wind_direction: 0.0,
             drought_factor: 5.0,
+            time_of_day: 12.0,
+            day_of_year: 180,
+            weather_front_progress: 0.0,
+            target_temperature: 25.0,
+            target_humidity: 50.0,
+            target_wind_speed: 15.0,
+            target_wind_direction: 0.0,
         }
     }
     
@@ -42,6 +65,13 @@ impl WeatherSystem {
             wind_speed: 60.0,
             wind_direction: 0.0,
             drought_factor: 10.0,
+            time_of_day: 14.0,
+            day_of_year: 15,
+            weather_front_progress: 0.0,
+            target_temperature: 45.0,
+            target_humidity: 10.0,
+            target_wind_speed: 60.0,
+            target_wind_direction: 0.0,
         }
     }
     
@@ -93,9 +123,128 @@ impl WeatherSystem {
     }
     
     /// Update weather (for dynamic simulations)
-    pub fn update(&mut self, _dt: f32) {
-        // Placeholder for dynamic weather changes
-        // Could add time-of-day effects, weather fronts, etc.
+    pub fn update(&mut self, dt: f32) {
+        // Update time of day
+        self.time_of_day += dt / 3600.0; // dt is in seconds
+        if self.time_of_day >= 24.0 {
+            self.time_of_day -= 24.0;
+            self.day_of_year += 1;
+            if self.day_of_year > 365 {
+                self.day_of_year = 1;
+            }
+        }
+        
+        // Diurnal (daily) temperature cycle
+        // Temperature peaks around 14:00 (2 PM) and minimum around 5:00 AM
+        let hour_offset = (self.time_of_day - 14.0) * std::f32::consts::PI / 12.0;
+        let diurnal_variation = -8.0 * hour_offset.cos(); // ±8°C variation
+        
+        // Smooth transition toward target temperature with diurnal cycle
+        let target_with_diurnal = self.target_temperature + diurnal_variation;
+        let temp_diff = target_with_diurnal - self.temperature;
+        self.temperature += temp_diff * (dt / 3600.0).min(0.1); // Smooth transition
+        
+        // Humidity varies inversely with temperature (simplified)
+        // Higher temp = lower humidity during the day
+        let humidity_variation = 15.0 * hour_offset.cos(); // ±15% variation
+        let target_with_variation = self.target_humidity + humidity_variation;
+        let humidity_diff = target_with_variation - self.humidity;
+        self.humidity = (self.humidity + humidity_diff * (dt / 1800.0).min(0.1)).clamp(5.0, 95.0);
+        
+        // Wind speed variations (wind typically picks up during day, calms at night)
+        let wind_hour_offset = (self.time_of_day - 15.0) * std::f32::consts::PI / 12.0;
+        let wind_variation = 5.0 * wind_hour_offset.cos(); // ±5 km/h variation
+        let target_wind_with_variation = self.target_wind_speed - wind_variation;
+        let wind_diff = target_wind_with_variation - self.wind_speed;
+        self.wind_speed = (self.wind_speed + wind_diff * (dt / 1800.0).min(0.1)).max(0.0);
+        
+        // Wind direction shifts gradually
+        let dir_diff = self.target_wind_direction - self.wind_direction;
+        // Handle wraparound (e.g., 350° to 10°)
+        let dir_diff = if dir_diff > 180.0 {
+            dir_diff - 360.0
+        } else if dir_diff < -180.0 {
+            dir_diff + 360.0
+        } else {
+            dir_diff
+        };
+        self.wind_direction += dir_diff * (dt / 3600.0).min(0.05);
+        if self.wind_direction < 0.0 {
+            self.wind_direction += 360.0;
+        }
+        if self.wind_direction >= 360.0 {
+            self.wind_direction -= 360.0;
+        }
+        
+        // Weather front progression (simulate frontal passages)
+        if self.weather_front_progress > 0.0 {
+            self.weather_front_progress -= dt / 7200.0; // 2 hour front passage
+            if self.weather_front_progress <= 0.0 {
+                self.weather_front_progress = 0.0;
+            }
+        }
+        
+        // Drought factor slowly increases without rain (very slow change)
+        // Increases by about 0.1 per day without rain in extreme heat
+        if self.temperature > 35.0 && self.humidity < 20.0 {
+            self.drought_factor = (self.drought_factor + dt / 864000.0).min(10.0); // ~10 days to max
+        }
+    }
+    
+    // Setter methods for updating weather without replacement
+    
+    /// Set temperature target (°C) - will smoothly transition
+    pub fn set_temperature(&mut self, temperature: f32) {
+        self.target_temperature = temperature;
+    }
+    
+    /// Set humidity target (%) - will smoothly transition
+    pub fn set_humidity(&mut self, humidity: f32) {
+        self.target_humidity = humidity.clamp(0.0, 100.0);
+    }
+    
+    /// Set wind speed target (km/h) - will smoothly transition
+    pub fn set_wind_speed(&mut self, wind_speed: f32) {
+        self.target_wind_speed = wind_speed.max(0.0);
+    }
+    
+    /// Set wind direction target (degrees) - will smoothly transition
+    pub fn set_wind_direction(&mut self, direction: f32) {
+        self.target_wind_direction = direction % 360.0;
+    }
+    
+    /// Set drought factor directly (0-10)
+    pub fn set_drought_factor(&mut self, drought: f32) {
+        self.drought_factor = drought.clamp(0.0, 10.0);
+    }
+    
+    /// Set time of day (hours since midnight)
+    pub fn set_time_of_day(&mut self, hours: f32) {
+        self.time_of_day = hours % 24.0;
+    }
+    
+    /// Set day of year (1-365)
+    pub fn set_day_of_year(&mut self, day: u16) {
+        self.day_of_year = day.clamp(1, 365);
+    }
+    
+    /// Trigger a weather front passage (causes rapid changes)
+    pub fn trigger_weather_front(&mut self, new_temp: f32, new_humidity: f32, new_wind_speed: f32, new_wind_dir: f32) {
+        self.target_temperature = new_temp;
+        self.target_humidity = new_humidity;
+        self.target_wind_speed = new_wind_speed;
+        self.target_wind_direction = new_wind_dir;
+        self.weather_front_progress = 1.0;
+    }
+    
+    /// Get current time of day
+    pub fn time_of_day(&self) -> f32 {
+        self.time_of_day
+    }
+    
+    /// Get current day of year
+    pub fn day_of_year(&self) -> u16 {
+        self.day_of_year
     }
     
     /// Calculate fuel moisture based on weather

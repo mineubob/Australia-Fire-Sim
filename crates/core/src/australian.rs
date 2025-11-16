@@ -1,5 +1,4 @@
 use crate::element::FuelElement;
-use crate::fuel::BarkType;
 
 /// Update oil vaporization and check for explosive ignition
 pub fn update_oil_vaporization(element: &mut FuelElement, _dt: f32) -> Option<ExplosionEvent> {
@@ -48,17 +47,19 @@ pub fn calculate_crown_transition(
     // Base threshold from fuel type
     let base_threshold = element.fuel.crown_fire_threshold;
     
-    // CRITICAL: Stringybark dramatically lowers threshold
-    let threshold = if matches!(element.fuel.bark_type, BarkType::Stringybark) {
+    // CRITICAL: High ladder fuel factor dramatically lowers threshold
+    let ladder_factor = element.fuel.bark_properties.ladder_fuel_factor;
+    let threshold = if ladder_factor > 0.8 {
+        // Extreme ladder fuels like Stringybark
         let bark_boost = element.fuel.bark_ladder_intensity; // 600-700 kW/m
         
         // Can cause crown fire at 30% normal intensity!
         if fire_intensity + bark_boost > 300.0 {
             return true; // GUARANTEED crown transition
         }
-        base_threshold * 0.3
+        base_threshold * (1.0 - ladder_factor * 0.7) // Up to 70% reduction
     } else {
-        base_threshold
+        base_threshold * (1.0 - ladder_factor * 0.3) // Moderate reduction
     };
     
     // Check vertical fuel continuity
@@ -73,28 +74,13 @@ pub fn calculate_crown_transition(
 
 /// Calculate bark ladder fuel contribution
 pub fn bark_ladder_contribution(element: &FuelElement) -> f32 {
-    match element.fuel.bark_type {
-        BarkType::Stringybark => {
-            // Stringybark creates intense vertical fire spread
-            element.fuel.bark_ladder_intensity
-        }
-        BarkType::PaperBark => {
-            // PaperBark is also highly flammable
-            element.fuel.bark_ladder_intensity * 0.7
-        }
-        BarkType::Fibrous => {
-            // Moderate ladder fuel
-            element.fuel.bark_ladder_intensity * 0.4
-        }
-        BarkType::IronBark => {
-            // Dense, slow burning - minimal ladder fuel
-            element.fuel.bark_ladder_intensity * 0.2
-        }
-        BarkType::Smooth => {
-            // Minimal ladder fuel effect
-            0.0
-        }
-    }
+    // Use bark properties for more nuanced calculations
+    let base_contribution = element.fuel.bark_ladder_intensity;
+    let ladder_factor = element.fuel.bark_properties.ladder_fuel_factor;
+    let flammability = element.fuel.bark_properties.flammability;
+    
+    // Contribution scaled by both ladder factor and flammability
+    base_contribution * ladder_factor * flammability
 }
 
 /// Calculate spotting distance based on fuel type and conditions
@@ -112,14 +98,10 @@ pub fn calculate_spotting_distance(
     // Fire intensity affects ember loft height
     let intensity_factor = (fire_intensity / 1000.0).sqrt().min(2.0);
     
-    // Stringybark produces massive ember storms
-    let fuel_factor = if matches!(element.fuel.bark_type, BarkType::Stringybark) {
-        1.5 // 50% increase in spotting distance
-    } else {
-        1.0
-    };
+    // Bark shedding rate affects ember generation
+    let shedding_factor = 1.0 + element.fuel.bark_properties.shedding_rate * 0.5;
     
-    base_distance * wind_factor * intensity_factor * fuel_factor
+    base_distance * wind_factor * intensity_factor * shedding_factor
 }
 
 /// Check if fuel moisture is low enough for ignition

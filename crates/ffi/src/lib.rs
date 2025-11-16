@@ -1,6 +1,13 @@
 use fire_sim_core::{FireSimulation, Fuel, FuelPart, Vec3, WeatherSystem};
-use std::os::raw::c_char;
-use std::ffi::CStr;
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+
+// Thread-safe simulation storage
+lazy_static::lazy_static! {
+    static ref SIMULATIONS: Mutex<HashMap<usize, Arc<Mutex<FireSimulation>>>> = Mutex::new(HashMap::new());
+}
+
+static mut NEXT_SIM_ID: usize = 1;
 
 /// C-compatible fire element visual data
 #[repr(C)]
@@ -24,35 +31,48 @@ pub struct EmberVisual {
     pub size: f32,
 }
 
-/// Create a new fire simulation
+/// Create a new fire simulation (thread-safe)
 #[no_mangle]
-pub extern "C" fn fire_sim_create(width: f32, height: f32, depth: f32) -> *mut FireSimulation {
-    let sim = Box::new(FireSimulation::new(width, height, depth));
-    Box::into_raw(sim)
+pub extern "C" fn fire_sim_create(width: f32, height: f32, depth: f32) -> usize {
+    let sim = FireSimulation::new(width, height, depth);
+    let sim_arc = Arc::new(Mutex::new(sim));
+    
+    unsafe {
+        let id = NEXT_SIM_ID;
+        NEXT_SIM_ID += 1;
+        
+        if let Ok(mut sims) = SIMULATIONS.lock() {
+            sims.insert(id, sim_arc);
+        }
+        
+        id
+    }
 }
 
-/// Destroy a fire simulation
+/// Destroy a fire simulation (thread-safe)
 #[no_mangle]
-pub extern "C" fn fire_sim_destroy(sim: *mut FireSimulation) {
-    if !sim.is_null() {
-        unsafe {
-            let _ = Box::from_raw(sim);
+pub extern "C" fn fire_sim_destroy(sim_id: usize) {
+    if let Ok(mut sims) = SIMULATIONS.lock() {
+        sims.remove(&sim_id);
+    }
+}
+
+/// Update the simulation (thread-safe)
+#[no_mangle]
+pub extern "C" fn fire_sim_update(sim_id: usize, dt: f32) {
+    if let Ok(sims) = SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(mut sim) = sim_arc.lock() {
+                sim.update(dt);
+            }
         }
     }
 }
 
-/// Update the simulation
-#[no_mangle]
-pub extern "C" fn fire_sim_update(sim: *mut FireSimulation, dt: f32) {
-    if let Some(sim) = unsafe { sim.as_mut() } {
-        sim.update(dt);
-    }
-}
-
-/// Add a fuel element to the simulation
+/// Add a fuel element to the simulation (thread-safe)
 #[no_mangle]
 pub extern "C" fn fire_sim_add_fuel_element(
-    sim: *mut FireSimulation,
+    sim_id: usize,
     x: f32,
     y: f32,
     z: f32,
@@ -61,156 +81,200 @@ pub extern "C" fn fire_sim_add_fuel_element(
     mass: f32,
     parent_id: i32,
 ) -> u32 {
-    if let Some(sim) = unsafe { sim.as_mut() } {
-        let position = Vec3::new(x, y, z);
-        
-        let fuel = Fuel::from_id(fuel_type).unwrap_or_else(|| Fuel::dry_grass());
-        
-        let part = match part_type {
-            0 => FuelPart::Root,
-            1 => FuelPart::TrunkLower,
-            2 => FuelPart::TrunkMiddle,
-            3 => FuelPart::TrunkUpper,
-            4 => FuelPart::Crown,
-            5 => FuelPart::GroundLitter,
-            6 => FuelPart::GroundVegetation,
-            _ => FuelPart::Surface,
-        };
-        
-        let parent = if parent_id >= 0 {
-            Some(parent_id as u32)
-        } else {
-            None
-        };
-        
-        sim.add_fuel_element(position, fuel, mass, part, parent)
-    } else {
-        0
+    if let Ok(sims) = SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(mut sim) = sim_arc.lock() {
+                let position = Vec3::new(x, y, z);
+                
+                let fuel = Fuel::from_id(fuel_type).unwrap_or_else(|| Fuel::dry_grass());
+                
+                let part = match part_type {
+                    0 => FuelPart::Root,
+                    1 => FuelPart::TrunkLower,
+                    2 => FuelPart::TrunkMiddle,
+                    3 => FuelPart::TrunkUpper,
+                    4 => FuelPart::Crown,
+                    5 => FuelPart::GroundLitter,
+                    6 => FuelPart::GroundVegetation,
+                    _ => FuelPart::Surface,
+                };
+                
+                let parent = if parent_id >= 0 {
+                    Some(parent_id as u32)
+                } else {
+                    None
+                };
+                
+                return sim.add_fuel_element(position, fuel, mass, part, parent);
+            }
+        }
     }
+    0
 }
 
-/// Ignite a fuel element
+/// Ignite a fuel element (thread-safe)
 #[no_mangle]
 pub extern "C" fn fire_sim_ignite_element(
-    sim: *mut FireSimulation,
+    sim_id: usize,
     element_id: u32,
     initial_temp: f32,
 ) {
-    if let Some(sim) = unsafe { sim.as_mut() } {
-        sim.ignite_element(element_id, initial_temp);
+    if let Ok(sims) = SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(mut sim) = sim_arc.lock() {
+                sim.ignite_element(element_id, initial_temp);
+            }
+        }
     }
 }
 
-/// Set weather conditions
+/// Set weather conditions (thread-safe)
 #[no_mangle]
 pub extern "C" fn fire_sim_set_weather(
-    sim: *mut FireSimulation,
+    sim_id: usize,
     temp: f32,
     humidity: f32,
     wind_speed: f32,
     wind_direction: f32,
     drought: f32,
 ) {
-    if let Some(sim) = unsafe { sim.as_mut() } {
-        let weather = WeatherSystem::new(temp, humidity, wind_speed, wind_direction, drought);
-        sim.set_weather(weather);
+    if let Ok(sims) = SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(mut sim) = sim_arc.lock() {
+                let weather = WeatherSystem::new(temp, humidity, wind_speed, wind_direction, drought);
+                sim.set_weather(weather);
+            }
+        }
     }
 }
 
-/// Get burning elements for rendering
+/// Update weather parameters without replacing (thread-safe)
+#[no_mangle]
+pub extern "C" fn fire_sim_update_weather(
+    sim_id: usize,
+    temp: f32,
+    humidity: f32,
+    wind_speed: f32,
+    wind_direction: f32,
+) {
+    if let Ok(sims) = SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(mut sim) = sim_arc.lock() {
+                sim.weather.set_temperature(temp);
+                sim.weather.set_humidity(humidity);
+                sim.weather.set_wind_speed(wind_speed);
+                sim.weather.set_wind_direction(wind_direction);
+            }
+        }
+    }
+}
+
+/// Get burning elements for rendering (thread-safe)
 #[no_mangle]
 pub extern "C" fn fire_sim_get_burning_elements(
-    sim: *mut FireSimulation,
+    sim_id: usize,
     out_count: *mut u32,
 ) -> *const FireElementVisual {
-    if let Some(sim) = unsafe { sim.as_mut() } {
-        let burning = sim.get_burning_elements();
-        
-        let visuals: Vec<FireElementVisual> = burning
-            .iter()
-            .map(|element| FireElementVisual {
-                id: element.id,
-                position: [element.position.x, element.position.y, element.position.z],
-                temperature: element.temperature,
-                flame_height: element.flame_height,
-                intensity: element.byram_fireline_intensity(),
-                fuel_type_id: element.fuel.id,
-                part_type: match element.part_type {
-                    FuelPart::Root => 0,
-                    FuelPart::TrunkLower => 1,
-                    FuelPart::TrunkMiddle => 2,
-                    FuelPart::TrunkUpper => 3,
-                    FuelPart::Crown => 4,
-                    FuelPart::GroundLitter => 5,
-                    FuelPart::GroundVegetation => 6,
-                    _ => 7,
-                },
-            })
-            .collect();
-        
-        unsafe {
-            *out_count = visuals.len() as u32;
+    if let Ok(sims) = SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(sim) = sim_arc.lock() {
+                let burning = sim.get_burning_elements();
+                
+                let visuals: Vec<FireElementVisual> = burning
+                    .iter()
+                    .map(|element| FireElementVisual {
+                        id: element.id,
+                        position: [element.position.x, element.position.y, element.position.z],
+                        temperature: element.temperature,
+                        flame_height: element.flame_height,
+                        intensity: element.byram_fireline_intensity(),
+                        fuel_type_id: element.fuel.id,
+                        part_type: match element.part_type {
+                            FuelPart::Root => 0,
+                            FuelPart::TrunkLower => 1,
+                            FuelPart::TrunkMiddle => 2,
+                            FuelPart::TrunkUpper => 3,
+                            FuelPart::Crown => 4,
+                            FuelPart::GroundLitter => 5,
+                            FuelPart::GroundVegetation => 6,
+                            _ => 7,
+                        },
+                    })
+                    .collect();
+                
+                unsafe {
+                    *out_count = visuals.len() as u32;
+                }
+                
+                let ptr = visuals.as_ptr();
+                std::mem::forget(visuals); // Prevent deallocation
+                return ptr;
+            }
         }
-        
-        let ptr = visuals.as_ptr();
-        std::mem::forget(visuals); // Prevent deallocation
-        ptr
-    } else {
-        unsafe {
-            *out_count = 0;
-        }
-        std::ptr::null()
     }
+    
+    unsafe {
+        *out_count = 0;
+    }
+    std::ptr::null()
 }
 
-/// Get embers for particle effects
+/// Get embers for particle effects (thread-safe)
 #[no_mangle]
 pub extern "C" fn fire_sim_get_embers(
-    sim: *mut FireSimulation,
+    sim_id: usize,
     out_count: *mut u32,
 ) -> *const EmberVisual {
-    if let Some(sim) = unsafe { sim.as_mut() } {
-        let embers = sim.get_embers();
-        
-        let visuals: Vec<EmberVisual> = embers
-            .iter()
-            .map(|ember| EmberVisual {
-                id: ember.id,
-                position: [ember.position.x, ember.position.y, ember.position.z],
-                velocity: [ember.velocity.x, ember.velocity.y, ember.velocity.z],
-                temperature: ember.temperature,
-                size: (ember.mass * 1000.0).sqrt(), // Scale mass to visual size
-            })
-            .collect();
-        
-        unsafe {
-            *out_count = visuals.len() as u32;
+    if let Ok(sims) = SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(sim) = sim_arc.lock() {
+                let embers = sim.get_embers();
+                
+                let visuals: Vec<EmberVisual> = embers
+                    .iter()
+                    .map(|ember| EmberVisual {
+                        id: ember.id,
+                        position: [ember.position.x, ember.position.y, ember.position.z],
+                        velocity: [ember.velocity.x, ember.velocity.y, ember.velocity.z],
+                        temperature: ember.temperature,
+                        size: (ember.mass * 1000.0).sqrt(), // Scale mass to visual size
+                    })
+                    .collect();
+                
+                unsafe {
+                    *out_count = visuals.len() as u32;
+                }
+                
+                let ptr = visuals.as_ptr();
+                std::mem::forget(visuals);
+                return ptr;
+            }
         }
-        
-        let ptr = visuals.as_ptr();
-        std::mem::forget(visuals);
-        ptr
-    } else {
-        unsafe {
-            *out_count = 0;
-        }
-        std::ptr::null()
     }
+    
+    unsafe {
+        *out_count = 0;
+    }
+    std::ptr::null()
 }
 
-/// Get simulation statistics
+/// Get simulation statistics (thread-safe)
 #[no_mangle]
 pub extern "C" fn fire_sim_get_stats(
-    sim: *mut FireSimulation,
+    sim_id: usize,
     out_burning_count: *mut u32,
     out_ember_count: *mut u32,
     out_total_elements: *mut u32,
 ) {
-    if let Some(sim) = unsafe { sim.as_mut() } {
-        unsafe {
-            *out_burning_count = sim.burning_count() as u32;
-            *out_ember_count = sim.ember_count() as u32;
-            *out_total_elements = sim.element_count() as u32;
+    if let Ok(sims) = SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(sim) = sim_arc.lock() {
+                unsafe {
+                    *out_burning_count = sim.burning_count() as u32;
+                    *out_ember_count = sim.ember_count() as u32;
+                    *out_total_elements = sim.element_count() as u32;
+                }
+            }
         }
     }
 }
