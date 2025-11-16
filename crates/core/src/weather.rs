@@ -76,13 +76,20 @@ impl WeatherSystem {
     }
     
     /// Calculate McArthur Forest Fire Danger Index
+    /// Using the actual McArthur Mark 5 FFDI formula:
+    /// FFDI = 2 * exp(-0.45 + 0.987 * ln(DF) - 0.0345 * H + 0.0338 * T + 0.0234 * V)
     pub fn calculate_ffdi(&self) -> f32 {
-        // McArthur FFDI formula
-        let ffdi = self.drought_factor 
-                   * (self.temperature / 30.0) 
-                   * ((100.0 - self.humidity) / 80.0) 
-                   * (self.wind_speed / 20.0) 
-                   * 10.0;
+        // Drought Factor must be at least 1.0 for ln() to work
+        let df = self.drought_factor.max(1.0);
+        
+        // McArthur Mark 5 FFDI formula
+        let exponent = -0.45 
+                     + 0.987 * df.ln() 
+                     - 0.0345 * self.humidity 
+                     + 0.0338 * self.temperature 
+                     + 0.0234 * self.wind_speed;
+        
+        let ffdi = 2.0 * exponent.exp();
         ffdi.max(0.0)
     }
     
@@ -267,9 +274,11 @@ mod tests {
         let weather = WeatherSystem::new(30.0, 20.0, 40.0, 0.0, 8.0);
         let ffdi = weather.calculate_ffdi();
         
-        // FFDI should be calculated correctly
-        // Expected: 8.0 * (30.0/30.0) * (80.0/80.0) * (40.0/20.0) * 10.0 = 160
-        assert!((ffdi - 160.0).abs() < 1.0);
+        // FFDI should be calculated using McArthur Mark 5 formula:
+        // FFDI = 2 * exp(-0.45 + 0.987*ln(8) - 0.0345*20 + 0.0338*30 + 0.0234*40)
+        // = 2 * exp(-0.45 + 2.054 - 0.69 + 1.014 + 0.936)
+        // = 2 * exp(2.864) = 2 * 17.53 = 35.1
+        assert!(ffdi > 30.0 && ffdi < 40.0, "FFDI was {}", ffdi);
     }
     
     #[test]
