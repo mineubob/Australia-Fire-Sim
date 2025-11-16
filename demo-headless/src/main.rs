@@ -50,9 +50,21 @@ struct Args {
     #[arg(long, default_value_t = 14.0)]
     hour: f32,
     
-    /// Number of fuel elements (approximate, in hundreds)
-    #[arg(short, long, default_value_t = 78)]
-    fuel_elements: u32,
+    /// Map size in meters (square map)
+    #[arg(long, default_value_t = 1000.0)]
+    map_size: f32,
+    
+    /// Number of trees to place
+    #[arg(long, default_value_t = 5)]
+    num_trees: u32,
+    
+    /// Tree spacing in meters
+    #[arg(long, default_value_t = 20.0)]
+    tree_spacing: f32,
+    
+    /// Grass coverage radius in meters (0 = full map)
+    #[arg(long, default_value_t = 0.0)]
+    grass_radius: f32,
     
     /// Report interval in seconds
     #[arg(short, long, default_value_t = 5.0)]
@@ -68,9 +80,9 @@ fn main() {
     
     println!("=== Fire Simulation Demo ===\n");
     
-    // Create simulation
-    let mut sim = FireSimulation::new(1000.0, 1000.0, 100.0);
-    println!("Created simulation with 1000x1000x100m bounds");
+    // Create simulation with configurable map size
+    let mut sim = FireSimulation::new(args.map_size, args.map_size, 100.0);
+    println!("Created simulation with {:.0}x{:.0}x100m bounds", args.map_size, args.map_size);
     
     // Parse climate pattern
     let climate_pattern = match args.climate.to_lowercase().as_str() {
@@ -124,66 +136,113 @@ fn main() {
     // Create a test scenario: grass field with eucalyptus trees
     println!("Creating fuel elements...");
     
-    // Scale the number of elements based on argument
-    let radius_squared = ((args.fuel_elements as f32) * 32.0) as i32;
+    // Determine grass coverage area
+    let grass_radius = if args.grass_radius > 0.0 {
+        args.grass_radius
+    } else {
+        args.map_size / 2.0 // Cover full map
+    };
     
-    // Add ground cover (dry grass)
+    // Add ground cover (dry grass) across entire area
     let grass_fuel = Fuel::dry_grass();
-    for x in -50..=50 {
-        for y in -50..=50 {
-            if (x * x + y * y) < radius_squared { // Circular area
+    let grass_spacing = 2.0; // 2m spacing between grass elements
+    let half_size = args.map_size / 2.0;
+    
+    let mut grass_count = 0;
+    let x_start = (-half_size / grass_spacing).floor() as i32;
+    let x_end = (half_size / grass_spacing).ceil() as i32;
+    let y_start = (-half_size / grass_spacing).floor() as i32;
+    let y_end = (half_size / grass_spacing).ceil() as i32;
+    
+    for x in x_start..=x_end {
+        for y in y_start..=y_end {
+            let pos_x = x as f32 * grass_spacing;
+            let pos_y = y as f32 * grass_spacing;
+            
+            // Check if within grass radius
+            let distance = (pos_x * pos_x + pos_y * pos_y).sqrt();
+            if distance <= grass_radius {
                 sim.add_fuel_element(
-                    Vec3::new(x as f32 * 2.0, y as f32 * 2.0, 0.0),
+                    Vec3::new(pos_x, pos_y, 0.0),
                     grass_fuel.clone(),
                     0.5,
                     FuelPart::GroundVegetation,
                     None,
                 );
+                grass_count += 1;
             }
         }
     }
     
-    // Add a few eucalyptus stringybark trees
+    println!("Added {} grass elements (radius: {:.0}m)", grass_count, grass_radius);
+    
+    // Add eucalyptus stringybark trees
     let stringybark = Fuel::eucalyptus_stringybark();
-    for i in 0..5 {
-        let x = (i as f32 - 2.0) * 20.0;
-        let tree_base = sim.add_fuel_element(
-            Vec3::new(x, 0.0, 0.0),
-            stringybark.clone(),
-            10.0,
-            FuelPart::TrunkLower,
-            None,
-        );
-        
-        // Add trunk middle
-        sim.add_fuel_element(
-            Vec3::new(x, 0.0, 5.0),
-            stringybark.clone(),
-            8.0,
-            FuelPart::TrunkMiddle,
-            Some(tree_base),
-        );
-        
-        // Add trunk upper
-        sim.add_fuel_element(
-            Vec3::new(x, 0.0, 10.0),
-            stringybark.clone(),
-            6.0,
-            FuelPart::TrunkUpper,
-            Some(tree_base),
-        );
-        
-        // Add crown
-        sim.add_fuel_element(
-            Vec3::new(x, 0.0, 15.0),
-            stringybark.clone(),
-            5.0,
-            FuelPart::Crown,
-            Some(tree_base),
-        );
+    let tree_count = args.num_trees;
+    let spacing = args.tree_spacing;
+    
+    // Calculate tree grid layout
+    let trees_per_row = (tree_count as f32).sqrt().ceil() as u32;
+    let mut tree_num = 0;
+    
+    for row in 0..trees_per_row {
+        for col in 0..trees_per_row {
+            if tree_num >= tree_count {
+                break;
+            }
+            
+            // Center the tree grid
+            let offset_x = (trees_per_row as f32 - 1.0) * spacing / 2.0;
+            let offset_y = (trees_per_row as f32 - 1.0) * spacing / 2.0;
+            
+            let x = col as f32 * spacing - offset_x;
+            let y = row as f32 * spacing - offset_y;
+            
+            // Add tree structure (trunk + crown)
+            let tree_base = sim.add_fuel_element(
+                Vec3::new(x, y, 0.0),
+                stringybark.clone(),
+                10.0,
+                FuelPart::TrunkLower,
+                None,
+            );
+            
+            // Add trunk middle
+            sim.add_fuel_element(
+                Vec3::new(x, y, 5.0),
+                stringybark.clone(),
+                8.0,
+                FuelPart::TrunkMiddle,
+                Some(tree_base),
+            );
+            
+            // Add trunk upper
+            sim.add_fuel_element(
+                Vec3::new(x, y, 10.0),
+                stringybark.clone(),
+                6.0,
+                FuelPart::TrunkUpper,
+                Some(tree_base),
+            );
+            
+            // Add crown
+            sim.add_fuel_element(
+                Vec3::new(x, y, 15.0),
+                stringybark.clone(),
+                5.0,
+                FuelPart::Crown,
+                Some(tree_base),
+            );
+            
+            tree_num += 1;
+        }
+        if tree_num >= tree_count {
+            break;
+        }
     }
     
-    println!("Created {} fuel elements", sim.element_count());
+    println!("Added {} trees with {:.0}m spacing", tree_count, spacing);
+    println!("Total fuel elements: {}", sim.element_count());
     
     // Ignite the center
     println!("\nIgniting fire at origin...\n");
@@ -198,22 +257,24 @@ fn main() {
     
     // Run simulation
     println!("Running simulation...\n");
-    println!("Time(s) | Burning | Embers | Fuel Consumed(kg)");
-    println!("--------|---------|--------|------------------");
+    println!("Time(s) | Burning | Embers | PyroCb | Lightning | Fuel Consumed(kg)");
+    println!("--------|---------|--------|--------|-----------|------------------");
     
     let mut time = 0.0;
     let dt = 0.1; // 10 Hz update rate
     let mut next_report = 0.0;
     
-    while time < args.duration && sim.burning_count() > 0 {
+    while time < args.duration && (sim.burning_count() > 0 || sim.pyrocb_system.active_cloud_count() > 0) {
         sim.update(dt);
         time += dt;
         
         if time >= next_report {
-            println!("{:7.1} | {:7} | {:6} | {:17.2}",
+            println!("{:7.1} | {:7} | {:6} | {:6} | {:9} | {:17.2}",
                      time,
                      sim.burning_count(),
                      sim.ember_count(),
+                     sim.pyrocb_system.active_cloud_count(),
+                     sim.pyrocb_system.total_lightning_events,
                      sim.total_fuel_consumed);
             next_report += args.report_interval;
         }
@@ -223,6 +284,15 @@ fn main() {
     println!("Final time: {:.1}s", time);
     println!("Total fuel consumed: {:.2} kg", sim.total_fuel_consumed);
     println!("Peak burning elements: {}", sim.burning_count());
+    println!("Total embers generated: {}", sim.ember_count());
+    println!("Max fire intensity: {:.0} kW/m", sim.max_fire_intensity);
+    
+    // PyroCb summary
+    if sim.pyrocb_system.total_lightning_events > 0 {
+        println!("\n🌩️  PYROCUMULONIMBUS EVENTS:");
+        println!("   Total lightning strikes: {}", sim.pyrocb_system.total_lightning_events);
+        println!("   Active pyroCb clouds: {}", sim.pyrocb_system.active_cloud_count());
+    }
     
     // Run validation tests if requested
     if args.validate {

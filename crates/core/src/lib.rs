@@ -11,6 +11,7 @@ pub mod physics;
 pub mod weather;
 pub mod ember;
 pub mod australian;
+pub mod pyrocumulonimbus;
 pub mod simulation;
 
 // Re-export main types
@@ -18,4 +19,5 @@ pub use fuel::{Fuel, BarkProperties};
 pub use element::{FuelElement, FuelPart, Vec3};
 pub use weather::{WeatherSystem, WeatherPreset, ClimatePattern};
 pub use ember::Ember;
+pub use pyrocumulonimbus::{PyroCb, PyroCbSystem, LightningStrike, Downdraft};
 pub use simulation::FireSimulation;

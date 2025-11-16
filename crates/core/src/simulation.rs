@@ -7,6 +7,7 @@ use crate::weather::WeatherSystem;
 use crate::ember::Ember;
 use crate::physics::*;
 use crate::australian;
+use crate::pyrocumulonimbus::PyroCbSystem;
 
 /// Main fire simulation
 pub struct FireSimulation {
@@ -25,6 +26,9 @@ pub struct FireSimulation {
     embers: Vec<Ember>,
     next_ember_id: u32,
     
+    // Pyrocumulonimbus system
+    pub pyrocb_system: PyroCbSystem,
+    
     // Configuration
     max_search_radius: f32,
     
@@ -32,6 +36,7 @@ pub struct FireSimulation {
     pub total_fuel_consumed: f32,
     pub total_area_burned: f32,
     pub simulation_time: f32,
+    pub max_fire_intensity: f32,
 }
 
 impl FireSimulation {
@@ -52,10 +57,12 @@ impl FireSimulation {
             weather: WeatherSystem::default(),
             embers: Vec::new(),
             next_ember_id: 0,
+            pyrocb_system: PyroCbSystem::new(),
             max_search_radius: 15.0,
             total_fuel_consumed: 0.0,
             total_area_burned: 0.0,
             simulation_time: 0.0,
+            max_fire_intensity: 0.0,
         }
     }
     
@@ -267,7 +274,69 @@ impl FireSimulation {
         // 6. Remove dead embers
         self.embers.retain(|e| e.is_active());
         
-        // 7. Update statistics
+        // 7. Check for pyroCb formation and update pyroCb system
+        // Calculate total fire intensity across all burning elements
+        let mut total_intensity = 0.0;
+        let mut fire_center = Vec3::zeros();
+        let mut burning_count = 0;
+        
+        for &element_id in &self.burning_elements {
+            if let Some(element) = self.get_element(element_id) {
+                let intensity = element.byram_fireline_intensity();
+                total_intensity += intensity;
+                fire_center += element.position * intensity;
+                burning_count += 1;
+            }
+        }
+        
+        if burning_count > 0 && total_intensity > 0.0 {
+            fire_center = fire_center / total_intensity;
+            self.max_fire_intensity = self.max_fire_intensity.max(total_intensity);
+            
+            // Check for pyroCb formation conditions
+            self.pyrocb_system.check_formation(
+                fire_center,
+                total_intensity,
+                ambient_temp,
+                self.weather.humidity,
+                self.weather.wind_speed,
+            );
+        }
+        
+        // Update pyroCb system
+        let mut rng = rand::thread_rng();
+        self.pyrocb_system.update(
+            dt,
+            total_intensity,
+            ambient_temp,
+            self.weather.humidity,
+            &mut rng,
+        );
+        
+        // Process lightning strikes from pyroCb
+        // Clone strikes to avoid borrow checker issues
+        let lightning_strikes: Vec<_> = self.pyrocb_system.lightning_strikes.iter()
+            .map(|strike| (strike.position, strike.energy, strike.ignition_radius))
+            .collect();
+        
+        for (position, energy, radius) in lightning_strikes {
+            let nearby = self.spatial_index.query_radius(position, radius);
+            
+            for &fuel_id in &nearby {
+                if let Some(element) = self.get_element_mut(fuel_id) {
+                    if element.can_ignite() {
+                        // Lightning provides immediate high temperature
+                        element.apply_heat(energy, 0.1, ambient_temp);
+                        
+                        if element.ignited {
+                            self.burning_elements.insert(fuel_id);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 8. Update statistics
         self.simulation_time += dt;
     }
     
