@@ -3,7 +3,7 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use fire_sim_core::{FireSimulation, Fuel, FuelPart, Vec3 as SimVec3, WeatherSystem, ClimatePattern, WeatherPreset};
 
 // Constants
-const SCALE_FACTOR: f32 = 0.5; // Scale simulation coordinates to Bevy world (increased for better visibility)
+const SCALE_FACTOR: f32 = 1.0; // Scale simulation coordinates to Bevy world
 const FIRE_COLOR_LOW: Color = Color::rgb(1.0, 0.8, 0.0);
 const FIRE_COLOR_MEDIUM: Color = Color::rgb(1.0, 0.5, 0.0);
 const FIRE_COLOR_HIGH: Color = Color::rgb(1.0, 0.2, 0.0);
@@ -27,6 +27,7 @@ fn main() {
             update_fire_visualization,
             update_ember_visualization,
             camera_controls,
+            fps_counter_system,
         ))
         .run();
 }
@@ -58,6 +59,10 @@ struct SimulationState {
     fuel_consumed: f32,
     ffdi: f32,
     fire_danger_rating: String,
+    
+    // Performance metrics
+    fps: f32,
+    frame_time_ms: f32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -95,6 +100,8 @@ impl Default for SimulationState {
             fuel_consumed: 0.0,
             ffdi: weather.calculate_ffdi(),
             fire_danger_rating: weather.fire_danger_rating().to_string(),
+            fps: 60.0,
+            frame_time_ms: 16.7,
         }
     }
 }
@@ -158,8 +165,8 @@ fn camera_controls(
     // Zoom
     if keyboard.pressed(KeyCode::Equals) || keyboard.pressed(KeyCode::NumpadAdd) {
         camera_transform.scale *= 1.0 - zoom_speed * time.delta_seconds();
-        camera_transform.scale.x = camera_transform.scale.x.max(0.05);
-        camera_transform.scale.y = camera_transform.scale.y.max(0.05);
+        camera_transform.scale.x = camera_transform.scale.x.max(0.3);
+        camera_transform.scale.y = camera_transform.scale.y.max(0.3);
     }
     if keyboard.pressed(KeyCode::Minus) || keyboard.pressed(KeyCode::NumpadSubtract) {
         camera_transform.scale *= 1.0 + zoom_speed * time.delta_seconds();
@@ -232,6 +239,8 @@ fn ui_system(
             
             // Statistics
             ui.heading("📊 Statistics");
+            ui.label(format!("FPS: {:.1}", state.fps));
+            ui.label(format!("Frame Time: {:.2}ms", state.frame_time_ms));
             ui.label(format!("Total Elements: {}", state.total_elements));
             ui.label(format!("🔥 Burning: {}", state.burning_elements));
             ui.label(format!("✨ Embers: {}", state.ember_count));
@@ -254,6 +263,78 @@ fn ui_system(
             };
             
             ui.colored_label(danger_color, format!("Rating: {}", state.fire_danger_rating));
+            ui.separator();
+            
+            // Wind Compass
+            ui.heading("🧭 Wind Direction");
+            let compass_size = 80.0;
+            let (response, painter) = ui.allocate_painter(
+                egui::Vec2::new(compass_size, compass_size),
+                egui::Sense::hover()
+            );
+            let center = response.rect.center();
+            let radius = compass_size / 2.0 - 5.0;
+            
+            // Draw compass circle
+            painter.circle_stroke(
+                center,
+                radius,
+                egui::Stroke::new(2.0, egui::Color32::GRAY)
+            );
+            
+            // Draw N, S, E, W markers
+            let text_radius = radius + 10.0;
+            painter.text(
+                egui::pos2(center.x, center.y - text_radius),
+                egui::Align2::CENTER_CENTER,
+                "N",
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE
+            );
+            painter.text(
+                egui::pos2(center.x, center.y + text_radius),
+                egui::Align2::CENTER_CENTER,
+                "S",
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE
+            );
+            painter.text(
+                egui::pos2(center.x + text_radius, center.y),
+                egui::Align2::CENTER_CENTER,
+                "E",
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE
+            );
+            painter.text(
+                egui::pos2(center.x - text_radius, center.y),
+                egui::Align2::CENTER_CENTER,
+                "W",
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE
+            );
+            
+            // Convert wind direction to radians (0° = North, clockwise)
+            let wind_angle_rad = state.wind_direction.to_radians();
+            
+            // Calculate arrow length based on wind speed (scale to fit compass)
+            let arrow_length = (state.wind_speed / 100.0).min(1.0) * radius * 0.8;
+            
+            // Calculate arrow end point
+            let arrow_end = egui::pos2(
+                center.x + arrow_length * wind_angle_rad.sin(),
+                center.y - arrow_length * wind_angle_rad.cos()
+            );
+            
+            // Draw wind arrow
+            painter.arrow(
+                center,
+                arrow_end - center,
+                egui::Stroke::new(3.0, egui::Color32::from_rgb(100, 150, 255))
+            );
+            
+            // Display wind speed
+            ui.label(format!("Speed: {:.1} km/h", state.wind_speed));
+            ui.label(format!("Direction: {:.0}°", state.wind_direction));
             ui.separator();
             
             // Weather Controls
@@ -424,8 +505,16 @@ fn ui_system(
                         // Add bulk field at clicked position
                         let width = state.field_width;
                         let height = state.field_height;
-                        add_grass_field(&mut state.simulation, sim_x, sim_y, width, height);
-                        println!("Added {}x{}m grass field at ({:.1}, {:.1})", width, height, sim_x, sim_y);
+                        let fuel_type = state.spawn_fuel_type;
+                        add_fuel_field(&mut state.simulation, sim_x, sim_y, width, height, fuel_type);
+                        let fuel_name = match fuel_type {
+                            FuelType::DryGrass => "grass",
+                            FuelType::StringyBark => "stringybark",
+                            FuelType::SmoothBark => "smooth bark",
+                            FuelType::Shrubland => "shrubland",
+                            FuelType::DeadWood => "dead wood",
+                        };
+                        println!("Added {}x{}m {} field at ({:.1}, {:.1})", width, height, fuel_name, sim_x, sim_y);
                         state.bulk_add_mode = false; // Disable after placing
                     } else {
                         // Add single fuel element
@@ -481,8 +570,22 @@ fn add_fuel_at_cursor(state: &mut SimulationState, x: f32, y: f32) {
     );
 }
 
-fn add_grass_field(sim: &mut FireSimulation, center_x: f32, center_y: f32, width: f32, height: f32) {
-    let grass = Fuel::dry_grass();
+fn add_fuel_field(sim: &mut FireSimulation, center_x: f32, center_y: f32, width: f32, height: f32, fuel_type: FuelType) {
+    let fuel = match fuel_type {
+        FuelType::DryGrass => Fuel::dry_grass(),
+        FuelType::StringyBark => Fuel::eucalyptus_stringybark(),
+        FuelType::SmoothBark => Fuel::eucalyptus_smooth_bark(),
+        FuelType::Shrubland => Fuel::shrubland(),
+        FuelType::DeadWood => Fuel::dead_wood_litter(),
+    };
+    
+    let part = match fuel_type {
+        FuelType::DryGrass => FuelPart::GroundVegetation,
+        FuelType::DeadWood => FuelPart::GroundLitter,
+        FuelType::Shrubland => FuelPart::GroundVegetation,
+        _ => FuelPart::TrunkLower,
+    };
+    
     let spacing = 1.0;
     
     let x_start = center_x - width / 2.0;
@@ -496,9 +599,9 @@ fn add_grass_field(sim: &mut FireSimulation, center_x: f32, center_y: f32, width
         while y <= y_end {
             sim.add_fuel_element(
                 SimVec3::new(x, y, 0.0),
-                grass.clone(),
+                fuel.clone(),
                 0.5,
-                FuelPart::GroundVegetation,
+                part,
                 None,
             );
             y += spacing;
@@ -695,4 +798,13 @@ fn update_ember_visualization(
             ));
         }
     }
+}
+
+fn fps_counter_system(
+    mut state: ResMut<SimulationState>,
+    time: Res<Time>,
+) {
+    // Update FPS and frame time
+    state.fps = 1.0 / time.delta_seconds();
+    state.frame_time_ms = time.delta_seconds() * 1000.0;
 }
