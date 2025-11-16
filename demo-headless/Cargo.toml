@@ -1,0 +1,11 @@
+[package]
+name = "demo-headless"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+fire-sim-core = { path = "../crates/core" }
+nalgebra.workspace = true
+clap = { version = "4.4", features = ["derive"] }
