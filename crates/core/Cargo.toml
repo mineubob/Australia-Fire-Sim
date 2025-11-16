@@ -1,0 +1,15 @@
+[package]
+name = "fire-sim-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+rayon.workspace = true
+nalgebra.workspace = true
+rand.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+approx = "0.5"

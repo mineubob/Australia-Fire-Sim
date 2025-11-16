@@ -1,0 +1,12 @@
+[package]
+name = "fire-sim-ffi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+fire-sim-core = { path = "../core" }
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
