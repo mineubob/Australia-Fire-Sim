@@ -3,7 +3,7 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use fire_sim_core::{FireSimulation, Fuel, FuelPart, Vec3 as SimVec3, WeatherSystem, ClimatePattern, WeatherPreset};
 
 // Constants
-const SCALE_FACTOR: f32 = 0.1; // Scale simulation coordinates to Bevy world
+const SCALE_FACTOR: f32 = 0.5; // Scale simulation coordinates to Bevy world (increased for better visibility)
 const FIRE_COLOR_LOW: Color = Color::rgb(1.0, 0.8, 0.0);
 const FIRE_COLOR_MEDIUM: Color = Color::rgb(1.0, 0.5, 0.0);
 const FIRE_COLOR_HIGH: Color = Color::rgb(1.0, 0.2, 0.0);
@@ -108,9 +108,9 @@ struct EmberSprite {
 }
 
 fn setup(mut commands: Commands) {
-    // Setup 2D camera
+    // Setup 2D camera - start zoomed in for better visibility
     commands.spawn(Camera2dBundle {
-        transform: Transform::from_xyz(0.0, 0.0, 1000.0),
+        transform: Transform::from_xyz(0.0, 0.0, 1000.0).with_scale(Vec3::splat(0.3)),
         ..default()
     });
     
@@ -215,6 +215,7 @@ fn ui_system(
     egui::SidePanel::right("control_panel")
         .default_width(350.0)
         .show(ctx, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
             ui.heading("🔥 Fire Simulation Control");
             ui.separator();
             
@@ -373,7 +374,8 @@ fn ui_system(
             ui.label("+/-: Zoom");
             ui.label("Space: Pause");
             ui.label("R: Reset");
-        });
+            }); // End of ScrollArea
+        }); // End of SidePanel
     
     // Handle mouse clicks for adding fuel and igniting
     if let (Ok((camera, camera_transform)), Ok(window)) = (camera_query.get_single(), windows.get_single()) {
@@ -522,11 +524,11 @@ fn update_fire_visualization(
     // Create new sprites for burning elements
     for id in 0..state.simulation.element_count() as u32 {
         if let Some(element) = state.simulation.get_element(id) {
+            let x = element.position.x * SCALE_FACTOR;
+            let y = element.position.y * SCALE_FACTOR;
+            let z = element.position.z * SCALE_FACTOR * 0.1; // Less vertical scale
+            
             if element.ignited && element.temperature > 100.0 {
-                let x = element.position.x * SCALE_FACTOR;
-                let y = element.position.y * SCALE_FACTOR;
-                let z = element.position.z * SCALE_FACTOR * 0.1; // Less vertical scale
-                
                 // Color based on temperature
                 let temp_normalized = ((element.temperature - 100.0) / 1000.0).clamp(0.0, 1.0);
                 let color = if temp_normalized < 0.3 {
@@ -553,15 +555,35 @@ fn update_fire_visualization(
                     FireElement { element_id: id },
                 ));
             } else if element.temperature > 50.0 {
-                // Show heated but not burning elements as dim
-                let x = element.position.x * SCALE_FACTOR;
-                let y = element.position.y * SCALE_FACTOR;
+                // Show heated but not burning elements as dim yellow
+                commands.spawn((
+                    SpriteBundle {
+                        sprite: Sprite {
+                            color: Color::rgba(0.8, 0.8, 0.0, 0.4),
+                            custom_size: Some(Vec2::new(2.5, 2.5)),
+                            ..default()
+                        },
+                        transform: Transform::from_xyz(x, y, 0.0),
+                        ..default()
+                    },
+                    FireElement { element_id: id },
+                ));
+            } else {
+                // Show unburned fuel elements as small green/brown dots
+                let fuel_color = match element.part_type {
+                    FuelPart::GroundVegetation => Color::rgba(0.2, 0.6, 0.2, 0.6), // Green for grass
+                    FuelPart::GroundLitter => Color::rgba(0.5, 0.3, 0.1, 0.5), // Brown for litter
+                    FuelPart::TrunkLower | FuelPart::TrunkMiddle | FuelPart::TrunkUpper => 
+                        Color::rgba(0.4, 0.25, 0.1, 0.7), // Dark brown for trunk
+                    FuelPart::Crown => Color::rgba(0.1, 0.5, 0.1, 0.7), // Dark green for crown
+                    _ => Color::rgba(0.3, 0.4, 0.2, 0.5), // Greenish for others
+                };
                 
                 commands.spawn((
                     SpriteBundle {
                         sprite: Sprite {
-                            color: Color::rgba(0.8, 0.8, 0.0, 0.3),
-                            custom_size: Some(Vec2::new(1.0, 1.0)),
+                            color: fuel_color,
+                            custom_size: Some(Vec2::new(3.0, 3.0)),
                             ..default()
                         },
                         transform: Transform::from_xyz(x, y, 0.0),
