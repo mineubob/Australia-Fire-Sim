@@ -73,6 +73,10 @@ struct Args {
     /// Run validation tests
     #[arg(short, long)]
     validate: bool,
+    
+    /// Number of initial fuel elements to ignite (0 = auto based on radius)
+    #[arg(short = 'i', long, default_value_t = 0)]
+    ignite_count: u32,
 }
 
 fn main() {
@@ -244,13 +248,36 @@ fn main() {
     println!("Added {} trees with {:.0}m spacing", tree_count, spacing);
     println!("Total fuel elements: {}", sim.element_count());
     
-    // Ignite the center
-    println!("\nIgniting fire at origin...\n");
-    let center_elements: Vec<u32> = (0..sim.element_count() as u32).collect();
-    for id in center_elements {
+    // Ignite elements at the center
+    let ignite_count = if args.ignite_count > 0 {
+        args.ignite_count
+    } else {
+        // Auto: ignite all within 5m radius
+        let center_elements: Vec<u32> = (0..sim.element_count() as u32)
+            .filter(|&id| {
+                if let Some(element) = sim.get_element(id) {
+                    element.position.magnitude() < 5.0
+                } else {
+                    false
+                }
+            })
+            .collect();
+        center_elements.len() as u32
+    };
+    
+    println!("\nIgniting {} fuel element(s) at origin...\n", ignite_count);
+    
+    let mut ignited = 0;
+    for id in 0..sim.element_count() as u32 {
+        if ignited >= ignite_count {
+            break;
+        }
+        
         if let Some(element) = sim.get_element(id) {
-            if element.position.magnitude() < 5.0 {
+            // Prioritize elements near the center
+            if args.ignite_count > 0 || element.position.magnitude() < 5.0 {
                 sim.ignite_element(id, 600.0);
+                ignited += 1;
             }
         }
     }
