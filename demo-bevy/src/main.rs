@@ -108,9 +108,9 @@ struct EmberSprite {
 }
 
 fn setup(mut commands: Commands) {
-    // Setup 2D camera - start zoomed in for better visibility
+    // Setup 2D camera - default scale for good initial view
     commands.spawn(Camera2dBundle {
-        transform: Transform::from_xyz(0.0, 0.0, 1000.0).with_scale(Vec3::splat(0.3)),
+        transform: Transform::from_xyz(0.0, 0.0, 1000.0),
         ..default()
     });
     
