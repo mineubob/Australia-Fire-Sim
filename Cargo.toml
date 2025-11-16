@@ -1,0 +1,16 @@
+[workspace]
+members = ["crates/core", "crates/ffi", "demo-headless"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Fire Sim Team"]
+license = "MIT"
+
+[workspace.dependencies]
+rayon = "1.8"
+nalgebra = "0.32"
+rust-sdl2 = { version = "0.34", features = ["image"] }
+rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
