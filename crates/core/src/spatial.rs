@@ -47,7 +47,11 @@ impl SpatialIndex {
     /// Query all elements within a radius
     pub fn query_radius(&self, pos: Vec3, radius: f32) -> Vec<u32> {
         let cells_needed = (radius / self.cell_size).ceil() as i32;
-        let mut results = Vec::new();
+        
+        // OPTIMIZATION: Pre-allocate with estimated capacity
+        // Most cells have ~50-100 elements, and we're checking ~27 cells (3^3)
+        let estimated_capacity = ((cells_needed * 2 + 1).pow(3) as usize) * 10;
+        let mut results = Vec::with_capacity(estimated_capacity.min(2000));
         
         // Check neighboring cells
         for dx in -cells_needed..=cells_needed {

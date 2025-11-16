@@ -126,6 +126,9 @@ impl FireSimulation {
         // 2. Process each burning element (parallel processing)
         let burning_ids: Vec<u32> = self.burning_elements.iter().copied().collect();
         
+        // OPTIMIZATION: Pre-compute values that don't change per iteration
+        let max_search_radius_sq = self.max_search_radius * self.max_search_radius;
+        
         // Parallel processing: collect heat transfer data for all elements
         let heat_transfers: Vec<Vec<(u32, f32)>> = burning_ids.par_iter().map(|&element_id| {
             let mut transfers = Vec::new();
@@ -135,6 +138,7 @@ impl FireSimulation {
                     return transfers;
                 }
                 
+                // OPTIMIZATION: Cache element properties to reduce field accesses
                 let element_pos = element.position;
                 
                 // Find nearby fuel
@@ -151,10 +155,19 @@ impl FireSimulation {
                             continue;
                         }
                         
-                        let distance = (target.position - element_pos).magnitude();
-                        if distance < 0.1 || distance > self.max_search_radius {
+                        // OPTIMIZATION: Calculate distance squared first (avoid sqrt)
+                        let dx = target.position.x - element_pos.x;
+                        let dy = target.position.y - element_pos.y;
+                        let dz = target.position.z - element_pos.z;
+                        let distance_sq = dx * dx + dy * dy + dz * dz;
+                        
+                        // OPTIMIZATION: Skip if too far (using squared distance)
+                        if distance_sq < 0.01 || distance_sq > max_search_radius_sq {
                             continue;
                         }
+                        
+                        // Only compute sqrt when we know we need it
+                        let distance = distance_sq.sqrt();
                         
                         // Calculate heat components
                         let radiation = calculate_radiation_flux(element, target, distance);

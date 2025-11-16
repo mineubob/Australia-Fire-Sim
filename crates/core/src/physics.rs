@@ -69,13 +69,15 @@ pub fn calculate_convection_heat(source: &FuelElement, target: &FuelElement, dis
 
 /// Calculate wind radiation multiplier (CRITICAL: extreme directional spread)
 pub fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32 {
-    if wind.magnitude() < 0.1 {
+    // OPTIMIZATION: Early exit for calm conditions using squared magnitude
+    let wind_mag_sq = wind.x * wind.x + wind.y * wind.y + wind.z * wind.z;
+    if wind_mag_sq < 0.01 {
         return 1.0;
     }
     
     let direction = (to - from).normalize();
     let alignment = direction.dot(&wind.normalize());
-    let wind_speed_ms = wind.magnitude();
+    let wind_speed_ms = wind_mag_sq.sqrt();
     
     if alignment > 0.0 {
         // Downwind: 41x multiplier at high wind
