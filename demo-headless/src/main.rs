@@ -1,4 +1,4 @@
-use fire_sim_core::{FireSimulation, Fuel, FuelPart, Vec3, WeatherSystem};
+use fire_sim_core::{FireSimulation, Fuel, FuelPart, Vec3, WeatherSystem, WeatherPreset, ClimatePattern};
 use clap::Parser;
 
 /// Fire simulation demo with configurable parameters
@@ -34,6 +34,22 @@ struct Args {
     #[arg(short, long)]
     catastrophic: bool,
     
+    /// Use regional weather preset (perth-metro, south-west, wheatbelt, goldfields, kimberley, pilbara)
+    #[arg(short = 'p', long)]
+    preset: Option<String>,
+    
+    /// Climate pattern (neutral, el-nino, la-nina)
+    #[arg(long, default_value = "neutral")]
+    climate: String,
+    
+    /// Day of year (1-365)
+    #[arg(long, default_value_t = 15)]
+    day: u16,
+    
+    /// Hour of day (0-24)
+    #[arg(long, default_value_t = 14.0)]
+    hour: f32,
+    
     /// Number of fuel elements (approximate, in hundreds)
     #[arg(short, long, default_value_t = 78)]
     fuel_elements: u32,
@@ -56,10 +72,34 @@ fn main() {
     let mut sim = FireSimulation::new(1000.0, 1000.0, 100.0);
     println!("Created simulation with 1000x1000x100m bounds");
     
+    // Parse climate pattern
+    let climate_pattern = match args.climate.to_lowercase().as_str() {
+        "el-nino" | "elnino" => ClimatePattern::ElNino,
+        "la-nina" | "lanina" => ClimatePattern::LaNina,
+        _ => ClimatePattern::Neutral,
+    };
+    
     // Set weather based on arguments or preset
     let weather = if args.catastrophic {
         println!("Using CATASTROPHIC weather preset");
         WeatherSystem::catastrophic()
+    } else if let Some(preset_name) = &args.preset {
+        // Use regional preset
+        let preset = match preset_name.to_lowercase().as_str() {
+            "perth-metro" | "perth" => WeatherPreset::perth_metro(),
+            "south-west" | "southwest" => WeatherPreset::south_west(),
+            "wheatbelt" => WeatherPreset::wheatbelt(),
+            "goldfields" => WeatherPreset::goldfields(),
+            "kimberley" => WeatherPreset::kimberley(),
+            "pilbara" => WeatherPreset::pilbara(),
+            _ => {
+                println!("Unknown preset '{}', using Perth Metro", preset_name);
+                WeatherPreset::perth_metro()
+            }
+        };
+        println!("Using '{}' regional preset", preset.name);
+        println!("Climate: {:?}, Day: {}, Hour: {:.1}", climate_pattern, args.day, args.hour);
+        WeatherSystem::from_preset(preset, args.day, args.hour, climate_pattern)
     } else {
         WeatherSystem::new(
             args.temperature,
@@ -71,8 +111,14 @@ fn main() {
     };
     
     println!("Weather: {} (FFDI: {:.1})", weather.fire_danger_rating(), weather.calculate_ffdi());
-    println!("Wind: {:.1} km/h, Temp: {:.1}°C, Humidity: {:.1}%, Drought: {:.1}\n", 
+    println!("Wind: {:.1} km/h, Temp: {:.1}°C, Humidity: {:.1}%, Drought: {:.1}", 
              weather.wind_speed, weather.temperature, weather.humidity, weather.drought_factor);
+    if let Some(preset_name) = weather.preset_name() {
+        println!("Region: {}, Solar: {:.0} W/m², Curing: {:.0}%\n", 
+                 preset_name, weather.solar_radiation(), weather.fuel_curing());
+    } else {
+        println!();
+    }
     sim.set_weather(weather);
     
     // Create a test scenario: grass field with eucalyptus trees

@@ -16,6 +16,6 @@ pub mod simulation;
 // Re-export main types
 pub use fuel::{Fuel, BarkProperties};
 pub use element::{FuelElement, FuelPart, Vec3};
-pub use weather::WeatherSystem;
+pub use weather::{WeatherSystem, WeatherPreset, ClimatePattern};
 pub use ember::Ember;
 pub use simulation::FireSimulation;
