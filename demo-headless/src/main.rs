@@ -1,5 +1,6 @@
 use fire_sim_core::{FireSimulation, Fuel, FuelPart, Vec3, WeatherSystem, WeatherPreset, ClimatePattern};
 use clap::Parser;
+use std::time::Instant;
 
 /// Fire simulation demo with configurable parameters
 #[derive(Parser, Debug)]
@@ -77,6 +78,10 @@ struct Args {
     /// Number of initial fuel elements to ignite (0 = auto based on radius)
     #[arg(short = 'i', long, default_value_t = 0)]
     ignite_count: u32,
+    
+    /// Show performance metrics
+    #[arg(long)]
+    show_metrics: bool,
 }
 
 fn main() {
@@ -284,28 +289,66 @@ fn main() {
     
     // Run simulation
     println!("Running simulation...\n");
-    println!("Time(s) | Burning | Embers | PyroCb | Lightning | Fuel Consumed(kg)");
-    println!("--------|---------|--------|--------|-----------|------------------");
+    
+    if args.show_metrics {
+        println!("Time(s) | Burning | Embers | PyroCb | Lightning | Fuel Consumed(kg) | Update(ms) | FPS");
+        println!("--------|---------|--------|--------|-----------|-------------------|------------|-----");
+    } else {
+        println!("Time(s) | Burning | Embers | PyroCb | Lightning | Fuel Consumed(kg)");
+        println!("--------|---------|--------|--------|-----------|------------------");
+    }
     
     let mut time = 0.0;
     let dt = 0.1; // 10 Hz update rate
     let mut next_report = 0.0;
     
+    // Performance tracking
+    let mut total_update_time_ms = 0.0;
+    let mut update_count = 0;
+    let mut min_update_ms: f32 = f32::MAX;
+    let mut max_update_ms: f32 = 0.0;
+    
+    let sim_start = Instant::now();
+    
     while time < args.duration && (sim.burning_count() > 0 || sim.pyrocb_system.active_cloud_count() > 0) {
+        let update_start = Instant::now();
         sim.update(dt);
+        let update_duration = update_start.elapsed();
+        let update_ms = update_duration.as_secs_f32() * 1000.0;
+        
+        total_update_time_ms += update_ms;
+        update_count += 1;
+        min_update_ms = min_update_ms.min(update_ms);
+        max_update_ms = max_update_ms.max(update_ms);
+        
         time += dt;
         
         if time >= next_report {
-            println!("{:7.1} | {:7} | {:6} | {:6} | {:9} | {:17.2}",
-                     time,
-                     sim.burning_count(),
-                     sim.ember_count(),
-                     sim.pyrocb_system.active_cloud_count(),
-                     sim.pyrocb_system.total_lightning_events,
-                     sim.total_fuel_consumed);
+            if args.show_metrics {
+                let fps = 1000.0 / update_ms;
+                println!("{:7.1} | {:7} | {:6} | {:6} | {:9} | {:17.2} | {:10.2} | {:4.1}",
+                         time,
+                         sim.burning_count(),
+                         sim.ember_count(),
+                         sim.pyrocb_system.active_cloud_count(),
+                         sim.pyrocb_system.total_lightning_events,
+                         sim.total_fuel_consumed,
+                         update_ms,
+                         fps);
+            } else {
+                println!("{:7.1} | {:7} | {:6} | {:6} | {:9} | {:17.2}",
+                         time,
+                         sim.burning_count(),
+                         sim.ember_count(),
+                         sim.pyrocb_system.active_cloud_count(),
+                         sim.pyrocb_system.total_lightning_events,
+                         sim.total_fuel_consumed);
+            }
             next_report += args.report_interval;
         }
     }
+    
+    let sim_duration = sim_start.elapsed();
     
     println!("\n=== Simulation Complete ===");
     println!("Final time: {:.1}s", time);
@@ -313,6 +356,20 @@ fn main() {
     println!("Peak burning elements: {}", sim.burning_count());
     println!("Total embers generated: {}", sim.ember_count());
     println!("Max fire intensity: {:.0} kW/m", sim.max_fire_intensity);
+    
+    if args.show_metrics {
+        println!("\n=== Performance Metrics ===");
+        println!("Total simulation time: {:.2}s", sim_duration.as_secs_f32());
+        println!("Total updates: {}", update_count);
+        println!("Average update time: {:.2} ms", total_update_time_ms / update_count as f32);
+        println!("Min update time: {:.2} ms", min_update_ms);
+        println!("Max update time: {:.2} ms", max_update_ms);
+        println!("Average FPS: {:.1}", 1000.0 / (total_update_time_ms / update_count as f32));
+        println!("Simulated time / Real time: {:.2}x", time / sim_duration.as_secs_f32());
+        println!("Total elements: {}", sim.element_count());
+        println!("Elements processed per second: {:.0}", 
+                 (sim.element_count() * update_count) as f32 / sim_duration.as_secs_f32());
+    }
     
     // PyroCb summary
     if sim.pyrocb_system.total_lightning_events > 0 {
