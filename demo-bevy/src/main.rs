@@ -49,6 +49,7 @@ struct SimulationState {
     spawn_fuel_type: FuelType,
     field_width: f32,
     field_height: f32,
+    bulk_add_mode: bool,
     
     // Statistics
     total_elements: usize,
@@ -87,6 +88,7 @@ impl Default for SimulationState {
             spawn_fuel_type: FuelType::DryGrass,
             field_width: 10.0,
             field_height: 10.0,
+            bulk_add_mode: false,
             total_elements: 0,
             burning_elements: 0,
             ember_count: 0,
@@ -342,12 +344,19 @@ fn ui_system(
                 ui.add(egui::Slider::new(&mut state.field_height, 5.0..=50.0));
             });
             
-            let button_text = format!("🌾 Add Field ({}x{}m)", state.field_width as i32, state.field_height as i32);
+            let button_text = if state.bulk_add_mode {
+                format!("✓ Click to place {}x{}m field", state.field_width as i32, state.field_height as i32)
+            } else {
+                format!("🌾 Add Field ({}x{}m)", state.field_width as i32, state.field_height as i32)
+            };
+            
             if ui.button(button_text).clicked() {
-                let width = state.field_width;
-                let height = state.field_height;
-                add_grass_field(&mut state.simulation, 0.0, 0.0, width, height);
-                println!("Added {}x{}m grass field at center", width, height);
+                state.bulk_add_mode = !state.bulk_add_mode;
+                if state.bulk_add_mode {
+                    println!("Bulk add mode enabled - click on map to place {}x{}m field", state.field_width, state.field_height);
+                } else {
+                    println!("Bulk add mode disabled");
+                }
             }
             
             ui.separator();
@@ -389,7 +398,11 @@ fn ui_system(
             
             ui.separator();
             ui.label("Controls:");
-            ui.label("Left Click: Add fuel");
+            if state.bulk_add_mode {
+                ui.colored_label(egui::Color32::from_rgb(100, 200, 100), "Left Click: Place bulk field");
+            } else {
+                ui.label("Left Click: Add fuel");
+            }
             ui.label("Right Click: Ignite");
             ui.label("Arrow Keys: Pan");
             ui.label("+/-: Zoom");
@@ -407,7 +420,17 @@ fn ui_system(
                 
                 // Left click to add fuel
                 if mouse_button.just_pressed(MouseButton::Left) {
-                    add_fuel_at_cursor(&mut state, sim_x, sim_y);
+                    if state.bulk_add_mode {
+                        // Add bulk field at clicked position
+                        let width = state.field_width;
+                        let height = state.field_height;
+                        add_grass_field(&mut state.simulation, sim_x, sim_y, width, height);
+                        println!("Added {}x{}m grass field at ({:.1}, {:.1})", width, height, sim_x, sim_y);
+                        state.bulk_add_mode = false; // Disable after placing
+                    } else {
+                        // Add single fuel element
+                        add_fuel_at_cursor(&mut state, sim_x, sim_y);
+                    }
                 }
                 
                 // Right click to ignite
