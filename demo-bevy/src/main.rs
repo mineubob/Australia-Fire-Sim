@@ -47,6 +47,8 @@ struct SimulationState {
     
     // Spawn controls
     spawn_fuel_type: FuelType,
+    field_width: f32,
+    field_height: f32,
     
     // Statistics
     total_elements: usize,
@@ -83,6 +85,8 @@ impl Default for SimulationState {
             wind_direction: 0.0,
             drought_factor: 5.0,
             spawn_fuel_type: FuelType::DryGrass,
+            field_width: 10.0,
+            field_height: 10.0,
             total_elements: 0,
             burning_elements: 0,
             ember_count: 0,
@@ -152,13 +156,13 @@ fn camera_controls(
     // Zoom
     if keyboard.pressed(KeyCode::Equals) || keyboard.pressed(KeyCode::NumpadAdd) {
         camera_transform.scale *= 1.0 - zoom_speed * time.delta_seconds();
-        camera_transform.scale.x = camera_transform.scale.x.max(0.1);
-        camera_transform.scale.y = camera_transform.scale.y.max(0.1);
+        camera_transform.scale.x = camera_transform.scale.x.max(0.05);
+        camera_transform.scale.y = camera_transform.scale.y.max(0.05);
     }
     if keyboard.pressed(KeyCode::Minus) || keyboard.pressed(KeyCode::NumpadSubtract) {
         camera_transform.scale *= 1.0 + zoom_speed * time.delta_seconds();
-        camera_transform.scale.x = camera_transform.scale.x.min(5.0);
-        camera_transform.scale.y = camera_transform.scale.y.min(5.0);
+        camera_transform.scale.x = camera_transform.scale.x.min(3.0);
+        camera_transform.scale.y = camera_transform.scale.y.min(3.0);
     }
 }
 
@@ -326,13 +330,30 @@ fn ui_system(
             
             ui.separator();
             
+            // Bulk Fuel Addition
+            ui.heading("📦 Bulk Add Fuel");
+            ui.label("Field size (meters):");
+            ui.horizontal(|ui| {
+                ui.label("Width:");
+                ui.add(egui::Slider::new(&mut state.field_width, 5.0..=50.0));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Height:");
+                ui.add(egui::Slider::new(&mut state.field_height, 5.0..=50.0));
+            });
+            
+            let button_text = format!("🌾 Add Field ({}x{}m)", state.field_width as i32, state.field_height as i32);
+            if ui.button(button_text).clicked() {
+                let width = state.field_width;
+                let height = state.field_height;
+                add_grass_field(&mut state.simulation, 0.0, 0.0, width, height);
+                println!("Added {}x{}m grass field at center", width, height);
+            }
+            
+            ui.separator();
+            
             // Quick Actions
             ui.heading("⚡ Actions");
-            
-            if ui.button("🌾 Add Grass Field (5x5)").clicked() {
-                add_grass_field(&mut state.simulation, 0.0, 0.0, 5.0, 5.0);
-                println!("Added 5x5m grass field at center");
-            }
             
             if ui.button("🌲 Add Stringybark Tree").clicked() {
                 add_tree(&mut state.simulation, 0.0, 0.0, Fuel::eucalyptus_stringybark());
@@ -528,7 +549,21 @@ fn update_fire_visualization(
             let y = element.position.y * SCALE_FACTOR;
             let z = element.position.z * SCALE_FACTOR * 0.1; // Less vertical scale
             
-            if element.ignited && element.temperature > 100.0 {
+            if element.fuel_remaining < 0.01 {
+                // Show burnt-out elements as gray ash
+                commands.spawn((
+                    SpriteBundle {
+                        sprite: Sprite {
+                            color: Color::rgba(0.3, 0.3, 0.3, 0.5), // Gray ash
+                            custom_size: Some(Vec2::new(2.0, 2.0)),
+                            ..default()
+                        },
+                        transform: Transform::from_xyz(x, y, 0.0),
+                        ..default()
+                    },
+                    FireElement { element_id: id },
+                ));
+            } else if element.ignited && element.temperature > 100.0 {
                 // Color based on temperature
                 let temp_normalized = ((element.temperature - 100.0) / 1000.0).clamp(0.0, 1.0);
                 let color = if temp_normalized < 0.3 {
