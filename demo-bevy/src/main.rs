@@ -26,6 +26,7 @@ fn main() {
             update_simulation,
             update_fire_visualization,
             update_ember_visualization,
+            update_cloud_visualization,
             camera_controls,
             fps_counter_system,
         ))
@@ -50,6 +51,7 @@ struct SimulationState {
     spawn_fuel_type: FuelType,
     field_width: f32,
     field_height: f32,
+    field_spacing: f32,
     bulk_add_mode: bool,
     
     // Statistics
@@ -93,6 +95,7 @@ impl Default for SimulationState {
             spawn_fuel_type: FuelType::DryGrass,
             field_width: 10.0,
             field_height: 10.0,
+            field_spacing: 1.0,
             bulk_add_mode: false,
             total_elements: 0,
             burning_elements: 0,
@@ -118,6 +121,13 @@ struct FireElement {
 #[allow(dead_code)]
 struct EmberSprite {
     ember_index: usize,
+}
+
+// Component to mark cloud sprites
+#[derive(Component)]
+#[allow(dead_code)]
+struct CloudSprite {
+    cloud_index: usize,
 }
 
 fn setup(mut commands: Commands) {
@@ -424,6 +434,10 @@ fn ui_system(
                 ui.label("Height:");
                 ui.add(egui::Slider::new(&mut state.field_height, 5.0..=50.0));
             });
+            ui.horizontal(|ui| {
+                ui.label("Spacing:");
+                ui.add(egui::Slider::new(&mut state.field_spacing, 0.5..=5.0).step_by(0.5));
+            });
             
             let button_text = if state.bulk_add_mode {
                 format!("✓ Click to place {}x{}m field", state.field_width as i32, state.field_height as i32)
@@ -505,8 +519,9 @@ fn ui_system(
                         // Add bulk field at clicked position
                         let width = state.field_width;
                         let height = state.field_height;
+                        let spacing = state.field_spacing;
                         let fuel_type = state.spawn_fuel_type;
-                        add_fuel_field(&mut state.simulation, sim_x, sim_y, width, height, fuel_type);
+                        add_fuel_field(&mut state.simulation, sim_x, sim_y, width, height, spacing, fuel_type);
                         let fuel_name = match fuel_type {
                             FuelType::DryGrass => "grass",
                             FuelType::StringyBark => "stringybark",
@@ -514,7 +529,7 @@ fn ui_system(
                             FuelType::Shrubland => "shrubland",
                             FuelType::DeadWood => "dead wood",
                         };
-                        println!("Added {}x{}m {} field at ({:.1}, {:.1})", width, height, fuel_name, sim_x, sim_y);
+                        println!("Added {}x{}m {} field (spacing: {}m) at ({:.1}, {:.1})", width, height, fuel_name, spacing, sim_x, sim_y);
                         state.bulk_add_mode = false; // Disable after placing
                     } else {
                         // Add single fuel element
@@ -570,7 +585,7 @@ fn add_fuel_at_cursor(state: &mut SimulationState, x: f32, y: f32) {
     );
 }
 
-fn add_fuel_field(sim: &mut FireSimulation, center_x: f32, center_y: f32, width: f32, height: f32, fuel_type: FuelType) {
+fn add_fuel_field(sim: &mut FireSimulation, center_x: f32, center_y: f32, width: f32, height: f32, spacing: f32, fuel_type: FuelType) {
     let fuel = match fuel_type {
         FuelType::DryGrass => Fuel::dry_grass(),
         FuelType::StringyBark => Fuel::eucalyptus_stringybark(),
@@ -585,8 +600,6 @@ fn add_fuel_field(sim: &mut FireSimulation, center_x: f32, center_y: f32, width:
         FuelType::Shrubland => FuelPart::GroundVegetation,
         _ => FuelPart::TrunkLower,
     };
-    
-    let spacing = 1.0;
     
     let x_start = center_x - width / 2.0;
     let x_end = center_x + width / 2.0;
@@ -807,4 +820,67 @@ fn fps_counter_system(
     // Update FPS and frame time
     state.fps = 1.0 / time.delta_seconds();
     state.frame_time_ms = time.delta_seconds() * 1000.0;
+}
+
+fn update_cloud_visualization(
+    mut commands: Commands,
+    state: Res<SimulationState>,
+    cloud_query: Query<(Entity, &CloudSprite)>,
+) {
+    // Remove old cloud sprites
+    for (entity, _) in cloud_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    
+    // Get clouds from simulation
+    let clouds = &state.simulation.pyrocb_system.clouds;
+    
+    // Create sprites for active clouds
+    for (idx, cloud) in clouds.iter().enumerate() {
+        if !cloud.active {
+            continue;
+        }
+        
+        let x = cloud.position.x * SCALE_FACTOR;
+        let y = cloud.position.y * SCALE_FACTOR;
+        // Position clouds at a higher z-layer so they appear above fire
+        let z = 100.0;
+        
+        // Cloud size based on diameter (scale down for visibility)
+        let size = (cloud.diameter * SCALE_FACTOR * 0.1).max(5.0).min(50.0);
+        
+        // Cloud color - white/gray based on charge and age
+        let gray_value = 0.8 - (cloud.charge_separation * 0.3);
+        let alpha = 0.6 + (cloud.energy / 100000.0).min(0.3);
+        let cloud_color = Color::rgba(gray_value, gray_value, gray_value, alpha);
+        
+        commands.spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: cloud_color,
+                    custom_size: Some(Vec2::new(size, size)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(x, y, z),
+                ..default()
+            },
+            CloudSprite { cloud_index: idx },
+        ));
+        
+        // Add a darker center to show updraft
+        let center_size = size * 0.3;
+        let center_gray = gray_value * 0.6;
+        commands.spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: Color::rgba(center_gray, center_gray, center_gray, alpha * 1.2),
+                    custom_size: Some(Vec2::new(center_size, center_size)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(x, y, z + 0.1),
+                ..default()
+            },
+            CloudSprite { cloud_index: idx },
+        ));
+    }
 }
