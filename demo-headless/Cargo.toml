@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "demo-headless"
+path = "src/main.rs"
+
+[[bin]]
+name = "ultra-demo"
+path = "src/ultra_demo.rs"
+
 [dependencies]
 fire-sim-core = { path = "../crates/core" }
 nalgebra.workspace = true
