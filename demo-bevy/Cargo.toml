@@ -1,0 +1,26 @@
+[package]
+name = "demo-bevy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+fire-sim-core = { path = "../crates/core" }
+nalgebra.workspace = true
+
+# Bevy with necessary features
+bevy = { version = "0.12", default-features = false, features = [
+    "bevy_winit",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "x11",
+    "png",
+] }
+
+# For UI
+bevy_egui = "0.24"
+egui = "0.25"
