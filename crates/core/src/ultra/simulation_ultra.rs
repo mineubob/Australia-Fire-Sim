@@ -273,7 +273,9 @@ impl FireSimulationUltra {
                         
                         // Allow cell to reach high temperatures from fire
                         cell.temperature += temp_rise;
-                        cell.temperature = cell.temperature.min(temp * 0.8);  // Cap at 80% of source temp
+                        // Cap at 800°C - realistic maximum for air in wildfire plumes
+                        // (Flames are hotter, but air around them reaches ~800°C max)
+                        cell.temperature = cell.temperature.min(800.0);
                     }
                     
                     // Combustion products

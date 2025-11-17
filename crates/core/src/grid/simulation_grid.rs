@@ -413,7 +413,21 @@ impl SimulationGrid {
             
             if neighbor_count > 0 {
                 let temp_change = diffusion_factor * laplacian;
-                updates.push((idx, cell.temperature + temp_change));
+                let mut new_temp = cell.temperature + temp_change;
+                
+                // Add modest cooling for hot cells to prevent unrealistic accumulation
+                if new_temp > 100.0 {
+                    // Natural cooling increases with temperature
+                    let cooling_factor = 0.005;  // 0.5% per second above ambient
+                    let cooling = (new_temp - self.ambient_temperature) * cooling_factor * dt;
+                    new_temp -= cooling;
+                    new_temp = new_temp.max(self.ambient_temperature);
+                }
+                
+                // Cap at realistic maximum
+                new_temp = new_temp.min(800.0);
+                
+                updates.push((idx, new_temp));
             }
             
             updates
@@ -446,6 +460,8 @@ impl SimulationGrid {
                         if temp_diff > 0.0 {
                             let heat_transfer = temp_diff * transfer_fraction;
                             self.cells[idx_current].temperature += heat_transfer;
+                            // Cap at realistic maximum for wildfire air temperatures
+                            self.cells[idx_current].temperature = self.cells[idx_current].temperature.min(800.0);
                             self.cells[idx_below].temperature -= heat_transfer;
                         }
                     }
