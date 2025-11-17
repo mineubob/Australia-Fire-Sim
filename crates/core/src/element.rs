@@ -131,6 +131,16 @@ impl FuelElement {
     
     /// Check if element should ignite (probabilistic)
     fn check_ignition_probability(&mut self, dt: f32) {
+        // OPTIMIZATION: Early exit for saturated fuel (can't ignite)
+        if self.moisture_fraction >= self.fuel.moisture_of_extinction {
+            return;
+        }
+        
+        // OPTIMIZATION: Early exit for cold fuel (far from ignition temp)
+        if self.temperature < self.fuel.ignition_temperature - 50.0 {
+            return;
+        }
+        
         // Moisture reduces ignition probability
         let moisture_factor = (1.0 - self.moisture_fraction / self.fuel.moisture_of_extinction).max(0.0);
         
@@ -152,7 +162,17 @@ impl FuelElement {
     
     /// Calculate burn rate in kg/s
     pub fn calculate_burn_rate(&self) -> f32 {
-        if !self.ignited || self.fuel_remaining <= 0.0 {
+        // OPTIMIZATION: Early exits for non-burning conditions
+        if !self.ignited {
+            return 0.0;
+        }
+        
+        if self.fuel_remaining <= 0.0 {
+            return 0.0;
+        }
+        
+        // OPTIMIZATION: Early exit for cold fuel (not hot enough to burn)
+        if self.temperature < self.fuel.ignition_temperature {
             return 0.0;
         }
         
@@ -165,7 +185,17 @@ impl FuelElement {
     
     /// Calculate Byram's fireline intensity in kW/m
     pub fn byram_fireline_intensity(&self) -> f32 {
-        if !self.ignited || self.fuel_remaining <= 0.0 {
+        // OPTIMIZATION: Early exits for non-burning conditions
+        if !self.ignited {
+            return 0.0;
+        }
+        
+        if self.fuel_remaining <= 0.0 {
+            return 0.0;
+        }
+        
+        // OPTIMIZATION: Early exit for cold fuel
+        if self.temperature < self.fuel.ignition_temperature {
             return 0.0;
         }
         
