@@ -1,4 +1,4 @@
-use crate::element::{FuelElement, Vec3};
+use crate::core_types::element::{FuelElement, Vec3};
 
 /// Stefan-Boltzmann constant (W/(m²·K⁴))
 const STEFAN_BOLTZMANN: f32 = 5.67e-8;
@@ -185,8 +185,8 @@ pub fn check_crown_transition(element: &FuelElement, fire_intensity: f32, wind_s
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuel::Fuel;
-    use crate::element::FuelPart;
+    use crate::core_types::fuel::Fuel;
+    use crate::core_types::element::FuelPart;
     
     #[test]
     fn test_wind_directionality() {

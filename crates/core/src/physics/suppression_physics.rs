@@ -6,7 +6,7 @@
 //! - Foam expansion and heat absorption
 //! - Aircraft/ground drop modeling
 
-use crate::element::Vec3;
+use crate::core_types::element::Vec3;
 use crate::grid::SimulationGrid;
 use serde::{Deserialize, Serialize};
 

@@ -20,7 +20,7 @@ fn main() {
     println!("  - Peak elevation: ~80m\n");
     
     // Create ultra-realistic simulation
-    let mut sim = FireSimulationUltra::new(200.0, 200.0, 100.0, 5.0, terrain);
+    let mut sim = FireSimulationUltra::new(5.0, terrain);
     println!("✓ Created FireSimulationUltra");
     println!("  - Grid: {} x {} x {} cells ({} total)",
              sim.grid.nx, sim.grid.ny, sim.grid.nz, sim.grid.cells.len());
@@ -57,7 +57,7 @@ fn main() {
             let id = sim.add_fuel_element(
                 Vec3::new(x, y, elevation + 0.5),
                 fuel,
-                0.5,  // 0.5 kg per element
+                5.0,  // 5 kg per element - more fuel for longer burning
                 FuelPart::GroundVegetation,
                 None,
             );

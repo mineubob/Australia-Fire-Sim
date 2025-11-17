@@ -1,6 +1,6 @@
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
-use crate::fuel::Fuel;
+use crate::core_types::fuel::Fuel;
 
 pub type Vec3 = Vector3<f32>;
 
@@ -176,11 +176,12 @@ impl FuelElement {
             return 0.0;
         }
         
-        // Burn rate based on fuel coefficient and moisture
+        // Realistic burn rate - slower burning for sustained fires
         let moisture_factor = (1.0 - self.moisture_fraction / self.fuel.moisture_of_extinction).max(0.0);
         let temp_factor = ((self.temperature - self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
         
-        self.fuel.burn_rate_coefficient * moisture_factor * temp_factor * self.fuel_remaining.sqrt()
+        // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
+        self.fuel.burn_rate_coefficient * moisture_factor * temp_factor * self.fuel_remaining.sqrt() * 0.1
     }
     
     /// Calculate Byram's fireline intensity in kW/m

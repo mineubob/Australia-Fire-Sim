@@ -1,6 +1,6 @@
 use fire_sim_core::{
     FireSimulation, FireSimulationUltra, Fuel, FuelPart, Vec3, WeatherSystem,
-    TerrainData, SuppressionDroplet, SuppressionAgent, AircraftDrop, GroundSuppression
+    TerrainData, SuppressionDroplet, SuppressionAgent
 };
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -325,7 +325,7 @@ pub struct GridCellVisual {
 pub extern "C" fn fire_sim_ultra_create(
     width: f32,
     height: f32,
-    depth: f32,
+    _depth: f32,  // Depth now computed from terrain
     grid_cell_size: f32,
     terrain_type: u8,  // 0=flat, 1=single_hill, 2=valley
 ) -> usize {
@@ -335,7 +335,7 @@ pub extern "C" fn fire_sim_ultra_create(
         _ => TerrainData::flat(width, height, 5.0, 0.0),
     };
     
-    let sim = FireSimulationUltra::new(width, height, depth, grid_cell_size, terrain);
+    let sim = FireSimulationUltra::new(grid_cell_size, terrain);
     let sim_arc = Arc::new(Mutex::new(sim));
     
     unsafe {

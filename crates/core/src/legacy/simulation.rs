@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 use rayon::prelude::*;
-use crate::element::{FuelElement, Vec3, FuelPart};
-use crate::fuel::Fuel;
-use crate::spatial::SpatialIndex;
-use crate::weather::WeatherSystem;
-use crate::ember::Ember;
-use crate::legacy_physics::*;
-use crate::australian;
-use crate::pyrocumulonimbus::PyroCbSystem;
+use crate::core_types::element::{FuelElement, Vec3, FuelPart};
+use crate::core_types::fuel::Fuel;
+use crate::core_types::spatial::SpatialIndex;
+use crate::core_types::weather::WeatherSystem;
+use crate::core_types::ember::Ember;
+use crate::legacy::legacy_physics::*;
+use crate::legacy::australian;
+use crate::legacy::pyrocumulonimbus::PyroCbSystem;
 
 /// Main fire simulation
 pub struct FireSimulation {
@@ -326,7 +326,7 @@ impl FireSimulation {
                 // 3f. Generate embers (probabilistic)
                 if let Some((pos, temp, fuel_remaining, ember_prod, fuel_id)) = ember_data {
                     if rand::random::<f32>() < 0.1 * dt {
-                        let new_embers = crate::ember::spawn_embers(
+                        let new_embers = crate::core_types::ember::spawn_embers(
                             pos,
                             temp,
                             fuel_remaining,
@@ -374,7 +374,7 @@ impl FireSimulation {
             for &fuel_id in nearby.iter().take(check_limit) {
                 if let Some(element) = self.get_element(fuel_id) {
                     if element.can_ignite() {
-                        let ignition_prob = crate::ember::ember_ignition_probability(
+                        let ignition_prob = crate::core_types::ember::ember_ignition_probability(
                             &Ember::new(0, pos, Vec3::zeros(), temp, 0.001, _fuel_type),
                             element.fuel.ember_receptivity,
                         );

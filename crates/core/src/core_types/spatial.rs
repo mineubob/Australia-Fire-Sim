@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::element::Vec3;
+use crate::core_types::element::Vec3;
 
 /// Spatial index using hash-based octree for fast neighbor queries
 pub struct SpatialIndex {
