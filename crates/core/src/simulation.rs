@@ -165,8 +165,11 @@ impl FireSimulation {
                     return transfers;
                 }
                 
-                // OPTIMIZATION: Cache element properties to reduce field accesses
+                // OPTIMIZATION: Cache element properties to reduce field accesses in physics calculations
                 let element_pos = element.position;
+                let element_temp = element.temperature;
+                let element_fuel_remaining = element.fuel_remaining;
+                let element_surface_area = element.fuel.surface_area_to_volume * element_fuel_remaining.sqrt();
                 
                 // Find nearby fuel
                 let nearby = self.spatial_index.query_radius(element_pos, self.max_search_radius);
@@ -217,10 +220,25 @@ impl FireSimulation {
                         
                         // OPTIMIZATION: Cache target properties
                         let target_pos = target.position;
+                        let target_temp = target.temperature;
+                        let target_surface_area = target.fuel.surface_area_to_volume;
                         
-                        // Calculate heat components
-                        let radiation = calculate_radiation_flux(element, target, distance);
-                        let convection = calculate_convection_heat(element, target, distance);
+                        // OPTIMIZATION: Inline radiation calculation with cached values
+                        // Calculate radiation using Stefan-Boltzmann with cached source properties
+                        let source_temp_k = element_temp + 273.15;
+                        let target_temp_k = target_temp + 273.15;
+                        let emissivity = 0.95;
+                        let view_factor = (element_surface_area / (4.0 * std::f32::consts::PI * distance * distance)).min(1.0);
+                        let flux = 5.67e-8 * emissivity * view_factor * (source_temp_k.powi(4) - target_temp_k.powi(4));
+                        let radiation = (flux * target_surface_area * 0.001).max(0.0);
+                        
+                        // OPTIMIZATION: Inline convection calculation
+                        let convection = if target_pos.z > element_pos.z {
+                            let intensity = element.byram_fireline_intensity();
+                            intensity * 0.15 / (distance + 1.0)
+                        } else {
+                            0.0
+                        };
                         
                         // OPTIMIZATION: Use cached wind data instead of recalculating
                         let wind_boost = if wind_is_calm {
