@@ -89,6 +89,31 @@ fn main() {
     
     println!("=== Fire Simulation Demo ===\n");
     
+    // Validate map size to prevent OOM
+    if args.map_size > 10000.0 {
+        // Estimate element count: map uses 2m spacing for grass
+        let grass_radius = if args.grass_radius > 0.0 {
+            args.grass_radius
+        } else {
+            args.map_size / 2.0
+        };
+        let estimated_elements = ((grass_radius / 2.0).powi(2) * std::f32::consts::PI) as u64;
+        
+        eprintln!("ERROR: Map size too large ({}m)", args.map_size);
+        eprintln!("This would create approximately {} grass elements (with 2m spacing)", estimated_elements);
+        eprintln!("Each element uses ~200 bytes, requiring ~{:.1} GB of memory", 
+                  estimated_elements as f64 * 200.0 / 1_073_741_824.0);
+        eprintln!("\nRecommended map sizes:");
+        eprintln!("  - Small (5k elements): --map-size 100");
+        eprintln!("  - Medium (50k elements): --map-size 300");
+        eprintln!("  - Large (200k elements): --map-size 1000 (default)");
+        eprintln!("  - Very Large (800k elements): --map-size 2000");
+        eprintln!("  - Maximum (3.2M elements): --map-size 4000");
+        eprintln!("\nIf you want {} elements, use: --map-size 1000 --grass-radius {}", 
+                  estimated_elements, (estimated_elements as f64 / std::f32::consts::PI as f64).sqrt() * 2.0);
+        std::process::exit(1);
+    }
+    
     // Create simulation with configurable map size
     let mut sim = FireSimulation::new(args.map_size, args.map_size, 100.0);
     println!("Created simulation with {:.0}x{:.0}x100m bounds", args.map_size, args.map_size);
