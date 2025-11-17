@@ -42,7 +42,7 @@ All tests were run with the following configuration:
 
 ### Performance at High Burning Element Counts (1400+)
 
-**Issue:** User reported significant slowdown at 1400+ burning elements.
+**Issue:** User reported significant slowdown at 1400+ burning elements, then later reported ~50 FPS at 4300 burning.
 
 **Before adaptive limiting:**
 - At ~1400 burning: ~3-4ms per update
@@ -52,6 +52,11 @@ All tests were run with the following configuration:
 - At ~1468 burning: 2.39ms per update (417.7 FPS) - **40% faster**
 - At ~3512 burning: 5.33ms per update (187.6 FPS) - **30% faster**
 - At ~5735 burning: 8.17ms per update (122.4 FPS) - **30% faster**
+
+**After wind caching and physics inlining (latest):**
+- At ~4456 burning: 6.30ms per update (158.8 FPS) - **5.5% faster than adaptive alone**
+- At ~5818 burning: 8.22ms per update (121.6 FPS), 4.63ms avg
+- **Total improvement from baseline: ~45% faster at 4500 burning**
 
 ## Optimizations Applied
 
@@ -202,6 +207,68 @@ for (pos, temp, _fuel_type) in embers_to_check {
 ```
 
 **Impact:** Prevents ember system from dominating frame time when many embers are active.
+
+### 7. Wind Vector Caching (New - addressing 4300 burning slowdown)
+**File:** `crates/core/src/simulation.rs`
+
+Pre-compute wind properties once per frame instead of recalculating for every element pair:
+
+```rust
+// Pre-compute wind properties that don't change during iteration
+let wind_mag_sq = wind_vector.x * wind_vector.x + wind_vector.y * wind_vector.y + wind_vector.z * wind_vector.z;
+let wind_is_calm = wind_mag_sq < 0.01;
+let wind_normalized = if !wind_is_calm {
+    wind_vector.normalize()
+} else {
+    Vec3::zeros()
+};
+let wind_speed_ms = if !wind_is_calm {
+    wind_mag_sq.sqrt()
+} else {
+    0.0
+};
+```
+
+**Impact:**
+- Eliminates ~4500 wind normalizations per frame at 4500 burning elements
+- Eliminates ~4500 magnitude calculations per frame
+- Reduces function call overhead
+
+### 8. Inlined Physics Calculations with Property Caching (New)
+**File:** `crates/core/src/simulation.rs`
+
+Inline `calculate_radiation_flux` and `calculate_convection_heat` directly into hot loop with aggressive property caching:
+
+```rust
+// Cache source element properties once
+let element_temp = element.temperature;
+let element_fuel_remaining = element.fuel_remaining;
+let element_surface_area = element.fuel.surface_area_to_volume * element_fuel_remaining.sqrt();
+
+// Cache target properties
+let target_temp = target.temperature;
+let target_surface_area = target.fuel.surface_area_to_volume;
+
+// Inline Stefan-Boltzmann radiation calculation
+let source_temp_k = element_temp + 273.15;
+let target_temp_k = target_temp + 273.15;
+let emissivity = 0.95;
+let view_factor = (element_surface_area / (4.0 * PI * distance * distance)).min(1.0);
+let flux = STEFAN_BOLTZMANN * emissivity * view_factor * (source_temp_k.powi(4) - target_temp_k.powi(4));
+let radiation = (flux * target_surface_area * 0.001).max(0.0);
+```
+
+**Impact:**
+- Eliminates function call overhead for ~millions of physics calculations per frame
+- Reduces redundant field accesses (element.temperature read once vs multiple times)
+- Enables compiler optimizations through inlining
+- At 4456 burning: 5.5% faster (6.67ms → 6.30ms)
+- At 5818 burning: 3.7% faster average (4.81ms → 4.63ms)
+
+**Physics Preservation:**
+- Stefan-Boltzmann formula unchanged (full T⁴ calculation)
+- All coefficients identical (emissivity=0.95, STEFAN_BOLTZMANN=5.67e-8)
+- Calculation order optimized, not simplified
 
 ## Realism Validation
 
