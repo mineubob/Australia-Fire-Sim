@@ -267,6 +267,27 @@ fn ui_system(
                 ui.label(format!("FPS: {:.1}", state.fps));
                 ui.label(format!("Frame Time: {:.2}ms", state.frame_time_ms));
                 ui.label(format!("Total Elements: {}", state.total_elements));
+                
+                // Show sampling info if elements are being sampled for performance
+                let sample_rate = if state.total_elements > 100000 {
+                    10
+                } else if state.total_elements > 50000 {
+                    5
+                } else if state.total_elements > 20000 {
+                    3
+                } else if state.total_elements > 10000 {
+                    2
+                } else {
+                    1
+                };
+                
+                if sample_rate > 1 {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 100),
+                        format!("⚡ Rendering 1/{} elements for performance", sample_rate)
+                    );
+                }
+                
                 ui.label(format!("🔥 Burning: {}", state.burning_elements));
                 ui.label(format!("✨ Embers: {}", state.ember_count));
                 ui.label(format!("🪵 Fuel Consumed: {:.1} kg", state.fuel_consumed));
@@ -766,8 +787,22 @@ fn update_fire_visualization(
         commands.entity(entity).despawn();
     }
 
-    // Create new sprites for burning elements
-    for id in 0..state.simulation.element_count() as u32 {
+    // Performance optimization: sample elements when count is very high
+    let total_elements = state.simulation.element_count();
+    let sample_rate = if total_elements > 100000 {
+        10 // Show 1 in 10 elements
+    } else if total_elements > 50000 {
+        5 // Show 1 in 5 elements
+    } else if total_elements > 20000 {
+        3 // Show 1 in 3 elements
+    } else if total_elements > 10000 {
+        2 // Show 1 in 2 elements
+    } else {
+        1 // Show all elements
+    };
+
+    // Create new sprites for elements (with sampling for performance)
+    for id in (0..total_elements as u32).step_by(sample_rate) {
         if let Some(element) = state.simulation.get_element(id) {
             let x = element.position.x * SCALE_FACTOR;
             let y = element.position.y * SCALE_FACTOR;
@@ -929,12 +964,13 @@ fn update_cloud_visualization(
         // Position clouds at a higher z-layer so they appear above fire
         let z = 100.0;
 
-        // Cloud size based on diameter (scale down for visibility)
-        let size = (cloud.diameter * SCALE_FACTOR * 0.1).max(5.0).min(50.0);
+        // Cloud size based on diameter - allow larger clouds to show expansion
+        // Scale down for visibility but don't cap too aggressively
+        let size = (cloud.diameter * SCALE_FACTOR * 0.2).max(10.0).min(200.0);
 
         // Cloud color - white/gray based on charge and age
         let gray_value = 0.8 - (cloud.charge_separation * 0.3);
-        let alpha = 0.6 + (cloud.energy / 100000.0).min(0.3);
+        let alpha = 0.5 + (cloud.energy / 100000.0).min(0.4);
         let cloud_color = Color::rgba(gray_value, gray_value, gray_value, alpha);
 
         commands.spawn((
