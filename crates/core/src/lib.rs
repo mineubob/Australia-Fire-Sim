@@ -26,6 +26,7 @@ pub mod simulation;
 // Ultra-realistic simulation modules (organized in subfolders)
 pub mod physics;
 pub mod grid;
+pub mod ultra;
 
 // Re-export main types
 pub use fuel::{Fuel, BarkProperties};
@@ -38,3 +39,4 @@ pub use simulation::FireSimulation;
 // Re-export ultra-realistic types
 pub use grid::{TerrainData, SimulationGrid, GridCell};
 pub use physics::{SuppressionAgent, SuppressionDroplet, AircraftDrop, GroundSuppression};
+pub use ultra::{FireSimulationUltra, SimulationStats};
