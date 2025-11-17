@@ -123,6 +123,20 @@ impl FireSimulation {
         let wind_vector = self.weather.wind_vector();
         let ambient_temp = self.weather.temperature;
         
+        // OPTIMIZATION: Pre-compute wind properties that don't change during iteration
+        let wind_mag_sq = wind_vector.x * wind_vector.x + wind_vector.y * wind_vector.y + wind_vector.z * wind_vector.z;
+        let wind_is_calm = wind_mag_sq < 0.01;
+        let wind_normalized = if !wind_is_calm {
+            wind_vector.normalize()
+        } else {
+            Vec3::zeros()
+        };
+        let wind_speed_ms = if !wind_is_calm {
+            wind_mag_sq.sqrt()
+        } else {
+            0.0
+        };
+        
         // 2. Process each burning element (parallel processing)
         let burning_ids: Vec<u32> = self.burning_elements.iter().copied().collect();
         
@@ -195,21 +209,43 @@ impl FireSimulation {
                     target_distances.truncate(target_limit);
                 }
                 
-                // Second pass: calculate heat transfer
+                // Second pass: calculate heat transfer with cached target data
+                // OPTIMIZATION: Batch get target element data to reduce overhead
                 for (target_id, distance_sq) in target_distances {
                     if let Some(target) = self.get_element(target_id) {
                         let distance = distance_sq.sqrt();
+                        
+                        // OPTIMIZATION: Cache target properties
+                        let target_pos = target.position;
                         
                         // Calculate heat components
                         let radiation = calculate_radiation_flux(element, target, distance);
                         let convection = calculate_convection_heat(element, target, distance);
                         
-                        // Apply multipliers
-                        let wind_boost = wind_radiation_multiplier(
-                            element.position,
-                            target.position,
-                            wind_vector,
-                        );
+                        // OPTIMIZATION: Use cached wind data instead of recalculating
+                        let wind_boost = if wind_is_calm {
+                            1.0
+                        } else {
+                            // Inline optimized wind calculation with cached values
+                            let dx = target_pos.x - element_pos.x;
+                            let dy = target_pos.y - element_pos.y;
+                            let dz = target_pos.z - element_pos.z;
+                            let dir_mag_sq = dx * dx + dy * dy + dz * dz;
+                            
+                            if dir_mag_sq < 0.0001 {
+                                1.0
+                            } else {
+                                let dir_mag = dir_mag_sq.sqrt();
+                                let alignment = (dx * wind_normalized.x + dy * wind_normalized.y + dz * wind_normalized.z) / dir_mag;
+                                
+                                if alignment > 0.0 {
+                                    1.0 + alignment * wind_speed_ms * 2.5
+                                } else {
+                                    ((-alignment.abs() * wind_speed_ms * 0.35).exp()).max(0.05)
+                                }
+                            }
+                        };
+                        
                         let vertical_factor = vertical_spread_factor(element, target);
                         let slope_factor = slope_spread_multiplier(element, target);
                         
