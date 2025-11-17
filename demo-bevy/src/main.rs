@@ -54,10 +54,9 @@ struct SimulationState {
 
     // Spawn controls
     spawn_fuel_type: FuelType,
-    field_width: f32,
-    field_height: f32,
     field_spacing: f32,
     bulk_add_mode: bool,
+    bulk_first_point: Option<(f32, f32)>,
 
     // Statistics
     total_elements: usize,
@@ -98,10 +97,9 @@ impl Default for SimulationState {
             wind_direction: 0.0,
             drought_factor: 5.0,
             spawn_fuel_type: FuelType::DryGrass,
-            field_width: 10.0,
-            field_height: 10.0,
             field_spacing: 1.0,
             bulk_add_mode: false,
+            bulk_first_point: None,
             total_elements: 0,
             burning_elements: 0,
             ember_count: 0,
@@ -472,39 +470,27 @@ fn ui_system(
 
                 // Bulk Fuel Addition
                 ui.heading("📦 Bulk Add Fuel");
-                ui.label("Field size (meters):");
-                ui.horizontal(|ui| {
-                    ui.label("Width:");
-                    ui.add(egui::Slider::new(&mut state.field_width, 5.0..=50.0));
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Height:");
-                    ui.add(egui::Slider::new(&mut state.field_height, 5.0..=50.0));
-                });
+                ui.label("Select two corners to define area:");
                 ui.horizontal(|ui| {
                     ui.label("Spacing:");
                     ui.add(egui::Slider::new(&mut state.field_spacing, 0.5..=5.0).step_by(0.5));
                 });
 
                 let button_text = if state.bulk_add_mode {
-                    format!(
-                        "✓ Click to place {}x{}m field",
-                        state.field_width as i32, state.field_height as i32
-                    )
+                    if state.bulk_first_point.is_some() {
+                        "✓ Click second corner"
+                    } else {
+                        "✓ Click first corner"
+                    }
                 } else {
-                    format!(
-                        "🌾 Add Field ({}x{}m)",
-                        state.field_width as i32, state.field_height as i32
-                    )
+                    "📍 Select Area"
                 };
 
                 if ui.button(button_text).clicked() {
                     state.bulk_add_mode = !state.bulk_add_mode;
+                    state.bulk_first_point = None; // Reset selection
                     if state.bulk_add_mode {
-                        println!(
-                            "Bulk add mode enabled - click on map to place {}x{}m field",
-                            state.field_width, state.field_height
-                        );
+                        println!("Bulk add mode enabled - click first corner");
                     } else {
                         println!("Bulk add mode disabled");
                     }
@@ -562,10 +548,17 @@ fn ui_system(
                 ui.separator();
                 ui.label("Controls:");
                 if state.bulk_add_mode {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(100, 200, 100),
-                        "Left Click: Place bulk field",
-                    );
+                    if state.bulk_first_point.is_some() {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(100, 200, 100),
+                            "Left Click: Second corner",
+                        );
+                    } else {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(100, 200, 100),
+                            "Left Click: First corner",
+                        );
+                    }
                 } else {
                     ui.label("Left Click: Add fuel");
                 }
@@ -589,32 +582,42 @@ fn ui_system(
                 // Left click to add fuel
                 if mouse_button.just_pressed(MouseButton::Left) {
                     if state.bulk_add_mode {
-                        // Add bulk field at clicked position
-                        let width = state.field_width;
-                        let height = state.field_height;
-                        let spacing = state.field_spacing;
-                        let fuel_type = state.spawn_fuel_type;
-                        add_fuel_field(
-                            &mut state.simulation,
-                            sim_x,
-                            sim_y,
-                            width,
-                            height,
-                            spacing,
-                            fuel_type,
-                        );
-                        let fuel_name = match fuel_type {
-                            FuelType::DryGrass => "grass",
-                            FuelType::StringyBark => "stringybark",
-                            FuelType::SmoothBark => "smooth bark",
-                            FuelType::Shrubland => "shrubland",
-                            FuelType::DeadWood => "dead wood",
-                        };
-                        println!(
-                            "Added {}x{}m {} field (spacing: {}m) at ({:.1}, {:.1})",
-                            width, height, fuel_name, spacing, sim_x, sim_y
-                        );
-                        state.bulk_add_mode = false; // Disable after placing
+                        if let Some((first_x, first_y)) = state.bulk_first_point {
+                            // Second click - calculate area and place field
+                            let width = (sim_x - first_x).abs();
+                            let height = (sim_y - first_y).abs();
+                            let center_x = (first_x + sim_x) / 2.0;
+                            let center_y = (first_y + sim_y) / 2.0;
+                            
+                            let spacing = state.field_spacing;
+                            let fuel_type = state.spawn_fuel_type;
+                            add_fuel_field(
+                                &mut state.simulation,
+                                center_x,
+                                center_y,
+                                width,
+                                height,
+                                spacing,
+                                fuel_type,
+                            );
+                            let fuel_name = match fuel_type {
+                                FuelType::DryGrass => "grass",
+                                FuelType::StringyBark => "stringybark",
+                                FuelType::SmoothBark => "smooth bark",
+                                FuelType::Shrubland => "shrubland",
+                                FuelType::DeadWood => "dead wood",
+                            };
+                            println!(
+                                "Added {:.1}x{:.1}m {} field (spacing: {}m) from ({:.1}, {:.1}) to ({:.1}, {:.1})",
+                                width, height, fuel_name, spacing, first_x, first_y, sim_x, sim_y
+                            );
+                            state.bulk_first_point = None; // Reset for next selection
+                            state.bulk_add_mode = false; // Exit bulk mode
+                        } else {
+                            // First click - store position
+                            state.bulk_first_point = Some((sim_x, sim_y));
+                            println!("First corner selected at ({:.1}, {:.1}), click second corner", sim_x, sim_y);
+                        }
                     } else {
                         // Add single fuel element
                         add_fuel_at_cursor(&mut state, sim_x, sim_y);
