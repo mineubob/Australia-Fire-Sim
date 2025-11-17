@@ -1,10 +1,14 @@
-use fire_sim_core::{FireSimulation, Fuel, FuelPart, Vec3, WeatherSystem};
+use fire_sim_core::{
+    FireSimulation, FireSimulationUltra, Fuel, FuelPart, Vec3, WeatherSystem,
+    TerrainData, SuppressionDroplet, SuppressionAgent, AircraftDrop, GroundSuppression
+};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
 // Thread-safe simulation storage
 lazy_static::lazy_static! {
     static ref SIMULATIONS: Mutex<HashMap<usize, Arc<Mutex<FireSimulation>>>> = Mutex::new(HashMap::new());
+    static ref ULTRA_SIMULATIONS: Mutex<HashMap<usize, Arc<Mutex<FireSimulationUltra>>>> = Mutex::new(HashMap::new());
 }
 
 static mut NEXT_SIM_ID: usize = 1;
@@ -295,6 +299,225 @@ pub extern "C" fn fire_sim_free_embers(ptr: *mut EmberVisual, count: u32) {
     if !ptr.is_null() {
         unsafe {
             let _ = Vec::from_raw_parts(ptr, count as usize, count as usize);
+        }
+    }
+}
+
+// ============================================================================
+// ULTRA-REALISTIC FIRE SIMULATION FFI
+// ============================================================================
+
+/// C-compatible grid cell data
+#[repr(C)]
+pub struct GridCellVisual {
+    pub temperature: f32,
+    pub wind_x: f32,
+    pub wind_y: f32,
+    pub wind_z: f32,
+    pub humidity: f32,
+    pub oxygen: f32,
+    pub smoke_particles: f32,
+    pub suppression_agent: f32,
+}
+
+/// Create a new ultra-realistic fire simulation
+#[no_mangle]
+pub extern "C" fn fire_sim_ultra_create(
+    width: f32,
+    height: f32,
+    depth: f32,
+    grid_cell_size: f32,
+    terrain_type: u8,  // 0=flat, 1=single_hill, 2=valley
+) -> usize {
+    let terrain = match terrain_type {
+        1 => TerrainData::single_hill(width, height, 5.0, 0.0, 100.0, width * 0.2),
+        2 => TerrainData::valley_between_hills(width, height, 5.0, 0.0, 80.0),
+        _ => TerrainData::flat(width, height, 5.0, 0.0),
+    };
+    
+    let sim = FireSimulationUltra::new(width, height, depth, grid_cell_size, terrain);
+    let sim_arc = Arc::new(Mutex::new(sim));
+    
+    unsafe {
+        let id = NEXT_SIM_ID;
+        NEXT_SIM_ID += 1;
+        
+        if let Ok(mut sims) = ULTRA_SIMULATIONS.lock() {
+            sims.insert(id, sim_arc);
+        }
+        
+        id
+    }
+}
+
+/// Destroy an ultra-realistic simulation
+#[no_mangle]
+pub extern "C" fn fire_sim_ultra_destroy(sim_id: usize) {
+    if let Ok(mut sims) = ULTRA_SIMULATIONS.lock() {
+        sims.remove(&sim_id);
+    }
+}
+
+/// Update the ultra-realistic simulation
+#[no_mangle]
+pub extern "C" fn fire_sim_ultra_update(sim_id: usize, dt: f32) {
+    if let Ok(sims) = ULTRA_SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(mut sim) = sim_arc.lock() {
+                sim.update(dt);
+            }
+        }
+    }
+}
+
+/// Add a fuel element to ultra simulation
+#[no_mangle]
+pub extern "C" fn fire_sim_ultra_add_fuel(
+    sim_id: usize,
+    x: f32,
+    y: f32,
+    z: f32,
+    fuel_type: u8,
+    part_type: u8,
+    mass: f32,
+    parent_id: i32,
+) -> u32 {
+    if let Ok(sims) = ULTRA_SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(mut sim) = sim_arc.lock() {
+                let position = Vec3::new(x, y, z);
+                let fuel = Fuel::from_id(fuel_type).unwrap_or_else(|| Fuel::dry_grass());
+                
+                let part = match part_type {
+                    0 => FuelPart::Root,
+                    1 => FuelPart::TrunkLower,
+                    2 => FuelPart::TrunkMiddle,
+                    3 => FuelPart::TrunkUpper,
+                    4 => FuelPart::Crown,
+                    5 => FuelPart::GroundLitter,
+                    6 => FuelPart::GroundVegetation,
+                    _ => FuelPart::Surface,
+                };
+                
+                let parent = if parent_id >= 0 {
+                    Some(parent_id as u32)
+                } else {
+                    None
+                };
+                
+                return sim.add_fuel_element(position, fuel, mass, part, parent);
+            }
+        }
+    }
+    0
+}
+
+/// Ignite a fuel element in ultra simulation
+#[no_mangle]
+pub extern "C" fn fire_sim_ultra_ignite(sim_id: usize, element_id: u32, initial_temp: f32) {
+    if let Ok(sims) = ULTRA_SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(mut sim) = sim_arc.lock() {
+                sim.ignite_element(element_id, initial_temp);
+            }
+        }
+    }
+}
+
+/// Query elevation at world position
+#[no_mangle]
+pub extern "C" fn fire_sim_ultra_get_elevation(sim_id: usize, x: f32, y: f32) -> f32 {
+    if let Ok(sims) = ULTRA_SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(sim) = sim_arc.lock() {
+                return sim.grid.terrain.elevation_at(x, y);
+            }
+        }
+    }
+    0.0
+}
+
+/// Get grid cell state at world position
+#[no_mangle]
+pub extern "C" fn fire_sim_ultra_get_cell(
+    sim_id: usize,
+    x: f32,
+    y: f32,
+    z: f32,
+    out_cell: *mut GridCellVisual,
+) -> bool {
+    if let Ok(sims) = ULTRA_SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(sim) = sim_arc.lock() {
+                let pos = Vec3::new(x, y, z);
+                if let Some(cell) = sim.get_cell_at_position(pos) {
+                    unsafe {
+                        (*out_cell).temperature = cell.temperature;
+                        (*out_cell).wind_x = cell.wind.x;
+                        (*out_cell).wind_y = cell.wind.y;
+                        (*out_cell).wind_z = cell.wind.z;
+                        (*out_cell).humidity = cell.humidity;
+                        (*out_cell).oxygen = cell.oxygen;
+                        (*out_cell).smoke_particles = cell.smoke_particles;
+                        (*out_cell).suppression_agent = cell.suppression_agent;
+                    }
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Add water suppression droplet
+#[no_mangle]
+pub extern "C" fn fire_sim_ultra_add_water_drop(
+    sim_id: usize,
+    x: f32,
+    y: f32,
+    z: f32,
+    vx: f32,
+    vy: f32,
+    vz: f32,
+    mass: f32,
+) {
+    if let Ok(sims) = ULTRA_SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(mut sim) = sim_arc.lock() {
+                let droplet = SuppressionDroplet::new(
+                    Vec3::new(x, y, z),
+                    Vec3::new(vx, vy, vz),
+                    mass,
+                    SuppressionAgent::Water,
+                );
+                sim.add_suppression_droplet(droplet);
+            }
+        }
+    }
+}
+
+/// Get ultra simulation statistics
+#[no_mangle]
+pub extern "C" fn fire_sim_ultra_get_stats(
+    sim_id: usize,
+    out_burning: *mut u32,
+    out_total: *mut u32,
+    out_active_cells: *mut u32,
+    out_total_cells: *mut u32,
+    out_fuel_consumed: *mut f32,
+) {
+    if let Ok(sims) = ULTRA_SIMULATIONS.lock() {
+        if let Some(sim_arc) = sims.get(&sim_id) {
+            if let Ok(sim) = sim_arc.lock() {
+                let stats = sim.get_stats();
+                unsafe {
+                    *out_burning = stats.burning_elements as u32;
+                    *out_total = stats.total_elements as u32;
+                    *out_active_cells = stats.active_cells as u32;
+                    *out_total_cells = stats.total_cells as u32;
+                    *out_fuel_consumed = stats.total_fuel_consumed;
+                }
+            }
         }
     }
 }
