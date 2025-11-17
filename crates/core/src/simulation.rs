@@ -37,9 +37,6 @@ pub struct FireSimulation {
     pub total_area_burned: f32,
     pub simulation_time: f32,
     pub max_fire_intensity: f32,
-    
-    // PERFORMANCE: Cached element count (updated on add/remove)
-    cached_element_count: usize,
 }
 
 impl FireSimulation {
@@ -50,24 +47,7 @@ impl FireSimulation {
             Vec3::new(width / 2.0, height / 2.0, depth),
         );
         
-        // OPTIMIZATION: Dynamic cell size based on map dimensions
-        // Larger maps get larger cells for better performance
-        // Small maps (< 500m): 10m cells (fine granularity)
-        // Medium maps (500-2000m): 15m cells (balanced)
-        // Large maps (2000-4000m): 25m cells (coarser, faster)
-        // Very large maps (> 4000m): 40m cells (maximum performance)
-        let max_dimension = width.max(height);
-        let cell_size = if max_dimension < 500.0 {
-            10.0  // Fine granularity for small maps
-        } else if max_dimension < 2000.0 {
-            15.0  // Default for medium maps
-        } else if max_dimension < 4000.0 {
-            25.0  // Coarser for large maps
-        } else {
-            40.0  // Maximum performance for very large maps
-        };
-        
-        let spatial_index = SpatialIndex::new(bounds, cell_size);
+        let spatial_index = SpatialIndex::new(bounds, 15.0); // 15m cells
         
         FireSimulation {
             elements: Vec::new(),
@@ -83,7 +63,6 @@ impl FireSimulation {
             total_area_burned: 0.0,
             simulation_time: 0.0,
             max_fire_intensity: 0.0,
-            cached_element_count: 0,
         }
     }
     
@@ -109,9 +88,6 @@ impl FireSimulation {
             self.elements.resize((id as usize + 1) * 2, None);
         }
         self.elements[id as usize] = Some(element);
-        
-        // OPTIMIZATION: Update cached element count
-        self.cached_element_count += 1;
         
         id
     }
@@ -527,8 +503,7 @@ impl FireSimulation {
     
     /// Get total number of elements
     pub fn element_count(&self) -> usize {
-        // OPTIMIZATION: Return cached count instead of computing
-        self.cached_element_count
+        self.elements.iter().filter(|e| e.is_some()).count()
     }
 }
 
