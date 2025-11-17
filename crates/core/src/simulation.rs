@@ -5,7 +5,7 @@ use crate::fuel::Fuel;
 use crate::spatial::SpatialIndex;
 use crate::weather::WeatherSystem;
 use crate::ember::Ember;
-use crate::physics::*;
+use crate::legacy_physics::*;
 use crate::australian;
 use crate::pyrocumulonimbus::PyroCbSystem;
 
