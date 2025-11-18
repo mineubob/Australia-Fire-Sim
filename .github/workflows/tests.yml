@@ -84,7 +84,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         
       - name: Build
-        run: cargo build SIMULATIONS--all-features
+        run: cargo build --all-features
         
       - name: Build release
-        run: cargo build --release SIMULATIONS--all-features
+        run: cargo build --release --all-features
