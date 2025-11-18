@@ -21,17 +21,14 @@ pub mod legacy;
 // Ultra-realistic simulation modules (organized in subfolders)
 pub mod grid;
 pub mod physics;
-pub mod ultra;
+pub mod simulation;
 
 // Re-export core types
 pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
 pub use core_types::{ClimatePattern, WeatherPreset, WeatherSystem};
 pub use core_types::{Ember, SpatialIndex};
 
-// Re-export legacy types
-pub use legacy::{Downdraft, FireSimulation, LightningStrike, PyroCb, PyroCbSystem};
-
 // Re-export ultra-realistic types
 pub use grid::{GridCell, SimulationGrid, TerrainData};
 pub use physics::{AircraftDrop, GroundSuppression, SuppressionAgent, SuppressionDroplet};
-pub use ultra::{FireSimulationUltra, SimulationStats};
+pub use simulation::{FireSimulation, SimulationStats};

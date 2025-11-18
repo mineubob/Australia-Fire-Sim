@@ -19,7 +19,7 @@ use rayon::prelude::*;
 use std::collections::HashSet;
 
 /// Ultra-realistic fire simulation with full atmospheric modeling
-pub struct FireSimulationUltra {
+pub struct FireSimulation {
     // Atmospheric grid
     pub grid: SimulationGrid,
 
@@ -51,7 +51,7 @@ pub struct FireSimulationUltra {
     pub max_fire_intensity: f32,
 }
 
-impl FireSimulationUltra {
+impl FireSimulation {
     /// Create a new ultra-realistic fire simulation
     pub fn new(grid_cell_size: f32, terrain: TerrainData) -> Self {
         // Use terrain dimensions
@@ -68,7 +68,7 @@ impl FireSimulationUltra {
         let spatial_index = SpatialIndex::new(bounds, 15.0);
         let grid = SimulationGrid::new(width, height, depth, grid_cell_size, terrain);
 
-        FireSimulationUltra {
+        FireSimulation {
             grid,
             elements: Vec::new(),
             burning_elements: HashSet::new(),
@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn test_ultra_simulation_creation() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        let sim = FireSimulationUltra::new(10.0, terrain);
+        let sim = FireSimulation::new(10.0, terrain);
 
         assert_eq!(sim.burning_elements.len(), 0);
         assert_eq!(sim.grid.nx, 10);
@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn test_add_and_ignite() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        let mut sim = FireSimulationUltra::new(10.0, terrain);
+        let mut sim = FireSimulation::new(10.0, terrain);
 
         let fuel = Fuel::dry_grass();
         let id = sim.add_fuel_element(
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn test_simulation_update() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        let mut sim = FireSimulationUltra::new(10.0, terrain);
+        let mut sim = FireSimulation::new(10.0, terrain);
 
         let fuel = Fuel::dry_grass();
         let id = sim.add_fuel_element(
