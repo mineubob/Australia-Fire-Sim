@@ -2,27 +2,53 @@
 //!
 //! Demonstrates fire spread on hills with atmospheric grid, combustion physics, and suppression
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use fire_sim_core::{
     FireSimulationUltra, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData, Vec3,
     WeatherSystem,
 };
 
+/// Fire size options
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum FireSize {
+    /// Small fire: 16 elements (4x4 grid)
+    Small,
+    /// Medium fire: 100 elements (10x10 grid)
+    Medium,
+    /// Large fire: 225 elements (15x15 grid)
+    Large,
+    /// Huge fire: 625 elements (25x25 grid)
+    Huge,
+    /// Custom fire: specify all parameters
+    Custom,
+}
+
+/// Terrain type options
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum TerrainType {
+    /// Flat terrain at base elevation
+    Flat,
+    /// Single hill in center
+    Hill,
+    /// Valley between two hills
+    Valley,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "ultra-demo")]
 #[command(about = "Ultra-realistic fire simulation demo", long_about = None)]
 struct Args {
-    /// Fire size: small (10 elements), medium (50), large (200), huge (500), custom
-    #[arg(short, long, default_value = "medium")]
-    size: String,
+    /// Fire size preset or custom
+    #[arg(short, long, value_enum, default_value = "medium")]
+    size: FireSize,
 
     /// Simulation duration in seconds
     #[arg(short, long, default_value = "60")]
     duration: u32,
 
-    /// Terrain type: flat, hill, valley
-    #[arg(short, long, default_value = "hill")]
-    terrain: String,
+    /// Terrain type
+    #[arg(short, long, value_enum, default_value = "hill")]
+    terrain: TerrainType,
 
     /// Enable water suppression at halfway point
     #[arg(short = 'w', long, default_value = "true")]
@@ -59,26 +85,27 @@ fn main() {
     println!("ULTRA-REALISTIC FIRE SIMULATION DEMO");
     println!("========================================");
     println!("Configuration:");
-    println!("  - Fire size: {}", args.size);
+    println!("  - Fire size: {:?}", args.size);
     println!("  - Duration: {}s", args.duration);
-    println!("  - Terrain: {}", args.terrain);
+    println!("  - Terrain: {:?}", args.terrain);
     println!("  - Suppression: {}\n", args.suppression);
 
     // Get map dimensions (from args for custom, or default 200x200)
-    let (map_width, map_height) = if args.size == "custom" {
-        (args.map_width.unwrap(), args.map_height.unwrap())
-    } else {
-        (200.0, 200.0)
+    let (map_width, map_height) = match args.size {
+        FireSize::Custom => (args.map_width.unwrap(), args.map_height.unwrap()),
+        _ => (200.0, 200.0),
     };
 
     // Create terrain based on type
-    let terrain = match args.terrain.as_str() {
-        "flat" => TerrainData::flat(map_width, map_height, 5.0, 0.0),
-        "valley" => TerrainData::valley_between_hills(map_width, map_height, 5.0, 0.0, 80.0),
-        _ => TerrainData::single_hill(map_width, map_height, 5.0, 0.0, 80.0, 40.0),
+    let terrain = match args.terrain {
+        TerrainType::Flat => TerrainData::flat(map_width, map_height, 5.0, 0.0),
+        TerrainType::Valley => {
+            TerrainData::valley_between_hills(map_width, map_height, 5.0, 0.0, 80.0)
+        }
+        TerrainType::Hill => TerrainData::single_hill(map_width, map_height, 5.0, 0.0, 80.0, 40.0),
     };
     println!(
-        "✓ Created terrain: {:.0}m x {:.0}m ({})",
+        "✓ Created terrain: {:.0}m x {:.0}m ({:?})",
         map_width, map_height, args.terrain
     );
 
@@ -110,27 +137,24 @@ fn main() {
     println!("  - Drought factor: 8.0 (Extreme)\n");
 
     // Determine fire size parameters
-    let (elements_x, elements_y, fuel_mass, ignite_count) = if args.size == "custom" {
-        (
+    let (elements_x, elements_y, fuel_mass, ignite_count) = match args.size {
+        FireSize::Custom => (
             args.elements_x.unwrap(),
             args.elements_y.unwrap(),
             args.fuel_mass.unwrap(),
             args.ignite_count.unwrap(),
-        )
-    } else {
-        match args.size.as_str() {
-            "small" => (4, 4, 3.0, 2),    // 4x4 = 16 elements, 3kg each, ignite 2
-            "large" => (15, 15, 8.0, 10), // 15x15 = 225 elements, 8kg each, ignite 10
-            "huge" => (25, 25, 10.0, 20), // 25x25 = 625 elements, 10kg each, ignite 20
-            _ => (10, 10, 5.0, 5),        // medium: 10x10 = 100 elements, 5kg each, ignite 5
-        }
+        ),
+        FireSize::Small => (4, 4, 3.0, 2), // 4x4 = 16 elements, 3kg each, ignite 2
+        FireSize::Large => (15, 15, 8.0, 10), // 15x15 = 225 elements, 8kg each, ignite 10
+        FireSize::Huge => (25, 25, 10.0, 20), // 25x25 = 625 elements, 10kg each, ignite 20
+        FireSize::Medium => (10, 10, 5.0, 5), // 10x10 = 100 elements, 5kg each, ignite 5
     };
 
     let total_elements = elements_x * elements_y;
 
     // Add fuel elements
     println!(
-        "Adding {} fuel elements ({} size)...",
+        "Adding {} fuel elements ({:?} size)...",
         total_elements, args.size
     );
     let mut fuel_ids = Vec::new();
@@ -225,6 +249,10 @@ fn main() {
         if args.suppression && step == suppression_time {
             println!("\n>>> DEPLOYING WATER SUPPRESSION <<<\n");
 
+            // Calculate drop altitude from terrain (60m above the center elevation)
+            let center_elevation = sim.grid.terrain.elevation_at(center_x, center_y);
+            let drop_altitude = center_elevation + 60.0;
+
             // Add water droplets in a circular pattern around the center
             for i in 0..30 {
                 let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
@@ -233,7 +261,7 @@ fn main() {
                     Vec3::new(
                         center_x + angle.cos() * radius,
                         center_y + angle.sin() * radius,
-                        60.0, // 60m altitude
+                        drop_altitude,
                     ),
                     Vec3::new(0.0, 0.0, -5.0), // Falling downward
                     10.0,                      // 10 kg each
@@ -283,9 +311,15 @@ fn main() {
 
     // Analyze atmospheric effects
     println!("\nAtmospheric Analysis:");
-    let center_pos = Vec3::new(center_x, center_y, 20.0);
+    // Query cell at 20m above center elevation
+    let center_elevation = sim.grid.terrain.elevation_at(center_x, center_y);
+    let analysis_height = center_elevation + 20.0;
+    let center_pos = Vec3::new(center_x, center_y, analysis_height);
     if let Some(cell) = sim.get_cell_at_position(center_pos) {
-        println!("  - Cell at ({:.0}, {:.0}, 20m):", center_x, center_y);
+        println!(
+            "  - Cell at ({:.0}, {:.0}, {:.0}m):",
+            center_x, center_y, analysis_height
+        );
         println!("    Temperature: {:.1}°C", cell.temperature);
         println!("    Oxygen: {:.3} kg/m³", cell.oxygen);
         println!("    Smoke: {:.4} kg/m³", cell.smoke_particles);
