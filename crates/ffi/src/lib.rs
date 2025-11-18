@@ -60,7 +60,6 @@ pub struct GridCellVisual {
 pub extern "C" fn fire_sim_create(
     width: f32,
     height: f32,
-    _depth: f32, // Depth now computed from terrain
     grid_cell_size: f32,
     terrain_type: u8, // 0=flat, 1=single_hill, 2=valley
 ) -> usize {
