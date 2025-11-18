@@ -39,19 +39,19 @@ enum TerrainType {
 #[command(about = "Ultra-realistic fire simulation demo", long_about = None)]
 struct Args {
     /// Fire size preset or custom
-    #[arg(short, long, value_enum, default_value = "medium")]
+    #[arg(short, long, value_enum, default_value_t = FireSize::Medium)]
     size: FireSize,
 
     /// Simulation duration in seconds
-    #[arg(short, long, default_value = "60")]
+    #[arg(short, long, default_value_t = 60)]
     duration: u32,
 
     /// Terrain type
-    #[arg(short, long, value_enum, default_value = "hill")]
+    #[arg(short, long, value_enum, default_value_t = TerrainType::Hill)]
     terrain: TerrainType,
 
     /// Enable water suppression at halfway point
-    #[arg(short = 'w', long, default_value = "true")]
+    #[arg(short = 'w', long, default_value_t = true)]
     suppression: bool,
 
     /// Map width in meters (required for custom size)
@@ -138,16 +138,16 @@ fn main() {
 
     // Determine fire size parameters
     let (elements_x, elements_y, fuel_mass, ignite_count) = match args.size {
+        FireSize::Small => (4, 4, 3.0, 2), // 4x4 = 16 elements, 3kg each, ignite 2
+        FireSize::Medium => (10, 10, 5.0, 5), // 10x10 = 100 elements, 5kg each, ignite 5
+        FireSize::Large => (15, 15, 8.0, 10), // 15x15 = 225 elements, 8kg each, ignite 10
+        FireSize::Huge => (25, 25, 10.0, 20), // 25x25 = 625 elements, 10kg each, ignite 20
         FireSize::Custom => (
             args.elements_x.unwrap(),
             args.elements_y.unwrap(),
             args.fuel_mass.unwrap(),
             args.ignite_count.unwrap(),
         ),
-        FireSize::Small => (4, 4, 3.0, 2), // 4x4 = 16 elements, 3kg each, ignite 2
-        FireSize::Large => (15, 15, 8.0, 10), // 15x15 = 225 elements, 8kg each, ignite 10
-        FireSize::Huge => (25, 25, 10.0, 20), // 25x25 = 625 elements, 10kg each, ignite 20
-        FireSize::Medium => (10, 10, 5.0, 5), // 10x10 = 100 elements, 5kg each, ignite 5
     };
 
     let total_elements = elements_x * elements_y;
