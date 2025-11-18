@@ -21,11 +21,7 @@ where
     let simulation = {
         let simulations = SIMULATIONS.lock().unwrap();
 
-        let Some(simulation) = simulations.get(id) else {
-            return None;
-        };
-
-        simulation.clone()
+        simulations.get(id)?.clone()
     };
     let simulation = simulation.read().unwrap();
 
@@ -39,11 +35,7 @@ where
     let simulation = {
         let simulations = SIMULATIONS.lock().unwrap();
 
-        let Some(simulation) = simulations.get(id) else {
-            return None;
-        };
-
-        simulation.clone()
+        simulations.get(id)?.clone()
     };
     let mut simulation = simulation.write().unwrap();
 
@@ -140,7 +132,7 @@ pub extern "C" fn fire_sim_add_fuel(
             None
         };
 
-        return sim.add_fuel_element(position, fuel, mass, part, parent);
+        sim.add_fuel_element(position, fuel, mass, part, parent)
     })
     .unwrap_or(0)
 }
@@ -182,7 +174,7 @@ pub unsafe extern "C" fn fire_sim_get_cell(
             return true;
         }
 
-        return false;
+        false
     })
     .unwrap_or(false)
 }
