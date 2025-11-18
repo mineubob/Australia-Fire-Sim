@@ -1,9 +1,9 @@
 use fire_sim_core::{
-    FireSimulation, FireSimulationUltra, Fuel, FuelPart, Vec3, WeatherSystem,
-    TerrainData, SuppressionDroplet, SuppressionAgent
+    FireSimulation, FireSimulationUltra, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet,
+    TerrainData, Vec3, WeatherSystem,
 };
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 // Thread-safe simulation storage
 lazy_static::lazy_static! {
@@ -40,15 +40,15 @@ pub struct EmberVisual {
 pub extern "C" fn fire_sim_create(width: f32, height: f32, depth: f32) -> usize {
     let sim = FireSimulation::new(width, height, depth);
     let sim_arc = Arc::new(Mutex::new(sim));
-    
+
     unsafe {
         let id = NEXT_SIM_ID;
         NEXT_SIM_ID += 1;
-        
+
         if let Ok(mut sims) = SIMULATIONS.lock() {
             sims.insert(id, sim_arc);
         }
-        
+
         id
     }
 }
@@ -89,9 +89,9 @@ pub extern "C" fn fire_sim_add_fuel_element(
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(mut sim) = sim_arc.lock() {
                 let position = Vec3::new(x, y, z);
-                
-                let fuel = Fuel::from_id(fuel_type).unwrap_or_else(|| Fuel::dry_grass());
-                
+
+                let fuel = Fuel::from_id(fuel_type).unwrap_or_else(Fuel::dry_grass);
+
                 let part = match part_type {
                     0 => FuelPart::Root,
                     1 => FuelPart::TrunkLower,
@@ -102,13 +102,13 @@ pub extern "C" fn fire_sim_add_fuel_element(
                     6 => FuelPart::GroundVegetation,
                     _ => FuelPart::Surface,
                 };
-                
+
                 let parent = if parent_id >= 0 {
                     Some(parent_id as u32)
                 } else {
                     None
                 };
-                
+
                 return sim.add_fuel_element(position, fuel, mass, part, parent);
             }
         }
@@ -118,11 +118,7 @@ pub extern "C" fn fire_sim_add_fuel_element(
 
 /// Ignite a fuel element (thread-safe)
 #[no_mangle]
-pub extern "C" fn fire_sim_ignite_element(
-    sim_id: usize,
-    element_id: u32,
-    initial_temp: f32,
-) {
+pub extern "C" fn fire_sim_ignite_element(sim_id: usize, element_id: u32, initial_temp: f32) {
     if let Ok(sims) = SIMULATIONS.lock() {
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(mut sim) = sim_arc.lock() {
@@ -145,7 +141,8 @@ pub extern "C" fn fire_sim_set_weather(
     if let Ok(sims) = SIMULATIONS.lock() {
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(mut sim) = sim_arc.lock() {
-                let weather = WeatherSystem::new(temp, humidity, wind_speed, wind_direction, drought);
+                let weather =
+                    WeatherSystem::new(temp, humidity, wind_speed, wind_direction, drought);
                 sim.set_weather(weather);
             }
         }
@@ -174,8 +171,10 @@ pub extern "C" fn fire_sim_update_weather(
 }
 
 /// Get burning elements for rendering (thread-safe)
+/// # Safety
+/// `out_count` must be a valid, non-null pointer
 #[no_mangle]
-pub extern "C" fn fire_sim_get_burning_elements(
+pub unsafe extern "C" fn fire_sim_get_burning_elements(
     sim_id: usize,
     out_count: *mut u32,
 ) -> *const FireElementVisual {
@@ -183,7 +182,7 @@ pub extern "C" fn fire_sim_get_burning_elements(
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(sim) = sim_arc.lock() {
                 let burning = sim.get_burning_elements();
-                
+
                 let visuals: Vec<FireElementVisual> = burning
                     .iter()
                     .map(|element| FireElementVisual {
@@ -205,27 +204,27 @@ pub extern "C" fn fire_sim_get_burning_elements(
                         },
                     })
                     .collect();
-                
+
                 unsafe {
                     *out_count = visuals.len() as u32;
                 }
-                
+
                 let ptr = visuals.as_ptr();
                 std::mem::forget(visuals); // Prevent deallocation
                 return ptr;
             }
         }
     }
-    
-    unsafe {
-        *out_count = 0;
-    }
+
+    *out_count = 0;
     std::ptr::null()
 }
 
 /// Get embers for particle effects (thread-safe)
+/// # Safety
+/// `out_count` must be a valid, non-null pointer
 #[no_mangle]
-pub extern "C" fn fire_sim_get_embers(
+pub unsafe extern "C" fn fire_sim_get_embers(
     sim_id: usize,
     out_count: *mut u32,
 ) -> *const EmberVisual {
@@ -233,7 +232,7 @@ pub extern "C" fn fire_sim_get_embers(
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(sim) = sim_arc.lock() {
                 let embers = sim.get_embers();
-                
+
                 let visuals: Vec<EmberVisual> = embers
                     .iter()
                     .map(|ember| EmberVisual {
@@ -244,27 +243,27 @@ pub extern "C" fn fire_sim_get_embers(
                         size: (ember.mass * 1000.0).sqrt(), // Scale mass to visual size
                     })
                     .collect();
-                
+
                 unsafe {
                     *out_count = visuals.len() as u32;
                 }
-                
+
                 let ptr = visuals.as_ptr();
                 std::mem::forget(visuals);
                 return ptr;
             }
         }
     }
-    
-    unsafe {
-        *out_count = 0;
-    }
+
+    *out_count = 0;
     std::ptr::null()
 }
 
 /// Get simulation statistics (thread-safe)
+/// # Safety
+/// All pointer parameters must be valid, non-null pointers
 #[no_mangle]
-pub extern "C" fn fire_sim_get_stats(
+pub unsafe extern "C" fn fire_sim_get_stats(
     sim_id: usize,
     out_burning_count: *mut u32,
     out_ember_count: *mut u32,
@@ -284,22 +283,22 @@ pub extern "C" fn fire_sim_get_stats(
 }
 
 /// Free memory allocated for element visuals
+/// # Safety
+/// `ptr` must be a valid pointer returned from fire_sim_get_burning_elements
 #[no_mangle]
-pub extern "C" fn fire_sim_free_elements(ptr: *mut FireElementVisual, count: u32) {
+pub unsafe extern "C" fn fire_sim_free_elements(ptr: *mut FireElementVisual, count: u32) {
     if !ptr.is_null() {
-        unsafe {
-            let _ = Vec::from_raw_parts(ptr, count as usize, count as usize);
-        }
+        let _ = Vec::from_raw_parts(ptr, count as usize, count as usize);
     }
 }
 
 /// Free memory allocated for ember visuals
+/// # Safety
+/// `ptr` must be a valid pointer returned from fire_sim_get_embers
 #[no_mangle]
-pub extern "C" fn fire_sim_free_embers(ptr: *mut EmberVisual, count: u32) {
+pub unsafe extern "C" fn fire_sim_free_embers(ptr: *mut EmberVisual, count: u32) {
     if !ptr.is_null() {
-        unsafe {
-            let _ = Vec::from_raw_parts(ptr, count as usize, count as usize);
-        }
+        let _ = Vec::from_raw_parts(ptr, count as usize, count as usize);
     }
 }
 
@@ -325,27 +324,27 @@ pub struct GridCellVisual {
 pub extern "C" fn fire_sim_ultra_create(
     width: f32,
     height: f32,
-    _depth: f32,  // Depth now computed from terrain
+    _depth: f32, // Depth now computed from terrain
     grid_cell_size: f32,
-    terrain_type: u8,  // 0=flat, 1=single_hill, 2=valley
+    terrain_type: u8, // 0=flat, 1=single_hill, 2=valley
 ) -> usize {
     let terrain = match terrain_type {
         1 => TerrainData::single_hill(width, height, 5.0, 0.0, 100.0, width * 0.2),
         2 => TerrainData::valley_between_hills(width, height, 5.0, 0.0, 80.0),
         _ => TerrainData::flat(width, height, 5.0, 0.0),
     };
-    
+
     let sim = FireSimulationUltra::new(grid_cell_size, terrain);
     let sim_arc = Arc::new(Mutex::new(sim));
-    
+
     unsafe {
         let id = NEXT_SIM_ID;
         NEXT_SIM_ID += 1;
-        
+
         if let Ok(mut sims) = ULTRA_SIMULATIONS.lock() {
             sims.insert(id, sim_arc);
         }
-        
+
         id
     }
 }
@@ -386,8 +385,8 @@ pub extern "C" fn fire_sim_ultra_add_fuel(
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(mut sim) = sim_arc.lock() {
                 let position = Vec3::new(x, y, z);
-                let fuel = Fuel::from_id(fuel_type).unwrap_or_else(|| Fuel::dry_grass());
-                
+                let fuel = Fuel::from_id(fuel_type).unwrap_or_else(Fuel::dry_grass);
+
                 let part = match part_type {
                     0 => FuelPart::Root,
                     1 => FuelPart::TrunkLower,
@@ -398,13 +397,13 @@ pub extern "C" fn fire_sim_ultra_add_fuel(
                     6 => FuelPart::GroundVegetation,
                     _ => FuelPart::Surface,
                 };
-                
+
                 let parent = if parent_id >= 0 {
                     Some(parent_id as u32)
                 } else {
                     None
                 };
-                
+
                 return sim.add_fuel_element(position, fuel, mass, part, parent);
             }
         }
@@ -438,8 +437,10 @@ pub extern "C" fn fire_sim_ultra_get_elevation(sim_id: usize, x: f32, y: f32) ->
 }
 
 /// Get grid cell state at world position
+/// # Safety
+/// `out_cell` must be a valid, non-null pointer
 #[no_mangle]
-pub extern "C" fn fire_sim_ultra_get_cell(
+pub unsafe extern "C" fn fire_sim_ultra_get_cell(
     sim_id: usize,
     x: f32,
     y: f32,
@@ -451,16 +452,14 @@ pub extern "C" fn fire_sim_ultra_get_cell(
             if let Ok(sim) = sim_arc.lock() {
                 let pos = Vec3::new(x, y, z);
                 if let Some(cell) = sim.get_cell_at_position(pos) {
-                    unsafe {
-                        (*out_cell).temperature = cell.temperature;
-                        (*out_cell).wind_x = cell.wind.x;
-                        (*out_cell).wind_y = cell.wind.y;
-                        (*out_cell).wind_z = cell.wind.z;
-                        (*out_cell).humidity = cell.humidity;
-                        (*out_cell).oxygen = cell.oxygen;
-                        (*out_cell).smoke_particles = cell.smoke_particles;
-                        (*out_cell).suppression_agent = cell.suppression_agent;
-                    }
+                    (*out_cell).temperature = cell.temperature;
+                    (*out_cell).wind_x = cell.wind.x;
+                    (*out_cell).wind_y = cell.wind.y;
+                    (*out_cell).wind_z = cell.wind.z;
+                    (*out_cell).humidity = cell.humidity;
+                    (*out_cell).oxygen = cell.oxygen;
+                    (*out_cell).smoke_particles = cell.smoke_particles;
+                    (*out_cell).suppression_agent = cell.suppression_agent;
                     return true;
                 }
             }
@@ -497,8 +496,10 @@ pub extern "C" fn fire_sim_ultra_add_water_drop(
 }
 
 /// Get ultra simulation statistics
+/// # Safety
+/// All pointer parameters must be valid, non-null pointers
 #[no_mangle]
-pub extern "C" fn fire_sim_ultra_get_stats(
+pub unsafe extern "C" fn fire_sim_ultra_get_stats(
     sim_id: usize,
     out_burning: *mut u32,
     out_total: *mut u32,
@@ -510,13 +511,11 @@ pub extern "C" fn fire_sim_ultra_get_stats(
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(sim) = sim_arc.lock() {
                 let stats = sim.get_stats();
-                unsafe {
-                    *out_burning = stats.burning_elements as u32;
-                    *out_total = stats.total_elements as u32;
-                    *out_active_cells = stats.active_cells as u32;
-                    *out_total_cells = stats.total_cells as u32;
-                    *out_fuel_consumed = stats.total_fuel_consumed;
-                }
+                *out_burning = stats.burning_elements as u32;
+                *out_total = stats.total_elements as u32;
+                *out_active_cells = stats.active_cells as u32;
+                *out_total_cells = stats.total_cells as u32;
+                *out_fuel_consumed = stats.total_fuel_consumed;
             }
         }
     }

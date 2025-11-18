@@ -1,13 +1,13 @@
 //! 3D simulation grid with atmospheric properties and adaptive refinement
-//! 
-//! Implements a hybrid grid system where atmospheric properties (temperature, wind, 
+//!
+//! Implements a hybrid grid system where atmospheric properties (temperature, wind,
 //! humidity, oxygen, combustion products) are tracked per cell, while discrete fuel
 //! elements interact with cells for extreme realism.
 
 use crate::core_types::element::Vec3;
 use crate::grid::TerrainData;
-use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// Atmospheric properties tracked per grid cell
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,59 +46,59 @@ impl GridCell {
     /// Create a new cell with atmospheric defaults
     pub fn new(elevation: f32) -> Self {
         GridCell {
-            temperature: 20.0,                      // Ambient 20°C
+            temperature: 20.0, // Ambient 20°C
             wind: Vec3::zeros(),
-            humidity: 0.4,                          // 40% RH
-            oxygen: 0.273,                          // Normal air: 21% O2 by volume ≈ 0.273 kg/m³
+            humidity: 0.4, // 40% RH
+            oxygen: 0.273, // Normal air: 21% O2 by volume ≈ 0.273 kg/m³
             carbon_monoxide: 0.0,
-            carbon_dioxide: 0.0007,                 // Ambient CO2: ~400 ppm
+            carbon_dioxide: 0.0007, // Ambient CO2: ~400 ppm
             smoke_particles: 0.0,
-            water_vapor: 0.008,                     // ~10 g/m³ at 40% RH
+            water_vapor: 0.008, // ~10 g/m³ at 40% RH
             radiation_flux: 0.0,
             elevation,
             refinement_level: 0,
             is_active: false,
-            pressure: 101325.0,                     // Sea level pressure (Pa)
+            pressure: 101325.0, // Sea level pressure (Pa)
             suppression_agent: 0.0,
         }
     }
-    
+
     /// Calculate air density (kg/m³) using ideal gas law
     /// ρ = P / (R_specific × T_kelvin)
     pub fn air_density(&self) -> f32 {
-        const R_SPECIFIC_AIR: f32 = 287.05;         // J/(kg·K)
+        const R_SPECIFIC_AIR: f32 = 287.05; // J/(kg·K)
         let temp_k = self.temperature + 273.15;
         self.pressure / (R_SPECIFIC_AIR * temp_k)
     }
-    
+
     /// Calculate buoyancy force per unit volume (N/m³)
     /// Based on temperature difference from ambient
     pub fn buoyancy_force(&self, _ambient_temp: f32) -> f32 {
-        let ambient_density = 1.2;                  // kg/m³ at 20°C
+        let ambient_density = 1.2; // kg/m³ at 20°C
         let current_density = self.air_density();
-        (ambient_density - current_density) * 9.81  // g = 9.81 m/s²
+        (ambient_density - current_density) * 9.81 // g = 9.81 m/s²
     }
-    
+
     /// Check if oxygen is sufficient for combustion
     /// Requires at least 15% O2 concentration
     pub fn can_support_combustion(&self) -> bool {
-        self.oxygen > 0.195  // 15% of normal concentration
+        self.oxygen > 0.195 // 15% of normal concentration
     }
-    
+
     /// Calculate effective thermal conductivity (W/(m·K))
     /// Accounts for smoke and water vapor
     pub fn thermal_conductivity(&self) -> f32 {
-        let base_conductivity = 0.026;  // Air at 20°C
-        
+        let base_conductivity = 0.026; // Air at 20°C
+
         // Smoke increases conductivity slightly
         let smoke_factor = 1.0 + self.smoke_particles * 0.1;
-        
+
         // Water vapor increases conductivity
         let vapor_factor = 1.0 + self.water_vapor * 0.02;
-        
+
         base_conductivity * smoke_factor * vapor_factor
     }
-    
+
     /// Reset cell to ambient conditions (for initialization/cleanup)
     pub fn reset_to_ambient(&mut self, elevation: f32) {
         *self = GridCell::new(elevation);
@@ -112,21 +112,21 @@ pub struct SimulationGrid {
     pub width: f32,
     pub height: f32,
     pub depth: f32,
-    
+
     /// Grid resolution (cells)
     pub nx: usize,
     pub ny: usize,
     pub nz: usize,
-    
+
     /// Cell size (m)
     pub cell_size: f32,
-    
+
     /// Grid cells in row-major order: [z * (ny * nx) + y * nx + x]
     pub cells: Vec<GridCell>,
-    
+
     /// Terrain data for elevation
     pub terrain: TerrainData,
-    
+
     /// Ambient conditions
     pub ambient_temperature: f32,
     pub ambient_wind: Vec3,
@@ -135,20 +135,14 @@ pub struct SimulationGrid {
 
 impl SimulationGrid {
     /// Create a new simulation grid
-    pub fn new(
-        width: f32,
-        height: f32,
-        depth: f32,
-        cell_size: f32,
-        terrain: TerrainData,
-    ) -> Self {
+    pub fn new(width: f32, height: f32, depth: f32, cell_size: f32, terrain: TerrainData) -> Self {
         let nx = (width / cell_size).ceil() as usize;
         let ny = (height / cell_size).ceil() as usize;
         let nz = (depth / cell_size).ceil() as usize;
-        
+
         let total_cells = nx * ny * nz;
         let mut cells = Vec::with_capacity(total_cells);
-        
+
         // Initialize cells with terrain elevation
         for _iz in 0..nz {
             for iy in 0..ny {
@@ -156,12 +150,12 @@ impl SimulationGrid {
                     let x = ix as f32 * cell_size + cell_size / 2.0;
                     let y = iy as f32 * cell_size + cell_size / 2.0;
                     let elevation = terrain.elevation_at(x, y);
-                    
+
                     cells.push(GridCell::new(elevation));
                 }
             }
         }
-        
+
         SimulationGrid {
             width,
             height,
@@ -177,13 +171,13 @@ impl SimulationGrid {
             ambient_humidity: 0.4,
         }
     }
-    
+
     /// Get cell index from (x, y, z) indices
     #[inline]
     pub fn cell_index(&self, ix: usize, iy: usize, iz: usize) -> usize {
         iz * (self.ny * self.nx) + iy * self.nx + ix
     }
-    
+
     /// Get cell at grid indices (bounds-checked)
     pub fn cell_at(&self, ix: usize, iy: usize, iz: usize) -> Option<&GridCell> {
         if ix < self.nx && iy < self.ny && iz < self.nz {
@@ -192,7 +186,7 @@ impl SimulationGrid {
             None
         }
     }
-    
+
     /// Get mutable cell at grid indices (bounds-checked)
     pub fn cell_at_mut(&mut self, ix: usize, iy: usize, iz: usize) -> Option<&mut GridCell> {
         if ix < self.nx && iy < self.ny && iz < self.nz {
@@ -202,51 +196,51 @@ impl SimulationGrid {
             None
         }
     }
-    
+
     /// Get cell at world position using nearest neighbor
     pub fn cell_at_position(&self, pos: Vec3) -> Option<&GridCell> {
         let ix = (pos.x / self.cell_size).floor() as isize;
         let iy = (pos.y / self.cell_size).floor() as isize;
         let iz = (pos.z / self.cell_size).floor() as isize;
-        
+
         if ix >= 0 && iy >= 0 && iz >= 0 {
             self.cell_at(ix as usize, iy as usize, iz as usize)
         } else {
             None
         }
     }
-    
+
     /// Get mutable cell at world position
     pub fn cell_at_position_mut(&mut self, pos: Vec3) -> Option<&mut GridCell> {
         let ix = (pos.x / self.cell_size).floor() as isize;
         let iy = (pos.y / self.cell_size).floor() as isize;
         let iz = (pos.z / self.cell_size).floor() as isize;
-        
+
         if ix >= 0 && iy >= 0 && iz >= 0 {
             self.cell_at_mut(ix as usize, iy as usize, iz as usize)
         } else {
             None
         }
     }
-    
+
     /// Interpolate cell properties at world position (trilinear)
     pub fn interpolate_at_position(&self, pos: Vec3) -> GridCell {
         let gx = pos.x / self.cell_size;
         let gy = pos.y / self.cell_size;
         let gz = pos.z / self.cell_size;
-        
+
         let ix0 = (gx.floor() as usize).min(self.nx.saturating_sub(2));
         let iy0 = (gy.floor() as usize).min(self.ny.saturating_sub(2));
         let iz0 = (gz.floor() as usize).min(self.nz.saturating_sub(2));
-        
+
         let ix1 = ix0 + 1;
         let iy1 = iy0 + 1;
         let iz1 = iz0 + 1;
-        
+
         let fx = gx - ix0 as f32;
         let fy = gy - iy0 as f32;
         let fz = gz - iz0 as f32;
-        
+
         // Get 8 corner cells
         let c000 = &self.cells[self.cell_index(ix0, iy0, iz0)];
         let c100 = &self.cells[self.cell_index(ix1, iy0, iz0)];
@@ -256,11 +250,11 @@ impl SimulationGrid {
         let c101 = &self.cells[self.cell_index(ix1, iy0, iz1)];
         let c011 = &self.cells[self.cell_index(ix0, iy1, iz1)];
         let c111 = &self.cells[self.cell_index(ix1, iy1, iz1)];
-        
+
         // Trilinear interpolation helper
         let lerp = |a: f32, b: f32, t: f32| a * (1.0 - t) + b * t;
         let lerp_vec = |a: Vec3, b: Vec3, t: f32| a * (1.0 - t) + b * t;
-        
+
         // Interpolate along x
         let c00 = GridCell {
             temperature: lerp(c000.temperature, c100.temperature, fx),
@@ -326,7 +320,7 @@ impl SimulationGrid {
             pressure: lerp(c011.pressure, c111.pressure, fx),
             suppression_agent: lerp(c011.suppression_agent, c111.suppression_agent, fx),
         };
-        
+
         // Interpolate along y
         let c0 = GridCell {
             temperature: lerp(c00.temperature, c10.temperature, fy),
@@ -360,7 +354,7 @@ impl SimulationGrid {
             pressure: lerp(c01.pressure, c11.pressure, fy),
             suppression_agent: lerp(c01.suppression_agent, c11.suppression_agent, fy),
         };
-        
+
         // Final interpolation along z
         GridCell {
             temperature: lerp(c0.temperature, c1.temperature, fz),
@@ -379,66 +373,84 @@ impl SimulationGrid {
             suppression_agent: lerp(c0.suppression_agent, c1.suppression_agent, fz),
         }
     }
-    
+
     /// Update atmospheric diffusion (parallel)
     pub fn update_diffusion(&mut self, dt: f32) {
-        let diffusion_coefficient = 0.00002;  // m²/s for heat in air
+        let diffusion_coefficient = 0.00002; // m²/s for heat in air
         let dx2 = self.cell_size * self.cell_size;
         let diffusion_factor = diffusion_coefficient * dt / dx2;
-        
+
         // Parallel diffusion calculation
-        let temp_updates: Vec<(usize, f32)> = self.cells.par_iter().enumerate().flat_map(|(idx, cell)| {
-            let iz = idx / (self.ny * self.nx);
-            let iy = (idx % (self.ny * self.nx)) / self.nx;
-            let ix = idx % self.nx;
-            
-            let mut updates = Vec::new();
-            
-            // 6-neighbor stencil for diffusion
-            let mut laplacian = 0.0;
-            let mut neighbor_count = 0;
-            
-            for (di, dj, dk) in [(-1i32, 0i32, 0i32), (1, 0, 0), (0, -1, 0), (0, 1, 0), (0, 0, -1), (0, 0, 1)] {
-                let ni = ix as i32 + di;
-                let nj = iy as i32 + dj;
-                let nk = iz as i32 + dk;
-                
-                if ni >= 0 && ni < self.nx as i32 && nj >= 0 && nj < self.ny as i32 && nk >= 0 && nk < self.nz as i32 {
-                    let n_idx = self.cell_index(ni as usize, nj as usize, nk as usize);
-                    let neighbor_temp = self.cells[n_idx].temperature;
-                    laplacian += neighbor_temp - cell.temperature;
-                    neighbor_count += 1;
+        let temp_updates: Vec<(usize, f32)> = self
+            .cells
+            .par_iter()
+            .enumerate()
+            .flat_map(|(idx, cell)| {
+                let iz = idx / (self.ny * self.nx);
+                let iy = (idx % (self.ny * self.nx)) / self.nx;
+                let ix = idx % self.nx;
+
+                let mut updates = Vec::new();
+
+                // 6-neighbor stencil for diffusion
+                let mut laplacian = 0.0;
+                let mut neighbor_count = 0;
+
+                for (di, dj, dk) in [
+                    (-1i32, 0i32, 0i32),
+                    (1, 0, 0),
+                    (0, -1, 0),
+                    (0, 1, 0),
+                    (0, 0, -1),
+                    (0, 0, 1),
+                ] {
+                    let ni = ix as i32 + di;
+                    let nj = iy as i32 + dj;
+                    let nk = iz as i32 + dk;
+
+                    if ni >= 0
+                        && ni < self.nx as i32
+                        && nj >= 0
+                        && nj < self.ny as i32
+                        && nk >= 0
+                        && nk < self.nz as i32
+                    {
+                        let n_idx = self.cell_index(ni as usize, nj as usize, nk as usize);
+                        let neighbor_temp = self.cells[n_idx].temperature;
+                        laplacian += neighbor_temp - cell.temperature;
+                        neighbor_count += 1;
+                    }
                 }
-            }
-            
-            if neighbor_count > 0 {
-                let temp_change = diffusion_factor * laplacian;
-                let mut new_temp = cell.temperature + temp_change;
-                
-                // Add modest cooling for hot cells to prevent unrealistic accumulation
-                if new_temp > 100.0 {
-                    // Natural cooling increases with temperature
-                    let cooling_factor = 0.005;  // 0.5% per second above ambient
-                    let cooling = (new_temp - self.ambient_temperature) * cooling_factor * dt;
-                    new_temp -= cooling;
-                    new_temp = new_temp.max(self.ambient_temperature);
+
+                if neighbor_count > 0 {
+                    let temp_change = diffusion_factor * laplacian;
+                    let mut new_temp = cell.temperature + temp_change;
+
+                    // Add modest cooling for hot cells to prevent unrealistic accumulation
+                    if new_temp > 100.0 {
+                        // Natural cooling increases with temperature
+                        let cooling_factor = 0.005; // 0.5% per second above ambient
+                        let cooling = (new_temp - self.ambient_temperature) * cooling_factor * dt;
+                        new_temp -= cooling;
+                        new_temp = new_temp.max(self.ambient_temperature);
+                    }
+
+                    // Cap at realistic maximum
+                    new_temp = new_temp.min(800.0);
+
+                    updates.push((idx, new_temp));
                 }
-                
-                // Cap at realistic maximum
-                new_temp = new_temp.min(800.0);
-                
-                updates.push((idx, new_temp));
-            }
-            
-            updates
-        }).collect();
-        
+
+                updates
+            })
+            .collect();
+
         // Apply updates
         for (idx, new_temp) in temp_updates {
             self.cells[idx].temperature = new_temp;
         }
     }
-    
+
     /// Update buoyancy-driven convection (hot air rises)
     pub fn update_buoyancy(&mut self, dt: f32) {
         // Vertical advection of heat due to buoyancy
@@ -447,21 +459,23 @@ impl SimulationGrid {
                 for ix in 0..self.nx {
                     let idx_below = self.cell_index(ix, iy, iz - 1);
                     let idx_current = self.cell_index(ix, iy, iz);
-                    
+
                     let cell_below = &self.cells[idx_below];
                     let buoyancy = cell_below.buoyancy_force(self.ambient_temperature);
-                    
+
                     if buoyancy > 0.0 {
                         // Hot air rises - transfer heat upward
-                        let vertical_velocity = (buoyancy * dt).sqrt();  // Simplified
+                        let vertical_velocity = (buoyancy * dt).sqrt(); // Simplified
                         let transfer_fraction = (vertical_velocity * dt / self.cell_size).min(0.3);
-                        
-                        let temp_diff = cell_below.temperature - self.cells[idx_current].temperature;
+
+                        let temp_diff =
+                            cell_below.temperature - self.cells[idx_current].temperature;
                         if temp_diff > 0.0 {
                             let heat_transfer = temp_diff * transfer_fraction;
                             self.cells[idx_current].temperature += heat_transfer;
                             // Cap at realistic maximum for wildfire air temperatures
-                            self.cells[idx_current].temperature = self.cells[idx_current].temperature.min(800.0);
+                            self.cells[idx_current].temperature =
+                                self.cells[idx_current].temperature.min(800.0);
                             self.cells[idx_below].temperature -= heat_transfer;
                         }
                     }
@@ -469,32 +483,36 @@ impl SimulationGrid {
             }
         }
     }
-    
+
     /// Mark cells near burning elements as active
     pub fn mark_active_cells(&mut self, active_positions: &[Vec3], activation_radius: f32) {
         // Reset all cells to inactive
         for cell in &mut self.cells {
             cell.is_active = false;
         }
-        
+
         // Mark cells within radius of active positions
         let cells_radius = (activation_radius / self.cell_size).ceil() as i32;
-        
+
         for pos in active_positions {
             let cx = (pos.x / self.cell_size) as i32;
             let cy = (pos.y / self.cell_size) as i32;
             let cz = (pos.z / self.cell_size) as i32;
-            
+
             for dz in -cells_radius..=cells_radius {
                 for dy in -cells_radius..=cells_radius {
                     for dx in -cells_radius..=cells_radius {
                         let ix = cx + dx;
                         let iy = cy + dy;
                         let iz = cz + dz;
-                        
-                        if ix >= 0 && ix < self.nx as i32 &&
-                           iy >= 0 && iy < self.ny as i32 &&
-                           iz >= 0 && iz < self.nz as i32 {
+
+                        if ix >= 0
+                            && ix < self.nx as i32
+                            && iy >= 0
+                            && iy < self.ny as i32
+                            && iz >= 0
+                            && iz < self.nz as i32
+                        {
                             let idx = self.cell_index(ix as usize, iy as usize, iz as usize);
                             self.cells[idx].is_active = true;
                         }
@@ -503,7 +521,7 @@ impl SimulationGrid {
             }
         }
     }
-    
+
     /// Get number of active cells
     pub fn active_cell_count(&self) -> usize {
         self.cells.iter().filter(|c| c.is_active).count()
@@ -514,86 +532,85 @@ impl SimulationGrid {
 mod tests {
     use super::*;
     use crate::grid::TerrainData;
-    use approx::assert_relative_eq;
-    
+
     #[test]
     fn test_grid_creation() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
         let grid = SimulationGrid::new(100.0, 100.0, 50.0, 5.0, terrain);
-        
+
         assert_eq!(grid.nx, 20);
         assert_eq!(grid.ny, 20);
         assert_eq!(grid.nz, 10);
         assert_eq!(grid.cells.len(), 20 * 20 * 10);
     }
-    
+
     #[test]
     fn test_cell_access() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
         let mut grid = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain);
-        
+
         // Grid is 10x10x5 cells (100/10, 100/10, 50/10)
         // Get cell and modify
         if let Some(cell) = grid.cell_at_mut(5, 5, 2) {
             cell.temperature = 100.0;
         }
-        
+
         // Verify change
         assert_eq!(grid.cell_at(5, 5, 2).unwrap().temperature, 100.0);
     }
-    
+
     #[test]
     fn test_position_query() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
         let mut grid = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain);
-        
+
         let pos = Vec3::new(55.0, 55.0, 25.0);
         if let Some(cell) = grid.cell_at_position_mut(pos) {
             cell.temperature = 200.0;
         }
-        
+
         assert_eq!(grid.cell_at_position(pos).unwrap().temperature, 200.0);
     }
-    
+
     #[test]
     fn test_air_density() {
         let cell_cold = GridCell::new(0.0);
         let mut cell_hot = GridCell::new(0.0);
         cell_hot.temperature = 500.0;
-        
+
         // Hot air is less dense
         assert!(cell_hot.air_density() < cell_cold.air_density());
     }
-    
+
     #[test]
     fn test_buoyancy() {
         let mut cell_hot = GridCell::new(0.0);
         cell_hot.temperature = 300.0;
-        
+
         let buoyancy = cell_hot.buoyancy_force(20.0);
-        
+
         // Hot air creates upward force
         assert!(buoyancy > 0.0);
     }
-    
+
     #[test]
     fn test_oxygen_combustion() {
         let cell_normal = GridCell::new(0.0);
         assert!(cell_normal.can_support_combustion());
-        
+
         let mut cell_depleted = GridCell::new(0.0);
-        cell_depleted.oxygen = 0.1;  // Low oxygen
+        cell_depleted.oxygen = 0.1; // Low oxygen
         assert!(!cell_depleted.can_support_combustion());
     }
-    
+
     #[test]
     fn test_active_cells() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
         let mut grid = SimulationGrid::new(100.0, 100.0, 50.0, 5.0, terrain);
-        
+
         let active_pos = vec![Vec3::new(50.0, 50.0, 10.0)];
         grid.mark_active_cells(&active_pos, 15.0);
-        
+
         let active_count = grid.active_cell_count();
         assert!(active_count > 0);
         assert!(active_count < grid.cells.len());
