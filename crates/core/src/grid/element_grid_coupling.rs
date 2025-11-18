@@ -3,7 +3,7 @@
 //! Handles heat/mass/gas exchange between burning fuel elements and grid cells,
 //! enabling realistic fire-atmosphere interaction.
 
-use crate::element::{FuelElement, Vec3};
+use crate::core_types::element::{FuelElement, Vec3};
 use crate::grid::SimulationGrid;
 use crate::physics::combustion_physics::{calculate_combustion_products, oxygen_limited_burn_rate};
 
@@ -206,7 +206,7 @@ pub fn get_wind_at_element(
 pub fn update_wind_field(
     grid: &mut SimulationGrid,
     base_wind: Vec3,
-    dt: f32,
+    _dt: f32,
 ) {
     // Wind modification by terrain (channeling, blocking, acceleration)
     for iz in 0..grid.nz {
@@ -315,8 +315,8 @@ pub fn simulate_plume_rise(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuel::Fuel;
-    use crate::element::FuelPart;
+    use crate::core_types::fuel::Fuel;
+    use crate::core_types::element::FuelPart;
     use crate::grid::TerrainData;
     use approx::assert_relative_eq;
     

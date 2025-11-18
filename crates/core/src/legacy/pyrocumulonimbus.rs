@@ -8,7 +8,7 @@
 /// - Australian Bureau of Meteorology: "When bushfires make their own weather"
 /// - AGU Journal of Geophysical Research: "Pyrocumulonimbus lightning and fire ignition"
 
-use crate::element::Vec3;
+use crate::core_types::element::Vec3;
 use rand::Rng;
 
 /// Pyrocumulonimbus cloud state

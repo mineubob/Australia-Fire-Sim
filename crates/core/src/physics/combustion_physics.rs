@@ -6,7 +6,7 @@
 //! - Multi-band radiation (visible, IR, UV)
 //! - Combustion product generation
 
-use crate::element::{FuelElement, Vec3};
+use crate::core_types::element::{FuelElement, Vec3};
 use crate::grid::GridCell;
 
 /// Universal gas constant (J/(mol·K))
@@ -276,8 +276,8 @@ pub fn calculate_fire_intensity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuel::Fuel;
-    use crate::element::FuelPart;
+    use crate::core_types::fuel::Fuel;
+    use crate::core_types::element::FuelPart;
     use crate::grid::GridCell;
     use approx::assert_relative_eq;
     

@@ -1,4 +1,4 @@
-use crate::element::Vec3;
+use crate::core_types::element::Vec3;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 

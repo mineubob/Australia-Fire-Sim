@@ -1,4 +1,4 @@
-use crate::element::FuelElement;
+use crate::core_types::element::FuelElement;
 
 /// Update oil vaporization and check for explosive ignition
 pub fn update_oil_vaporization(element: &mut FuelElement, _dt: f32) -> Option<ExplosionEvent> {
@@ -31,7 +31,7 @@ pub fn update_oil_vaporization(element: &mut FuelElement, _dt: f32) -> Option<Ex
 /// Explosion event data
 #[derive(Debug, Clone)]
 pub struct ExplosionEvent {
-    pub position: crate::element::Vec3,
+    pub position: crate::core_types::element::Vec3,
     pub energy: f32,          // kJ
     pub blast_radius: f32,    // meters
     pub temperature: f32,     // °C
@@ -128,8 +128,8 @@ pub fn eucalyptus_heat_release(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuel::Fuel;
-    use crate::element::{FuelPart, Vec3};
+    use crate::core_types::fuel::Fuel;
+    use crate::core_types::element::{FuelPart, Vec3};
     
     #[test]
     fn test_stringybark_crown_transition() {

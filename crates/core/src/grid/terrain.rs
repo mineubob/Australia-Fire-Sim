@@ -3,7 +3,7 @@
 //! Implements Digital Elevation Model (DEM) support with slope/aspect calculations,
 //! solar radiation based on terrain, and efficient height queries.
 
-use crate::element::Vec3;
+use crate::core_types::element::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Terrain data structure holding elevation information

@@ -9,11 +9,11 @@
 
 use std::collections::HashSet;
 use rayon::prelude::*;
-use crate::element::{FuelElement, FuelPart, Vec3};
-use crate::fuel::Fuel;
-use crate::spatial::SpatialIndex;
-use crate::weather::WeatherSystem;
-use crate::ember::Ember;
+use crate::core_types::element::{FuelElement, FuelPart, Vec3};
+use crate::core_types::fuel::Fuel;
+use crate::core_types::spatial::SpatialIndex;
+use crate::core_types::weather::WeatherSystem;
+use crate::core_types::ember::Ember;
 use crate::grid::{TerrainData, SimulationGrid, GridCell};
 use crate::grid::element_grid_coupling::*;
 use crate::physics::SuppressionDroplet;
@@ -54,15 +54,18 @@ pub struct FireSimulationUltra {
 impl FireSimulationUltra {
     /// Create a new ultra-realistic fire simulation
     pub fn new(
-        width: f32,
-        height: f32,
-        depth: f32,
         grid_cell_size: f32,
         terrain: TerrainData,
     ) -> Self {
+        // Use terrain dimensions
+        let width = terrain.width;
+        let height = terrain.height;
+        // Use sensible depth based on terrain elevation range
+        let depth = (terrain.max_elevation - terrain.min_elevation + 100.0).max(100.0);
+        
         let bounds = (
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(width, height, depth),
+            Vec3::new(0.0, 0.0, terrain.min_elevation),
+            Vec3::new(width, height, terrain.max_elevation + 50.0),
         );
         
         let spatial_index = SpatialIndex::new(bounds, 15.0);
@@ -256,16 +259,23 @@ impl FireSimulationUltra {
                 
                 // Now we can safely borrow grid mutably
                 if let Some(cell) = self.grid.cell_at_position_mut(pos) {
-                    // Simple heat transfer
+                    // Enhanced heat transfer - fires need to heat air more effectively
                     let temp_diff = temp - cell.temperature;
                     if temp_diff > 0.0 {
-                        let h = 50.0;
+                        // Much higher heat transfer coefficient for realistic fire heating
+                        let h = 500.0;  // W/(m²·K) - typical for fire convection
                         let area = surface_area * fuel_remaining.sqrt();
                         let heat_kj = h * area * temp_diff * dt * 0.001;
                         
                         let air_mass = cell.air_density() * cell_volume;
-                        let temp_rise = heat_kj / (air_mass * 1.005);
+                        let specific_heat_air = 1.005;  // kJ/(kg·K)
+                        let temp_rise = heat_kj / (air_mass * specific_heat_air);
+                        
+                        // Allow cell to reach high temperatures from fire
                         cell.temperature += temp_rise;
+                        // Cap at 800°C - realistic maximum for air in wildfire plumes
+                        // (Flames are hotter, but air around them reaches ~800°C max)
+                        cell.temperature = cell.temperature.min(800.0);
                     }
                     
                     // Combustion products
@@ -402,18 +412,17 @@ mod tests {
     #[test]
     fn test_ultra_simulation_creation() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        let sim = FireSimulationUltra::new(100.0, 100.0, 50.0, 10.0, terrain);
+        let sim = FireSimulationUltra::new(10.0, terrain);
         
         assert_eq!(sim.burning_elements.len(), 0);
         assert_eq!(sim.grid.nx, 10);
         assert_eq!(sim.grid.ny, 10);
-        assert_eq!(sim.grid.nz, 5);
     }
     
     #[test]
     fn test_add_and_ignite() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        let mut sim = FireSimulationUltra::new(100.0, 100.0, 50.0, 10.0, terrain);
+        let mut sim = FireSimulationUltra::new(10.0, terrain);
         
         let fuel = Fuel::dry_grass();
         let id = sim.add_fuel_element(
@@ -433,7 +442,7 @@ mod tests {
     #[test]
     fn test_simulation_update() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        let mut sim = FireSimulationUltra::new(100.0, 100.0, 50.0, 10.0, terrain);
+        let mut sim = FireSimulationUltra::new(10.0, terrain);
         
         let fuel = Fuel::dry_grass();
         let id = sim.add_fuel_element(

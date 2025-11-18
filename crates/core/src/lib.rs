@@ -12,31 +12,27 @@
 //! - Element-grid coupling for realistic fire-atmosphere interaction
 //! - Advanced suppression physics (water, retardant, foam)
 
-// Legacy modules (kept for compatibility with existing code)
-pub mod fuel;
-pub mod element;
-pub mod spatial;
-pub mod legacy_physics;
-pub mod weather;
-pub mod ember;
-pub mod australian;
-pub mod pyrocumulonimbus;
-pub mod simulation;
+// Core types and utilities
+pub mod core_types;
+
+// Legacy simulation modules (kept for compatibility)
+pub mod legacy;
 
 // Ultra-realistic simulation modules (organized in subfolders)
 pub mod physics;
 pub mod grid;
 pub mod ultra;
 
-// Re-export main types
-pub use fuel::{Fuel, BarkProperties};
-pub use element::{FuelElement, FuelPart, Vec3};
-pub use weather::{WeatherSystem, WeatherPreset, ClimatePattern};
-pub use ember::Ember;
-pub use pyrocumulonimbus::{PyroCb, PyroCbSystem, LightningStrike, Downdraft};
-pub use simulation::FireSimulation;
+// Re-export core types
+pub use core_types::{Fuel, BarkProperties, FuelElement, FuelPart, Vec3};
+pub use core_types::{WeatherSystem, WeatherPreset, ClimatePattern};
+pub use core_types::{Ember, SpatialIndex};
+
+// Re-export legacy types
+pub use legacy::{FireSimulation, PyroCb, PyroCbSystem, LightningStrike, Downdraft};
 
 // Re-export ultra-realistic types
 pub use grid::{TerrainData, SimulationGrid, GridCell};
 pub use physics::{SuppressionAgent, SuppressionDroplet, AircraftDrop, GroundSuppression};
 pub use ultra::{FireSimulationUltra, SimulationStats};
+
