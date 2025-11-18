@@ -1,6 +1,6 @@
 use fire_sim_core::{FireSimulation, Fuel, FuelPart, Vec3, WeatherSystem};
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 // Thread-safe simulation storage
 lazy_static::lazy_static! {
@@ -36,15 +36,15 @@ pub struct EmberVisual {
 pub extern "C" fn fire_sim_create(width: f32, height: f32, depth: f32) -> usize {
     let sim = FireSimulation::new(width, height, depth);
     let sim_arc = Arc::new(Mutex::new(sim));
-    
+
     unsafe {
         let id = NEXT_SIM_ID;
         NEXT_SIM_ID += 1;
-        
+
         if let Ok(mut sims) = SIMULATIONS.lock() {
             sims.insert(id, sim_arc);
         }
-        
+
         id
     }
 }
@@ -85,9 +85,9 @@ pub extern "C" fn fire_sim_add_fuel_element(
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(mut sim) = sim_arc.lock() {
                 let position = Vec3::new(x, y, z);
-                
+
                 let fuel = Fuel::from_id(fuel_type).unwrap_or_else(|| Fuel::dry_grass());
-                
+
                 let part = match part_type {
                     0 => FuelPart::Root,
                     1 => FuelPart::TrunkLower,
@@ -98,13 +98,13 @@ pub extern "C" fn fire_sim_add_fuel_element(
                     6 => FuelPart::GroundVegetation,
                     _ => FuelPart::Surface,
                 };
-                
+
                 let parent = if parent_id >= 0 {
                     Some(parent_id as u32)
                 } else {
                     None
                 };
-                
+
                 return sim.add_fuel_element(position, fuel, mass, part, parent);
             }
         }
@@ -114,11 +114,7 @@ pub extern "C" fn fire_sim_add_fuel_element(
 
 /// Ignite a fuel element (thread-safe)
 #[no_mangle]
-pub extern "C" fn fire_sim_ignite_element(
-    sim_id: usize,
-    element_id: u32,
-    initial_temp: f32,
-) {
+pub extern "C" fn fire_sim_ignite_element(sim_id: usize, element_id: u32, initial_temp: f32) {
     if let Ok(sims) = SIMULATIONS.lock() {
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(mut sim) = sim_arc.lock() {
@@ -141,7 +137,8 @@ pub extern "C" fn fire_sim_set_weather(
     if let Ok(sims) = SIMULATIONS.lock() {
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(mut sim) = sim_arc.lock() {
-                let weather = WeatherSystem::new(temp, humidity, wind_speed, wind_direction, drought);
+                let weather =
+                    WeatherSystem::new(temp, humidity, wind_speed, wind_direction, drought);
                 sim.set_weather(weather);
             }
         }
@@ -179,7 +176,7 @@ pub extern "C" fn fire_sim_get_burning_elements(
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(sim) = sim_arc.lock() {
                 let burning = sim.get_burning_elements();
-                
+
                 let visuals: Vec<FireElementVisual> = burning
                     .iter()
                     .map(|element| FireElementVisual {
@@ -201,18 +198,18 @@ pub extern "C" fn fire_sim_get_burning_elements(
                         },
                     })
                     .collect();
-                
+
                 unsafe {
                     *out_count = visuals.len() as u32;
                 }
-                
+
                 let ptr = visuals.as_ptr();
                 std::mem::forget(visuals); // Prevent deallocation
                 return ptr;
             }
         }
     }
-    
+
     unsafe {
         *out_count = 0;
     }
@@ -221,15 +218,12 @@ pub extern "C" fn fire_sim_get_burning_elements(
 
 /// Get embers for particle effects (thread-safe)
 #[no_mangle]
-pub extern "C" fn fire_sim_get_embers(
-    sim_id: usize,
-    out_count: *mut u32,
-) -> *const EmberVisual {
+pub extern "C" fn fire_sim_get_embers(sim_id: usize, out_count: *mut u32) -> *const EmberVisual {
     if let Ok(sims) = SIMULATIONS.lock() {
         if let Some(sim_arc) = sims.get(&sim_id) {
             if let Ok(sim) = sim_arc.lock() {
                 let embers = sim.get_embers();
-                
+
                 let visuals: Vec<EmberVisual> = embers
                     .iter()
                     .map(|ember| EmberVisual {
@@ -240,18 +234,18 @@ pub extern "C" fn fire_sim_get_embers(
                         size: (ember.mass * 1000.0).sqrt(), // Scale mass to visual size
                     })
                     .collect();
-                
+
                 unsafe {
                     *out_count = visuals.len() as u32;
                 }
-                
+
                 let ptr = visuals.as_ptr();
                 std::mem::forget(visuals);
                 return ptr;
             }
         }
     }
-    
+
     unsafe {
         *out_count = 0;
     }

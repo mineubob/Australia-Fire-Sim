@@ -267,7 +267,7 @@ fn ui_system(
                 ui.label(format!("FPS: {:.1}", state.fps));
                 ui.label(format!("Frame Time: {:.2}ms", state.frame_time_ms));
                 ui.label(format!("Total Elements: {}", state.total_elements));
-                
+
                 // Show sampling info if elements are being sampled for performance
                 let sample_rate = if state.total_elements > 100000 {
                     10
@@ -280,14 +280,14 @@ fn ui_system(
                 } else {
                     1
                 };
-                
+
                 if sample_rate > 1 {
                     ui.colored_label(
                         egui::Color32::from_rgb(255, 200, 100),
-                        format!("⚡ Rendering 1/{} elements for performance", sample_rate)
+                        format!("⚡ Rendering 1/{} elements for performance", sample_rate),
                     );
                 }
-                
+
                 ui.label(format!("🔥 Burning: {}", state.burning_elements));
                 ui.label(format!("✨ Embers: {}", state.ember_count));
                 ui.label(format!("🪵 Fuel Consumed: {:.1} kg", state.fuel_consumed));
@@ -609,7 +609,7 @@ fn ui_system(
                             let height = (sim_y - first_y).abs();
                             let center_x = (first_x + sim_x) / 2.0;
                             let center_y = (first_y + sim_y) / 2.0;
-                            
+
                             let spacing = state.field_spacing;
                             let fuel_type = state.spawn_fuel_type;
                             add_fuel_field(
@@ -637,7 +637,10 @@ fn ui_system(
                         } else {
                             // First click - store position
                             state.bulk_first_point = Some((sim_x, sim_y));
-                            println!("First corner selected at ({:.1}, {:.1}), click second corner", sim_x, sim_y);
+                            println!(
+                                "First corner selected at ({:.1}, {:.1}), click second corner",
+                                sim_x, sim_y
+                            );
                         }
                     } else {
                         // Add single fuel element
@@ -966,7 +969,7 @@ fn update_cloud_visualization(
 
         // Cloud size based on diameter - allow larger clouds to show expansion
         // Scale down for visibility but don't cap too aggressively
-        let size = (cloud.diameter * SCALE_FACTOR * 0.2).max(10.0).min(200.0);
+        let size = (cloud.diameter * SCALE_FACTOR * 0.2).clamp(10.0, 200.0);
 
         // Cloud color - white/gray based on charge and age
         let gray_value = 0.8 - (cloud.charge_separation * 0.3);
