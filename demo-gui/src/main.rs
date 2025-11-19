@@ -2,7 +2,7 @@
 //!
 //! This demo provides a real-time 3D visualization of the fire simulation with interactive controls.
 
-use bevy::prelude::*;
+use bevy::{prelude::*, input::mouse::MouseWheel};
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData, Vec3 as SimVec3,
     WeatherSystem,
@@ -99,6 +99,7 @@ fn main() {
         .add_systems(Update, (
             handle_menu_interactions,
             update_config_display,
+            handle_menu_scroll,
         ).run_if(in_menu))
         .add_systems(Update, (
             init_simulation_system.run_if(should_start_simulation),
@@ -308,6 +309,9 @@ enum ConfigButton {
 #[derive(Component)]
 struct ConfigValueText(ConfigButton);
 
+#[derive(Component)]
+struct ScrollablePanel;
+
 /// Setup menu UI
 fn setup_menu(mut commands: Commands) {
     // Spawn a 2D camera for the UI
@@ -351,21 +355,33 @@ fn setup_menu(mut commands: Commands) {
             ..default()
         }));
         
-        // Scrollable config panel
-        parent.spawn(NodeBundle {
-            style: Style {
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(20.0)),
-                row_gap: Val::Px(10.0),
-                max_width: Val::Px(700.0),
-                max_height: Val::Px(400.0),
-                overflow: Overflow::clip_y(),
+        // Scrollable config panel container
+        parent.spawn((
+            NodeBundle {
+                style: Style {
+                    width: Val::Px(700.0),
+                    max_height: Val::Px(450.0),
+                    overflow: Overflow::clip_y(),
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::srgba(0.2, 0.2, 0.25, 0.9)),
                 ..default()
             },
-            background_color: BackgroundColor(Color::srgba(0.2, 0.2, 0.25, 0.9)),
-            ..default()
-        })
-        .with_children(|config_panel| {
+            ScrollablePanel,
+        ))
+        .with_children(|scroll_container| {
+            // Inner scrollable content
+            scroll_container.spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(20.0)),
+                    row_gap: Val::Px(10.0),
+                    width: Val::Percent(100.0),
+                    ..default()
+                },
+                ..default()
+            })
+            .with_children(|config_panel| {
             add_config_section(config_panel, "TERRAIN SETTINGS");
             add_numeric_config(config_panel, "Map Width (m):", ConfigButton::DecrementMapWidth, ConfigButton::IncrementMapWidth);
             add_numeric_config(config_panel, "Map Height (m):", ConfigButton::DecrementMapHeight, ConfigButton::IncrementMapHeight);
@@ -385,6 +401,7 @@ fn setup_menu(mut commands: Commands) {
             add_numeric_config(config_panel, "Wind Speed (m/s):", ConfigButton::DecrementWindSpeed, ConfigButton::IncrementWindSpeed);
             add_numeric_config(config_panel, "Wind Direction (°):", ConfigButton::DecrementWindDirection, ConfigButton::IncrementWindDirection);
             add_numeric_config(config_panel, "Drought Factor:", ConfigButton::DecrementDroughtFactor, ConfigButton::IncrementDroughtFactor);
+            });
         });
         
         // START button
@@ -712,6 +729,43 @@ fn update_config_display(
                 FuelType::DeadWood => "Dead Wood".to_string(),
             },
         };
+    }
+}
+
+/// Handle mouse wheel scrolling for menu panel
+fn handle_menu_scroll(
+    mut scroll_events: EventReader<MouseWheel>,
+    scroll_query: Query<(&Node, &Children), With<ScrollablePanel>>,
+    mut children_query: Query<&mut Style>,
+) {
+    for event in scroll_events.read() {
+        for (panel_node, children) in &scroll_query {
+            if let Some(&child_entity) = children.first() {
+                if let Ok(mut child_style) = children_query.get_mut(child_entity) {
+                    // Get current top position (or 0 if not set)
+                    let current_top = match child_style.top {
+                        Val::Px(px) => px,
+                        _ => 0.0,
+                    };
+                    
+                    // Calculate new scroll position (scroll down = negative, scroll up = positive)
+                    let scroll_amount = event.y * 30.0; // 30 pixels per scroll tick
+                    let new_top = current_top + scroll_amount;
+                    
+                    // Get container height
+                    let container_height = panel_node.size().y;
+                    
+                    // Estimate content height (we'll allow scrolling and clamp)
+                    // Max scroll is 0, min scroll allows content to scroll up
+                    let max_scroll = 0.0;
+                    let min_scroll = -(1000.0 - container_height).max(0.0); // Allow up to 1000px of content
+                    let clamped_top = new_top.clamp(min_scroll, max_scroll);
+                    
+                    // Apply new scroll position to the child (content)
+                    child_style.top = Val::Px(clamped_top);
+                }
+            }
+        }
     }
 }
 
