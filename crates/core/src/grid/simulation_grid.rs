@@ -111,9 +111,9 @@ impl GridCell {
         self.temperature
     }
     
-    /// Get wind velocity vector (m/s)
-    pub fn wind(&self) -> Vec3 {
-        self.wind
+    /// Get wind velocity vector (m/s) - returns reference for zero-copy access
+    pub fn wind(&self) -> &Vec3 {
+        &self.wind
     }
     
     /// Get relative humidity (0-1)
