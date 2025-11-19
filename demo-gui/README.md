@@ -11,7 +11,8 @@ This demo provides an interactive, visually rich demonstration of the fire simul
 - **Fully customizable** simulation parameters
 - **Dynamic fire visualization** with temperature-based colors and glow effects
 - **Interactive camera controls** for exploring the scene
-- **Live statistics display** showing simulation metrics and weather conditions
+- **Right-side statistics panel** with organized simulation metrics
+- **Hover tooltips** showing detailed fuel element information
 - **Interactive controls** for pausing, speed adjustment, and fire suppression
 
 ## Features
@@ -22,10 +23,16 @@ This demo provides an interactive, visually rich demonstration of the fire simul
   - Green for unburned fuel
   - Orange/red with glow for burning elements (color based on temperature)
   - Gray/black for consumed fuel
+  - **Hover to see details**: Position, temperature, fuel remaining, moisture, status, flame height
 - **3D Terrain**: Mesh generated from actual elevation data with proper normals
   - Follows terrain type (flat, single hill, or valley between hills)
   - Visual representation matches simulation physics
 - **Fire Effects**: Dynamic colors and emissive lighting based on element temperature
+- **Statistics Panel**: Semi-transparent box on right side with organized stats
+  - Simulation status (time, speed, paused/running)
+  - Fire status (burning elements, fuel consumed, max temperature)
+  - Weather conditions (temperature, humidity, wind)
+  - Fire danger rating (FFDI and category)
 
 ### Customization
 
@@ -78,17 +85,28 @@ let config = DemoConfig {
 - **Arrow Keys**: Camera controls
   - Up/Down: Move forward/backward
   - Left/Right: Rotate camera
+- **Mouse Hover**: Show detailed information about fuel elements
 
-### On-Screen Information
+### User Interface
 
-- **Simulation Time**: Current elapsed simulation time
-- **Burning Elements**: Number of currently burning fuel elements
-- **Fuel Consumed**: Total mass of fuel consumed (kg)
-- **Max Temperature**: Highest temperature in the simulation (°C)
-- **Weather Conditions**: Temperature, humidity, wind speed
-- **Fire Danger**: McArthur FFDI and fire danger rating
-- **Status**: RUNNING or PAUSED
-- **Speed**: Current simulation speed multiplier
+**Left Side:**
+- Title and control instructions
+
+**Right Side - Statistics Panel:**
+Organized display with semi-transparent background showing:
+- **Simulation Status**: Time, status (RUNNING/PAUSED), speed multiplier
+- **Fire Status**: Number of burning elements, total elements, fuel consumed, max temperature
+- **Weather Conditions**: Temperature, humidity, wind speed/direction, drought factor
+- **Fire Danger**: FFDI value and danger rating
+
+**Hover Tooltips:**
+When you hover the mouse over a fuel element, a tooltip appears showing:
+- Element ID and position coordinates
+- Current temperature
+- Fuel remaining (kg)
+- Moisture percentage
+- Status (BURNING/CONSUMED/Unburned)
+- Flame height
 
 ## Requirements
 
