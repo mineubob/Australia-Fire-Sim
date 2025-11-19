@@ -238,8 +238,7 @@ pub fn update_wind_field(grid: &mut SimulationGrid, base_wind: Vec3, _dt: f32) {
                 // Terrain channeling effect
                 let wind_direction = base_wind.xy().normalize();
                 let terrain_aspect_rad = terrain_aspect.to_radians();
-                let aspect_vec =
-                    Vec3::new(terrain_aspect_rad.sin(), terrain_aspect_rad.cos(), 0.0);
+                let aspect_vec = Vec3::new(terrain_aspect_rad.sin(), terrain_aspect_rad.cos(), 0.0);
 
                 let alignment = wind_direction.dot(&aspect_vec.xy());
                 let channeling_factor = if terrain_slope > 15.0 {
