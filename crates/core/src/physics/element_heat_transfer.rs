@@ -17,11 +17,7 @@ const EMISSIVITY: f32 = 0.95;
 
 /// Calculate radiant heat flux from source element to target element
 /// Uses full Stefan-Boltzmann law: σ * ε * (T_source^4 - T_target^4)
-pub fn calculate_radiation_flux(
-    source: &FuelElement,
-    target: &FuelElement,
-    distance: f32,
-) -> f32 {
+pub fn calculate_radiation_flux(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
     if distance <= 0.0 || source.fuel_remaining <= 0.0 {
         return 0.0;
     }
@@ -32,8 +28,8 @@ pub fn calculate_radiation_flux(
 
     // FULL FORMULA: σ * ε * (T_source^4 - T_target^4)
     // NO SIMPLIFICATIONS per repository guidelines
-    let radiant_power = STEFAN_BOLTZMANN * EMISSIVITY
-        * (temp_source_k.powi(4) - temp_target_k.powi(4));
+    let radiant_power =
+        STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
 
     // Only transfer heat if source is hotter
     if radiant_power <= 0.0 {
@@ -59,11 +55,7 @@ pub fn calculate_radiation_flux(
 
 /// Calculate convection heat transfer for vertical spread
 /// Fire climbs faster due to hot gases rising and preheating fuel above
-pub fn calculate_convection_heat(
-    source: &FuelElement,
-    target: &FuelElement,
-    distance: f32,
-) -> f32 {
+pub fn calculate_convection_heat(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
     let height_diff = target.position.z - source.position.z;
 
     // Only convection upward (hot air rises)
@@ -205,8 +197,8 @@ pub fn calculate_total_heat_transfer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_types::fuel::Fuel;
     use crate::core_types::element::FuelPart;
+    use crate::core_types::fuel::Fuel;
 
     fn create_test_element(x: f32, y: f32, z: f32, temp: f32) -> FuelElement {
         FuelElement::new(
@@ -241,7 +233,11 @@ mod tests {
         let multiplier = wind_radiation_multiplier(from, to, wind);
 
         // Should be 26x at 10 m/s fully aligned
-        assert!(multiplier > 20.0, "Expected ~26x boost downwind, got {}", multiplier);
+        assert!(
+            multiplier > 20.0,
+            "Expected ~26x boost downwind, got {}",
+            multiplier
+        );
     }
 
     #[test]
@@ -265,7 +261,11 @@ mod tests {
         let factor = vertical_spread_factor(&source, &target_up);
 
         // Fire climbs at least 2.5x faster
-        assert!(factor >= 2.5, "Expected at least 2.5x upward, got {}", factor);
+        assert!(
+            factor >= 2.5,
+            "Expected at least 2.5x upward, got {}",
+            factor
+        );
     }
 
     #[test]
@@ -276,7 +276,11 @@ mod tests {
         let factor = vertical_spread_factor(&source, &target_down);
 
         // Fire spreads slower downward
-        assert!(factor < 1.0, "Expected reduced downward spread, got {}", factor);
+        assert!(
+            factor < 1.0,
+            "Expected reduced downward spread, got {}",
+            factor
+        );
     }
 
     #[test]

@@ -460,12 +460,12 @@ impl SimulationGrid {
         // 2. Cells within 2 cells of active cells (to allow heat spreading beyond active zone)
         // This fixes the fire spread stagnation bug!
         let mut cells_to_process = std::collections::HashSet::new();
-        
+
         for &idx in &self.active_cell_indices {
             let iz = idx / (self.ny * self.nx);
             let iy = (idx % (self.ny * self.nx)) / self.nx;
             let ix = idx % self.nx;
-            
+
             // Expand 2 cells in each direction for better heat propagation
             for dz in -2..=2 {
                 for dy in -2..=2 {
@@ -488,7 +488,7 @@ impl SimulationGrid {
                 }
             }
         }
-        
+
         // Parallel diffusion calculation
         let cells_vec: Vec<usize> = cells_to_process.into_iter().collect();
         let temp_updates: Vec<(usize, f32)> = cells_vec

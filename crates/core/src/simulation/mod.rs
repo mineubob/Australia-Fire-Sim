@@ -321,7 +321,7 @@ impl FireSimulation {
         // Calculate all element-to-element heat transfers in parallel for performance
         // This leverages Rayon to compute radiation/convection physics across all burning elements
         let ambient_temp = self.grid.ambient_temperature;
-        
+
         // Collect heat transfer calculations (parallelized, read-only)
         let heat_transfers: Vec<(u32, f32)> = nearby_cache
             .par_iter()
@@ -584,11 +584,11 @@ mod tests {
 
         // Set LOW fire danger conditions (cool, humid, calm - winter conditions)
         let weather = WeatherSystem::new(
-            15.0,  // Cool temperature (15°C - winter)
-            0.70,  // High humidity (70% - coastal morning)
-            2.0,   // Low wind (2 m/s - calm)
-            0.0,   // No wind direction
-            2.0,   // Low drought factor
+            15.0, // Cool temperature (15°C - winter)
+            0.70, // High humidity (70% - coastal morning)
+            2.0,  // Low wind (2 m/s - calm)
+            0.0,  // No wind direction
+            2.0,  // Low drought factor
         );
         sim.set_weather(weather);
 
@@ -631,11 +631,7 @@ mod tests {
 
         // FFDI should be low
         let ffdi = sim.weather.calculate_ffdi();
-        assert!(
-            ffdi < 12.0,
-            "FFDI should be low (<12), got {}",
-            ffdi
-        );
+        assert!(ffdi < 12.0, "FFDI should be low (<12), got {}", ffdi);
     }
 
     /// Test fire spread under MODERATE fire danger conditions
@@ -647,11 +643,11 @@ mod tests {
 
         // Set MODERATE fire danger conditions (warm, moderate humidity, light wind)
         let weather = WeatherSystem::new(
-            25.0,  // Warm temperature (25°C - spring)
-            0.40,  // Moderate humidity (40%)
-            8.0,   // Moderate wind (8 m/s)
-            45.0,  // Wind direction
-            5.0,   // Moderate drought
+            25.0, // Warm temperature (25°C - spring)
+            0.40, // Moderate humidity (40%)
+            8.0,  // Moderate wind (8 m/s)
+            45.0, // Wind direction
+            5.0,  // Moderate drought
         );
         sim.set_weather(weather);
 
@@ -708,11 +704,11 @@ mod tests {
 
         // Set EXTREME fire danger conditions (hot, dry, strong wind - Code Red)
         let weather = WeatherSystem::new(
-            42.0,  // Extreme temperature (42°C - heatwave)
-            0.15,  // Very low humidity (15% - bone dry)
-            25.0,  // Strong wind (25 m/s / 90 km/h)
-            45.0,  // Wind direction (NE typical for bad fire days)
-            10.0,  // Extreme drought
+            42.0, // Extreme temperature (42°C - heatwave)
+            0.15, // Very low humidity (15% - bone dry)
+            25.0, // Strong wind (25 m/s / 90 km/h)
+            45.0, // Wind direction (NE typical for bad fire days)
+            10.0, // Extreme drought
         );
         sim.set_weather(weather);
 
@@ -752,11 +748,7 @@ mod tests {
 
         // FFDI should be extreme (>75)
         let ffdi = sim.weather.calculate_ffdi();
-        assert!(
-            ffdi > 75.0,
-            "FFDI should be extreme (>75), got {}",
-            ffdi
-        );
+        assert!(ffdi > 75.0, "FFDI should be extreme (>75), got {}", ffdi);
     }
 
     /// Test that Australian-specific factors affect fire behavior correctly
@@ -767,12 +759,24 @@ mod tests {
 
         // Test eucalyptus fuel with volatile oils
         let eucalyptus = Fuel::eucalyptus_stringybark();
-        
+
         // Verify Australian-specific properties exist
-        assert!(eucalyptus.volatile_oil_content > 0.0, "Eucalyptus should have volatile oils");
-        assert!(eucalyptus.oil_vaporization_temp > 0.0, "Should have oil vaporization temp");
-        assert!(eucalyptus.oil_autoignition_temp > 0.0, "Should have oil autoignition temp");
-        assert!(eucalyptus.max_spotting_distance > 1000.0, "Eucalyptus should have long spotting distance");
+        assert!(
+            eucalyptus.volatile_oil_content > 0.0,
+            "Eucalyptus should have volatile oils"
+        );
+        assert!(
+            eucalyptus.oil_vaporization_temp > 0.0,
+            "Should have oil vaporization temp"
+        );
+        assert!(
+            eucalyptus.oil_autoignition_temp > 0.0,
+            "Should have oil autoignition temp"
+        );
+        assert!(
+            eucalyptus.max_spotting_distance > 1000.0,
+            "Eucalyptus should have long spotting distance"
+        );
 
         // Stringybark should have high ladder fuel factor
         assert!(
@@ -783,13 +787,16 @@ mod tests {
         // Test McArthur FFDI is being used
         let weather = WeatherSystem::new(35.0, 0.25, 20.0, 0.0, 8.0);
         sim.set_weather(weather);
-        
+
         let ffdi = sim.weather.calculate_ffdi();
         assert!(ffdi > 0.0, "FFDI should be calculated");
-        
+
         // Verify FFDI affects spread rate
         let spread_multiplier = sim.weather.spread_rate_multiplier();
-        assert!(spread_multiplier > 1.0, "High FFDI should increase spread rate");
+        assert!(
+            spread_multiplier > 1.0,
+            "High FFDI should increase spread rate"
+        );
     }
 
     /// Test wind direction effects on fire spread (critical for Australian conditions)
@@ -800,10 +807,10 @@ mod tests {
 
         // Strong easterly wind (270° = westward)
         let weather = WeatherSystem::new(
-            35.0,  // Hot
-            0.20,  // Dry
-            20.0,  // Strong wind
-            0.0,   // East wind (spreads west)
+            35.0, // Hot
+            0.20, // Dry
+            20.0, // Strong wind
+            0.0,  // East wind (spreads west)
             8.0,
         );
         sim.set_weather(weather);
