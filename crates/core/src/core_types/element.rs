@@ -280,4 +280,31 @@ impl FuelElement {
         // Stefan-Boltzmann simplified
         5.67e-8 * (temp_k / 1000.0).powi(4) * surface_area * 10000.0
     }
+
+    // Public accessor methods for visualization/external use
+
+    /// Get current temperature in Celsius
+    pub fn temperature(&self) -> f32 {
+        self.temperature
+    }
+
+    /// Get current moisture fraction (0-1)
+    pub fn moisture_fraction(&self) -> f32 {
+        self.moisture_fraction
+    }
+
+    /// Get remaining fuel mass in kg
+    pub fn fuel_remaining(&self) -> f32 {
+        self.fuel_remaining
+    }
+
+    /// Check if element is currently ignited
+    pub fn is_ignited(&self) -> bool {
+        self.ignited
+    }
+
+    /// Get current flame height in meters
+    pub fn flame_height(&self) -> f32 {
+        self.flame_height
+    }
 }

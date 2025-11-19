@@ -57,29 +57,30 @@ Heat MUST go to moisture evaporation FIRST (2260 kJ/kg latent heat) before tempe
 ## Project Structure
 
 ```
-fire-sim-3d/
+Australia-Fire-Sim/
 ├── Cargo.toml                  # Workspace configuration
 ├── crates/
 │   ├── core/                   # Fire simulation core
 │   │   ├── src/
 │   │   │   ├── lib.rs         # Main library exports
-│   │   │   ├── fuel.rs        # Fuel types and properties
-│   │   │   ├── element.rs     # Fuel element structure
-│   │   │   ├── simulation.rs  # Main simulation loop
-│   │   │   ├── physics.rs     # Heat transfer calculations
-│   │   │   ├── ember.rs       # Ember physics
-│   │   │   ├── weather.rs     # Weather system and FFDI
-│   │   │   ├── spatial.rs     # Spatial indexing
-│   │   │   └── australian.rs  # Australian-specific behaviors
+│   │   │   ├── core_types/    # Fuel, elements, weather
+│   │   │   ├── grid/          # Atmospheric grid system
+│   │   │   ├── physics/       # Heat transfer, combustion
+│   │   │   └── simulation/    # Main simulation loop
 │   │   └── Cargo.toml
 │   └── ffi/                    # FFI for Unreal Engine
 │       ├── src/
 │       │   └── lib.rs         # C-compatible bindings
 │       ├── cbindgen.toml      # Header generation config
 │       └── Cargo.toml
-└── demo-headless/              # Test/demo application
+├── demo-headless/              # Command-line demo
+│   ├── src/
+│   │   └── main.rs            # Text-based demo with stats
+│   └── Cargo.toml
+└── demo-gui/                   # Bevy-based GUI demo (NEW!)
     ├── src/
-    │   └── main.rs            # Demo scenarios
+    │   └── main.rs            # 3D visualization with Bevy
+    ├── README.md              # GUI demo documentation
     └── Cargo.toml
 ```
 
@@ -92,9 +93,35 @@ cargo build --release
 # Run tests
 cargo test --release
 
-# Run demo
+# Run headless demo (no GUI required)
 cargo run --release --bin demo-headless
+
+# Run GUI demo (requires display system)
+cargo run --release --bin demo-gui
 ```
+
+## Demos
+
+### Headless Demo
+
+The `demo-headless` crate provides a command-line interface for running simulations:
+- Text-based statistics output
+- Configurable fire size, duration, terrain
+- Weather and suppression options
+- Performance metrics
+
+### GUI Demo (NEW!)
+
+The `demo-gui` crate provides a real-time 3D visualization using the Bevy game engine:
+- **Interactive 3D view** of fire spread
+- **Dynamic fire visualization** with temperature-based colors
+- **Camera controls** for scene exploration
+- **Live statistics** showing simulation state and weather
+- **Interactive controls** for pause, speed, and suppression
+
+See [demo-gui/README.md](demo-gui/README.md) for detailed information.
+
+**Requirements**: GUI demo requires a display system (X11/Wayland on Linux, native on Windows/macOS) and system libraries. See demo-gui README for installation instructions.
 
 ## Performance
 

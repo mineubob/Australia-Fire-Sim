@@ -1,0 +1,38 @@
+[package]
+name = "demo-gui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "demo-gui"
+path = "src/main.rs"
+
+[dependencies]
+fire-sim-core = { path = "../crates/core" }
+nalgebra.workspace = true
+
+# Bevy game engine (minimal features for CI compatibility)
+# Note: Full features can be enabled on local systems with proper dependencies
+bevy = { version = "0.14", default-features = false, features = [
+    "animation",
+    "bevy_asset",
+    "bevy_scene",
+    "bevy_winit",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+    "bevy_gltf",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "multi_threaded",
+    "png",
+    "hdr",
+    "zstd",
+    "x11",
+    "bevy_gizmos",
+    "tonemapping_luts",
+    "default_font",
+] }
