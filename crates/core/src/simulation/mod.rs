@@ -689,7 +689,7 @@ mod tests {
         // FFDI should be moderate
         let ffdi = sim.weather.calculate_ffdi();
         assert!(
-            ffdi >= 12.0 && ffdi < 50.0,
+            (12.0..50.0).contains(&ffdi),
             "FFDI should be moderate (12-50), got {}",
             ffdi
         );
@@ -840,8 +840,8 @@ mod tests {
 
         // Check that downwind elements ignited more than upwind
         let mut downwind_burning = 0;
-        for i in 0..5 {
-            if let Some(elem) = sim.get_element(fuel_ids[i]) {
+        for elem_id in fuel_ids.iter().take(5) {
+            if let Some(elem) = sim.get_element(*elem_id) {
                 if elem.ignited {
                     downwind_burning += 1;
                 }

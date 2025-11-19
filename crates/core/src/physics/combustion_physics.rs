@@ -94,7 +94,7 @@ pub fn oxygen_limited_burn_rate(fuel_burn_rate: f32, cell: &GridCell, cell_volum
 }
 
 /// Calculate combustion products for a burning fuel element
-pub struct CombustionProducts {
+pub(crate) struct CombustionProducts {
     pub co2_produced: f32,   // kg
     pub co_produced: f32,    // kg
     pub h2o_produced: f32,   // kg
@@ -103,7 +103,7 @@ pub struct CombustionProducts {
     pub o2_consumed: f32,    // kg
 }
 
-pub fn calculate_combustion_products(
+pub(crate) fn calculate_combustion_products(
     fuel_consumed: f32,
     cell: &GridCell,
     fuel_heat_content: f32,
@@ -150,13 +150,13 @@ pub fn calculate_combustion_products(
 
 /// Multi-band radiation calculation
 /// Splits thermal radiation into visible, IR, and UV bands
-pub struct RadiationBands {
+pub(crate) struct RadiationBands {
     pub visible: f32,     // W/m² (400-700 nm)
     pub infrared: f32,    // W/m² (700 nm - 1 mm)
     pub ultraviolet: f32, // W/m² (10-400 nm)
 }
 
-pub fn calculate_radiation_bands(temperature_celsius: f32, emissivity: f32) -> RadiationBands {
+pub(crate) fn calculate_radiation_bands(temperature_celsius: f32, emissivity: f32) -> RadiationBands {
     const STEFAN_BOLTZMANN: f32 = 5.67e-8;
 
     let temp_kelvin = temperature_celsius + 273.15;

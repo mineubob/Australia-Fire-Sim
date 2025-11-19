@@ -48,9 +48,7 @@ pub fn calculate_radiation_flux(source: &FuelElement, target: &FuelElement, dist
     // Convert to heat energy for target element (kJ/s)
     // Apply target's surface area for heat absorption
     let target_surface_area = target.fuel.surface_area_to_volume;
-    let heat_kj = flux * target_surface_area * 0.001; // W to kW (kJ/s)
-
-    heat_kj
+    flux * target_surface_area * 0.001 // W to kW (kJ/s)
 }
 
 /// Calculate convection heat transfer for vertical spread
