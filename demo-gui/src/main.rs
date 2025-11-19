@@ -270,6 +270,9 @@ struct FpsText;
 struct MenuUI;
 
 #[derive(Component)]
+struct MenuCamera;
+
+#[derive(Component)]
 struct StartButton;
 
 #[derive(Component, Clone, Copy)]
@@ -307,6 +310,9 @@ struct ConfigValueText(ConfigButton);
 
 /// Setup menu UI
 fn setup_menu(mut commands: Commands) {
+    // Spawn a 2D camera for the UI
+    commands.spawn((Camera2dBundle::default(), MenuCamera));
+    
     commands.spawn((
         NodeBundle {
             style: Style {
@@ -582,6 +588,7 @@ fn handle_menu_interactions(
         Changed<Interaction>,
     >,
     menu_query: Query<Entity, With<MenuUI>>,
+    camera_query: Query<Entity, With<MenuCamera>>,
     mut commands: Commands,
 ) {
     for (interaction, config_button, start_button, mut color) in &mut interaction_query {
@@ -591,6 +598,10 @@ fn handle_menu_interactions(
                     // Hide menu
                     for entity in menu_query.iter() {
                         commands.entity(entity).despawn_recursive();
+                    }
+                    // Despawn menu camera
+                    for entity in camera_query.iter() {
+                        commands.entity(entity).despawn();
                     }
                     menu_state.in_menu = false;
                 } else if let Some(button) = config_button {
