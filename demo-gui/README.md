@@ -7,6 +7,8 @@ A real-time 3D visualization of the Australia Fire Simulation using the Bevy gam
 This demo provides an interactive, visually rich demonstration of the fire simulation with:
 
 - **Real-time 3D rendering** of fuel elements and fire spread
+- **3D terrain mesh** with actual elevation data (hills, valleys, or flat terrain)
+- **Fully customizable** simulation parameters
 - **Dynamic fire visualization** with temperature-based colors and glow effects
 - **Interactive camera controls** for exploring the scene
 - **Live statistics display** showing simulation metrics and weather conditions
@@ -20,8 +22,52 @@ This demo provides an interactive, visually rich demonstration of the fire simul
   - Green for unburned fuel
   - Orange/red with glow for burning elements (color based on temperature)
   - Gray/black for consumed fuel
-- **Terrain**: 3D ground plane representing the simulation area
+- **3D Terrain**: Mesh generated from actual elevation data with proper normals
+  - Follows terrain type (flat, single hill, or valley between hills)
+  - Visual representation matches simulation physics
 - **Fire Effects**: Dynamic colors and emissive lighting based on element temperature
+
+### Customization
+
+The simulation is **fully customizable** by editing `src/main.rs`. You can configure:
+
+**Terrain Settings:**
+- Map dimensions (width, height)
+- Terrain type (Flat, Hill, Valley)
+
+**Fire Settings:**
+- Grid size (elements_x, elements_y)
+- Fuel type (DryGrass, EucalyptusStringybark, EucalyptusSmoothBark, Shrubland, DeadWood)
+- Fuel mass per element
+- Element spacing
+- Number of initial ignitions
+
+**Weather Settings:**
+- Temperature (°C)
+- Humidity (0-1 fraction)
+- Wind speed (m/s)
+- Wind direction (degrees)
+- Drought factor
+
+Example customization in `main()`:
+```rust
+let config = DemoConfig {
+    map_width: 300.0,
+    map_height: 300.0,
+    terrain_type: TerrainType::Valley,
+    elements_x: 15,
+    elements_y: 15,
+    fuel_type: FuelType::EucalyptusStringybark,
+    fuel_mass: 8.0,
+    spacing: 10.0,
+    initial_ignitions: 10,
+    temperature: 40.0,
+    humidity: 0.10,
+    wind_speed: 25.0,
+    wind_direction: 90.0,  // East wind
+    drought_factor: 12.0,   // Catastrophic
+};
+```
 
 ### Controls
 
@@ -89,11 +135,12 @@ cargo build --release -p demo-gui
 cargo run --release -p demo-gui
 ```
 
-The demo will start with a pre-configured fire simulation:
+The demo will start with default configuration:
 - 10x10 grid of dry grass fuel elements
 - Extreme fire danger weather conditions (35°C, 15% humidity, 20 m/s wind)
 - 5 initially ignited elements
-- Terrain with a central hill
+- Terrain with a central hill (80m elevation)
+- 3D terrain mesh following actual elevation data
 
 ## Implementation Details
 
@@ -101,7 +148,9 @@ The demo will start with a pre-configured fire simulation:
 
 The demo is structured using Bevy's Entity Component System (ECS):
 
-- **Resources**: `SimulationState` manages the fire simulation and UI state
+- **Resources**: 
+  - `DemoConfig`: Configuration for simulation parameters
+  - `SimulationState`: Manages the fire simulation and UI state
 - **Components**: `FuelVisual`, `MainCamera`, `StatsText`, `ControlsText`
 - **Systems**: 
   - `update_simulation`: Steps the fire simulation forward
@@ -110,48 +159,39 @@ The demo is structured using Bevy's Entity Component System (ECS):
   - `update_ui`: Refreshes statistics display
   - `handle_controls`: Processes user input
 
+### 3D Terrain Rendering
+
+The terrain is rendered as a 3D mesh with actual elevation data:
+- Samples elevation every 5 meters from the terrain model
+- Generates proper vertex normals for realistic lighting
+- Matches the physics simulation's terrain exactly
+- Supports flat, hill, and valley terrain types
+
 ### Simulation Integration
 
 The demo wraps the `fire-sim-core` library and updates it at 10 FPS (0.1 second timesteps) with configurable speed multiplier. Visual updates occur at the monitor's refresh rate (typically 60 FPS) for smooth rendering.
 
 ### Performance
 
-- Updates 100 fuel elements with burning/visual state every frame
+- Updates fuel elements with burning/visual state every frame
 - Smooth 60 FPS rendering on modern hardware
 - Simulation complexity scales with number of burning elements
+- Terrain mesh optimized with efficient indexing
 
-## Customization
+## Advanced Customization
 
-You can modify the simulation parameters in `src/main.rs`:
+See the **Customization** section at the top of this README for details on configuring simulation parameters.
 
-```rust
-impl Default for SimulationState {
-    fn default() -> Self {
-        // Adjust these parameters:
-        let elements_x = 10;     // Grid width
-        let elements_y = 10;     // Grid height
-        let fuel_mass = 5.0;     // kg per element
-        let spacing = 8.0;       // meters between elements
-        
-        // Weather configuration
-        let weather = WeatherSystem::new(
-            35.0,  // temperature (°C)
-            0.15,  // humidity (fraction)
-            20.0,  // wind speed (m/s)
-            45.0,  // wind direction (degrees)
-            10.0,  // drought factor
-        );
-        
-        // ... rest of setup
-    }
-}
-```
+For more complex customizations, you can edit `src/main.rs`:
+- Add new terrain types
+- Implement custom fuel types
+- Modify visual effects
+- Add additional UI elements
 
 ## Known Limitations
 
 - Cannot run in headless/CI environments (requires display system)
 - No ember particle visualization (elements only)
-- Simplified terrain rendering (flat plane, not actual elevation mesh)
 - Water suppression droplets not visualized (effects visible on fuel elements)
 
 ## Future Enhancements
@@ -160,7 +200,8 @@ Potential improvements for the GUI demo:
 
 - [ ] Particle system for ember visualization
 - [ ] Smoke plume rendering
-- [ ] 3D terrain mesh with elevation
+- [x] 3D terrain mesh with elevation ✅ **IMPLEMENTED**
+- [x] Customizable simulation parameters ✅ **IMPLEMENTED**
 - [ ] More detailed fire effects (flames, heat distortion)
 - [ ] Save/load simulation state
 - [ ] Recording/playback functionality
