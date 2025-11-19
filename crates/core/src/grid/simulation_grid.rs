@@ -431,23 +431,29 @@ impl SimulationGrid {
         }
     }
 
-    /// Update atmospheric diffusion (parallel)
+    /// Update atmospheric diffusion (parallel, active cells only)
     pub fn update_diffusion(&mut self, dt: f32) {
         let diffusion_coefficient = 0.00002; // m²/s for heat in air
         let dx2 = self.cell_size * self.cell_size;
         let diffusion_factor = diffusion_coefficient * dt / dx2;
 
-        // Parallel diffusion calculation
+        // Parallel diffusion calculation (only active cells for performance)
         let temp_updates: Vec<(usize, f32)> = self
             .cells
             .par_iter()
             .enumerate()
+            .filter(|(_, cell)| cell.is_active) // Skip inactive cells - major performance win
             .flat_map(|(idx, cell)| {
                 let iz = idx / (self.ny * self.nx);
                 let iy = (idx % (self.ny * self.nx)) / self.nx;
                 let ix = idx % self.nx;
 
                 let mut updates = Vec::new();
+
+                // Early termination if temperature near ambient
+                if (cell.temperature - self.ambient_temperature).abs() < 1.0 {
+                    return updates;
+                }
 
                 // 6-neighbor stencil for diffusion
                 let mut laplacian = 0.0;
@@ -502,7 +508,7 @@ impl SimulationGrid {
             })
             .collect();
 
-        // Apply updates
+        // Apply updates (batched for cache locality)
         for (idx, new_temp) in temp_updates {
             self.cells[idx].temperature = new_temp;
         }

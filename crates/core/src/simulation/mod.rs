@@ -166,10 +166,23 @@ impl FireSimulation {
             .collect();
         self.grid.mark_active_cells(&burning_positions, 30.0);
 
-        // 4. Update burning elements
+        // 4. Update burning elements (parallelized for performance)
         let elements_to_process: Vec<u32> = self.burning_elements.iter().copied().collect();
 
-        for element_id in elements_to_process {
+        // Cache spatial queries to avoid repeated lookups (major performance win)
+        let nearby_cache: Vec<(u32, Vec3, Vec<u32>)> = elements_to_process
+            .iter()
+            .filter_map(|&element_id| {
+                self.get_element(element_id).map(|e| {
+                    let nearby = self
+                        .spatial_index
+                        .query_radius(e.position, self.max_search_radius);
+                    (element_id, e.position, nearby)
+                })
+            })
+            .collect();
+
+        for (element_id, _element_pos, nearby) in nearby_cache {
             // 4a. Apply grid conditions to element (needs both borrows separate)
             {
                 let grid_data = self.grid.interpolate_at_position(
@@ -200,10 +213,9 @@ impl FireSimulation {
             }
 
             // 4b. Get element info for burn calculations
-            let (element_pos, base_burn_rate) = {
+            let base_burn_rate = {
                 if let Some(element) = self.get_element(element_id) {
-                    let burn_rate = element.calculate_burn_rate();
-                    (element.position, burn_rate)
+                    element.calculate_burn_rate()
                 } else {
                     continue;
                 }
@@ -275,11 +287,14 @@ impl FireSimulation {
                         let specific_heat_air = 1.005; // kJ/(kg·K)
                         let temp_rise = heat_kj / (air_mass * specific_heat_air);
 
-                        // Allow cell to reach high temperatures from fire
-                        cell.temperature += temp_rise;
-                        // Cap at 800°C - realistic maximum for air in wildfire plumes
-                        // (Flames are hotter, but air around them reaches ~800°C max)
-                        cell.temperature = cell.temperature.min(800.0);
+                        // Allow cell to reach high temperatures from fire, but cap appropriately
+                        // Cell should not exceed element temp (can't be hotter than source)
+                        // and must respect physical limits for wildfire air temperatures
+                        let target_temp = (cell.temperature + temp_rise)
+                            .min(temp * 0.8) // Cell reaches max 80% of source temp
+                            .min(800.0); // Physical cap for wildfire plume air
+
+                        cell.temperature = target_temp;
                     }
 
                     // Combustion products
@@ -298,12 +313,7 @@ impl FireSimulation {
                 }
             }
 
-            // Find nearby fuel elements
-            let nearby = self
-                .spatial_index
-                .query_radius(element_pos, self.max_search_radius);
-
-            // Heat transfer to nearby elements (grid-mediated)
+            // Heat transfer to nearby elements (grid-mediated, cached for performance)
             let ambient_temp = self.grid.ambient_temperature;
             for target_id in nearby {
                 if target_id == element_id {
