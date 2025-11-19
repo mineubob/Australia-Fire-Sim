@@ -17,7 +17,7 @@ const EMISSIVITY: f32 = 0.95;
 
 /// Calculate radiant heat flux from source element to target element
 /// Uses full Stefan-Boltzmann law: σ * ε * (T_source^4 - T_target^4)
-pub fn calculate_radiation_flux(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
+pub(crate) fn calculate_radiation_flux(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
     if distance <= 0.0 || source.fuel_remaining <= 0.0 {
         return 0.0;
     }
@@ -53,7 +53,7 @@ pub fn calculate_radiation_flux(source: &FuelElement, target: &FuelElement, dist
 
 /// Calculate convection heat transfer for vertical spread
 /// Fire climbs faster due to hot gases rising and preheating fuel above
-pub fn calculate_convection_heat(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
+pub(crate) fn calculate_convection_heat(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
     let height_diff = target.position.z - source.position.z;
 
     // Only convection upward (hot air rises)
@@ -89,7 +89,7 @@ pub fn calculate_convection_heat(source: &FuelElement, target: &FuelElement, dis
 
 /// Wind direction multiplier for heat transfer
 /// 26x boost downwind at 10 m/s, 5% minimum upwind
-pub fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32 {
+pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32 {
     let wind_speed_ms = wind.magnitude();
 
     // No wind effect if wind is negligible
@@ -117,7 +117,7 @@ pub fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32 {
 
 /// Vertical spread factor - fire climbs much faster than it spreads horizontally
 /// 2.5x+ faster upward due to convection and flame tilt
-pub fn vertical_spread_factor(from: &FuelElement, to: &FuelElement) -> f32 {
+pub(crate) fn vertical_spread_factor(from: &FuelElement, to: &FuelElement) -> f32 {
     let height_diff = to.position.z - from.position.z;
 
     if height_diff > 0.0 {
@@ -136,7 +136,7 @@ pub fn vertical_spread_factor(from: &FuelElement, to: &FuelElement) -> f32 {
 /// Slope effects on fire spread
 /// Exponential uphill boost (flames tilt toward fuel ahead)
 /// Reduced downhill spread (gravity works against spread)
-pub fn slope_spread_multiplier(from: &FuelElement, to: &FuelElement) -> f32 {
+pub(crate) fn slope_spread_multiplier(from: &FuelElement, to: &FuelElement) -> f32 {
     let horizontal = ((to.position.x - from.position.x).powi(2)
         + (to.position.y - from.position.y).powi(2))
     .sqrt();
@@ -162,7 +162,7 @@ pub fn slope_spread_multiplier(from: &FuelElement, to: &FuelElement) -> f32 {
 
 /// Calculate total heat transfer from source to target element
 /// Combines radiation, convection, wind, vertical, and slope effects
-pub fn calculate_total_heat_transfer(
+pub(crate) fn calculate_total_heat_transfer(
     source: &FuelElement,
     target: &FuelElement,
     wind: Vec3,

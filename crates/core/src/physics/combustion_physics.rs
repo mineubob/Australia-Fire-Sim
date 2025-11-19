@@ -30,7 +30,7 @@ const SMOKE_PER_KG_FUEL: f32 = 0.02; // kg particulates per kg fuel
 
 /// Calculate Arrhenius reaction rate
 /// k = A × exp(-Ea / (R × T))
-pub fn arrhenius_rate(temperature_celsius: f32, activation_energy: f32) -> f32 {
+pub(crate) fn arrhenius_rate(temperature_celsius: f32, activation_energy: f32) -> f32 {
     let temp_kelvin = temperature_celsius + 273.15;
 
     if temp_kelvin <= 273.15 {
@@ -43,7 +43,7 @@ pub fn arrhenius_rate(temperature_celsius: f32, activation_energy: f32) -> f32 {
 
 /// Calculate ignition probability using Arrhenius kinetics
 /// Probabilistic ignition based on temperature and time
-pub fn calculate_ignition_probability(element: &FuelElement, dt: f32) -> f32 {
+pub(crate) fn calculate_ignition_probability(element: &FuelElement, dt: f32) -> f32 {
     if element.temperature < element.fuel.ignition_temperature {
         return 0.0;
     }
@@ -68,7 +68,7 @@ pub fn calculate_ignition_probability(element: &FuelElement, dt: f32) -> f32 {
 
 /// Calculate oxygen-limited combustion rate
 /// Returns fraction of maximum burn rate based on available O2
-pub fn oxygen_limited_burn_rate(fuel_burn_rate: f32, cell: &GridCell, cell_volume: f32) -> f32 {
+pub(crate) fn oxygen_limited_burn_rate(fuel_burn_rate: f32, cell: &GridCell, cell_volume: f32) -> f32 {
     // Oxygen required for stoichiometric combustion (kg/s)
     let o2_required = fuel_burn_rate * O2_PER_KG_FUEL;
 
@@ -192,7 +192,7 @@ pub(crate) fn calculate_radiation_bands(temperature_celsius: f32, emissivity: f3
 }
 
 /// Calculate flame color based on temperature
-pub fn flame_color_temperature(temperature_celsius: f32) -> [f32; 3] {
+pub(crate) fn flame_color_temperature(temperature_celsius: f32) -> [f32; 3] {
     // RGB color approximation based on blackbody radiation
 
     if temperature_celsius < 500.0 {
@@ -221,7 +221,7 @@ pub fn flame_color_temperature(temperature_celsius: f32) -> [f32; 3] {
 
 /// Calculate convective heat transfer coefficient (W/(m²·K))
 /// Based on natural convection for vertical surfaces
-pub fn natural_convection_coefficient(temp_diff: f32, height: f32) -> f32 {
+pub(crate) fn natural_convection_coefficient(temp_diff: f32, height: f32) -> f32 {
     if temp_diff <= 0.0 || height <= 0.0 {
         return 5.0; // Minimum forced convection
     }
@@ -251,7 +251,7 @@ pub fn natural_convection_coefficient(temp_diff: f32, height: f32) -> f32 {
 
 /// Calculate fire intensity using modified Byram's equation
 /// Accounts for oxygen limitation
-pub fn calculate_fire_intensity(
+pub(crate) fn calculate_fire_intensity(
     fuel_consumed_rate: f32,
     heat_content: f32,
     oxygen_factor: f32,

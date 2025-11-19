@@ -4,7 +4,6 @@ pub mod element_grid_coupling;
 pub mod simulation_grid;
 pub mod terrain;
 
-// Re-export main types
-pub use element_grid_coupling::*;
-pub use simulation_grid::*;
-pub use terrain::*;
+// Re-export only public types (not internal functions)
+pub use simulation_grid::{GridCell, SimulationGrid};
+pub use terrain::{TerrainCache, TerrainData};

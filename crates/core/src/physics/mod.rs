@@ -4,7 +4,5 @@ pub mod combustion_physics;
 pub mod element_heat_transfer;
 pub mod suppression_physics;
 
-// Re-export main types
-pub use combustion_physics::*;
-pub use element_heat_transfer::*;
-pub use suppression_physics::*;
+// Re-export only public types (not internal functions)
+pub use suppression_physics::{AircraftDrop, GroundSuppression, SuppressionAgent, SuppressionDroplet};
