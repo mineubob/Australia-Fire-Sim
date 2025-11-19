@@ -105,57 +105,57 @@ impl GridCell {
     }
 
     // Public accessor methods for FFI and external use
-    
+
     /// Get air temperature (°C)
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
-    
+
     /// Get wind velocity vector (m/s) - returns reference for zero-copy access
     pub fn wind(&self) -> &Vec3 {
         &self.wind
     }
-    
+
     /// Get relative humidity (0-1)
     pub fn humidity(&self) -> f32 {
         self.humidity
     }
-    
+
     /// Get oxygen concentration (kg/m³)
     pub fn oxygen(&self) -> f32 {
         self.oxygen
     }
-    
+
     /// Get CO concentration (kg/m³)
     pub fn carbon_monoxide(&self) -> f32 {
         self.carbon_monoxide
     }
-    
+
     /// Get CO2 concentration (kg/m³)
     pub fn carbon_dioxide(&self) -> f32 {
         self.carbon_dioxide
     }
-    
+
     /// Get smoke/particulate concentration (kg/m³)
     pub fn smoke_particles(&self) -> f32 {
         self.smoke_particles
     }
-    
+
     /// Get water vapor concentration (kg/m³)
     pub fn water_vapor(&self) -> f32 {
         self.water_vapor
     }
-    
+
     /// Get suppression agent concentration (kg/m³)
     pub fn suppression_agent(&self) -> f32 {
         self.suppression_agent
     }
-    
+
     /// Get cell elevation (m)
     pub fn elevation(&self) -> f32 {
         self.elevation
     }
-    
+
     /// Check if cell is active
     pub fn is_active(&self) -> bool {
         self.is_active
