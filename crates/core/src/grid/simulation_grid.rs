@@ -190,6 +190,9 @@ pub struct SimulationGrid {
     /// Last base wind used for updates (to skip redundant updates)
     pub(crate) last_base_wind: Vec3,
 
+    /// Track indices of currently active cells for efficient reset
+    active_cell_indices: Vec<usize>,
+
     /// Ambient conditions
     pub ambient_temperature: f32,
     pub ambient_wind: Vec3,
@@ -234,6 +237,7 @@ impl SimulationGrid {
             terrain,
             terrain_cache,
             last_base_wind: Vec3::zeros(),
+            active_cell_indices: Vec::new(),
             ambient_temperature: 20.0,
             ambient_wind: Vec3::zeros(),
             ambient_humidity: 0.4,
@@ -444,17 +448,53 @@ impl SimulationGrid {
 
     /// Update atmospheric diffusion (parallel, active cells only)
     pub fn update_diffusion(&mut self, dt: f32) {
-        let diffusion_coefficient = 0.00002; // m²/s for heat in air
+        // Enhanced diffusion coefficient to account for fire-driven convection
+        // Still air: 0.00002 m²/s, but fires create strong convective mixing
+        // Effective diffusivity can be 100-1000x higher near fires
+        let diffusion_coefficient = 0.002; // m²/s - 100x higher for fire convection
         let dx2 = self.cell_size * self.cell_size;
         let diffusion_factor = diffusion_coefficient * dt / dx2;
 
-        // Parallel diffusion calculation (only active cells for performance)
-        let temp_updates: Vec<(usize, f32)> = self
-            .cells
+        // Collect cells that need diffusion processing:
+        // 1. Active cells themselves (hot from fire)
+        // 2. Cells within 2 cells of active cells (to allow heat spreading beyond active zone)
+        // This fixes the fire spread stagnation bug!
+        let mut cells_to_process = std::collections::HashSet::new();
+
+        for &idx in &self.active_cell_indices {
+            let iz = idx / (self.ny * self.nx);
+            let iy = (idx % (self.ny * self.nx)) / self.nx;
+            let ix = idx % self.nx;
+
+            // Expand 2 cells in each direction for better heat propagation
+            for dz in -2..=2 {
+                for dy in -2..=2 {
+                    for dx in -2..=2 {
+                        let ni = ix as i32 + dx;
+                        let nj = iy as i32 + dy;
+                        let nk = iz as i32 + dz;
+
+                        if ni >= 0
+                            && ni < self.nx as i32
+                            && nj >= 0
+                            && nj < self.ny as i32
+                            && nk >= 0
+                            && nk < self.nz as i32
+                        {
+                            let n_idx = self.cell_index(ni as usize, nj as usize, nk as usize);
+                            cells_to_process.insert(n_idx);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Parallel diffusion calculation
+        let cells_vec: Vec<usize> = cells_to_process.into_iter().collect();
+        let temp_updates: Vec<(usize, f32)> = cells_vec
             .par_iter()
-            .enumerate()
-            .filter(|(_, cell)| cell.is_active) // Skip inactive cells - major performance win
-            .flat_map(|(idx, cell)| {
+            .flat_map(|&idx| {
+                let cell = &self.cells[idx];
                 let iz = idx / (self.ny * self.nx);
                 let iy = (idx % (self.ny * self.nx)) / self.nx;
                 let ix = idx % self.nx;
@@ -560,10 +600,12 @@ impl SimulationGrid {
 
     /// Mark cells near burning elements as active
     pub fn mark_active_cells(&mut self, active_positions: &[Vec3], activation_radius: f32) {
-        // Reset all cells to inactive
-        for cell in &mut self.cells {
-            cell.is_active = false;
+        // Reset only previously active cells to inactive (MAJOR PERFORMANCE WIN)
+        // Instead of iterating 36 million cells, only iterate ~1456 active cells
+        for &idx in &self.active_cell_indices {
+            self.cells[idx].is_active = false;
         }
+        self.active_cell_indices.clear();
 
         // Mark cells within radius of active positions
         let cells_radius = (activation_radius / self.cell_size).ceil() as i32;
@@ -588,7 +630,10 @@ impl SimulationGrid {
                             && iz < self.nz as i32
                         {
                             let idx = self.cell_index(ix as usize, iy as usize, iz as usize);
-                            self.cells[idx].is_active = true;
+                            if !self.cells[idx].is_active {
+                                self.cells[idx].is_active = true;
+                                self.active_cell_indices.push(idx);
+                            }
                         }
                     }
                 }

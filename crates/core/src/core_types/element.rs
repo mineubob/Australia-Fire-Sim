@@ -84,6 +84,13 @@ impl FuelElement {
         }
     }
 
+    /// Set temperature (for testing)
+    #[cfg(test)]
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = temperature;
+        self
+    }
+
     /// Apply heat to this fuel element (CRITICAL: moisture evaporation first)
     pub fn apply_heat(&mut self, heat_kj: f32, dt: f32, ambient_temperature: f32) {
         if heat_kj <= 0.0 || self.fuel_remaining <= 0.0 {

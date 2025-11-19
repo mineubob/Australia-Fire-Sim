@@ -8,8 +8,10 @@ use crate::grid::SimulationGrid;
 use crate::physics::combustion_physics::{calculate_combustion_products, oxygen_limited_burn_rate};
 use rayon::prelude::*;
 
+// TODO: Remove if not required - currently unused, was part of earlier grid coupling approach
+#[allow(dead_code)]
 /// Transfer heat from burning element to surrounding grid cells
-pub fn transfer_heat_to_grid(element: &FuelElement, grid: &mut SimulationGrid, dt: f32) {
+pub(crate) fn transfer_heat_to_grid(element: &FuelElement, grid: &mut SimulationGrid, dt: f32) {
     if !element.ignited || element.fuel_remaining <= 0.0 {
         return;
     }
@@ -92,8 +94,10 @@ pub fn transfer_heat_to_grid(element: &FuelElement, grid: &mut SimulationGrid, d
     }
 }
 
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 /// Transfer combustion products from element to grid
-pub fn transfer_combustion_products_to_grid(
+pub(crate) fn transfer_combustion_products_to_grid(
     element: &FuelElement,
     fuel_consumed: f32,
     grid: &mut SimulationGrid,
@@ -128,7 +132,9 @@ pub fn transfer_combustion_products_to_grid(
 }
 
 /// Apply grid conditions to fuel element (wind, humidity, oxygen)
-pub fn apply_grid_to_element(element: &mut FuelElement, grid: &SimulationGrid) {
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
+pub(crate) fn apply_grid_to_element(element: &mut FuelElement, grid: &SimulationGrid) {
     let interpolated = grid.interpolate_at_position(element.position);
 
     // Update element's local conditions
@@ -153,7 +159,7 @@ pub fn apply_grid_to_element(element: &mut FuelElement, grid: &SimulationGrid) {
 }
 
 /// Calculate oxygen-limited burn rate for element based on cell oxygen
-pub fn get_oxygen_limited_burn_rate(
+pub(crate) fn get_oxygen_limited_burn_rate(
     element: &FuelElement,
     base_burn_rate: f32,
     grid: &SimulationGrid,
@@ -167,7 +173,9 @@ pub fn get_oxygen_limited_burn_rate(
 }
 
 /// Calculate buoyancy force on element from grid temperature gradient
-pub fn calculate_buoyancy_on_element(element: &FuelElement, grid: &SimulationGrid) -> Vec3 {
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
+pub(crate) fn calculate_buoyancy_on_element(element: &FuelElement, grid: &SimulationGrid) -> Vec3 {
     let pos = element.position;
     let cell_size = grid.cell_size;
 
@@ -189,7 +197,9 @@ pub fn calculate_buoyancy_on_element(element: &FuelElement, grid: &SimulationGri
 }
 
 /// Interpolate wind velocity at element position
-pub fn get_wind_at_element(element: &FuelElement, grid: &SimulationGrid) -> Vec3 {
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
+pub(crate) fn get_wind_at_element(element: &FuelElement, grid: &SimulationGrid) -> Vec3 {
     let interpolated = grid.interpolate_at_position(element.position);
     interpolated.wind
 }
@@ -197,7 +207,7 @@ pub fn get_wind_at_element(element: &FuelElement, grid: &SimulationGrid) -> Vec3
 /// Update grid wind field based on terrain and base wind
 /// Uses precomputed terrain cache for performance
 /// Parallelized for multi-core systems
-pub fn update_wind_field(grid: &mut SimulationGrid, base_wind: Vec3, _dt: f32) {
+pub(crate) fn update_wind_field(grid: &mut SimulationGrid, base_wind: Vec3, _dt: f32) {
     // Skip update if wind hasn't changed significantly
     let wind_delta = (base_wind - grid.last_base_wind).norm();
     if wind_delta < 0.1 {
@@ -254,7 +264,7 @@ pub fn update_wind_field(grid: &mut SimulationGrid, base_wind: Vec3, _dt: f32) {
 }
 
 /// Simulate smoke/heat plume rising from fire
-pub fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &[Vec3], dt: f32) {
+pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &[Vec3], dt: f32) {
     // For each burning element position, create upward transport of heat and smoke
     for pos in source_positions {
         if let Some(source_cell) = grid.cell_at_position(*pos) {
