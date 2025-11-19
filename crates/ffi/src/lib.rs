@@ -11,6 +11,23 @@ static SIMULATIONS: LazyLock<Mutex<HashMap<usize, Arc<RwLock<FireSimulation>>>>>
 static mut NEXT_SIM_ID: usize = 1;
 
 // ============================================================================
+// FFI ERROR CODES FOR C++ INTEGRATION
+// ============================================================================
+
+/// Success code
+pub const FIRE_SIM_SUCCESS: i32 = 0;
+/// Invalid simulation ID
+pub const FIRE_SIM_INVALID_ID: i32 = -1;
+/// Null pointer passed
+pub const FIRE_SIM_NULL_POINTER: i32 = -2;
+/// Invalid fuel type
+pub const FIRE_SIM_INVALID_FUEL: i32 = -3;
+/// Invalid terrain type
+pub const FIRE_SIM_INVALID_TERRAIN: i32 = -4;
+/// Lock error (internal)
+pub const FIRE_SIM_LOCK_ERROR: i32 = -5;
+
+// ============================================================================
 // ULTRA-REALISTIC FIRE SIMULATION FFI
 // ============================================================================
 
@@ -56,13 +73,38 @@ pub struct GridCellVisual {
 }
 
 /// Create a new ultra-realistic fire simulation
+///
+/// # Parameters
+/// - `width`: World width in meters
+/// - `height`: World height in meters
+/// - `grid_cell_size`: Grid cell size in meters (typically 2-5m)
+/// - `terrain_type`: 0=flat, 1=single_hill, 2=valley
+/// - `out_sim_id`: Pointer to receive simulation ID
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_sim_id` set
+/// - `FIRE_SIM_INVALID_TERRAIN` (-4) if terrain_type is invalid
+/// - `FIRE_SIM_NULL_POINTER` (-2) if out_sim_id is null
+/// - `FIRE_SIM_LOCK_ERROR` (-5) if internal lock fails
+///
+/// # Safety
+/// `out_sim_id` must be a valid, non-null pointer
 #[no_mangle]
-pub extern "C" fn fire_sim_create(
+pub unsafe extern "C" fn fire_sim_create(
     width: f32,
     height: f32,
     grid_cell_size: f32,
-    terrain_type: u8, // 0=flat, 1=single_hill, 2=valley
-) -> usize {
+    terrain_type: u8,
+    out_sim_id: *mut usize,
+) -> i32 {
+    if out_sim_id.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    if terrain_type > 2 {
+        return FIRE_SIM_INVALID_TERRAIN;
+    }
+
     let terrain = match terrain_type {
         1 => TerrainData::single_hill(width, height, 5.0, 0.0, 100.0, width * 0.2),
         2 => TerrainData::valley_between_hills(width, height, 5.0, 0.0, 80.0),
@@ -72,35 +114,70 @@ pub extern "C" fn fire_sim_create(
     let sim = FireSimulation::new(grid_cell_size, terrain);
     let sim_arc = Arc::new(RwLock::new(sim));
 
-    unsafe {
-        let id = NEXT_SIM_ID;
-        NEXT_SIM_ID += 1;
+    let id = NEXT_SIM_ID;
+    NEXT_SIM_ID += 1;
 
-        if let Ok(mut sims) = SIMULATIONS.lock() {
+    match SIMULATIONS.lock() {
+        Ok(mut sims) => {
             sims.insert(id, sim_arc);
+            *out_sim_id = id;
+            FIRE_SIM_SUCCESS
         }
-
-        id
+        Err(_) => FIRE_SIM_LOCK_ERROR,
     }
 }
 
 /// Destroy an ultra-realistic simulation
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_LOCK_ERROR` (-5) if internal lock fails
 #[no_mangle]
-pub extern "C" fn fire_sim_destroy(sim_id: usize) {
-    if let Ok(mut sims) = SIMULATIONS.lock() {
-        sims.remove(&sim_id);
+pub extern "C" fn fire_sim_destroy(sim_id: usize) -> i32 {
+    match SIMULATIONS.lock() {
+        Ok(mut sims) => {
+            if sims.remove(&sim_id).is_some() {
+                FIRE_SIM_SUCCESS
+            } else {
+                FIRE_SIM_INVALID_ID
+            }
+        }
+        Err(_) => FIRE_SIM_LOCK_ERROR,
     }
 }
 
 /// Update the ultra-realistic simulation
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
 #[no_mangle]
-pub extern "C" fn fire_sim_update(sim_id: usize, dt: f32) {
-    with_fire_sim_write(&sim_id, |sim| sim.update(dt));
+pub extern "C" fn fire_sim_update(sim_id: usize, dt: f32) -> i32 {
+    match with_fire_sim_write(&sim_id, |sim| sim.update(dt)) {
+        Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
 }
 
 /// Add a fuel element to ultra simulation
+///
+/// # Parameters
+/// - `fuel_type`: Fuel type ID (0-7)
+/// - `part_type`: Fuel part type (0-7)
+/// - `parent_id`: Parent element ID, or -1 for none
+/// - `out_element_id`: Pointer to receive new element ID
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_element_id` set
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_INVALID_FUEL` (-3) if fuel_type is invalid
+/// - `FIRE_SIM_NULL_POINTER` (-2) if out_element_id is null
+///
+/// # Safety
+/// `out_element_id` must be a valid, non-null pointer
 #[no_mangle]
-pub extern "C" fn fire_sim_add_fuel(
+pub unsafe extern "C" fn fire_sim_add_fuel(
     sim_id: usize,
     x: f32,
     y: f32,
@@ -109,8 +186,17 @@ pub extern "C" fn fire_sim_add_fuel(
     part_type: u8,
     mass: f32,
     parent_id: i32,
-) -> u32 {
-    with_fire_sim_write(&sim_id, |sim| {
+    out_element_id: *mut u32,
+) -> i32 {
+    if out_element_id.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    if fuel_type > 7 {
+        return FIRE_SIM_INVALID_FUEL;
+    }
+
+    match with_fire_sim_write(&sim_id, |sim| {
         let position = Vec3::new(x, y, z);
         let fuel = Fuel::from_id(fuel_type).unwrap_or_else(Fuel::dry_grass);
 
@@ -132,23 +218,67 @@ pub extern "C" fn fire_sim_add_fuel(
         };
 
         sim.add_fuel_element(position, fuel, mass, part, parent)
-    })
-    .unwrap_or(0)
+    }) {
+        Some(id) => {
+            *out_element_id = id;
+            FIRE_SIM_SUCCESS
+        }
+        None => FIRE_SIM_INVALID_ID,
+    }
 }
 
 /// Ignite a fuel element in ultra simulation
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
 #[no_mangle]
-pub extern "C" fn fire_sim_ignite(sim_id: usize, element_id: u32, initial_temp: f32) {
-    with_fire_sim_write(&sim_id, |sim| sim.ignite_element(element_id, initial_temp));
+pub extern "C" fn fire_sim_ignite(sim_id: usize, element_id: u32, initial_temp: f32) -> i32 {
+    match with_fire_sim_write(&sim_id, |sim| sim.ignite_element(element_id, initial_temp)) {
+        Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
 }
 
 /// Query elevation at world position
+///
+/// # Parameters
+/// - `out_elevation`: Pointer to receive elevation value
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_elevation` set
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_NULL_POINTER` (-2) if out_elevation is null
+///
+/// # Safety
+/// `out_elevation` must be a valid, non-null pointer
 #[no_mangle]
-pub extern "C" fn fire_sim_get_elevation(sim_id: usize, x: f32, y: f32) -> f32 {
-    with_fire_sim_read(&sim_id, |sim| sim.grid.terrain.elevation_at(x, y)).unwrap_or(0.0)
+pub unsafe extern "C" fn fire_sim_get_elevation(
+    sim_id: usize,
+    x: f32,
+    y: f32,
+    out_elevation: *mut f32,
+) -> i32 {
+    if out_elevation.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    match with_fire_sim_read(&sim_id, |sim| sim.grid.terrain.elevation_at(x, y)) {
+        Some(elev) => {
+            *out_elevation = elev;
+            FIRE_SIM_SUCCESS
+        }
+        None => FIRE_SIM_INVALID_ID,
+    }
 }
 
 /// Get grid cell state at world position
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_cell` populated
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist or cell not found
+/// - `FIRE_SIM_NULL_POINTER` (-2) if out_cell is null
+///
 /// # Safety
 /// `out_cell` must be a valid, non-null pointer
 #[no_mangle]
@@ -158,8 +288,12 @@ pub unsafe extern "C" fn fire_sim_get_cell(
     y: f32,
     z: f32,
     out_cell: *mut GridCellVisual,
-) -> bool {
-    with_fire_sim_read(&sim_id, |sim| {
+) -> i32 {
+    if out_cell.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    match with_fire_sim_read(&sim_id, |sim| {
         let pos = Vec3::new(x, y, z);
         if let Some(cell) = sim.get_cell_at_position(pos) {
             (*out_cell).temperature = cell.temperature;
@@ -172,13 +306,18 @@ pub unsafe extern "C" fn fire_sim_get_cell(
             (*out_cell).suppression_agent = cell.suppression_agent;
             return true;
         }
-
         false
-    })
-    .unwrap_or(false)
+    }) {
+        Some(true) => FIRE_SIM_SUCCESS,
+        _ => FIRE_SIM_INVALID_ID,
+    }
 }
 
 /// Add water suppression droplet
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
 #[no_mangle]
 pub extern "C" fn fire_sim_add_water_drop(
     sim_id: usize,
@@ -189,8 +328,8 @@ pub extern "C" fn fire_sim_add_water_drop(
     vy: f32,
     vz: f32,
     mass: f32,
-) {
-    with_fire_sim_write(&sim_id, |sim| {
+) -> i32 {
+    match with_fire_sim_write(&sim_id, |sim| {
         let droplet = SuppressionDroplet::new(
             Vec3::new(x, y, z),
             Vec3::new(vx, vy, vz),
@@ -198,10 +337,19 @@ pub extern "C" fn fire_sim_add_water_drop(
             SuppressionAgent::Water,
         );
         sim.add_suppression_droplet(droplet);
-    });
+    }) {
+        Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
 }
 
 /// Get ultra simulation statistics
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success, with all pointers populated
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_NULL_POINTER` (-2) if any pointer is null
+///
 /// # Safety
 /// All pointer parameters must be valid, non-null pointers
 #[no_mangle]
@@ -212,14 +360,25 @@ pub unsafe extern "C" fn fire_sim_get_stats(
     out_active_cells: *mut u32,
     out_total_cells: *mut u32,
     out_fuel_consumed: *mut f32,
-) -> bool {
-    with_fire_sim_read(&sim_id, |sim| {
+) -> i32 {
+    if out_burning.is_null()
+        || out_total.is_null()
+        || out_active_cells.is_null()
+        || out_total_cells.is_null()
+        || out_fuel_consumed.is_null()
+    {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    match with_fire_sim_read(&sim_id, |sim| {
         let stats = sim.get_stats();
         *out_burning = stats.burning_elements as u32;
         *out_total = stats.total_elements as u32;
         *out_active_cells = stats.active_cells as u32;
         *out_total_cells = stats.total_cells as u32;
         *out_fuel_consumed = stats.total_fuel_consumed;
-    })
-    .is_some()
+    }) {
+        Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
 }
