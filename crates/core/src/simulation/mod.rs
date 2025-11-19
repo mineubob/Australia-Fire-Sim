@@ -335,7 +335,9 @@ impl FireSimulation {
                 // Now mutably borrow the target
                 if let Some(target) = self.get_element_mut(target_id) {
                     if cell_temp > target.temperature {
-                        let heat_transfer = (cell_temp - target.temperature) * 10.0 * dt;
+                        // Increased heat transfer coefficient for better fire spread
+                        // Grid cells heated to 800°C need to effectively ignite nearby fuel
+                        let heat_transfer = (cell_temp - target.temperature) * 50.0 * dt;
                         target.apply_heat(heat_transfer, dt, ambient_temp);
 
                         // Check for ignition
