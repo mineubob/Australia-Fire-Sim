@@ -18,7 +18,7 @@ const R_UNIVERSAL: f32 = 8.314;
 #[allow(dead_code)]
 /// Arrhenius parameters for wood combustion
 const ACTIVATION_ENERGY_WOOD: f32 = 140000.0; // J/mol (typical for cellulose)
-// TODO: Remove if not required - currently unused
+                                              // TODO: Remove if not required - currently unused
 #[allow(dead_code)]
 const PRE_EXPONENTIAL_FACTOR: f32 = 1e8; // 1/s
 
@@ -78,7 +78,11 @@ pub(crate) fn calculate_ignition_probability(element: &FuelElement, dt: f32) -> 
 
 /// Calculate oxygen-limited combustion rate
 /// Returns fraction of maximum burn rate based on available O2
-pub(crate) fn oxygen_limited_burn_rate(fuel_burn_rate: f32, cell: &GridCell, cell_volume: f32) -> f32 {
+pub(crate) fn oxygen_limited_burn_rate(
+    fuel_burn_rate: f32,
+    cell: &GridCell,
+    cell_volume: f32,
+) -> f32 {
     // Oxygen required for stoichiometric combustion (kg/s)
     let o2_required = fuel_burn_rate * O2_PER_KG_FUEL;
 
@@ -171,7 +175,10 @@ pub(crate) struct RadiationBands {
 
 // TODO: Remove if not required - currently unused
 #[allow(dead_code)]
-pub(crate) fn calculate_radiation_bands(temperature_celsius: f32, emissivity: f32) -> RadiationBands {
+pub(crate) fn calculate_radiation_bands(
+    temperature_celsius: f32,
+    emissivity: f32,
+) -> RadiationBands {
     const STEFAN_BOLTZMANN: f32 = 5.67e-8;
 
     let temp_kelvin = temperature_celsius + 273.15;

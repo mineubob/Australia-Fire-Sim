@@ -17,7 +17,11 @@ const EMISSIVITY: f32 = 0.95;
 
 /// Calculate radiant heat flux from source element to target element
 /// Uses full Stefan-Boltzmann law: σ * ε * (T_source^4 - T_target^4)
-pub(crate) fn calculate_radiation_flux(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
+pub(crate) fn calculate_radiation_flux(
+    source: &FuelElement,
+    target: &FuelElement,
+    distance: f32,
+) -> f32 {
     if distance <= 0.0 || source.fuel_remaining <= 0.0 {
         return 0.0;
     }
@@ -53,7 +57,11 @@ pub(crate) fn calculate_radiation_flux(source: &FuelElement, target: &FuelElemen
 
 /// Calculate convection heat transfer for vertical spread
 /// Fire climbs faster due to hot gases rising and preheating fuel above
-pub(crate) fn calculate_convection_heat(source: &FuelElement, target: &FuelElement, distance: f32) -> f32 {
+pub(crate) fn calculate_convection_heat(
+    source: &FuelElement,
+    target: &FuelElement,
+    distance: f32,
+) -> f32 {
     let height_diff = target.position.z - source.position.z;
 
     // Only convection upward (hot air rises)
