@@ -936,6 +936,10 @@ fn test_ffdi_calibration() {
 
 - **Examples / Tips**: When running commands, prefer options that produce full logs; for example, `git --no-pager log` or `cargo test -- --nocapture`, and always prefer to inspect the full raw logs rather than a shortened summary.
 
+- **Validate Rust code**: Before submitting any code changes, AI agents MUST validate Rust code using the following commands to ensure correctness and formatting:
+    - Run `cargo clippy --all-targets --all-features -- -D warnings` to treat all clippy warnings as errors and catch potential issues.
+    - Run `cargo fmt --all -v --check` to verify formatting matches project style. For a quick automated fix, `cargo fmt --all -v` may be used instead (but a check should be performed before finalizing changes).
+
 ### References Used
 
 - **Rothermel Fire Spread Model** (1972) - USDA Forest Service Research Paper INT-115
