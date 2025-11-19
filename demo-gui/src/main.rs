@@ -1148,7 +1148,9 @@ fn update_camera_controls(
     mut query: Query<&mut Transform, With<MainCamera>>,
     time: Res<Time>,
 ) {
-    let mut transform = query.single_mut();
+    let Ok(mut transform) = query.get_single_mut() else {
+        return;
+    };
     let speed = 50.0 * time.delta_seconds();
     let rotation_speed = 1.0 * time.delta_seconds();
     
