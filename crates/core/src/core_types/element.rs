@@ -37,21 +37,21 @@ pub struct FuelElement {
     pub position: Vec3, // World position in meters
     pub fuel: Fuel,     // Comprehensive fuel type with all properties
 
-    // Thermal state
-    pub temperature: f32,       // Current temperature (°C)
-    pub moisture_fraction: f32, // 0-1, calculated from weather
-    pub fuel_remaining: f32,    // kg
-    pub ignited: bool,
-    pub flame_height: f32, // meters (Byram's formula)
+    // Thermal state (accessible within crate only)
+    pub(crate) temperature: f32,       // Current temperature (°C)
+    pub(crate) moisture_fraction: f32, // 0-1, calculated from weather
+    pub(crate) fuel_remaining: f32,    // kg
+    pub(crate) ignited: bool,
+    pub(crate) flame_height: f32, // meters (Byram's formula)
 
     // Structural relationships
     pub parent_id: Option<u32>, // Parent structure/tree ID
     pub part_type: FuelPart,    // What kind of fuel part
 
     // Spatial context
-    pub elevation: f32,      // Height above ground
-    pub slope_angle: f32,    // Local terrain slope (degrees)
-    pub neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
+    pub(crate) elevation: f32,      // Height above ground
+    pub(crate) slope_angle: f32,    // Local terrain slope (degrees)
+    pub(crate) neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
 }
 
 impl FuelElement {

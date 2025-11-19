@@ -13,33 +13,33 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GridCell {
     /// Air temperature (°C)
-    pub temperature: f32,
+    pub(crate) temperature: f32,
     /// Wind velocity vector (m/s)
-    pub wind: Vec3,
+    pub(crate) wind: Vec3,
     /// Relative humidity (0-1)
-    pub humidity: f32,
+    pub(crate) humidity: f32,
     /// Oxygen concentration (kg/m³)
-    pub oxygen: f32,
+    pub(crate) oxygen: f32,
     /// CO concentration (kg/m³)
-    pub carbon_monoxide: f32,
+    pub(crate) carbon_monoxide: f32,
     /// CO2 concentration (kg/m³)
-    pub carbon_dioxide: f32,
+    pub(crate) carbon_dioxide: f32,
     /// Smoke/particulate concentration (kg/m³)
-    pub smoke_particles: f32,
+    pub(crate) smoke_particles: f32,
     /// Water vapor from combustion (kg/m³)
-    pub water_vapor: f32,
+    pub(crate) water_vapor: f32,
     /// Incident radiation flux (W/m²)
-    pub radiation_flux: f32,
+    pub(crate) radiation_flux: f32,
     /// Terrain elevation at cell center (m)
-    pub elevation: f32,
+    pub(crate) elevation: f32,
     /// Cell refinement level (0 = base, higher = finer)
-    pub refinement_level: u8,
+    pub(crate) refinement_level: u8,
     /// Is cell active (near fire or important)
-    pub is_active: bool,
+    pub(crate) is_active: bool,
     /// Pressure (Pa) - for buoyancy calculations
-    pub pressure: f32,
+    pub(crate) pressure: f32,
     /// Suppression agent concentration (kg/m³) - water/retardant/foam
-    pub suppression_agent: f32,
+    pub(crate) suppression_agent: f32,
 }
 
 impl GridCell {
@@ -102,6 +102,63 @@ impl GridCell {
     /// Reset cell to ambient conditions (for initialization/cleanup)
     pub fn reset_to_ambient(&mut self, elevation: f32) {
         *self = GridCell::new(elevation);
+    }
+
+    // Public accessor methods for FFI and external use
+    
+    /// Get air temperature (°C)
+    pub fn temperature(&self) -> f32 {
+        self.temperature
+    }
+    
+    /// Get wind velocity vector (m/s)
+    pub fn wind(&self) -> Vec3 {
+        self.wind
+    }
+    
+    /// Get relative humidity (0-1)
+    pub fn humidity(&self) -> f32 {
+        self.humidity
+    }
+    
+    /// Get oxygen concentration (kg/m³)
+    pub fn oxygen(&self) -> f32 {
+        self.oxygen
+    }
+    
+    /// Get CO concentration (kg/m³)
+    pub fn carbon_monoxide(&self) -> f32 {
+        self.carbon_monoxide
+    }
+    
+    /// Get CO2 concentration (kg/m³)
+    pub fn carbon_dioxide(&self) -> f32 {
+        self.carbon_dioxide
+    }
+    
+    /// Get smoke/particulate concentration (kg/m³)
+    pub fn smoke_particles(&self) -> f32 {
+        self.smoke_particles
+    }
+    
+    /// Get water vapor concentration (kg/m³)
+    pub fn water_vapor(&self) -> f32 {
+        self.water_vapor
+    }
+    
+    /// Get suppression agent concentration (kg/m³)
+    pub fn suppression_agent(&self) -> f32 {
+        self.suppression_agent
+    }
+    
+    /// Get cell elevation (m)
+    pub fn elevation(&self) -> f32 {
+        self.elevation
+    }
+    
+    /// Check if cell is active
+    pub fn is_active(&self) -> bool {
+        self.is_active
     }
 }
 

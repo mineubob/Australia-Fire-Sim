@@ -296,14 +296,15 @@ pub unsafe extern "C" fn fire_sim_get_cell(
     match with_fire_sim_read(&sim_id, |sim| {
         let pos = Vec3::new(x, y, z);
         if let Some(cell) = sim.get_cell_at_position(pos) {
-            (*out_cell).temperature = cell.temperature;
-            (*out_cell).wind_x = cell.wind.x;
-            (*out_cell).wind_y = cell.wind.y;
-            (*out_cell).wind_z = cell.wind.z;
-            (*out_cell).humidity = cell.humidity;
-            (*out_cell).oxygen = cell.oxygen;
-            (*out_cell).smoke_particles = cell.smoke_particles;
-            (*out_cell).suppression_agent = cell.suppression_agent;
+            (*out_cell).temperature = cell.temperature();
+            let wind = cell.wind();
+            (*out_cell).wind_x = wind.x;
+            (*out_cell).wind_y = wind.y;
+            (*out_cell).wind_z = wind.z;
+            (*out_cell).humidity = cell.humidity();
+            (*out_cell).oxygen = cell.oxygen();
+            (*out_cell).smoke_particles = cell.smoke_particles();
+            (*out_cell).suppression_agent = cell.suppression_agent();
             return true;
         }
         false

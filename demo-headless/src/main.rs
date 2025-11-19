@@ -227,7 +227,7 @@ fn main() {
                 .grid
                 .cells
                 .iter()
-                .map(|c| c.temperature)
+                .map(|c| c.temperature())
                 .fold(0.0f32, f32::max);
 
             // Calculate instantaneous FPS
@@ -320,10 +320,10 @@ fn main() {
             "  - Cell at ({:.0}, {:.0}, {:.0}m):",
             center_x, center_y, analysis_height
         );
-        println!("    Temperature: {:.1}°C", cell.temperature);
-        println!("    Oxygen: {:.3} kg/m³", cell.oxygen);
-        println!("    Smoke: {:.4} kg/m³", cell.smoke_particles);
-        println!("    CO2: {:.4} kg/m³", cell.carbon_dioxide);
+        println!("    Temperature: {:.1}°C", cell.temperature());
+        println!("    Oxygen: {:.3} kg/m³", cell.oxygen());
+        println!("    Smoke: {:.4} kg/m³", cell.smoke_particles());
+        println!("    CO2: {:.4} kg/m³", cell.carbon_dioxide());
     }
 
     println!("\n✓ Demo complete! The simulation demonstrated:");

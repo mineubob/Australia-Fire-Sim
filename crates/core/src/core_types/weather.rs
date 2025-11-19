@@ -728,12 +728,12 @@ pub struct WeatherSystem {
     /// - 6am: Coldest, highest humidity
     /// - 2pm: Hottest, lowest humidity
     /// - Smooth sinusoidal transitions between
-    time_of_day: f32,
+    pub(crate) time_of_day: f32,
 
     /// Day of year (1-365)
     ///
     /// Used for seasonal variations in temperature, humidity, wind, etc.
-    day_of_year: u16,
+    pub(crate) day_of_year: u16,
 
     /// Weather front progression (0-1)
     ///
@@ -741,25 +741,25 @@ pub struct WeatherSystem {
     /// - 0.0: No front, stable conditions
     /// - 0.5: Front passing, rapid changes
     /// - 1.0: Front passed, new stable conditions
-    weather_front_progress: f32,
+    pub(crate) weather_front_progress: f32,
 
     // Target values for smooth transitions
-    target_temperature: f32,
-    target_humidity: f32,
-    target_wind_speed: f32,
-    target_wind_direction: f32,
+    pub(crate) target_temperature: f32,
+    pub(crate) target_humidity: f32,
+    pub(crate) target_wind_speed: f32,
+    pub(crate) target_wind_direction: f32,
 
     /// Regional weather preset with seasonal patterns
-    preset: Option<WeatherPreset>,
+    pub(crate) preset: Option<WeatherPreset>,
 
     /// Active climate pattern (El Niño, La Niña, or Neutral)
-    climate_pattern: ClimatePattern,
+    pub climate_pattern: ClimatePattern,
 
     /// Whether a heatwave is occurring
-    is_heatwave: bool,
+    pub(crate) is_heatwave: bool,
 
     /// Days remaining in heatwave (if active)
-    heatwave_days_remaining: u8,
+    pub(crate) heatwave_days_remaining: u8,
 }
 
 impl WeatherSystem {

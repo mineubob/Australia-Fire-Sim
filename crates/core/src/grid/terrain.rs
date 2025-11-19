@@ -16,11 +16,11 @@ pub struct TerrainData {
     /// Grid resolution in meters per sample
     pub resolution: f32,
     /// Number of elevation samples in X direction
-    pub nx: usize,
+    pub(crate) nx: usize,
     /// Number of elevation samples in Y direction
-    pub ny: usize,
+    pub(crate) ny: usize,
     /// Elevation data in meters (row-major order: [y * nx + x])
-    pub elevations: Vec<f32>,
+    pub(crate) elevations: Vec<f32>,
     /// Minimum elevation in dataset
     pub min_elevation: f32,
     /// Maximum elevation in dataset
