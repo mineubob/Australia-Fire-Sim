@@ -104,6 +104,7 @@ fn main() {
             update_camera_controls,
             update_ui,
             handle_controls,
+            update_tooltip,
         ))
         .run();
 }
@@ -196,6 +197,12 @@ struct StatsText;
 
 #[derive(Component)]
 struct ControlsText;
+
+#[derive(Component)]
+struct TooltipText;
+
+#[derive(Component)]
+struct StatsPanel;
 
 /// Setup the 3D scene
 fn setup(
@@ -391,56 +398,119 @@ fn spawn_terrain(
 }
 
 fn setup_ui(commands: &mut Commands) {
-    // Root UI container
+    // Root UI container - fills entire screen
     commands
         .spawn(NodeBundle {
             style: Style {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
+                flex_direction: FlexDirection::Row,
                 justify_content: JustifyContent::SpaceBetween,
-                padding: UiRect::all(Val::Px(10.0)),
                 ..default()
             },
             ..default()
         })
         .with_children(|parent| {
-            // Title
-            parent.spawn(TextBundle::from_section(
-                "Australia Fire Simulation - Bevy Demo",
+            // Left side - Title and controls
+            parent.spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(10.0)),
+                    ..default()
+                },
+                ..default()
+            })
+            .with_children(|left| {
+                // Title
+                left.spawn(TextBundle::from_section(
+                    "Australia Fire Simulation",
+                    TextStyle {
+                        font_size: 28.0,
+                        color: Color::WHITE,
+                        ..default()
+                    },
+                ));
+                
+                // Controls text
+                left.spawn((
+                    TextBundle::from_section(
+                        "Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  W - Add Water Suppression\n  Arrow Keys - Camera\n  Hover - Element Details",
+                        TextStyle {
+                            font_size: 14.0,
+                            color: Color::srgb(0.6, 0.6, 0.6),
+                            ..default()
+                        },
+                    ),
+                    ControlsText,
+                ));
+            });
+            
+            // Right side - Stats panel with background box
+            parent.spawn((
+                NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(Val::Px(15.0)),
+                        margin: UiRect::all(Val::Px(10.0)),
+                        width: Val::Px(400.0),
+                        max_height: Val::Percent(90.0),
+                        ..default()
+                    },
+                    background_color: BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.85)),
+                    ..default()
+                },
+                StatsPanel,
+            ))
+            .with_children(|panel| {
+                // Stats heading
+                panel.spawn(TextBundle::from_section(
+                    "SIMULATION STATISTICS",
+                    TextStyle {
+                        font_size: 20.0,
+                        color: Color::srgb(1.0, 0.8, 0.2),
+                        ..default()
+                    },
+                ));
+                
+                // Stats text
+                panel.spawn((
+                    TextBundle::from_section(
+                        "Initializing...",
+                        TextStyle {
+                            font_size: 16.0,
+                            color: Color::srgb(0.9, 0.9, 0.9),
+                            ..default()
+                        },
+                    ),
+                    StatsText,
+                ));
+            });
+        });
+    
+    // Tooltip (hidden by default)
+    commands.spawn((
+        TextBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                padding: UiRect::all(Val::Px(8.0)),
+                ..default()
+            },
+            text: Text::from_section(
+                "",
                 TextStyle {
-                    font_size: 32.0,
+                    font_size: 14.0,
                     color: Color::WHITE,
                     ..default()
                 },
-            ));
-            
-            // Stats text
-            parent.spawn((
-                TextBundle::from_section(
-                    "Initializing...",
-                    TextStyle {
-                        font_size: 20.0,
-                        color: Color::srgb(0.8, 0.8, 0.8),
-                        ..default()
-                    },
-                ),
-                StatsText,
-            ));
-            
-            // Controls text
-            parent.spawn((
-                TextBundle::from_section(
-                    "Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  W - Add Water Suppression\n  Arrow Keys - Camera",
-                    TextStyle {
-                        font_size: 16.0,
-                        color: Color::srgb(0.6, 0.6, 0.6),
-                        ..default()
-                    },
-                ),
-                ControlsText,
-            ));
-        });
+            ),
+            background_color: BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
+            visibility: Visibility::Hidden,
+            ..default()
+        },
+        TooltipText,
+    ));
 }
 
 /// Update the simulation
@@ -532,11 +602,31 @@ fn update_ui(
     
     for mut text in query.iter_mut() {
         text.sections[0].value = format!(
-            "Time: {:.1}s | Burning: {} | Fuel Consumed: {:.1} kg | Max Temp: {:.0}°C\n\
-             Weather: {:.0}°C, {:.0}% RH, {:.1} m/s wind | FFDI: {:.1} ({})\n\
-             Status: {} | Speed: {:.1}x",
+            "Simulation Time: {:.1}s\n\
+             Status: {}\n\
+             Speed: {:.1}x\n\
+             \n\
+             FIRE STATUS\n\
+             Burning Elements: {}\n\
+             Total Elements: {}\n\
+             Fuel Consumed: {:.1} kg\n\
+             Max Temperature: {:.0}°C\n\
+             \n\
+             WEATHER CONDITIONS\n\
+             Temperature: {:.0}°C\n\
+             Humidity: {:.0}%\n\
+             Wind Speed: {:.1} m/s\n\
+             Wind Direction: {:.0}°\n\
+             Drought Factor: {:.1}\n\
+             \n\
+             FIRE DANGER\n\
+             FFDI: {:.1}\n\
+             Rating: {}",
             stats.simulation_time,
+            if sim_state.paused { "PAUSED" } else { "RUNNING" },
+            sim_state.speed,
             stats.burning_elements,
+            stats.total_elements,
             stats.total_fuel_consumed,
             sim_state.simulation.get_all_elements().iter()
                 .map(|e| e.temperature())
@@ -544,11 +634,105 @@ fn update_ui(
             weather.temperature,
             weather.humidity * 100.0,
             weather.wind_speed,
+            weather.wind_direction,
+            weather.drought_factor,
             weather.calculate_ffdi(),
             weather.fire_danger_rating(),
-            if sim_state.paused { "PAUSED" } else { "RUNNING" },
-            sim_state.speed,
         );
+    }
+}
+
+/// Update tooltip on hover
+fn update_tooltip(
+    windows: Query<&Window>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
+    sim_state: Res<SimulationState>,
+    mut tooltip_query: Query<(&mut Text, &mut Style, &mut Visibility), With<TooltipText>>,
+) {
+    let Ok(window) = windows.get_single() else {
+        return;
+    };
+    
+    let Some(cursor_position) = window.cursor_position() else {
+        // Hide tooltip if cursor not in window
+        for (_, _, mut visibility) in tooltip_query.iter_mut() {
+            *visibility = Visibility::Hidden;
+        }
+        return;
+    };
+    
+    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+        return;
+    };
+    
+    // Cast ray from camera through cursor position
+    let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
+        return;
+    };
+    
+    // Find closest fuel element intersecting with ray
+    let mut closest_element: Option<(u32, f32)> = None;
+    
+    for (transform, fuel_visual) in fuel_query.iter() {
+        let element_pos = transform.translation();
+        
+        // Simple sphere collision (2m radius for the cube)
+        let to_element = element_pos - ray.origin;
+        let ray_dir = *ray.direction; // Convert Dir3 to Vec3
+        let projection = to_element.dot(ray_dir);
+        
+        if projection > 0.0 {
+            let closest_point = ray.origin + ray_dir * projection;
+            let distance_to_ray = (element_pos - closest_point).length();
+            
+            if distance_to_ray < 2.0 { // Cube is 2x2x2
+                let distance = projection;
+                if closest_element.is_none() || distance < closest_element.unwrap().1 {
+                    closest_element = Some((fuel_visual.element_id, distance));
+                }
+            }
+        }
+    }
+    
+    // Update tooltip
+    for (mut text, mut style, mut visibility) in tooltip_query.iter_mut() {
+        if let Some((element_id, _)) = closest_element {
+            // Find the element in simulation
+            if let Some(element) = sim_state.simulation.get_all_elements()
+                .into_iter()
+                .find(|e| e.id == element_id)
+            {
+                // Show tooltip with element details
+                text.sections[0].value = format!(
+                    "Fuel Element #{}\n\
+                     Position: ({:.1}, {:.1}, {:.1})\n\
+                     Temperature: {:.0}°C\n\
+                     Fuel Remaining: {:.2} kg\n\
+                     Moisture: {:.1}%\n\
+                     Status: {}\n\
+                     Flame Height: {:.2} m",
+                    element.id,
+                    element.position.x,
+                    element.position.y,
+                    element.position.z,
+                    element.temperature(),
+                    element.fuel_remaining(),
+                    element.moisture_fraction() * 100.0,
+                    if element.is_ignited() { "BURNING" } else if element.fuel_remaining() < 0.1 { "CONSUMED" } else { "Unburned" },
+                    element.flame_height(),
+                );
+                
+                // Position tooltip near cursor
+                style.left = Val::Px(cursor_position.x + 15.0);
+                style.top = Val::Px(cursor_position.y + 15.0);
+                *visibility = Visibility::Visible;
+            } else {
+                *visibility = Visibility::Hidden;
+            }
+        } else {
+            *visibility = Visibility::Hidden;
+        }
     }
 }
 
