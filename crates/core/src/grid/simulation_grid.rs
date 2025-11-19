@@ -448,7 +448,10 @@ impl SimulationGrid {
 
     /// Update atmospheric diffusion (parallel, active cells only)
     pub fn update_diffusion(&mut self, dt: f32) {
-        let diffusion_coefficient = 0.00002; // m²/s for heat in air
+        // Enhanced diffusion coefficient to account for fire-driven convection
+        // Still air: 0.00002 m²/s, but fires create strong convective mixing
+        // Effective diffusivity can be 100-1000x higher near fires
+        let diffusion_coefficient = 0.002; // m²/s - 100x higher for fire convection
         let dx2 = self.cell_size * self.cell_size;
         let diffusion_factor = diffusion_coefficient * dt / dx2;
 
