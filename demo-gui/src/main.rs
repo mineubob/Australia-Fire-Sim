@@ -75,7 +75,7 @@ impl Default for SimulationState {
             for j in 0..elements_y {
                 let x = start_x + i as f32 * spacing;
                 let y = start_y + j as f32 * spacing;
-                let elevation = 0.0; // Will be set by terrain
+                let elevation = sim.get_terrain().elevation_at(x, y); // Will be set by terrain
                 
                 let fuel = Fuel::dry_grass();
                 sim.add_fuel_element(

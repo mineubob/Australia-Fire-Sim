@@ -506,6 +506,11 @@ impl FireSimulation {
             simulation_time: self.simulation_time,
         }
     }
+
+    /// Get terrain data
+    pub fn get_terrain(&self) -> &TerrainData {
+        &self.grid.terrain
+    }
 }
 
 /// Statistics for the simulation
