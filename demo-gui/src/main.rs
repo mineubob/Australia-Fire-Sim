@@ -83,9 +83,6 @@ impl FuelType {
 
 /// Main entry point
 fn main() {
-    // You can customize the configuration here
-    let config = DemoConfig::default();
-    
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -95,18 +92,79 @@ fn main() {
             }),
             ..default()
         }))
-        .insert_resource(config)
-        .init_resource::<SimulationState>()
-        .add_systems(Startup, setup)
+        .init_resource::<DemoConfig>()
+        .init_resource::<MenuState>()
+        .init_resource::<FpsCounter>()
+        .add_systems(Startup, setup_menu)
         .add_systems(Update, (
-            update_simulation,
-            update_fuel_visuals,
-            update_camera_controls,
-            update_ui,
-            handle_controls,
-            update_tooltip,
+            handle_menu_interactions,
+            update_config_display,
+        ).run_if(in_menu))
+        .add_systems(Update, (
+            init_simulation_system.run_if(should_start_simulation),
+            setup_scene.run_if(should_setup_scene),
+            update_simulation.run_if(simulation_running),
+            update_fuel_visuals.run_if(simulation_running),
+            update_camera_controls.run_if(simulation_running),
+            update_ui.run_if(simulation_running),
+            handle_controls.run_if(simulation_running),
+            update_tooltip.run_if(simulation_running),
+            update_fps.run_if(simulation_running),
         ))
         .run();
+}
+
+/// FPS counter resource
+#[derive(Resource)]
+struct FpsCounter {
+    frame_count: u32,
+    timer: f32,
+    fps: f32,
+}
+
+impl Default for FpsCounter {
+    fn default() -> Self {
+        Self {
+            frame_count: 0,
+            timer: 0.0,
+            fps: 60.0,
+        }
+    }
+}
+
+/// Menu state resource
+#[derive(Resource)]
+struct MenuState {
+    in_menu: bool,
+    simulation_initialized: bool,
+    scene_setup: bool,
+}
+
+impl Default for MenuState {
+    fn default() -> Self {
+        Self {
+            in_menu: true,
+            simulation_initialized: false,
+            scene_setup: false,
+        }
+    }
+}
+
+// Run conditions
+fn in_menu(menu_state: Res<MenuState>) -> bool {
+    menu_state.in_menu
+}
+
+fn should_start_simulation(menu_state: Res<MenuState>) -> bool {
+    !menu_state.in_menu && !menu_state.simulation_initialized
+}
+
+fn should_setup_scene(menu_state: Res<MenuState>) -> bool {
+    !menu_state.in_menu && menu_state.simulation_initialized && !menu_state.scene_setup
+}
+
+fn simulation_running(menu_state: Res<MenuState>) -> bool {
+    !menu_state.in_menu && menu_state.simulation_initialized && menu_state.scene_setup
 }
 
 /// Simulation state resource
@@ -203,6 +261,470 @@ struct TooltipText;
 
 #[derive(Component)]
 struct StatsPanel;
+
+#[derive(Component)]
+struct FpsText;
+
+/// Menu components
+#[derive(Component)]
+struct MenuUI;
+
+#[derive(Component)]
+struct StartButton;
+
+#[derive(Component, Clone, Copy)]
+enum ConfigButton {
+    IncrementMapWidth,
+    DecrementMapWidth,
+    IncrementMapHeight,
+    DecrementMapHeight,
+    IncrementElementsX,
+    DecrementElementsX,
+    IncrementElementsY,
+    DecrementElementsY,
+    IncrementFuelMass,
+    DecrementFuelMass,
+    IncrementInitialIgnitions,
+    DecrementInitialIgnitions,
+    IncrementSpacing,
+    DecrementSpacing,
+    IncrementTemperature,
+    DecrementTemperature,
+    IncrementHumidity,
+    DecrementHumidity,
+    IncrementWindSpeed,
+    DecrementWindSpeed,
+    IncrementWindDirection,
+    DecrementWindDirection,
+    IncrementDroughtFactor,
+    DecrementDroughtFactor,
+    CycleTerrainType,
+    CycleFuelType,
+}
+
+#[derive(Component)]
+struct ConfigValueText(ConfigButton);
+
+/// Setup menu UI
+fn setup_menu(mut commands: Commands) {
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            background_color: BackgroundColor(Color::srgb(0.1, 0.1, 0.15)),
+            ..default()
+        },
+        MenuUI,
+    ))
+    .with_children(|parent| {
+        // Title
+        parent.spawn(TextBundle::from_section(
+            "Australia Fire Simulation",
+            TextStyle {
+                font_size: 48.0,
+                color: Color::srgb(1.0, 0.8, 0.2),
+                ..default()
+            },
+        ));
+        
+        parent.spawn(TextBundle::from_section(
+            "Configure Simulation Parameters",
+            TextStyle {
+                font_size: 24.0,
+                color: Color::srgb(0.8, 0.8, 0.8),
+                ..default()
+            },
+        ).with_style(Style {
+            margin: UiRect::new(Val::Px(0.0), Val::Px(0.0), Val::Px(10.0), Val::Px(30.0)),
+            ..default()
+        }));
+        
+        // Scrollable config panel
+        parent.spawn(NodeBundle {
+            style: Style {
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(20.0)),
+                row_gap: Val::Px(10.0),
+                max_width: Val::Px(700.0),
+                max_height: Val::Px(400.0),
+                overflow: Overflow::clip_y(),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::srgba(0.2, 0.2, 0.25, 0.9)),
+            ..default()
+        })
+        .with_children(|config_panel| {
+            add_config_section(config_panel, "TERRAIN SETTINGS");
+            add_numeric_config(config_panel, "Map Width (m):", ConfigButton::DecrementMapWidth, ConfigButton::IncrementMapWidth);
+            add_numeric_config(config_panel, "Map Height (m):", ConfigButton::DecrementMapHeight, ConfigButton::IncrementMapHeight);
+            add_cycle_config(config_panel, "Terrain Type:", ConfigButton::CycleTerrainType);
+            
+            add_config_section(config_panel, "FIRE SETTINGS");
+            add_numeric_config(config_panel, "Grid Width:", ConfigButton::DecrementElementsX, ConfigButton::IncrementElementsX);
+            add_numeric_config(config_panel, "Grid Height:", ConfigButton::DecrementElementsY, ConfigButton::IncrementElementsY);
+            add_numeric_config(config_panel, "Fuel Mass (kg):", ConfigButton::DecrementFuelMass, ConfigButton::IncrementFuelMass);
+            add_cycle_config(config_panel, "Fuel Type:", ConfigButton::CycleFuelType);
+            add_numeric_config(config_panel, "Initial Ignitions:", ConfigButton::DecrementInitialIgnitions, ConfigButton::IncrementInitialIgnitions);
+            add_numeric_config(config_panel, "Spacing (m):", ConfigButton::DecrementSpacing, ConfigButton::IncrementSpacing);
+            
+            add_config_section(config_panel, "WEATHER SETTINGS");
+            add_numeric_config(config_panel, "Temperature (°C):", ConfigButton::DecrementTemperature, ConfigButton::IncrementTemperature);
+            add_numeric_config(config_panel, "Humidity (0-1):", ConfigButton::DecrementHumidity, ConfigButton::IncrementHumidity);
+            add_numeric_config(config_panel, "Wind Speed (m/s):", ConfigButton::DecrementWindSpeed, ConfigButton::IncrementWindSpeed);
+            add_numeric_config(config_panel, "Wind Direction (°):", ConfigButton::DecrementWindDirection, ConfigButton::IncrementWindDirection);
+            add_numeric_config(config_panel, "Drought Factor:", ConfigButton::DecrementDroughtFactor, ConfigButton::IncrementDroughtFactor);
+        });
+        
+        // START button
+        parent.spawn((
+            ButtonBundle {
+                style: Style {
+                    width: Val::Px(300.0),
+                    height: Val::Px(60.0),
+                    margin: UiRect::top(Val::Px(30.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::srgb(0.2, 0.6, 0.2)),
+                ..default()
+            },
+            StartButton,
+        ))
+        .with_children(|button| {
+            button.spawn(TextBundle::from_section(
+                "START SIMULATION",
+                TextStyle {
+                    font_size: 24.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            ));
+        });
+    });
+}
+
+fn add_config_section(parent: &mut ChildBuilder, title: &str) {
+    parent.spawn(TextBundle::from_section(
+        title,
+        TextStyle {
+            font_size: 20.0,
+            color: Color::srgb(1.0, 0.8, 0.2),
+            ..default()
+        },
+    ).with_style(Style {
+        margin: UiRect::top(Val::Px(10.0)),
+        ..default()
+    }));
+}
+
+fn add_numeric_config(parent: &mut ChildBuilder, label: &str, dec_button: ConfigButton, inc_button: ConfigButton) {
+    parent.spawn(NodeBundle {
+        style: Style {
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            width: Val::Percent(100.0),
+            ..default()
+        },
+        ..default()
+    })
+    .with_children(|row| {
+        row.spawn(TextBundle::from_section(
+            label,
+            TextStyle {
+                font_size: 16.0,
+                color: Color::srgb(0.9, 0.9, 0.9),
+                ..default()
+            },
+        ));
+        
+        row.spawn(NodeBundle {
+            style: Style {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(10.0),
+                ..default()
+            },
+            ..default()
+        })
+        .with_children(|controls| {
+            // Decrement button
+            controls.spawn((
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Px(30.0),
+                        height: Val::Px(30.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    background_color: BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
+                    ..default()
+                },
+                dec_button,
+            ))
+            .with_children(|btn| {
+                btn.spawn(TextBundle::from_section(
+                    "-",
+                    TextStyle {
+                        font_size: 20.0,
+                        color: Color::WHITE,
+                        ..default()
+                    },
+                ));
+            });
+            
+            // Value display
+            controls.spawn((
+                TextBundle::from_section(
+                    "0",
+                    TextStyle {
+                        font_size: 16.0,
+                        color: Color::srgb(0.7, 0.9, 1.0),
+                        ..default()
+                    },
+                ),
+                ConfigValueText(inc_button),
+            ));
+            
+            // Increment button
+            controls.spawn((
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Px(30.0),
+                        height: Val::Px(30.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    background_color: BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
+                    ..default()
+                },
+                inc_button,
+            ))
+            .with_children(|btn| {
+                btn.spawn(TextBundle::from_section(
+                    "+",
+                    TextStyle {
+                        font_size: 20.0,
+                        color: Color::WHITE,
+                        ..default()
+                    },
+                ));
+            });
+        });
+    });
+}
+
+fn add_cycle_config(parent: &mut ChildBuilder, label: &str, cycle_button: ConfigButton) {
+    parent.spawn(NodeBundle {
+        style: Style {
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            width: Val::Percent(100.0),
+            ..default()
+        },
+        ..default()
+    })
+    .with_children(|row| {
+        row.spawn(TextBundle::from_section(
+            label,
+            TextStyle {
+                font_size: 16.0,
+                color: Color::srgb(0.9, 0.9, 0.9),
+                ..default()
+            },
+        ));
+        
+        row.spawn((
+            ButtonBundle {
+                style: Style {
+                    padding: UiRect::all(Val::Px(8.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
+                ..default()
+            },
+            cycle_button,
+        ))
+        .with_children(|btn| {
+            btn.spawn((
+                TextBundle::from_section(
+                    "Value",
+                    TextStyle {
+                        font_size: 16.0,
+                        color: Color::srgb(0.7, 0.9, 1.0),
+                        ..default()
+                    },
+                ),
+                ConfigValueText(cycle_button),
+            ));
+        });
+    });
+}
+
+/// Handle menu button interactions
+fn handle_menu_interactions(
+    mut config: ResMut<DemoConfig>,
+    mut menu_state: ResMut<MenuState>,
+    mut interaction_query: Query<
+        (&Interaction, Option<&ConfigButton>, Option<&StartButton>, &mut BackgroundColor),
+        Changed<Interaction>,
+    >,
+    menu_query: Query<Entity, With<MenuUI>>,
+    mut commands: Commands,
+) {
+    for (interaction, config_button, start_button, mut color) in &mut interaction_query {
+        match *interaction {
+            Interaction::Pressed => {
+                if start_button.is_some() {
+                    // Hide menu
+                    for entity in menu_query.iter() {
+                        commands.entity(entity).despawn_recursive();
+                    }
+                    menu_state.in_menu = false;
+                } else if let Some(button) = config_button {
+                    // Update config based on button
+                    match button {
+                        ConfigButton::IncrementMapWidth => config.map_width += 10.0,
+                        ConfigButton::DecrementMapWidth => config.map_width = (config.map_width - 10.0).max(50.0),
+                        ConfigButton::IncrementMapHeight => config.map_height += 10.0,
+                        ConfigButton::DecrementMapHeight => config.map_height = (config.map_height - 10.0).max(50.0),
+                        ConfigButton::IncrementElementsX => config.elements_x += 1,
+                        ConfigButton::DecrementElementsX => config.elements_x = config.elements_x.saturating_sub(1).max(1),
+                        ConfigButton::IncrementElementsY => config.elements_y += 1,
+                        ConfigButton::DecrementElementsY => config.elements_y = config.elements_y.saturating_sub(1).max(1),
+                        ConfigButton::IncrementFuelMass => config.fuel_mass += 0.5,
+                        ConfigButton::DecrementFuelMass => config.fuel_mass = (config.fuel_mass - 0.5).max(0.5),
+                        ConfigButton::IncrementInitialIgnitions => config.initial_ignitions += 1,
+                        ConfigButton::DecrementInitialIgnitions => config.initial_ignitions = config.initial_ignitions.saturating_sub(1).max(1),
+                        ConfigButton::IncrementSpacing => config.spacing += 0.5,
+                        ConfigButton::DecrementSpacing => config.spacing = (config.spacing - 0.5).max(1.0),
+                        ConfigButton::IncrementTemperature => config.temperature += 1.0,
+                        ConfigButton::DecrementTemperature => config.temperature = (config.temperature - 1.0).max(0.0),
+                        ConfigButton::IncrementHumidity => config.humidity = (config.humidity + 0.01).min(1.0),
+                        ConfigButton::DecrementHumidity => config.humidity = (config.humidity - 0.01).max(0.0),
+                        ConfigButton::IncrementWindSpeed => config.wind_speed += 1.0,
+                        ConfigButton::DecrementWindSpeed => config.wind_speed = (config.wind_speed - 1.0).max(0.0),
+                        ConfigButton::IncrementWindDirection => config.wind_direction = (config.wind_direction + 15.0) % 360.0,
+                        ConfigButton::DecrementWindDirection => config.wind_direction = (config.wind_direction - 15.0 + 360.0) % 360.0,
+                        ConfigButton::IncrementDroughtFactor => config.drought_factor = (config.drought_factor + 0.5).min(20.0),
+                        ConfigButton::DecrementDroughtFactor => config.drought_factor = (config.drought_factor - 0.5).max(0.0),
+                        ConfigButton::CycleTerrainType => {
+                            config.terrain_type = match config.terrain_type {
+                                TerrainType::Flat => TerrainType::Hill,
+                                TerrainType::Hill => TerrainType::Valley,
+                                TerrainType::Valley => TerrainType::Flat,
+                            };
+                        }
+                        ConfigButton::CycleFuelType => {
+                            config.fuel_type = match config.fuel_type {
+                                FuelType::DryGrass => FuelType::EucalyptusStringybark,
+                                FuelType::EucalyptusStringybark => FuelType::EucalyptusSmoothBark,
+                                FuelType::EucalyptusSmoothBark => FuelType::Shrubland,
+                                FuelType::Shrubland => FuelType::DeadWood,
+                                FuelType::DeadWood => FuelType::DryGrass,
+                            };
+                        }
+                    }
+                }
+            }
+            Interaction::Hovered => {
+                if start_button.is_some() {
+                    *color = BackgroundColor(Color::srgb(0.25, 0.7, 0.25));
+                } else {
+                    *color = BackgroundColor(Color::srgb(0.5, 0.5, 0.5));
+                }
+            }
+            Interaction::None => {
+                if start_button.is_some() {
+                    *color = BackgroundColor(Color::srgb(0.2, 0.6, 0.2));
+                } else {
+                    *color = BackgroundColor(Color::srgb(0.4, 0.4, 0.4));
+                }
+            }
+        }
+    }
+}
+
+/// Update config value displays in menu
+fn update_config_display(
+    config: Res<DemoConfig>,
+    mut query: Query<(&mut Text, &ConfigValueText)>,
+) {
+    for (mut text, config_text) in query.iter_mut() {
+        text.sections[0].value = match config_text.0 {
+            ConfigButton::IncrementMapWidth | ConfigButton::DecrementMapWidth => 
+                format!("{:.0}", config.map_width),
+            ConfigButton::IncrementMapHeight | ConfigButton::DecrementMapHeight => 
+                format!("{:.0}", config.map_height),
+            ConfigButton::IncrementElementsX | ConfigButton::DecrementElementsX => 
+                format!("{}", config.elements_x),
+            ConfigButton::IncrementElementsY | ConfigButton::DecrementElementsY => 
+                format!("{}", config.elements_y),
+            ConfigButton::IncrementFuelMass | ConfigButton::DecrementFuelMass => 
+                format!("{:.1}", config.fuel_mass),
+            ConfigButton::IncrementInitialIgnitions | ConfigButton::DecrementInitialIgnitions => 
+                format!("{}", config.initial_ignitions),
+            ConfigButton::IncrementSpacing | ConfigButton::DecrementSpacing => 
+                format!("{:.1}", config.spacing),
+            ConfigButton::IncrementTemperature | ConfigButton::DecrementTemperature => 
+                format!("{:.0}", config.temperature),
+            ConfigButton::IncrementHumidity | ConfigButton::DecrementHumidity => 
+                format!("{:.2}", config.humidity),
+            ConfigButton::IncrementWindSpeed | ConfigButton::DecrementWindSpeed => 
+                format!("{:.0}", config.wind_speed),
+            ConfigButton::IncrementWindDirection | ConfigButton::DecrementWindDirection => 
+                format!("{:.0}", config.wind_direction),
+            ConfigButton::IncrementDroughtFactor | ConfigButton::DecrementDroughtFactor => 
+                format!("{:.1}", config.drought_factor),
+            ConfigButton::CycleTerrainType => match config.terrain_type {
+                TerrainType::Flat => "Flat".to_string(),
+                TerrainType::Hill => "Hill".to_string(),
+                TerrainType::Valley => "Valley".to_string(),
+            },
+            ConfigButton::CycleFuelType => match config.fuel_type {
+                FuelType::DryGrass => "Dry Grass".to_string(),
+                FuelType::EucalyptusStringybark => "Eucalyptus Stringybark".to_string(),
+                FuelType::EucalyptusSmoothBark => "Eucalyptus Smooth Bark".to_string(),
+                FuelType::Shrubland => "Shrubland".to_string(),
+                FuelType::DeadWood => "Dead Wood".to_string(),
+            },
+        };
+    }
+}
+
+/// Initialize simulation when transitioning from menu
+fn init_simulation_system(
+    mut commands: Commands,
+    mut menu_state: ResMut<MenuState>,
+) {
+    // Initialize simulation state
+    commands.init_resource::<SimulationState>();
+    menu_state.simulation_initialized = true;
+}
+
+/// Setup the 3D scene after simulation is initialized
+fn setup_scene(
+    commands: Commands,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<StandardMaterial>>,
+    sim_state: ResMut<SimulationState>,
+    mut menu_state: ResMut<MenuState>,
+) {
+    setup(commands, meshes, materials, sim_state);
+    menu_state.scene_setup = true;
+}
 
 /// Setup the 3D scene
 fn setup(
@@ -511,6 +1033,50 @@ fn setup_ui(commands: &mut Commands) {
         },
         TooltipText,
     ));
+    
+    // FPS counter (top-right corner)
+    commands.spawn((
+        TextBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                right: Val::Px(10.0),
+                top: Val::Px(10.0),
+                padding: UiRect::all(Val::Px(5.0)),
+                ..default()
+            },
+            text: Text::from_section(
+                "FPS: 60",
+                TextStyle {
+                    font_size: 16.0,
+                    color: Color::srgb(1.0, 1.0, 0.0),
+                    ..default()
+                },
+            ),
+            background_color: BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            ..default()
+        },
+        FpsText,
+    ));
+}
+
+/// Update FPS counter
+fn update_fps(
+    time: Res<Time>,
+    mut fps_counter: ResMut<FpsCounter>,
+    mut query: Query<&mut Text, With<FpsText>>,
+) {
+    fps_counter.frame_count += 1;
+    fps_counter.timer += time.delta_seconds();
+    
+    if fps_counter.timer >= 1.0 {
+        fps_counter.fps = fps_counter.frame_count as f32 / fps_counter.timer;
+        fps_counter.frame_count = 0;
+        fps_counter.timer = 0.0;
+        
+        for mut text in query.iter_mut() {
+            text.sections[0].value = format!("FPS: {:.0}", fps_counter.fps);
+        }
+    }
 }
 
 /// Update the simulation
