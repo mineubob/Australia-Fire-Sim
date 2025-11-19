@@ -6,6 +6,7 @@
 use crate::core_types::element::{FuelElement, Vec3};
 use crate::grid::SimulationGrid;
 use crate::physics::combustion_physics::{calculate_combustion_products, oxygen_limited_burn_rate};
+use rayon::prelude::*;
 
 /// Transfer heat from burning element to surrounding grid cells
 pub fn transfer_heat_to_grid(element: &FuelElement, grid: &mut SimulationGrid, dt: f32) {
@@ -194,20 +195,40 @@ pub fn get_wind_at_element(element: &FuelElement, grid: &SimulationGrid) -> Vec3
 }
 
 /// Update grid wind field based on terrain and base wind
+/// Uses precomputed terrain cache for performance
+/// Parallelized for multi-core systems
 pub fn update_wind_field(grid: &mut SimulationGrid, base_wind: Vec3, _dt: f32) {
-    // Wind modification by terrain (channeling, blocking, acceleration)
-    for iz in 0..grid.nz {
-        for iy in 0..grid.ny {
-            for ix in 0..grid.nx {
-                let x = ix as f32 * grid.cell_size + grid.cell_size / 2.0;
-                let y = iy as f32 * grid.cell_size + grid.cell_size / 2.0;
+    // Skip update if wind hasn't changed significantly
+    let wind_delta = (base_wind - grid.last_base_wind).norm();
+    if wind_delta < 0.1 {
+        return; // Wind barely changed, skip expensive update
+    }
+    grid.last_base_wind = base_wind;
 
-                let terrain_slope = grid.terrain.slope_at(x, y);
-                let terrain_aspect = grid.terrain.aspect_at(x, y);
+    // Wind modification by terrain (channeling, blocking, acceleration)
+    // Process in parallel for performance on large grids
+    let nx = grid.nx;
+    let ny = grid.ny;
+    let _nz = grid.nz;
+    let cell_size = grid.cell_size;
+    let _ambient_temp = grid.ambient_temperature;
+    let terrain_cache = &grid.terrain_cache;
+
+    // Parallel processing of grid cells
+    grid.cells
+        .par_chunks_mut(nx)
+        .enumerate()
+        .for_each(|(chunk_idx, chunk)| {
+            let iz = chunk_idx / ny;
+            let iy = chunk_idx % ny;
+
+            for (ix, cell) in chunk.iter_mut().enumerate() {
+                // Use cached terrain properties - eliminates expensive slope_at/aspect_at calls
+                let terrain_slope = terrain_cache.slope_at_grid(ix, iy);
+                let terrain_aspect = terrain_cache.aspect_at_grid(ix, iy);
 
                 // Wind speed increases with height above terrain
-                let cell = &grid.cells[grid.cell_index(ix, iy, iz)];
-                let height_above_terrain = (iz as f32 * grid.cell_size) - cell.elevation;
+                let height_above_terrain = (iz as f32 * cell_size) - cell.elevation;
                 let height_factor = if height_above_terrain > 0.0 {
                     1.0 + (height_above_terrain / 10.0).min(0.5)
                 } else {
@@ -217,7 +238,8 @@ pub fn update_wind_field(grid: &mut SimulationGrid, base_wind: Vec3, _dt: f32) {
                 // Terrain channeling effect
                 let wind_direction = base_wind.xy().normalize();
                 let terrain_aspect_rad = terrain_aspect.to_radians();
-                let aspect_vec = Vec3::new(terrain_aspect_rad.sin(), terrain_aspect_rad.cos(), 0.0);
+                let aspect_vec =
+                    Vec3::new(terrain_aspect_rad.sin(), terrain_aspect_rad.cos(), 0.0);
 
                 let alignment = wind_direction.dot(&aspect_vec.xy());
                 let channeling_factor = if terrain_slope > 15.0 {
@@ -227,13 +249,9 @@ pub fn update_wind_field(grid: &mut SimulationGrid, base_wind: Vec3, _dt: f32) {
                 };
 
                 // Apply factors
-                let modified_wind = base_wind * height_factor * channeling_factor;
-
-                let idx = grid.cell_index(ix, iy, iz);
-                grid.cells[idx].wind = modified_wind;
+                cell.wind = base_wind * height_factor * channeling_factor;
             }
-        }
-    }
+        });
 }
 
 /// Simulate smoke/heat plume rising from fire

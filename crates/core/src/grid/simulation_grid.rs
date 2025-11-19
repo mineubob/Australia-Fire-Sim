@@ -5,7 +5,7 @@
 //! elements interact with cells for extreme realism.
 
 use crate::core_types::element::Vec3;
-use crate::grid::TerrainData;
+use crate::grid::{TerrainCache, TerrainData};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -184,6 +184,12 @@ pub struct SimulationGrid {
     /// Terrain data for elevation
     pub terrain: TerrainData,
 
+    /// Precomputed terrain properties cache (slope/aspect)
+    pub terrain_cache: TerrainCache,
+
+    /// Last base wind used for updates (to skip redundant updates)
+    pub(crate) last_base_wind: Vec3,
+
     /// Ambient conditions
     pub ambient_temperature: f32,
     pub ambient_wind: Vec3,
@@ -213,6 +219,9 @@ impl SimulationGrid {
             }
         }
 
+        // Build terrain cache for fast slope/aspect lookups
+        let terrain_cache = terrain.build_cache(nx, ny, cell_size);
+
         SimulationGrid {
             width,
             height,
@@ -223,6 +232,8 @@ impl SimulationGrid {
             cell_size,
             cells,
             terrain,
+            terrain_cache,
+            last_base_wind: Vec3::zeros(),
             ambient_temperature: 20.0,
             ambient_wind: Vec3::zeros(),
             ambient_humidity: 0.4,

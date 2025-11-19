@@ -6,6 +6,34 @@
 use crate::core_types::element::Vec3;
 use serde::{Deserialize, Serialize};
 
+/// Precomputed terrain properties cache for performance
+/// Stores slope and aspect at each grid position to avoid runtime computation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TerrainCache {
+    /// Precomputed slope at each XY position (degrees)
+    pub slope: Vec<f32>,
+    /// Precomputed aspect at each XY position (degrees, 0-360)
+    pub aspect: Vec<f32>,
+    /// Number of samples in X direction
+    pub nx: usize,
+    /// Number of samples in Y direction
+    pub ny: usize,
+}
+
+impl TerrainCache {
+    /// Get cached slope at grid position
+    #[inline]
+    pub fn slope_at_grid(&self, ix: usize, iy: usize) -> f32 {
+        self.slope[iy * self.nx + ix]
+    }
+
+    /// Get cached aspect at grid position
+    #[inline]
+    pub fn aspect_at_grid(&self, ix: usize, iy: usize) -> f32 {
+        self.aspect[iy * self.nx + ix]
+    }
+}
+
 /// Terrain data structure holding elevation information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerrainData {
@@ -313,6 +341,31 @@ impl TerrainData {
 
         // Radiation proportional to cosine (Lambert's law)
         cos_angle.max(0.0)
+    }
+
+    /// Build terrain cache for fast slope/aspect lookups
+    /// Precomputes slope and aspect for every grid position
+    /// This is expensive but only done once at initialization
+    pub fn build_cache(&self, cache_nx: usize, cache_ny: usize, cell_size: f32) -> TerrainCache {
+        let mut slope = Vec::with_capacity(cache_nx * cache_ny);
+        let mut aspect = Vec::with_capacity(cache_nx * cache_ny);
+
+        for iy in 0..cache_ny {
+            for ix in 0..cache_nx {
+                let x = ix as f32 * cell_size + cell_size / 2.0;
+                let y = iy as f32 * cell_size + cell_size / 2.0;
+
+                slope.push(self.slope_at(x, y));
+                aspect.push(self.aspect_at(x, y));
+            }
+        }
+
+        TerrainCache {
+            slope,
+            aspect,
+            nx: cache_nx,
+            ny: cache_ny,
+        }
     }
 
     /// Get gradient vector at position (dz/dx, dz/dy, 1.0 normalized)
