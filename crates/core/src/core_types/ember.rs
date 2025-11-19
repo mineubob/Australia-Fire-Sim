@@ -1,4 +1,4 @@
-use crate::element::Vec3;
+use crate::core_types::element::Vec3;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 pub struct Ember {
     pub id: u32,
     pub position: Vec3,
-    pub velocity: Vec3,
-    pub temperature: f32,
-    pub mass: f32, // kg (0.0001 to 0.01)
-    pub source_fuel_type: u8,
+    pub(crate) velocity: Vec3,
+    pub(crate) temperature: f32,
+    pub(crate) mass: f32, // kg (0.0001 to 0.01)
+    pub(crate) source_fuel_type: u8,
 }
 
 impl Ember {

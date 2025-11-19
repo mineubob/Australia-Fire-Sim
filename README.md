@@ -77,57 +77,26 @@ fire-sim-3d/
 │       │   └── lib.rs         # C-compatible bindings
 │       ├── cbindgen.toml      # Header generation config
 │       └── Cargo.toml
-├── demo-headless/              # Command-line demo
-│   ├── src/
-│   │   └── main.rs            # Demo scenarios
-│   └── Cargo.toml
-└── demo-bevy/                  # Visual demo with Bevy engine and UI
+└── demo-headless/              # Test/demo application
     ├── src/
-    │   └── main.rs            # Interactive 3D visualization
-    ├── Cargo.toml
-    └── README.md
-```
-
-## Demos
-
-### Bevy Visual Demo (Recommended)
-Interactive 3D visualization with UI controls:
-
-```bash
-# Run visual demo with Bevy and egui UI
-cargo run --release -p demo-bevy
-```
-
-Features:
-- Real-time fire visualization with color-coded flames
-- Interactive UI panel for weather and simulation controls
-- Click-to-place fuel and click-to-ignite functionality
-- Camera controls (pan, zoom)
-- Fire danger rating display with FFDI
-- Quick weather presets (Catastrophic, Perth Summer, etc.)
-
-See [demo-bevy/README.md](demo-bevy/README.md) for detailed controls and features.
-
-### Headless Command-Line Demo
-For benchmarking and scripting:
-
-```bash
-# Run headless demo with configurable parameters
-cargo run --release -p demo-headless -- --duration 60 --num-trees 5
-
-# See all options
-cargo run --release -p demo-headless -- --help
+    │   └── main.rs            # Demo scenarios
+    └── Cargo.toml
 ```
 
 ## Building
 
 ```bash
-# Build all crates including demos
+# Build all crates
 cargo build --release
 
 # Run tests
 cargo test --release
+
+# Run demo
+cargo run --release --bin demo-headless
 ```
+
+## Performance
 
 - **600,000 fuel elements**: Spatial indexing with Morton encoding
 - **1,000+ burning simultaneously**: 60 FPS target

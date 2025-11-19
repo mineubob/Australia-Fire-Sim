@@ -1,4 +1,4 @@
-use crate::element::Vec3;
+use crate::core_types::element::Vec3;
 use std::collections::HashMap;
 
 /// Spatial index using hash-based octree for fast neighbor queries
@@ -30,7 +30,7 @@ impl SpatialIndex {
     /// Insert an element into the spatial index
     pub fn insert(&mut self, id: u32, position: Vec3) {
         let hash = self.hash_position(position);
-        self.octree.entry(hash).or_insert_with(Vec::new).push(id);
+        self.octree.entry(hash).or_default().push(id);
     }
 
     /// Remove an element from the spatial index

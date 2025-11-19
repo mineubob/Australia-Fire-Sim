@@ -928,6 +928,14 @@ fn test_ffdi_calibration() {
 - **Testing**: Each physics formula should have a validation test
 - **Documentation**: Explain WHY, not just WHAT (scientific reasoning)
 
+### AI Agents & Tooling
+
+- **Always view full command output**: All AI agents (including the Copilot coding agent and any automation tools) MUST always view and process the full, un-truncated command output when executing or reviewing commands. Shortened or truncated outputs can omit critical details and lead to incorrect conclusions or unsafe changes. If a tool truncates output by default, use options or techniques to capture the complete output (for example: disable paging, use --no-pager or --no-truncate flags, redirect output to a file, or use explicit logging).
+
+- **Why**: Full outputs are essential for correctness (error traces, test failures, and subtle warnings are often truncated) and for safe automated changes, especially in a high-fidelity simulation project where small differences matter.
+
+- **Examples / Tips**: When running commands, prefer options that produce full logs; for example, `git --no-pager log` or `cargo test -- --nocapture`, and always prefer to inspect the full raw logs rather than a shortened summary.
+
 ### References Used
 
 - **Rothermel Fire Spread Model** (1972) - USDA Forest Service Research Paper INT-115

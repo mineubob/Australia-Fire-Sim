@@ -1,72 +1,228 @@
-use crate::element::Vec3;
+//! Weather simulation module for realistic fire behavior modeling
+//!
+//! This module implements dynamic weather conditions that directly affect fire spread and behavior.
+//! Weather parameters are based on real meteorological data and fire science principles.
+
+use crate::core_types::element::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Climate pattern types affecting weather
+///
+/// These represent major climate phenomena that influence fire weather across seasons:
+/// - **Neutral**: Normal conditions with average temperatures and rainfall
+/// - **El Niño**: Warm phase of ENSO, typically causes hotter/drier conditions in Australia
+/// - **La Niña**: Cool phase of ENSO, typically causes cooler/wetter conditions in Australia
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ClimatePattern {
+    /// Normal atmospheric conditions
     Neutral,
+    /// El Niño Southern Oscillation warm phase (hotter, drier)
     ElNino,
+    /// El Niño Southern Oscillation cool phase (cooler, wetter)
     LaNina,
 }
 
 /// Weather condition preset defining base temperatures, wind, and modifiers for regional climates
-/// Supports dynamic weather simulation with monthly variations and climate patterns
+///
+/// Supports dynamic weather simulation with:
+/// - Monthly temperature variations (seasonal cycles)
+/// - Diurnal temperature changes (coldest at 6am, hottest at 2pm)
+/// - Climate pattern effects (El Niño/La Niña)
+/// - Seasonal humidity, wind, and solar radiation patterns
+/// - Drought progression based on season and climate
+/// - Fuel curing (dryness) percentages affecting ignition and spread
+///
+/// # Example
+/// ```
+/// use fire_sim_core::WeatherPreset;
+///
+/// // Create Perth Metro weather preset
+/// let weather = WeatherPreset::perth_metro();
+///
+/// // Hot, dry summer conditions perfect for fire spread
+/// assert!(weather.summer_humidity < 45.0);
+/// assert!(weather.summer_curing > 90.0);
+/// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeatherPreset {
+    /// Region name (e.g., "Perth Metro", "Wheatbelt")
     pub name: String,
 
-    // Monthly base temperatures (min, max) in °C for each month (Jan=0 to Dec=11)
+    /// Monthly base temperatures as (min, max) pairs in °C
+    ///
+    /// Array indexed by month: [Jan=0, Feb=1, ..., Dec=11]
+    /// - Min: Overnight/early morning temperature (around 6am)
+    /// - Max: Afternoon temperature (around 2-3pm)
+    ///
+    /// Used to calculate diurnal temperature cycles:
+    /// - Coldest at 6am (min temp)
+    /// - Hottest at 2pm (max temp)  
+    /// - Smooth sinusoidal transition between
     pub monthly_temps: [(f32, f32); 12],
 
-    // Climate pattern modifiers
+    /// Temperature modification during El Niño events (°C)
+    ///
+    /// El Niño typically adds 1.5-3.0°C to Australian temperatures
+    /// Applied additively to monthly base temperatures
     pub el_nino_temp_mod: f32,
+
+    /// Temperature modification during La Niña events (°C)
+    ///
+    /// La Niña typically reduces temperatures by 0.5-1.5°C
+    /// Applied additively to monthly base temperatures (negative value)
     pub la_nina_temp_mod: f32,
 
-    // Seasonal base humidity %
+    /// Base relative humidity for summer (%)
+    ///
+    /// Summer (Dec-Feb in Southern Hemisphere)
+    /// Lower humidity increases fire danger significantly
+    /// Typical range: 20-50% for Australian regions
     pub summer_humidity: f32,
+
+    /// Base relative humidity for autumn (%)
+    ///
+    /// Autumn (Mar-May)
+    /// Transitional season with moderate humidity
     pub autumn_humidity: f32,
+
+    /// Base relative humidity for winter (%)
+    ///
+    /// Winter (Jun-Aug)  
+    /// Highest humidity season, reduced fire risk
+    /// Typical range: 45-75% for Australian regions
     pub winter_humidity: f32,
+
+    /// Base relative humidity for spring (%)
+    ///
+    /// Spring (Sep-Nov)
+    /// Fire season begins, humidity decreases
     pub spring_humidity: f32,
 
-    // Climate pattern humidity modifiers
+    /// Humidity modification during El Niño (% points)
+    ///
+    /// El Niño reduces humidity by 8-15% points
+    /// Dramatically increases fire danger
     pub el_nino_humidity_mod: f32,
+
+    /// Humidity modification during La Niña (% points)
+    ///
+    /// La Niña increases humidity by 3-8% points
+    /// Reduces fire danger
     pub la_nina_humidity_mod: f32,
 
-    // Seasonal base wind speeds (km/h)
+    /// Base wind speed for summer (km/h)
+    ///
+    /// Higher wind speeds increase fire spread rate exponentially
+    /// Wind affects: rate of spread, spotting distance, ember transport
     pub summer_wind: f32,
+
+    /// Base wind speed for autumn (km/h)
     pub autumn_wind: f32,
+
+    /// Base wind speed for winter (km/h)
     pub winter_wind: f32,
+
+    /// Base wind speed for spring (km/h)
     pub spring_wind: f32,
 
-    // Additional modifiers
+    /// Temperature increase during heatwave events (°C)
+    ///
+    /// Heatwaves add to base temperature, creating extreme fire conditions
+    /// Typical values: 6-12°C above normal
+    /// Combined with low pressure and humidity for catastrophic fire danger
     pub heatwave_temp_bonus: f32,
+
+    /// Base atmospheric pressure (hPa or millibars)
+    ///
+    /// Standard: 1013 hPa at sea level
+    /// Varies 1008-1018 hPa regionally
+    /// Affects oxygen availability and combustion
     pub base_pressure: f32,
+
+    /// Pressure drop during heatwave (hPa)
+    ///
+    /// Low pressure systems bring hot, dry conditions
+    /// Typical drop: 6-12 hPa during extreme heat
     pub heatwave_pressure_drop: f32,
 
-    // Seasonal pressure modifiers
+    /// Summer pressure modification from base (hPa)
+    ///
+    /// Usually negative (lower pressure in summer)
     pub summer_pressure_mod: f32,
+
+    /// Winter pressure modification from base (hPa)
+    ///
+    /// Usually positive (higher pressure in winter)
     pub winter_pressure_mod: f32,
 
-    // Seasonal solar radiation maxima (W/m²)
+    /// Maximum solar radiation in summer (W/m²)
+    ///
+    /// Peak intensity affects fuel heating and drying
+    /// Typical Australian values: 950-1200 W/m² at solar noon
+    /// Influences ignition probability and fire intensity
     pub summer_solar_max: f32,
+
+    /// Maximum solar radiation in autumn (W/m²)
     pub autumn_solar_max: f32,
+
+    /// Maximum solar radiation in winter (W/m²)
     pub winter_solar_max: f32,
+
+    /// Maximum solar radiation in spring (W/m²)
     pub spring_solar_max: f32,
 
-    // Drought progression rates (per day)
+    /// Drought factor progression rate in summer (per day)
+    ///
+    /// Positive values: drought intensifies (no rainfall)
+    /// Negative values: moisture recovery (rainfall period)
+    /// Used in Keetch-Byram Drought Index calculation
+    /// Typical range: 0.1-0.25 per day in dry periods
     pub summer_drought_rate: f32,
+
+    /// Drought factor progression rate in autumn (per day)
     pub autumn_drought_rate: f32,
+
+    /// Drought factor progression rate in winter (per day)
+    ///
+    /// Often negative (moisture recovery during rainy season)
     pub winter_drought_rate: f32,
+
+    /// Drought factor progression rate in spring (per day)
     pub spring_drought_rate: f32,
 
-    // Climate drought modifiers
+    /// Drought progression modifier during El Niño (per day)
+    ///
+    /// Positive: accelerates drought during El Niño
+    /// Typical: +0.08 to +0.20 per day
     pub el_nino_drought_mod: f32,
+
+    /// Drought progression modifier during La Niña (per day)
+    ///
+    /// Negative: slows or reverses drought during La Niña
+    /// Typical: -0.05 to -0.15 per day
     pub la_nina_drought_mod: f32,
 
-    // Curing base percentages (fuel dryness)
+    /// Fuel curing percentage in summer (0-100%)
+    ///
+    /// Curing = dryness/dead fuel content
+    /// - 0%: All green, living fuel (will not burn)
+    /// - 50%: Mix of green and dry (slow burning)
+    /// - 80%+: Mostly cured (readily combustible)
+    /// - 95%+: Fully cured (explosive fire spread)
+    ///
+    /// Summer typically 90-100% cured in fire-prone regions
     pub summer_curing: f32,
+
+    /// Fuel curing percentage in autumn (%)
     pub autumn_curing: f32,
+
+    /// Fuel curing percentage in winter (%)
+    ///
+    /// Lowest curing due to rainfall and growth
+    /// Typical: 40-75% depending on rainfall
     pub winter_curing: f32,
+
+    /// Fuel curing percentage in spring (%)
     pub spring_curing: f32,
 }
 
@@ -488,7 +644,7 @@ impl WeatherPreset {
         };
 
         // Solar radiation follows sine curve from sunrise (6am) to sunset (6pm)
-        if time_of_day < 6.0 || time_of_day > 18.0 {
+        if !(6.0..=18.0).contains(&time_of_day) {
             0.0
         } else {
             let hour_factor = ((time_of_day - 6.0) * std::f32::consts::PI / 12.0).sin();
@@ -497,29 +653,113 @@ impl WeatherPreset {
     }
 }
 
-/// Weather system with McArthur Forest Fire Danger Index
+/// Weather system with McArthur Forest Fire Danger Index (FFDI)
+///
+/// Provides dynamic weather conditions with diurnal cycles, seasonal variations,
+/// and scientifically accurate fire danger calculations.
+///
+/// # McArthur Forest Fire Danger Index
+///
+/// The FFDI is Australia's standard metric for assessing wildfire danger.
+/// Formula (Mark 5): `FFDI = 2.11 × exp(-0.45 + 0.987×ln(D) - 0.0345×H + 0.0338×T + 0.0234×V)`
+///
+/// Where:
+/// - **D** = Drought Factor (0-10, from Keetch-Byram Drought Index)
+/// - **H** = Relative Humidity (%)
+/// - **T** = Air Temperature (°C)
+/// - **V** = Wind Speed (km/h)
+/// - **2.11** = Calibration constant (matches WA Fire Behaviour Calculator)
+///
+/// Reference: https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest
+///
+/// # Fire Danger Ratings
+///
+/// - **0-5**: Low (controlled burning possible)
+/// - **5-12**: Moderate (heightened awareness)
+/// - **12-24**: High (avoid fire-prone activities)
+/// - **24-50**: Very High (prepare to evacuate)
+/// - **50-75**: Severe (serious fire danger)
+/// - **75-100**: Extreme (catastrophic conditions likely)
+/// - **100+**: Catastrophic (Code Red - leave high-risk areas)
+///
+/// # Example
+///
+/// ```
+/// use fire_sim_core::{WeatherSystem, WeatherPreset, ClimatePattern};
+///
+/// // Create from Perth Metro preset
+/// let weather = WeatherSystem::from_preset(
+///     WeatherPreset::perth_metro(),
+///     15,    // Day 15 (mid-January, peak summer)
+///     14.0,  // 2pm (hottest time)
+///     ClimatePattern::ElNino,
+/// );
+///
+/// let ffdi = weather.calculate_ffdi();
+/// // Expect FFDI 50-100+ on hot summer day with El Niño
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeatherSystem {
-    pub temperature: f32,    // °C
-    pub humidity: f32,       // %
-    pub wind_speed: f32,     // km/h
-    pub wind_direction: f32, // degrees (0 = North, 90 = East)
-    pub drought_factor: f32, // 0-10 (Keetch-Byram Drought Index scaled)
+    /// Current air temperature (°C)
+    pub temperature: f32,
 
-    // Dynamic weather state
-    time_of_day: f32,            // Hours since midnight (0-24)
-    day_of_year: u16,            // Day number (1-365)
-    weather_front_progress: f32, // 0-1 for weather front passage
-    target_temperature: f32,     // Target for smooth transitions
-    target_humidity: f32,        // Target for smooth transitions
-    target_wind_speed: f32,      // Target for smooth transitions
-    target_wind_direction: f32,  // Target for smooth transitions
+    /// Current relative humidity (0-100%)
+    pub humidity: f32,
 
-    // Regional preset and climate state
-    preset: Option<WeatherPreset>,
-    climate_pattern: ClimatePattern,
-    is_heatwave: bool,
-    heatwave_days_remaining: u8,
+    /// Current wind speed (km/h)
+    pub wind_speed: f32,
+
+    /// Wind direction in degrees (0=North, 90=East, 180=South, 270=West)
+    pub wind_direction: f32,
+
+    /// Drought factor (0-10)
+    ///
+    /// Based on Keetch-Byram Drought Index:
+    /// - 0-2: Soil moist, fuels damp
+    /// - 2-4: Moderate drying
+    /// - 4-6: Significant drying, fire spread increases
+    /// - 6-8: Severe drought, rapid fire spread
+    /// - 8-10: Extreme drought, explosive fire behavior
+    pub drought_factor: f32,
+
+    /// Time of day in hours (0-24)
+    ///
+    /// Used for diurnal temperature/humidity cycles:
+    /// - 6am: Coldest, highest humidity
+    /// - 2pm: Hottest, lowest humidity
+    /// - Smooth sinusoidal transitions between
+    pub(crate) time_of_day: f32,
+
+    /// Day of year (1-365)
+    ///
+    /// Used for seasonal variations in temperature, humidity, wind, etc.
+    pub(crate) day_of_year: u16,
+
+    /// Weather front progression (0-1)
+    ///
+    /// Tracks passage of weather fronts:
+    /// - 0.0: No front, stable conditions
+    /// - 0.5: Front passing, rapid changes
+    /// - 1.0: Front passed, new stable conditions
+    pub(crate) weather_front_progress: f32,
+
+    // Target values for smooth transitions
+    pub(crate) target_temperature: f32,
+    pub(crate) target_humidity: f32,
+    pub(crate) target_wind_speed: f32,
+    pub(crate) target_wind_direction: f32,
+
+    /// Regional weather preset with seasonal patterns
+    pub(crate) preset: Option<WeatherPreset>,
+
+    /// Active climate pattern (El Niño, La Niña, or Neutral)
+    pub climate_pattern: ClimatePattern,
+
+    /// Whether a heatwave is occurring
+    pub(crate) is_heatwave: bool,
+
+    /// Days remaining in heatwave (if active)
+    pub(crate) heatwave_days_remaining: u8,
 }
 
 impl WeatherSystem {
@@ -585,9 +825,10 @@ impl WeatherSystem {
             heatwave_days_remaining: 0,
         }
     }
+}
 
-    /// Create default weather (moderate conditions)
-    pub fn default() -> Self {
+impl Default for WeatherSystem {
+    fn default() -> Self {
         WeatherSystem {
             temperature: 25.0,
             humidity: 50.0,
@@ -607,7 +848,9 @@ impl WeatherSystem {
             heatwave_days_remaining: 0,
         }
     }
+}
 
+impl WeatherSystem {
     /// Create extreme weather (catastrophic conditions)
     pub fn catastrophic() -> Self {
         WeatherSystem {
@@ -631,10 +874,56 @@ impl WeatherSystem {
     }
 
     /// Calculate McArthur Forest Fire Danger Index (Mark 5)
-    /// Using the official McArthur Mark 5 FFDI formula from Western Australia's Fire Behaviour Calculator
-    /// Reference: https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest
-    /// FFDI = C * exp(-0.45 + 0.987*ln(D) - 0.0345*H + 0.0338*T + 0.0234*V)
-    /// Where: D=Drought Factor, H=Humidity%, T=Temperature°C, V=Wind Speed km/h, C=calibration constant
+    ///
+    /// The FFDI is the primary fire danger metric used in Australia.
+    ///
+    /// # Formula
+    ///
+    /// ```text
+    /// FFDI = C × exp(-0.45 + 0.987×ln(D) - 0.0345×H + 0.0338×T + 0.0234×V)
+    /// ```
+    ///
+    /// Where:
+    /// - **C** = 2.11 (calibration constant matching WA Fire Behaviour Calculator)
+    /// - **D** = Drought Factor (0-10, Keetch-Byram Drought Index)
+    /// - **H** = Relative Humidity (%)
+    /// - **T** = Air Temperature (°C)
+    /// - **V** = Wind Speed (km/h)
+    ///
+    /// # Physical Meaning
+    ///
+    /// The FFDI exponentially increases with:
+    /// - Higher temperatures (0.0338 coefficient)
+    /// - Lower humidity (-0.0345 coefficient, negative because more humidity reduces fire)
+    /// - Higher wind speeds (0.0234 coefficient)
+    /// - Higher drought factor (0.987 coefficient on logarithm)
+    ///
+    /// # Returns
+    ///
+    /// Fire danger index value (typically 0-150+):
+    /// - 0-5: Low
+    /// - 5-12: Moderate
+    /// - 12-24: High
+    /// - 24-50: Very High
+    /// - 50-75: Severe
+    /// - 75-100: Extreme
+    /// - 100+: Catastrophic (Code Red)
+    ///
+    /// # Reference
+    ///
+    /// Based on McArthur (1967) and calibrated to Western Australian data:
+    /// https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use fire_sim_core::WeatherSystem;
+    ///
+    /// // Extreme conditions
+    /// let weather = WeatherSystem::new(42.0, 12.0, 55.0, 0.0, 9.5);
+    /// let ffdi = weather.calculate_ffdi();
+    /// assert!(ffdi > 100.0); // Catastrophic
+    /// ```
     pub fn calculate_ffdi(&self) -> f32 {
         // Drought Factor must be at least 1.0 for ln() to work
         let df = self.drought_factor.max(1.0);

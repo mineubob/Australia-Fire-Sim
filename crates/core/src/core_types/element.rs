@@ -1,4 +1,4 @@
-use crate::fuel::Fuel;
+use crate::core_types::fuel::Fuel;
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 
@@ -37,21 +37,21 @@ pub struct FuelElement {
     pub position: Vec3, // World position in meters
     pub fuel: Fuel,     // Comprehensive fuel type with all properties
 
-    // Thermal state
-    pub temperature: f32,       // Current temperature (°C)
-    pub moisture_fraction: f32, // 0-1, calculated from weather
-    pub fuel_remaining: f32,    // kg
-    pub ignited: bool,
-    pub flame_height: f32, // meters (Byram's formula)
+    // Thermal state (accessible within crate only)
+    pub(crate) temperature: f32,       // Current temperature (°C)
+    pub(crate) moisture_fraction: f32, // 0-1, calculated from weather
+    pub(crate) fuel_remaining: f32,    // kg
+    pub(crate) ignited: bool,
+    pub(crate) flame_height: f32, // meters (Byram's formula)
 
     // Structural relationships
     pub parent_id: Option<u32>, // Parent structure/tree ID
     pub part_type: FuelPart,    // What kind of fuel part
 
     // Spatial context
-    pub elevation: f32,      // Height above ground
-    pub slope_angle: f32,    // Local terrain slope (degrees)
-    pub neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
+    pub(crate) elevation: f32,      // Height above ground
+    pub(crate) slope_angle: f32,    // Local terrain slope (degrees)
+    pub(crate) neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
 }
 
 impl FuelElement {
@@ -179,13 +179,18 @@ impl FuelElement {
             return 0.0;
         }
 
-        // Burn rate based on fuel coefficient and moisture
+        // Realistic burn rate - slower burning for sustained fires
         let moisture_factor =
             (1.0 - self.moisture_fraction / self.fuel.moisture_of_extinction).max(0.0);
         let temp_factor =
             ((self.temperature - self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
 
-        self.fuel.burn_rate_coefficient * moisture_factor * temp_factor * self.fuel_remaining.sqrt()
+        // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
+        self.fuel.burn_rate_coefficient
+            * moisture_factor
+            * temp_factor
+            * self.fuel_remaining.sqrt()
+            * 0.1
     }
 
     /// Calculate Byram's fireline intensity in kW/m
