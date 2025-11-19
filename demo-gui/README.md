@@ -6,16 +6,28 @@ A real-time 3D visualization of the Australia Fire Simulation using the Bevy gam
 
 This demo provides an interactive, visually rich demonstration of the fire simulation with:
 
+- **Main Menu System** with full configuration before starting
 - **Real-time 3D rendering** of fuel elements and fire spread
 - **3D terrain mesh** with actual elevation data (hills, valleys, or flat terrain)
-- **Fully customizable** simulation parameters
+- **Fully customizable** simulation parameters via interactive menu
 - **Dynamic fire visualization** with temperature-based colors and glow effects
 - **Interactive camera controls** for exploring the scene
 - **Right-side statistics panel** with organized simulation metrics
+- **FPS counter** showing real-time frame rate
 - **Hover tooltips** showing detailed fuel element information
 - **Interactive controls** for pausing, speed adjustment, and fire suppression
 
 ## Features
+
+### Main Menu System ✨ NEW!
+
+When you start the demo, you'll see a configuration menu where you can customize:
+
+- **Terrain Settings**: Map width/height, terrain type (Flat/Hill/Valley)
+- **Fire Settings**: Grid size, fuel mass, fuel type (5 options), ignitions, spacing
+- **Weather Settings**: Temperature, humidity, wind speed/direction, drought factor
+
+Use **+/-** buttons to adjust numeric values and click cycle buttons to change terrain and fuel types. Click **START SIMULATION** when ready!
 
 ### Visual Elements
 
@@ -33,10 +45,11 @@ This demo provides an interactive, visually rich demonstration of the fire simul
   - Fire status (burning elements, fuel consumed, max temperature)
   - Weather conditions (temperature, humidity, wind)
   - Fire danger rating (FFDI and category)
+- **FPS Counter** ✨ NEW!: Top-right corner shows real-time frame rate
 
 ### Customization
 
-The simulation is **fully customizable** by editing `src/main.rs`. You can configure:
+The simulation is **fully customizable** via the main menu at startup. You can also edit `src/main.rs` for advanced configuration:
 
 **Terrain Settings:**
 - Map dimensions (width, height)
@@ -78,9 +91,15 @@ let config = DemoConfig {
 
 ### Controls
 
+**In Menu:**
+- **+/-** buttons: Adjust numeric values
+- **Cycle buttons**: Change terrain type and fuel type
+- **START SIMULATION**: Begin the simulation with current config
+
+**During Simulation:**
 - **SPACE**: Pause/Resume simulation
 - **[ / ]**: Decrease/Increase simulation speed (0.1x to 10x)
-- **R**: Reset simulation to initial state
+- **R**: Reset simulation (returns to menu)
 - **W**: Deploy water suppression (30 droplets in circular pattern)
 - **Arrow Keys**: Camera controls
   - Up/Down: Move forward/backward
@@ -88,6 +107,16 @@ let config = DemoConfig {
 - **Mouse Hover**: Show detailed information about fuel elements
 
 ### User Interface
+
+**Main Menu Screen:**
+- Configuration panel with all simulation parameters
+- Increment/decrement buttons for all values
+- START button to begin simulation
+
+**Simulation Screen:**
+
+**Top-Right Corner:**
+- **FPS Counter** ✨ NEW!: Real-time frame rate display
 
 **Left Side:**
 - Title and control instructions
