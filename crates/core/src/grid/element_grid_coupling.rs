@@ -8,6 +8,8 @@ use crate::grid::SimulationGrid;
 use crate::physics::combustion_physics::{calculate_combustion_products, oxygen_limited_burn_rate};
 use rayon::prelude::*;
 
+// TODO: Remove if not required - currently unused, was part of earlier grid coupling approach
+#[allow(dead_code)]
 /// Transfer heat from burning element to surrounding grid cells
 pub(crate) fn transfer_heat_to_grid(element: &FuelElement, grid: &mut SimulationGrid, dt: f32) {
     if !element.ignited || element.fuel_remaining <= 0.0 {
@@ -92,6 +94,8 @@ pub(crate) fn transfer_heat_to_grid(element: &FuelElement, grid: &mut Simulation
     }
 }
 
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 /// Transfer combustion products from element to grid
 pub(crate) fn transfer_combustion_products_to_grid(
     element: &FuelElement,
@@ -128,6 +132,8 @@ pub(crate) fn transfer_combustion_products_to_grid(
 }
 
 /// Apply grid conditions to fuel element (wind, humidity, oxygen)
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn apply_grid_to_element(element: &mut FuelElement, grid: &SimulationGrid) {
     let interpolated = grid.interpolate_at_position(element.position);
 
@@ -167,6 +173,8 @@ pub(crate) fn get_oxygen_limited_burn_rate(
 }
 
 /// Calculate buoyancy force on element from grid temperature gradient
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn calculate_buoyancy_on_element(element: &FuelElement, grid: &SimulationGrid) -> Vec3 {
     let pos = element.position;
     let cell_size = grid.cell_size;
@@ -189,6 +197,8 @@ pub(crate) fn calculate_buoyancy_on_element(element: &FuelElement, grid: &Simula
 }
 
 /// Interpolate wind velocity at element position
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn get_wind_at_element(element: &FuelElement, grid: &SimulationGrid) -> Vec3 {
     let interpolated = grid.interpolate_at_position(element.position);
     interpolated.wind

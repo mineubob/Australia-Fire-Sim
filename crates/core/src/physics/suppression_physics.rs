@@ -276,6 +276,8 @@ pub(crate) fn apply_suppression_to_grid(droplet: &SuppressionDroplet, grid: &mut
 }
 
 /// Calculate suppression effectiveness on fuel element
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn calculate_suppression_effectiveness(
     agent_concentration: f32,
     agent_type: SuppressionAgent,

@@ -9,11 +9,17 @@
 use crate::core_types::element::FuelElement;
 use crate::grid::GridCell;
 
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 /// Universal gas constant (J/(mol·K))
 const R_UNIVERSAL: f32 = 8.314;
 
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 /// Arrhenius parameters for wood combustion
 const ACTIVATION_ENERGY_WOOD: f32 = 140000.0; // J/mol (typical for cellulose)
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 const PRE_EXPONENTIAL_FACTOR: f32 = 1e8; // 1/s
 
 /// Stoichiometric coefficients for complete combustion
@@ -30,6 +36,8 @@ const SMOKE_PER_KG_FUEL: f32 = 0.02; // kg particulates per kg fuel
 
 /// Calculate Arrhenius reaction rate
 /// k = A × exp(-Ea / (R × T))
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn arrhenius_rate(temperature_celsius: f32, activation_energy: f32) -> f32 {
     let temp_kelvin = temperature_celsius + 273.15;
 
@@ -43,6 +51,8 @@ pub(crate) fn arrhenius_rate(temperature_celsius: f32, activation_energy: f32) -
 
 /// Calculate ignition probability using Arrhenius kinetics
 /// Probabilistic ignition based on temperature and time
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn calculate_ignition_probability(element: &FuelElement, dt: f32) -> f32 {
     if element.temperature < element.fuel.ignition_temperature {
         return 0.0;
@@ -94,6 +104,7 @@ pub(crate) fn oxygen_limited_burn_rate(fuel_burn_rate: f32, cell: &GridCell, cel
 }
 
 /// Calculate combustion products for a burning fuel element
+#[allow(dead_code)] // co_produced and heat_released fields
 pub(crate) struct CombustionProducts {
     pub co2_produced: f32,   // kg
     pub co_produced: f32,    // kg
@@ -148,6 +159,8 @@ pub(crate) fn calculate_combustion_products(
     }
 }
 
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 /// Multi-band radiation calculation
 /// Splits thermal radiation into visible, IR, and UV bands
 pub(crate) struct RadiationBands {
@@ -156,6 +169,8 @@ pub(crate) struct RadiationBands {
     pub ultraviolet: f32, // W/m² (10-400 nm)
 }
 
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn calculate_radiation_bands(temperature_celsius: f32, emissivity: f32) -> RadiationBands {
     const STEFAN_BOLTZMANN: f32 = 5.67e-8;
 
@@ -192,6 +207,8 @@ pub(crate) fn calculate_radiation_bands(temperature_celsius: f32, emissivity: f3
 }
 
 /// Calculate flame color based on temperature
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn flame_color_temperature(temperature_celsius: f32) -> [f32; 3] {
     // RGB color approximation based on blackbody radiation
 
@@ -221,6 +238,8 @@ pub(crate) fn flame_color_temperature(temperature_celsius: f32) -> [f32; 3] {
 
 /// Calculate convective heat transfer coefficient (W/(m²·K))
 /// Based on natural convection for vertical surfaces
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn natural_convection_coefficient(temp_diff: f32, height: f32) -> f32 {
     if temp_diff <= 0.0 || height <= 0.0 {
         return 5.0; // Minimum forced convection
@@ -251,6 +270,8 @@ pub(crate) fn natural_convection_coefficient(temp_diff: f32, height: f32) -> f32
 
 /// Calculate fire intensity using modified Byram's equation
 /// Accounts for oxygen limitation
+// TODO: Remove if not required - currently unused
+#[allow(dead_code)]
 pub(crate) fn calculate_fire_intensity(
     fuel_consumed_rate: f32,
     heat_content: f32,
