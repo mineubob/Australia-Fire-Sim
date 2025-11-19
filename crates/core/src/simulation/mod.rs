@@ -313,37 +313,104 @@ impl FireSimulation {
                 }
             }
 
-            // Heat transfer to nearby elements (grid-mediated, cached for performance)
+            // Direct element-to-element heat transfer (realistic Stefan-Boltzmann radiation)
+            // Replaces grid-mediated transfer for better fire spread
             let ambient_temp = self.grid.ambient_temperature;
-            for target_id in nearby {
-                if target_id == element_id {
-                    continue;
-                }
+            
+            // Collect source element data to avoid borrow conflicts
+            let source_data = if let Some(source) = self.get_element(element_id) {
+                Some((
+                    source.position,
+                    source.temperature,
+                    source.fuel_remaining,
+                    source.fuel.clone(),
+                ))
+            } else {
+                None
+            };
 
-                // Get local cell temperature first
-                let target_pos = if let Some(target) = self.get_element(target_id) {
-                    if target.ignited {
-                        continue;
-                    }
-                    target.position
-                } else {
-                    continue;
+            if let Some((source_pos, source_temp, source_fuel_remaining, source_fuel)) = source_data {
+                // Create temporary source element for physics calculations
+                let temp_source = FuelElement {
+                    id: element_id,
+                    position: source_pos,
+                    temperature: source_temp,
+                    fuel_remaining: source_fuel_remaining,
+                    fuel: source_fuel,
+                    moisture_fraction: 0.0, // Not needed for radiation calculation
+                    ignited: true,
+                    flame_height: 0.0,
+                    parent_id: None,
+                    part_type: FuelPart::GroundVegetation,
+                    elevation: source_pos.z,
+                    slope_angle: 0.0,
+                    neighbors: Vec::new(),
                 };
 
-                let cell_temp = self.grid.interpolate_at_position(target_pos).temperature;
+                for target_id in nearby {
+                    if target_id == element_id {
+                        continue;
+                    }
 
-                // Now mutably borrow the target
-                if let Some(target) = self.get_element_mut(target_id) {
-                    if cell_temp > target.temperature {
-                        // Increased heat transfer coefficient for better fire spread
-                        // Grid cells heated to 800°C need to effectively ignite nearby fuel
-                        let heat_transfer = (cell_temp - target.temperature) * 50.0 * dt;
-                        target.apply_heat(heat_transfer, dt, ambient_temp);
+                    // Check if target is already burning
+                    let should_process = if let Some(target) = self.get_element(target_id) {
+                        !target.ignited && target.fuel_remaining > 0.01
+                    } else {
+                        false
+                    };
 
-                        // Check for ignition
-                        if target.temperature > target.fuel.ignition_temperature {
-                            target.ignited = true;
-                            self.burning_elements.insert(target_id);
+                    if !should_process {
+                        continue;
+                    }
+
+                    // Get target element data
+                    let target_data = if let Some(target) = self.get_element(target_id) {
+                        Some((
+                            target.position,
+                            target.temperature,
+                            target.fuel.clone(),
+                        ))
+                    } else {
+                        None
+                    };
+
+                    if let Some((target_pos, target_temp, target_fuel)) = target_data {
+                        // Create temporary target element for physics calculations
+                        let temp_target = FuelElement {
+                            id: target_id,
+                            position: target_pos,
+                            temperature: target_temp,
+                            fuel_remaining: 1.0, // Doesn't affect radiation calculation
+                            fuel: target_fuel,
+                            moisture_fraction: 0.0,
+                            ignited: false,
+                            flame_height: 0.0,
+                            parent_id: None,
+                            part_type: FuelPart::GroundVegetation,
+                            elevation: target_pos.z,
+                            slope_angle: 0.0,
+                            neighbors: Vec::new(),
+                        };
+
+                        // Calculate direct element-to-element heat transfer
+                        let heat_transfer = crate::physics::element_heat_transfer::calculate_total_heat_transfer(
+                            &temp_source,
+                            &temp_target,
+                            wind_vector,
+                            dt,
+                        );
+
+                        // Apply heat to target element
+                        if heat_transfer > 0.0 {
+                            if let Some(target) = self.get_element_mut(target_id) {
+                                target.apply_heat(heat_transfer, dt, ambient_temp);
+
+                                // Check for ignition
+                                if target.temperature > target.fuel.ignition_temperature {
+                                    target.ignited = true;
+                                    self.burning_elements.insert(target_id);
+                                }
+                            }
                         }
                     }
                 }
