@@ -1135,7 +1135,7 @@ fn update_tooltip(
             {
                 // Show tooltip with element details
                 text.0 = format!(
-                    "Fuel Element #{}\n\
+                    "Fuel Element #{} ({})\n\
                      Position: ({:.1}, {:.1}, {:.1})\n\
                      Temperature: {:.0}°C\n\
                      Fuel Remaining: {:.2} kg\n\
@@ -1143,6 +1143,7 @@ fn update_tooltip(
                      Status: {}\n\
                      Flame Height: {:.2} m",
                     element.id,
+                    element.fuel.name,
                     element.position.x,
                     element.position.y,
                     element.position.z,
