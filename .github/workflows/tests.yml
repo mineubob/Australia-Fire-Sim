@@ -37,9 +37,6 @@ jobs:
       
       - name: Run tests
         run: cargo test
-        
-      - name: Run tests (release)
-        run: cargo test --release
 
   clippy:
     name: Clippy
