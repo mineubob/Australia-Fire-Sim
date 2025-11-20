@@ -275,26 +275,6 @@ pub(crate) fn apply_suppression_to_grid(droplet: &SuppressionDroplet, grid: &mut
     }
 }
 
-/// Calculate suppression effectiveness on fuel element
-// TODO: Remove if not required - currently unused
-#[allow(dead_code)]
-pub(crate) fn calculate_suppression_effectiveness(
-    agent_concentration: f32,
-    agent_type: SuppressionAgent,
-) -> f32 {
-    let base_effectiveness = match agent_type {
-        SuppressionAgent::Water => 0.7,
-        SuppressionAgent::ShortTermRetardant => 0.85,
-        SuppressionAgent::LongTermRetardant => 0.95,
-        SuppressionAgent::Foam => 0.9,
-    };
-
-    // Effectiveness increases with concentration (saturation curve)
-    let concentration_factor = 1.0 - (-agent_concentration * 2.0).exp();
-
-    base_effectiveness * concentration_factor
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,20 +400,5 @@ mod tests {
 
         // Foam should have higher cooling capacity
         assert!(foam.cooling_capacity() > water.cooling_capacity());
-    }
-
-    #[test]
-    fn test_suppression_effectiveness() {
-        let eff_low = calculate_suppression_effectiveness(0.1, SuppressionAgent::Water);
-        let eff_high = calculate_suppression_effectiveness(1.0, SuppressionAgent::Water);
-
-        // More agent = more effective
-        assert!(eff_high > eff_low);
-
-        // Long-term retardant is most effective
-        let eff_retardant =
-            calculate_suppression_effectiveness(0.5, SuppressionAgent::LongTermRetardant);
-        let eff_water = calculate_suppression_effectiveness(0.5, SuppressionAgent::Water);
-        assert!(eff_retardant > eff_water);
     }
 }
