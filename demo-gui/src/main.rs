@@ -1285,17 +1285,17 @@ fn handle_controls(
                         // Ground plane: z = 0
                         // Solve for t: origin.z + t * direction.z = 0
                         let ray_dir = *ray.direction;
-                        
+
                         if ray_dir.z.abs() > 0.001 {
                             // Ray intersects ground plane
                             let t = -ray.origin.z / ray_dir.z;
-                            
+
                             if t > 0.0 {
                                 // Intersection point is in front of camera
                                 let drop_x = ray.origin.x + t * ray_dir.x;
                                 let drop_y = ray.origin.y + t * ray_dir.y;
                                 let drop_altitude = 60.0;
-                                
+
                                 // Add water droplets in a circular pattern at cursor position
                                 for i in 0..30 {
                                     let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
