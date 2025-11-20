@@ -3,7 +3,7 @@
 //! This demo provides a real-time 3D visualization of the fire simulation with interactive controls.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
     Vec3 as SimVec3, WeatherPreset, WeatherSystem,
@@ -184,7 +184,7 @@ fn main() {
         .init_resource::<DemoConfig>()
         .init_resource::<MenuState>()
         .init_resource::<FpsCounter>()
-        .add_systems(Update, render_menu_ui.run_if(in_menu))
+        .add_systems(EguiPrimaryContextPass, render_menu_ui.run_if(in_menu))
         .add_systems(
             Update,
             (
