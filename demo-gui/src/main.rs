@@ -81,6 +81,10 @@ impl TerrainType {
             TerrainType::Valley => TerrainType::Flat,
         }
     }
+
+    fn all() -> [Self; 3] {
+        [TerrainType::Flat, TerrainType::Hill, TerrainType::Valley]
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -121,6 +125,16 @@ impl FuelType {
             FuelType::Shrubland => FuelType::DeadWood,
             FuelType::DeadWood => FuelType::DryGrass,
         }
+    }
+
+    fn all() -> [Self; 5] {
+        [
+            FuelType::DryGrass,
+            FuelType::EucalyptusStringybark,
+            FuelType::EucalyptusSmoothBark,
+            FuelType::Shrubland,
+            FuelType::DeadWood,
+        ]
     }
 }
 
@@ -166,6 +180,17 @@ impl WeatherPresetType {
             WeatherPresetType::Kimberley => WeatherPreset::kimberley(),
             WeatherPresetType::Pilbara => WeatherPreset::pilbara(),
         }
+    }
+
+    fn all() -> [Self; 6] {
+        [
+            WeatherPresetType::PerthMetro,
+            WeatherPresetType::SouthWest,
+            WeatherPresetType::Wheatbelt,
+            WeatherPresetType::Goldfields,
+            WeatherPresetType::Kimberley,
+            WeatherPresetType::Pilbara,
+        ]
     }
 }
 
@@ -312,9 +337,13 @@ fn render_menu_ui(
 
                     ui.horizontal(|ui| {
                         ui.label("Terrain Type:");
-                        if ui.button(config.terrain_type.name()).clicked() {
-                            config.terrain_type = config.terrain_type.cycle();
-                        }
+                        egui::ComboBox::from_label("")
+                            .selected_text(config.terrain_type.name())
+                            .show_ui(ui, |ui| {
+                                for variant in TerrainType::all() {
+                                    ui.selectable_value(&mut config.terrain_type, variant, variant.name());
+                                }
+                            });
                     });
                 });
 
@@ -346,9 +375,13 @@ fn render_menu_ui(
 
                     ui.horizontal(|ui| {
                         ui.label("Fuel Type:");
-                        if ui.button(config.fuel_type.name()).clicked() {
-                            config.fuel_type = config.fuel_type.cycle();
-                        }
+                        egui::ComboBox::from_label("")
+                            .selected_text(config.fuel_type.name())
+                            .show_ui(ui, |ui| {
+                                for variant in FuelType::all() {
+                                    ui.selectable_value(&mut config.fuel_type, variant, variant.name());
+                                }
+                            });
                     });
 
                     ui.horizontal(|ui| {
@@ -380,9 +413,13 @@ fn render_menu_ui(
                     if config.use_weather_preset {
                         ui.horizontal(|ui| {
                             ui.label("Weather Preset:");
-                            if ui.button(config.weather_preset.name()).clicked() {
-                                config.weather_preset = config.weather_preset.cycle();
-                            }
+                            egui::ComboBox::from_label("")
+                                .selected_text(config.weather_preset.name())
+                                .show_ui(ui, |ui| {
+                                    for variant in WeatherPresetType::all() {
+                                        ui.selectable_value(&mut config.weather_preset, variant, variant.name());
+                                    }
+                                });
                         });
                         ui.label(
                             egui::RichText::new("(Dynamic weather will be simulated)")
