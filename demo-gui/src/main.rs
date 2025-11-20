@@ -264,13 +264,21 @@ fn render_menu_ui(
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
-    
+
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(20.0);
-            ui.heading(egui::RichText::new("Australia Fire Simulation").size(48.0).color(egui::Color32::from_rgb(255, 204, 51)));
+            ui.heading(
+                egui::RichText::new("Australia Fire Simulation")
+                    .size(48.0)
+                    .color(egui::Color32::from_rgb(255, 204, 51)),
+            );
             ui.add_space(10.0);
-            ui.label(egui::RichText::new("Configure Simulation Parameters").size(24.0).color(egui::Color32::from_rgb(204, 204, 204)));
+            ui.label(
+                egui::RichText::new("Configure Simulation Parameters")
+                    .size(24.0)
+                    .color(egui::Color32::from_rgb(204, 204, 204)),
+            );
             ui.add_space(30.0);
         });
 
@@ -278,22 +286,26 @@ fn render_menu_ui(
             .max_height(450.0)
             .show(ui, |ui| {
                 ui.set_max_width(700.0);
-                
+
                 // Terrain Settings
                 ui.group(|ui| {
-                    ui.heading(egui::RichText::new("TERRAIN SETTINGS").size(20.0).color(egui::Color32::from_rgb(255, 204, 51)));
+                    ui.heading(
+                        egui::RichText::new("TERRAIN SETTINGS")
+                            .size(20.0)
+                            .color(egui::Color32::from_rgb(255, 204, 51)),
+                    );
                     ui.add_space(10.0);
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("Map Width (m):");
                         ui.add(egui::Slider::new(&mut config.map_width, 50.0..=500.0).text("m"));
                     });
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("Map Height (m):");
                         ui.add(egui::Slider::new(&mut config.map_height, 50.0..=500.0).text("m"));
                     });
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("Terrain Type:");
                         if ui.button(config.terrain_type.name()).clicked() {
@@ -301,58 +313,66 @@ fn render_menu_ui(
                         }
                     });
                 });
-                
+
                 ui.add_space(10.0);
-                
+
                 // Fire Settings
                 ui.group(|ui| {
-                    ui.heading(egui::RichText::new("FIRE SETTINGS").size(20.0).color(egui::Color32::from_rgb(255, 204, 51)));
+                    ui.heading(
+                        egui::RichText::new("FIRE SETTINGS")
+                            .size(20.0)
+                            .color(egui::Color32::from_rgb(255, 204, 51)),
+                    );
                     ui.add_space(10.0);
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("Elements X:");
                         ui.add(egui::Slider::new(&mut config.elements_x, 5..=20));
                     });
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("Elements Y:");
                         ui.add(egui::Slider::new(&mut config.elements_y, 5..=20));
                     });
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("Fuel Mass (kg):");
                         ui.add(egui::Slider::new(&mut config.fuel_mass, 1.0..=20.0).text("kg"));
                     });
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("Fuel Type:");
                         if ui.button(config.fuel_type.name()).clicked() {
                             config.fuel_type = config.fuel_type.cycle();
                         }
                     });
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("Initial Ignitions:");
                         ui.add(egui::Slider::new(&mut config.initial_ignitions, 1..=20));
                     });
-                    
+
                     ui.horizontal(|ui| {
                         ui.label("Spacing (m):");
                         ui.add(egui::Slider::new(&mut config.spacing, 5.0..=15.0).text("m"));
                     });
                 });
-                
+
                 ui.add_space(10.0);
-                
+
                 // Weather Settings
                 ui.group(|ui| {
-                    ui.heading(egui::RichText::new("WEATHER SETTINGS").size(20.0).color(egui::Color32::from_rgb(255, 204, 51)));
+                    ui.heading(
+                        egui::RichText::new("WEATHER SETTINGS")
+                            .size(20.0)
+                            .color(egui::Color32::from_rgb(255, 204, 51)),
+                    );
                     ui.add_space(10.0);
-                    
+
                     ui.horizontal(|ui| {
                         ui.checkbox(&mut config.use_weather_preset, "Use Weather Preset");
                     });
-                    
+
                     if config.use_weather_preset {
                         ui.horizontal(|ui| {
                             ui.label("Weather Preset:");
@@ -360,43 +380,57 @@ fn render_menu_ui(
                                 config.weather_preset = config.weather_preset.cycle();
                             }
                         });
-                        ui.label(egui::RichText::new("(Dynamic weather will be simulated)").size(12.0).color(egui::Color32::GRAY));
+                        ui.label(
+                            egui::RichText::new("(Dynamic weather will be simulated)")
+                                .size(12.0)
+                                .color(egui::Color32::GRAY),
+                        );
                     } else {
                         ui.horizontal(|ui| {
                             ui.label("Temperature (°C):");
-                            ui.add(egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"));
+                            ui.add(
+                                egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"),
+                            );
                         });
-                        
+
                         ui.horizontal(|ui| {
                             ui.label("Humidity:");
                             ui.add(egui::Slider::new(&mut config.humidity, 0.05..=0.60).text(""));
                         });
-                        
+
                         ui.horizontal(|ui| {
                             ui.label("Wind Speed (km/h):");
-                            ui.add(egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"));
+                            ui.add(
+                                egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"),
+                            );
                         });
-                        
+
                         ui.horizontal(|ui| {
                             ui.label("Wind Direction (°):");
-                            ui.add(egui::Slider::new(&mut config.wind_direction, 0.0..=360.0).text("°"));
+                            ui.add(
+                                egui::Slider::new(&mut config.wind_direction, 0.0..=360.0)
+                                    .text("°"),
+                            );
                         });
-                        
+
                         ui.horizontal(|ui| {
                             ui.label("Drought Factor:");
                             ui.add(egui::Slider::new(&mut config.drought_factor, 1.0..=20.0));
                         });
                     }
                 });
-                
+
                 ui.add_space(20.0);
             });
 
         ui.vertical_centered(|ui| {
-            if ui.add_sized(
-                [300.0, 60.0],
-                egui::Button::new(egui::RichText::new("START SIMULATION").size(24.0))
-            ).clicked() {
+            if ui
+                .add_sized(
+                    [300.0, 60.0],
+                    egui::Button::new(egui::RichText::new("START SIMULATION").size(24.0)),
+                )
+                .clicked()
+            {
                 menu_state.in_menu = false;
             }
             ui.add_space(20.0);
@@ -567,8 +601,7 @@ fn setup(
     // Add camera
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(150.0, 120.0, 150.0)
-            .looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
+        Transform::from_xyz(150.0, 120.0, 150.0).looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
         MainCamera,
     ));
 
