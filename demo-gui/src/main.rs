@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
-    Vec3 as SimVec3, WeatherSystem,
+    Vec3 as SimVec3, WeatherPreset, WeatherSystem,
 };
 
 /// Configuration for the simulation demo
@@ -26,6 +26,8 @@ pub struct DemoConfig {
     pub spacing: f32,
 
     // Weather settings
+    pub use_weather_preset: bool,
+    pub weather_preset: WeatherPresetType,
     pub temperature: f32,
     pub humidity: f32,
     pub wind_speed: f32,
@@ -45,6 +47,8 @@ impl Default for DemoConfig {
             fuel_type: FuelType::DryGrass,
             initial_ignitions: 5,
             spacing: 8.0,
+            use_weather_preset: false,
+            weather_preset: WeatherPresetType::PerthMetro,
             temperature: 35.0,
             humidity: 0.15,
             wind_speed: 20.0,
@@ -116,6 +120,51 @@ impl FuelType {
             FuelType::EucalyptusSmoothBark => FuelType::Shrubland,
             FuelType::Shrubland => FuelType::DeadWood,
             FuelType::DeadWood => FuelType::DryGrass,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum WeatherPresetType {
+    PerthMetro,
+    SouthWest,
+    Wheatbelt,
+    Goldfields,
+    Kimberley,
+    Pilbara,
+}
+
+impl WeatherPresetType {
+    fn name(self) -> &'static str {
+        match self {
+            WeatherPresetType::PerthMetro => "Perth Metro",
+            WeatherPresetType::SouthWest => "South West",
+            WeatherPresetType::Wheatbelt => "Wheatbelt",
+            WeatherPresetType::Goldfields => "Goldfields",
+            WeatherPresetType::Kimberley => "Kimberley",
+            WeatherPresetType::Pilbara => "Pilbara",
+        }
+    }
+
+    fn cycle(self) -> Self {
+        match self {
+            WeatherPresetType::PerthMetro => WeatherPresetType::SouthWest,
+            WeatherPresetType::SouthWest => WeatherPresetType::Wheatbelt,
+            WeatherPresetType::Wheatbelt => WeatherPresetType::Goldfields,
+            WeatherPresetType::Goldfields => WeatherPresetType::Kimberley,
+            WeatherPresetType::Kimberley => WeatherPresetType::Pilbara,
+            WeatherPresetType::Pilbara => WeatherPresetType::PerthMetro,
+        }
+    }
+
+    fn to_preset(self) -> WeatherPreset {
+        match self {
+            WeatherPresetType::PerthMetro => WeatherPreset::perth_metro(),
+            WeatherPresetType::SouthWest => WeatherPreset::south_west(),
+            WeatherPresetType::Wheatbelt => WeatherPreset::wheatbelt(),
+            WeatherPresetType::Goldfields => WeatherPreset::goldfields(),
+            WeatherPresetType::Kimberley => WeatherPreset::kimberley(),
+            WeatherPresetType::Pilbara => WeatherPreset::pilbara(),
         }
     }
 }
@@ -301,29 +350,43 @@ fn render_menu_ui(
                     ui.add_space(10.0);
                     
                     ui.horizontal(|ui| {
-                        ui.label("Temperature (°C):");
-                        ui.add(egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"));
+                        ui.checkbox(&mut config.use_weather_preset, "Use Weather Preset");
                     });
                     
-                    ui.horizontal(|ui| {
-                        ui.label("Humidity:");
-                        ui.add(egui::Slider::new(&mut config.humidity, 0.05..=0.60).text(""));
-                    });
-                    
-                    ui.horizontal(|ui| {
-                        ui.label("Wind Speed (km/h):");
-                        ui.add(egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"));
-                    });
-                    
-                    ui.horizontal(|ui| {
-                        ui.label("Wind Direction (°):");
-                        ui.add(egui::Slider::new(&mut config.wind_direction, 0.0..=360.0).text("°"));
-                    });
-                    
-                    ui.horizontal(|ui| {
-                        ui.label("Drought Factor:");
-                        ui.add(egui::Slider::new(&mut config.drought_factor, 1.0..=20.0));
-                    });
+                    if config.use_weather_preset {
+                        ui.horizontal(|ui| {
+                            ui.label("Weather Preset:");
+                            if ui.button(config.weather_preset.name()).clicked() {
+                                config.weather_preset = config.weather_preset.cycle();
+                            }
+                        });
+                        ui.label(egui::RichText::new("(Dynamic weather will be simulated)").size(12.0).color(egui::Color32::GRAY));
+                    } else {
+                        ui.horizontal(|ui| {
+                            ui.label("Temperature (°C):");
+                            ui.add(egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"));
+                        });
+                        
+                        ui.horizontal(|ui| {
+                            ui.label("Humidity:");
+                            ui.add(egui::Slider::new(&mut config.humidity, 0.05..=0.60).text(""));
+                        });
+                        
+                        ui.horizontal(|ui| {
+                            ui.label("Wind Speed (km/h):");
+                            ui.add(egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"));
+                        });
+                        
+                        ui.horizontal(|ui| {
+                            ui.label("Wind Direction (°):");
+                            ui.add(egui::Slider::new(&mut config.wind_direction, 0.0..=360.0).text("°"));
+                        });
+                        
+                        ui.horizontal(|ui| {
+                            ui.label("Drought Factor:");
+                            ui.add(egui::Slider::new(&mut config.drought_factor, 1.0..=20.0));
+                        });
+                    }
                 });
                 
                 ui.add_space(20.0);
@@ -374,13 +437,21 @@ impl FromWorld for SimulationState {
         let mut sim = FireSimulation::new(5.0, terrain);
 
         // Set weather conditions from config
-        let weather = WeatherSystem::new(
-            config.temperature,
-            config.humidity,
-            config.wind_speed,
-            config.wind_direction,
-            config.drought_factor,
-        );
+        let weather = if config.use_weather_preset {
+            // Use dynamic weather preset
+            let mut weather = WeatherSystem::new(25.0, 0.3, 15.0, 0.0, 5.0); // Default values
+            weather.set_preset(config.weather_preset.to_preset());
+            weather
+        } else {
+            // Use static weather values
+            WeatherSystem::new(
+                config.temperature,
+                config.humidity,
+                config.wind_speed,
+                config.wind_direction,
+                config.drought_factor,
+            )
+        };
         sim.set_weather(weather);
 
         // Add fuel elements in a grid
@@ -1071,13 +1142,21 @@ fn handle_controls(
         let mut sim = FireSimulation::new(5.0, terrain);
 
         // Set weather conditions from config
-        let weather = WeatherSystem::new(
-            config.temperature,
-            config.humidity,
-            config.wind_speed,
-            config.wind_direction,
-            config.drought_factor,
-        );
+        let weather = if config.use_weather_preset {
+            // Use dynamic weather preset
+            let mut weather = WeatherSystem::new(25.0, 0.3, 15.0, 0.0, 5.0); // Default values
+            weather.set_preset(config.weather_preset.to_preset());
+            weather
+        } else {
+            // Use static weather values
+            WeatherSystem::new(
+                config.temperature,
+                config.humidity,
+                config.wind_speed,
+                config.wind_direction,
+                config.drought_factor,
+            )
+        };
         sim.set_weather(weather);
 
         // Add fuel elements in a grid
