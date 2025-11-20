@@ -2,7 +2,8 @@
 //!
 //! This demo provides a real-time 3D visualization of the fire simulation with interactive controls.
 
-use bevy::{input::mouse::MouseWheel, prelude::*};
+use bevy::{input::mouse::MouseWheel, prelude::*, ui::*};
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
     Vec3 as SimVec3, WeatherSystem,
@@ -92,6 +93,7 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(EguiPlugin::default())
         .init_resource::<DemoConfig>()
         .init_resource::<MenuState>()
         .init_resource::<FpsCounter>()
@@ -333,7 +335,7 @@ struct ScrollablePanel;
 /// Setup menu UI
 fn setup_menu(mut commands: Commands) {
     // Spawn a 2D camera for the UI
-    commands.spawn((Camera2dBundle::default(), MenuCamera));
+    commands.spawn((Camera2d, MenuCamera));
 
     commands
         .spawn((
@@ -353,29 +355,28 @@ fn setup_menu(mut commands: Commands) {
         ))
         .with_children(|parent| {
             // Title
-            parent.spawn(TextBundle::from_section(
-                "Australia Fire Simulation",
-                TextStyle {
+            parent.spawn((
+                Text::new("Australia Fire Simulation"),
+                TextFont {
                     font_size: 48.0,
-                    color: Color::srgb(1.0, 0.8, 0.2),
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.8, 0.2)),
+            ));
+
+            parent.spawn((
+                Text::new("Configure Simulation Parameters"),
+                TextFont {
+                    font_size: 24.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.8, 0.8, 0.8)),
+                Node::default(),
+                Style {
+                    margin: UiRect::new(Val::Px(0.0), Val::Px(0.0), Val::Px(10.0), Val::Px(30.0)),
                     ..default()
                 },
             ));
-
-            parent.spawn(
-                TextBundle::from_section(
-                    "Configure Simulation Parameters",
-                    TextStyle {
-                        font_size: 24.0,
-                        color: Color::srgb(0.8, 0.8, 0.8),
-                        ..default()
-                    },
-                )
-                .with_style(Style {
-                    margin: UiRect::new(Val::Px(0.0), Val::Px(0.0), Val::Px(10.0), Val::Px(30.0)),
-                    ..default()
-                }),
-            );
 
             // Scrollable config panel container
             parent
@@ -514,33 +515,32 @@ fn setup_menu(mut commands: Commands) {
                     StartButton,
                 ))
                 .with_children(|button| {
-                    button.spawn(TextBundle::from_section(
-                        "START SIMULATION",
-                        TextStyle {
+                    button.spawn((
+                        Text::new("START SIMULATION"),
+                        TextFont {
                             font_size: 24.0,
-                            color: Color::WHITE,
                             ..default()
                         },
+                        TextColor(Color::WHITE),
                     ));
                 });
         });
 }
 
 fn add_config_section(parent: &mut ChildBuilder, title: &str) {
-    parent.spawn(
-        TextBundle::from_section(
-            title,
-            TextStyle {
-                font_size: 20.0,
-                color: Color::srgb(1.0, 0.8, 0.2),
-                ..default()
-            },
-        )
-        .with_style(Style {
+    parent.spawn((
+        Text::new(title),
+        TextFont {
+            font_size: 20.0,
+            ..default()
+        },
+        TextColor(Color::srgb(1.0, 0.8, 0.2)),
+        Node::default(),
+        Style {
             margin: UiRect::top(Val::Px(10.0)),
             ..default()
-        }),
-    );
+        },
+    ));
 }
 
 fn add_numeric_config(
@@ -561,13 +561,13 @@ fn add_numeric_config(
             ..default()
         })
         .with_children(|row| {
-            row.spawn(TextBundle::from_section(
-                label,
-                TextStyle {
+            row.spawn((
+                Text::new(label),
+                TextFont {
                     font_size: 16.0,
-                    color: Color::srgb(0.9, 0.9, 0.9),
                     ..default()
                 },
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
             ));
 
             row.spawn(NodeBundle {
@@ -597,26 +597,24 @@ fn add_numeric_config(
                         dec_button,
                     ))
                     .with_children(|btn| {
-                        btn.spawn(TextBundle::from_section(
-                            "-",
-                            TextStyle {
+                        btn.spawn((
+                            Text::new("-"),
+                            TextFont {
                                 font_size: 20.0,
-                                color: Color::WHITE,
                                 ..default()
                             },
+                            TextColor(Color::WHITE),
                         ));
                     });
 
                 // Value display
                 controls.spawn((
-                    TextBundle::from_section(
-                        "0",
-                        TextStyle {
-                            font_size: 16.0,
-                            color: Color::srgb(0.7, 0.9, 1.0),
-                            ..default()
-                        },
-                    ),
+                    Text::new("0"),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.7, 0.9, 1.0)),
                     ConfigValueText(inc_button),
                 ));
 
@@ -637,13 +635,13 @@ fn add_numeric_config(
                         inc_button,
                     ))
                     .with_children(|btn| {
-                        btn.spawn(TextBundle::from_section(
-                            "+",
-                            TextStyle {
+                        btn.spawn((
+                            Text::new("+"),
+                            TextFont {
                                 font_size: 20.0,
-                                color: Color::WHITE,
                                 ..default()
                             },
+                            TextColor(Color::WHITE),
                         ));
                     });
             });
@@ -663,13 +661,13 @@ fn add_cycle_config(parent: &mut ChildBuilder, label: &str, cycle_button: Config
             ..default()
         })
         .with_children(|row| {
-            row.spawn(TextBundle::from_section(
-                label,
-                TextStyle {
+            row.spawn((
+                Text::new(label),
+                TextFont {
                     font_size: 16.0,
-                    color: Color::srgb(0.9, 0.9, 0.9),
                     ..default()
                 },
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
             ));
 
             row.spawn((
@@ -687,14 +685,13 @@ fn add_cycle_config(parent: &mut ChildBuilder, label: &str, cycle_button: Config
             ))
             .with_children(|btn| {
                 btn.spawn((
-                    TextBundle::from_section(
-                        "Value",
-                        TextStyle {
-                            font_size: 16.0,
-                            color: Color::srgb(0.7, 0.9, 1.0),
-                            ..default()
-                        },
-                    ),
+                    Text::new("Value"),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.7, 0.9, 1.0)),
+                    ConfigValueText(cycle_button),
                     ConfigValueText(cycle_button),
                 ));
             });
@@ -830,7 +827,7 @@ fn handle_menu_interactions(
 /// Update config value displays in menu
 fn update_config_display(config: Res<DemoConfig>, mut query: Query<(&mut Text, &ConfigValueText)>) {
     for (mut text, config_text) in query.iter_mut() {
-        text.sections[0].value = match config_text.0 {
+        text.0 = match config_text.0 {
             ConfigButton::IncrementMapWidth | ConfigButton::DecrementMapWidth => {
                 format!("{:.0}", config.map_width)
             }
@@ -965,11 +962,9 @@ fn setup(
 
     // Add camera
     commands.spawn((
-        Camera3dBundle {
-            transform: Transform::from_xyz(150.0, 120.0, 150.0)
-                .looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
-            ..default()
-        },
+        Camera3d::default(),
+        Transform::from_xyz(150.0, 120.0, 150.0)
+            .looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
         MainCamera,
     ));
 
@@ -1159,25 +1154,23 @@ fn setup_ui(commands: &mut Commands) {
             })
             .with_children(|left| {
                 // Title
-                left.spawn(TextBundle::from_section(
-                    "Australia Fire Simulation",
-                    TextStyle {
+                left.spawn((
+                    Text::new("Australia Fire Simulation"),
+                    TextFont {
                         font_size: 28.0,
-                        color: Color::WHITE,
                         ..default()
                     },
+                    TextColor(Color::WHITE),
                 ));
 
                 // Controls text
                 left.spawn((
-                    TextBundle::from_section(
-                        "Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  W - Add Water Suppression\n  Arrow Keys - Camera\n  Hover - Element Details",
-                        TextStyle {
-                            font_size: 14.0,
-                            color: Color::srgb(0.6, 0.6, 0.6),
-                            ..default()
-                        },
-                    ),
+                    Text::new("Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  W - Add Water Suppression\n  Arrow Keys - Camera\n  Hover - Element Details"),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.6, 0.6, 0.6)),
                     ControlsText,
                 ));
             });
@@ -1200,25 +1193,23 @@ fn setup_ui(commands: &mut Commands) {
             ))
             .with_children(|panel| {
                 // Stats heading
-                panel.spawn(TextBundle::from_section(
-                    "SIMULATION STATISTICS",
-                    TextStyle {
+                panel.spawn((
+                    Text::new("SIMULATION STATISTICS"),
+                    TextFont {
                         font_size: 20.0,
-                        color: Color::srgb(1.0, 0.8, 0.2),
                         ..default()
                     },
+                    TextColor(Color::srgb(1.0, 0.8, 0.2)),
                 ));
 
                 // Stats text
                 panel.spawn((
-                    TextBundle::from_section(
-                        "Initializing...",
-                        TextStyle {
-                            font_size: 16.0,
-                            color: Color::srgb(0.9, 0.9, 0.9),
-                            ..default()
-                        },
-                    ),
+                    Text::new("Initializing..."),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.9, 0.9, 0.9)),
                     StatsText,
                 ));
             });
@@ -1226,50 +1217,42 @@ fn setup_ui(commands: &mut Commands) {
 
     // Tooltip (hidden by default)
     commands.spawn((
-        TextBundle {
-            style: Style {
+        Text::new(""),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node::default(),
+        Style {
                 position_type: PositionType::Absolute,
                 left: Val::Px(0.0),
                 top: Val::Px(0.0),
                 padding: UiRect::all(Val::Px(8.0)),
                 ..default()
             },
-            text: Text::from_section(
-                "",
-                TextStyle {
-                    font_size: 14.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            ),
-            background_color: BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
-            visibility: Visibility::Hidden,
-            ..default()
-        },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
+            Visibility::Hidden,
         TooltipText,
     ));
 
     // FPS counter (top-right corner)
     commands.spawn((
-        TextBundle {
-            style: Style {
+        Text::new("FPS: 60"),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::srgb(1.0, 1.0, 0.0)),
+        Node::default(),
+        Style {
                 position_type: PositionType::Absolute,
                 right: Val::Px(10.0),
                 top: Val::Px(10.0),
                 padding: UiRect::all(Val::Px(5.0)),
                 ..default()
             },
-            text: Text::from_section(
-                "FPS: 60",
-                TextStyle {
-                    font_size: 16.0,
-                    color: Color::srgb(1.0, 1.0, 0.0),
-                    ..default()
-                },
-            ),
-            background_color: BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
-            ..default()
-        },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
         FpsText,
     ));
 }
@@ -1281,7 +1264,7 @@ fn update_fps(
     mut query: Query<&mut Text, With<FpsText>>,
 ) {
     fps_counter.frame_count += 1;
-    fps_counter.timer += time.delta_seconds();
+    fps_counter.timer += time.delta_secs();
 
     if fps_counter.timer >= 1.0 {
         fps_counter.fps = fps_counter.frame_count as f32 / fps_counter.timer;
@@ -1289,7 +1272,7 @@ fn update_fps(
         fps_counter.timer = 0.0;
 
         for mut text in query.iter_mut() {
-            text.sections[0].value = format!("FPS: {:.0}", fps_counter.fps);
+            text.0 = format!("FPS: {:.0}", fps_counter.fps);
         }
     }
 }
@@ -1301,7 +1284,7 @@ fn update_simulation(time: Res<Time>, mut sim_state: ResMut<SimulationState>) {
     }
 
     // Accumulate time with speed multiplier
-    sim_state.time_accumulator += time.delta_seconds() * sim_state.speed;
+    sim_state.time_accumulator += time.delta_secs() * sim_state.speed;
 
     // Update simulation at 10 FPS (0.1 second timesteps)
     let timestep = 0.1;
@@ -1350,11 +1333,11 @@ fn update_camera_controls(
     mut query: Query<&mut Transform, With<MainCamera>>,
     time: Res<Time>,
 ) {
-    let Ok(mut transform) = query.get_single_mut() else {
+    let Ok(mut transform) = query.single_mut() else {
         return;
     };
-    let speed = 50.0 * time.delta_seconds();
-    let rotation_speed = 1.0 * time.delta_seconds();
+    let speed = 50.0 * time.delta_secs();
+    let rotation_speed = 1.0 * time.delta_secs();
 
     // Movement
     if keyboard.pressed(KeyCode::ArrowUp) {
@@ -1379,7 +1362,7 @@ fn update_ui(sim_state: Res<SimulationState>, mut query: Query<&mut Text, With<S
     let weather = &sim_state.simulation.weather;
 
     for mut text in query.iter_mut() {
-        text.sections[0].value = format!(
+        text.0 = format!(
             "Simulation Time: {:.1}s\n\
              Status: {}\n\
              Speed: {:.1}x\n\
@@ -1435,7 +1418,7 @@ fn update_tooltip(
     sim_state: Res<SimulationState>,
     mut tooltip_query: Query<(&mut Text, &mut Style, &mut Visibility), With<TooltipText>>,
 ) {
-    let Ok(window) = windows.get_single() else {
+    let Ok(window) = windows.single() else {
         return;
     };
 
@@ -1447,7 +1430,7 @@ fn update_tooltip(
         return;
     };
 
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 
