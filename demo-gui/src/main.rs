@@ -333,14 +333,18 @@ fn render_menu_ui(
                     );
                     ui.add_space(10.0);
 
+                    // Guard for spacing > 0 and ensure at least 1
+                    let max_x = ((config.map_width / config.spacing).floor() as usize + 1).max(1);
+                    let max_y = ((config.map_height / config.spacing).floor() as usize + 1).max(1);
+
                     ui.horizontal(|ui| {
                         ui.label("Elements X:");
-                        ui.add(egui::Slider::new(&mut config.elements_x, 5..=20));
+                        ui.add(egui::Slider::new(&mut config.elements_x, 1..=max_x));
                     });
 
                     ui.horizontal(|ui| {
                         ui.label("Elements Y:");
-                        ui.add(egui::Slider::new(&mut config.elements_y, 5..=20));
+                        ui.add(egui::Slider::new(&mut config.elements_y, 1..=max_y));
                     });
 
                     ui.horizontal(|ui| {
@@ -517,8 +521,8 @@ impl FromWorld for SimulationState {
         // Add fuel elements in a grid
         let center_x = config.map_width / 2.0;
         let center_y = config.map_height / 2.0;
-        let start_x = center_x - (config.elements_x as f32 * config.spacing) / 2.0;
-        let start_y = center_y - (config.elements_y as f32 * config.spacing) / 2.0;
+        let start_x = center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
+        let start_y = center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
 
         for i in 0..config.elements_x {
             for j in 0..config.elements_y {
@@ -1174,6 +1178,23 @@ fn update_tooltip(
     Ok(())
 }
 
+/// Query for all sim related entities in the scene.
+type SceneEntitiesQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    Entity,
+    Or<(
+        With<MainCamera>,
+        With<DirectionalLight>,
+        With<FuelVisual>,
+        With<StatsPanel>,
+        With<ControlsText>,
+        With<TerrainMesh>,
+    )>,
+>;
+
+// Control's require lots of args.
+#[allow(clippy::too_many_arguments)]
 /// Handle user controls
 fn handle_controls(
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -1183,14 +1204,7 @@ fn handle_controls(
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut menu_state: ResMut<MenuState>,
     mut commands: Commands,
-    scene_entities: Query<Entity, Or<(
-        With<MainCamera>,
-        With<DirectionalLight>,
-        With<FuelVisual>,
-        With<StatsPanel>,
-        With<ControlsText>,
-        With<TerrainMesh>,
-    )>>,
+    scene_entities: SceneEntitiesQuery,
 ) {
     // Pause/Resume
     if keyboard.just_pressed(KeyCode::Space) {
@@ -1246,8 +1260,8 @@ fn handle_controls(
         // Add fuel elements in a grid
         let center_x = config.map_width / 2.0;
         let center_y = config.map_height / 2.0;
-        let start_x = center_x - (config.elements_x as f32 * config.spacing) / 2.0;
-        let start_y = center_y - (config.elements_y as f32 * config.spacing) / 2.0;
+        let start_x = center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
+        let start_y = center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
 
         for i in 0..config.elements_x {
             for j in 0..config.elements_y {
