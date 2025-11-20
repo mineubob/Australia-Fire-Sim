@@ -1180,6 +1180,8 @@ fn handle_controls(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut sim_state: ResMut<SimulationState>,
     config: Res<DemoConfig>,
+    windows: Query<&Window>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) {
     // Pause/Resume
     if keyboard.just_pressed(KeyCode::Space) {
@@ -1270,27 +1272,51 @@ fn handle_controls(
         // Note: Fuel entity map is not cleared - entities will be updated in update_fuel_visuals
     }
 
-    // Add water suppression
+    // Add water suppression at cursor position
     if keyboard.just_pressed(KeyCode::KeyW) {
-        let center_x = config.map_width / 2.0;
-        let center_y = config.map_height / 2.0;
-        let drop_altitude = 60.0;
-
-        // Add water droplets in a circular pattern
-        for i in 0..30 {
-            let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
-            let radius = 25.0;
-            let droplet = SuppressionDroplet::new(
-                SimVec3::new(
-                    center_x + angle.cos() * radius,
-                    center_y + angle.sin() * radius,
-                    drop_altitude,
-                ),
-                SimVec3::new(0.0, 0.0, -5.0),
-                10.0,
-                SuppressionAgent::Water,
-            );
-            sim_state.simulation.add_suppression_droplet(droplet);
+        // Try to get cursor position and convert to world coordinates
+        if let Ok(window) = windows.single() {
+            if let Some(cursor_position) = window.cursor_position() {
+                if let Ok((camera, camera_transform)) = camera_query.single() {
+                    // Cast ray from camera through cursor position
+                    if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+                        // Find intersection with ground plane (z = 0)
+                        // Ray equation: P = origin + t * direction
+                        // Ground plane: z = 0
+                        // Solve for t: origin.z + t * direction.z = 0
+                        let ray_dir = *ray.direction;
+                        
+                        if ray_dir.z.abs() > 0.001 {
+                            // Ray intersects ground plane
+                            let t = -ray.origin.z / ray_dir.z;
+                            
+                            if t > 0.0 {
+                                // Intersection point is in front of camera
+                                let drop_x = ray.origin.x + t * ray_dir.x;
+                                let drop_y = ray.origin.y + t * ray_dir.y;
+                                let drop_altitude = 60.0;
+                                
+                                // Add water droplets in a circular pattern at cursor position
+                                for i in 0..30 {
+                                    let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
+                                    let radius = 25.0;
+                                    let droplet = SuppressionDroplet::new(
+                                        SimVec3::new(
+                                            drop_x + angle.cos() * radius,
+                                            drop_y + angle.sin() * radius,
+                                            drop_altitude,
+                                        ),
+                                        SimVec3::new(0.0, 0.0, -5.0),
+                                        10.0,
+                                        SuppressionAgent::Water,
+                                    );
+                                    sim_state.simulation.add_suppression_droplet(droplet);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
