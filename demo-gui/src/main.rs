@@ -339,18 +339,15 @@ fn setup_menu(mut commands: Commands) {
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: BackgroundColor(Color::srgb(0.1, 0.1, 0.15)),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
+            BackgroundColor(Color::srgb(0.1, 0.1, 0.15)),
             MenuUI,
         ))
         .with_children(|parent| {
@@ -381,29 +378,23 @@ fn setup_menu(mut commands: Commands) {
             // Scrollable config panel container
             parent
                 .spawn((
-                    NodeBundle {
-                        style: Style {
-                            width: Val::Px(700.0),
-                            max_height: Val::Px(450.0),
-                            overflow: Overflow::clip_y(),
-                            ..default()
-                        },
-                        background_color: BackgroundColor(Color::srgba(0.2, 0.2, 0.25, 0.9)),
+                    Node {
+                        width: Val::Px(700.0),
+                        max_height: Val::Px(450.0),
+                        overflow: Overflow::clip_y(),
                         ..default()
                     },
+                    BackgroundColor(Color::srgba(0.2, 0.2, 0.25, 0.9)),
                     ScrollablePanel,
                 ))
                 .with_children(|scroll_container| {
                     // Inner scrollable content
                     scroll_container
-                        .spawn(NodeBundle {
-                            style: Style {
-                                flex_direction: FlexDirection::Column,
-                                padding: UiRect::all(Val::Px(20.0)),
-                                row_gap: Val::Px(10.0),
-                                width: Val::Percent(100.0),
-                                ..default()
-                            },
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(Val::Px(20.0)),
+                            row_gap: Val::Px(10.0),
+                            width: Val::Percent(100.0),
                             ..default()
                         })
                         .with_children(|config_panel| {
@@ -500,18 +491,16 @@ fn setup_menu(mut commands: Commands) {
             // START button
             parent
                 .spawn((
-                    ButtonBundle {
-                        style: Style {
-                            width: Val::Px(300.0),
-                            height: Val::Px(60.0),
-                            margin: UiRect::top(Val::Px(30.0)),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        background_color: BackgroundColor(Color::srgb(0.2, 0.6, 0.2)),
+                    Button,
+                    Node {
+                        width: Val::Px(300.0),
+                        height: Val::Px(60.0),
+                        margin: UiRect::top(Val::Px(30.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
                         ..default()
                     },
+                    BackgroundColor(Color::srgb(0.2, 0.6, 0.2)),
                     StartButton,
                 ))
                 .with_children(|button| {
@@ -535,8 +524,7 @@ fn add_config_section(parent: &mut ChildBuilder, title: &str) {
             ..default()
         },
         TextColor(Color::srgb(1.0, 0.8, 0.2)),
-        Node::default(),
-        Style {
+        Node {
             margin: UiRect::top(Val::Px(10.0)),
             ..default()
         },
@@ -550,14 +538,11 @@ fn add_numeric_config(
     inc_button: ConfigButton,
 ) {
     parent
-        .spawn(NodeBundle {
-            style: Style {
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
-                width: Val::Percent(100.0),
-                ..default()
-            },
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            width: Val::Percent(100.0),
             ..default()
         })
         .with_children(|row| {
@@ -570,30 +555,25 @@ fn add_numeric_config(
                 TextColor(Color::srgb(0.9, 0.9, 0.9)),
             ));
 
-            row.spawn(NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(10.0),
-                    ..default()
-                },
+            row.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(10.0),
                 ..default()
             })
             .with_children(|controls| {
                 // Decrement button
                 controls
                     .spawn((
-                        ButtonBundle {
-                            style: Style {
-                                width: Val::Px(30.0),
-                                height: Val::Px(30.0),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            background_color: BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
+                        Button,
+                        Node {
+                            width: Val::Px(30.0),
+                            height: Val::Px(30.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
                             ..default()
                         },
+                        BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
                         dec_button,
                     ))
                     .with_children(|btn| {
@@ -621,17 +601,15 @@ fn add_numeric_config(
                 // Increment button
                 controls
                     .spawn((
-                        ButtonBundle {
-                            style: Style {
-                                width: Val::Px(30.0),
-                                height: Val::Px(30.0),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            background_color: BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
+                        Button,
+                        Node {
+                            width: Val::Px(30.0),
+                            height: Val::Px(30.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
                             ..default()
                         },
+                        BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
                         inc_button,
                     ))
                     .with_children(|btn| {
@@ -650,14 +628,11 @@ fn add_numeric_config(
 
 fn add_cycle_config(parent: &mut ChildBuilder, label: &str, cycle_button: ConfigButton) {
     parent
-        .spawn(NodeBundle {
-            style: Style {
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
-                width: Val::Percent(100.0),
-                ..default()
-            },
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            width: Val::Percent(100.0),
             ..default()
         })
         .with_children(|row| {
@@ -671,16 +646,14 @@ fn add_cycle_config(parent: &mut ChildBuilder, label: &str, cycle_button: Config
             ));
 
             row.spawn((
-                ButtonBundle {
-                    style: Style {
-                        padding: UiRect::all(Val::Px(8.0)),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    background_color: BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
+                Button,
+                Node {
+                    padding: UiRect::all(Val::Px(8.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
                     ..default()
                 },
+                BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
                 cycle_button,
             ))
             .with_children(|btn| {
@@ -691,7 +664,6 @@ fn add_cycle_config(parent: &mut ChildBuilder, label: &str, cycle_button: Config
                         ..default()
                     },
                     TextColor(Color::srgb(0.7, 0.9, 1.0)),
-                    ConfigValueText(cycle_button),
                     ConfigValueText(cycle_button),
                 ));
             });
@@ -944,20 +916,20 @@ fn setup(
     mut sim_state: ResMut<SimulationState>,
 ) {
     // Add light
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
+    commands.spawn((
+        DirectionalLight {
             illuminance: 10000.0,
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(50.0, 100.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    });
+        Transform::from_xyz(50.0, 100.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
 
     // Add ambient light
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
         brightness: 200.0,
+        affects_lightmapped_meshes: false,
     });
 
     // Add camera
@@ -999,12 +971,9 @@ fn setup(
 
         let entity = commands
             .spawn((
-                PbrBundle {
-                    mesh: cube_mesh.clone(),
-                    material,
-                    transform: Transform::from_xyz(pos.x, pos.z, pos.y),
-                    ..default()
-                },
+                Mesh3d(cube_mesh.clone()),
+                MeshMaterial3d(material),
+                Transform::from_xyz(pos.x, pos.z, pos.y),
                 FuelVisual { element_id },
             ))
             .id();
@@ -1121,35 +1090,28 @@ fn spawn_terrain(
         ..default()
     });
 
-    commands.spawn(PbrBundle {
-        mesh: terrain_mesh,
-        material: terrain_material,
-        transform: Transform::from_xyz(0.0, 0.0, 0.0),
-        ..default()
-    });
+    commands.spawn((
+        Mesh3d(terrain_mesh),
+        MeshMaterial3d(terrain_material),
+        Transform::from_xyz(0.0, 0.0, 0.0),
+    ));
 }
 
 fn setup_ui(commands: &mut Commands) {
     // Root UI container - fills entire screen
     commands
-        .spawn(NodeBundle {
-            style: Style {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                ..default()
-            },
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
             ..default()
         })
         .with_children(|parent| {
             // Left side - Title and controls
-            parent.spawn(NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
-                    ..default()
-                },
+            parent.spawn(Node {
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(10.0)),
                 ..default()
             })
             .with_children(|left| {
@@ -1177,18 +1139,15 @@ fn setup_ui(commands: &mut Commands) {
 
             // Right side - Stats panel with background box
             parent.spawn((
-                NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Column,
-                        padding: UiRect::all(Val::Px(15.0)),
-                        margin: UiRect::all(Val::Px(10.0)),
-                        width: Val::Px(400.0),
-                        max_height: Val::Percent(90.0),
-                        ..default()
-                    },
-                    background_color: BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.85)),
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(15.0)),
+                    margin: UiRect::all(Val::Px(10.0)),
+                    width: Val::Px(400.0),
+                    max_height: Val::Percent(90.0),
                     ..default()
                 },
+                BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.85)),
                 StatsPanel,
             ))
             .with_children(|panel| {
@@ -1223,16 +1182,15 @@ fn setup_ui(commands: &mut Commands) {
             ..default()
         },
         TextColor(Color::WHITE),
-        Node::default(),
-        Style {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(0.0),
-                padding: UiRect::all(Val::Px(8.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
-            Visibility::Hidden,
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            top: Val::Px(0.0),
+            padding: UiRect::all(Val::Px(8.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
+        Visibility::Hidden,
         TooltipText,
     ));
 
@@ -1244,15 +1202,14 @@ fn setup_ui(commands: &mut Commands) {
             ..default()
         },
         TextColor(Color::srgb(1.0, 1.0, 0.0)),
-        Node::default(),
-        Style {
-                position_type: PositionType::Absolute,
-                right: Val::Px(10.0),
-                top: Val::Px(10.0),
-                padding: UiRect::all(Val::Px(5.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+        Node {
+            position_type: PositionType::Absolute,
+            right: Val::Px(10.0),
+            top: Val::Px(10.0),
+            padding: UiRect::all(Val::Px(5.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
         FpsText,
     ));
 }
