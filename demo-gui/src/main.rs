@@ -1091,7 +1091,7 @@ fn update_tooltip(
     };
 
     // Camera might not be ready on first frame after scene setup
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_transform)) = camera_query.single() else {
         return Ok(()); // Silently skip if camera not ready yet
     };
 
