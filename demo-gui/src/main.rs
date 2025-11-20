@@ -184,6 +184,7 @@ fn main() {
         .init_resource::<DemoConfig>()
         .init_resource::<MenuState>()
         .init_resource::<FpsCounter>()
+        .add_systems(Startup, setup_menu_camera)
         .add_systems(EguiPrimaryContextPass, render_menu_ui.run_if(in_menu))
         .add_systems(
             Update,
@@ -253,6 +254,11 @@ fn should_setup_scene(menu_state: Res<MenuState>) -> bool {
 
 fn simulation_running(menu_state: Res<MenuState>) -> bool {
     !menu_state.in_menu && menu_state.simulation_initialized && menu_state.scene_setup
+}
+
+/// Setup camera for menu UI (required for egui to work)
+fn setup_menu_camera(mut commands: Commands) {
+    commands.spawn(Camera2d);
 }
 
 /// Render egui menu UI
@@ -556,7 +562,16 @@ struct StatsPanel;
 struct FpsText;
 
 /// Initialize simulation when transitioning from menu
-fn init_simulation_system(mut commands: Commands, mut menu_state: ResMut<MenuState>) {
+fn init_simulation_system(
+    mut commands: Commands,
+    mut menu_state: ResMut<MenuState>,
+    camera_query: Query<Entity, (With<Camera2d>, Without<Camera3d>)>,
+) {
+    // Remove menu camera (Camera2d) since we'll add a Camera3d for the simulation
+    for entity in camera_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    
     // Initialize simulation state
     commands.init_resource::<SimulationState>();
     menu_state.simulation_initialized = true;
