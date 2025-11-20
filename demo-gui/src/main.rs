@@ -537,13 +537,7 @@ impl FromWorld for SimulationState {
             }
         }
 
-        // Ignite elements based on config
-        for id in 0..config
-            .initial_ignitions
-            .min(config.elements_x * config.elements_y)
-        {
-            sim.ignite_element(id as u32, 600.0);
-        }
+        // No auto-ignition - user will manually ignite fuel elements with 'I' key
 
         Self {
             simulation: sim,
@@ -832,7 +826,7 @@ fn setup_ui(commands: &mut Commands) {
 
                 // Controls text
                 left.spawn((
-                    Text::new("Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  W - Add Water Suppression\n  ESC - Return to Menu\n  Arrow Keys - Camera\n  Hover - Element Details"),
+                    Text::new("Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  I - Ignite Fuel (at cursor)\n  W - Add Water Suppression\n  ESC - Return to Menu\n  Arrow Keys - Camera\n  Hover - Element Details"),
                     TextFont {
                         font_size: 14.0,
                         ..default()
@@ -1272,19 +1266,61 @@ fn handle_controls(
             }
         }
 
-        // Ignite elements based on config
-        for id in 0..config
-            .initial_ignitions
-            .min(config.elements_x * config.elements_y)
-        {
-            sim.ignite_element(id as u32, 600.0);
-        }
+        // No auto-ignition - user will manually ignite fuel elements with 'I' key
 
         sim_state.simulation = sim;
         sim_state.paused = false;
         sim_state.speed = 1.0;
         sim_state.time_accumulator = 0.0;
         // Note: Fuel entity map is not cleared - entities will be updated in update_fuel_visuals
+    }
+
+    // Manual ignition at cursor position
+    if keyboard.just_pressed(KeyCode::KeyI) {
+        // Try to get cursor position and convert to world coordinates
+        if let Ok(window) = windows.single() {
+            if let Some(cursor_position) = window.cursor_position() {
+                if let Ok((camera, camera_transform)) = camera_query.single() {
+                    // Cast ray from camera through cursor position
+                    if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+                        // Find intersection with ground plane (z = 0)
+                        let ray_dir = *ray.direction;
+
+                        if ray_dir.z.abs() > 0.001 {
+                            let t = -ray.origin.z / ray_dir.z;
+
+                            if t > 0.0 {
+                                // Intersection point is in front of camera
+                                let ignite_x = ray.origin.x + t * ray_dir.x;
+                                let ignite_y = ray.origin.y + t * ray_dir.y;
+
+                                // Find the closest fuel element to cursor position and ignite it
+                                let elements = sim_state.simulation.get_all_elements();
+                                let mut closest_id: Option<u32> = None;
+                                let mut closest_dist = f32::MAX;
+
+                                for element in elements {
+                                    let dx = element.position.x - ignite_x;
+                                    let dy = element.position.y - ignite_y;
+                                    let dist = (dx * dx + dy * dy).sqrt();
+
+                                    if dist < closest_dist && dist < 10.0 {
+                                        // Within 10m
+                                        closest_dist = dist;
+                                        closest_id = Some(element.id);
+                                    }
+                                }
+
+                                // Ignite the closest element
+                                if let Some(id) = closest_id {
+                                    sim_state.simulation.ignite_element(id, 600.0);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Add water suppression at cursor position
