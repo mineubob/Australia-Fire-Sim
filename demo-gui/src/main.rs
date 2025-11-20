@@ -1294,7 +1294,7 @@ fn handle_controls(
                                 // Intersection point is in front of camera
                                 let drop_x = ray.origin.x + t * ray_dir.x;
                                 let drop_y = ray.origin.y + t * ray_dir.y;
-                                let drop_altitude = 60.0;
+                                let drop_altitude = ray.origin.z + t * ray_dir.z;
 
                                 // Add water droplets in a circular pattern at cursor position
                                 for i in 0..30 {
