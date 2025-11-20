@@ -40,7 +40,7 @@ impl Default for DemoConfig {
         Self {
             map_width: 200.0,
             map_height: 200.0,
-            terrain_type: TerrainType::Hill,
+            terrain_type: TerrainType::Valley,
             elements_x: 10,
             elements_y: 10,
             fuel_mass: 5.0,
@@ -71,14 +71,6 @@ impl TerrainType {
             TerrainType::Flat => "Flat",
             TerrainType::Hill => "Hill",
             TerrainType::Valley => "Valley",
-        }
-    }
-
-    fn cycle(self) -> Self {
-        match self {
-            TerrainType::Flat => TerrainType::Hill,
-            TerrainType::Hill => TerrainType::Valley,
-            TerrainType::Valley => TerrainType::Flat,
         }
     }
 
@@ -117,16 +109,6 @@ impl FuelType {
         }
     }
 
-    fn cycle(self) -> Self {
-        match self {
-            FuelType::DryGrass => FuelType::EucalyptusStringybark,
-            FuelType::EucalyptusStringybark => FuelType::EucalyptusSmoothBark,
-            FuelType::EucalyptusSmoothBark => FuelType::Shrubland,
-            FuelType::Shrubland => FuelType::DeadWood,
-            FuelType::DeadWood => FuelType::DryGrass,
-        }
-    }
-
     fn all() -> [Self; 5] {
         [
             FuelType::DryGrass,
@@ -157,17 +139,6 @@ impl WeatherPresetType {
             WeatherPresetType::Goldfields => "Goldfields",
             WeatherPresetType::Kimberley => "Kimberley",
             WeatherPresetType::Pilbara => "Pilbara",
-        }
-    }
-
-    fn cycle(self) -> Self {
-        match self {
-            WeatherPresetType::PerthMetro => WeatherPresetType::SouthWest,
-            WeatherPresetType::SouthWest => WeatherPresetType::Wheatbelt,
-            WeatherPresetType::Wheatbelt => WeatherPresetType::Goldfields,
-            WeatherPresetType::Goldfields => WeatherPresetType::Kimberley,
-            WeatherPresetType::Kimberley => WeatherPresetType::Pilbara,
-            WeatherPresetType::Pilbara => WeatherPresetType::PerthMetro,
         }
     }
 
@@ -337,11 +308,15 @@ fn render_menu_ui(
 
                     ui.horizontal(|ui| {
                         ui.label("Terrain Type:");
-                        egui::ComboBox::from_label("")
+                        egui::ComboBox::new("terrain-type", "")
                             .selected_text(config.terrain_type.name())
                             .show_ui(ui, |ui| {
                                 for variant in TerrainType::all() {
-                                    ui.selectable_value(&mut config.terrain_type, variant, variant.name());
+                                    ui.selectable_value(
+                                        &mut config.terrain_type,
+                                        variant,
+                                        variant.name(),
+                                    );
                                 }
                             });
                     });
@@ -375,11 +350,15 @@ fn render_menu_ui(
 
                     ui.horizontal(|ui| {
                         ui.label("Fuel Type:");
-                        egui::ComboBox::from_label("")
+                        egui::ComboBox::new("fuel-type", "")
                             .selected_text(config.fuel_type.name())
                             .show_ui(ui, |ui| {
                                 for variant in FuelType::all() {
-                                    ui.selectable_value(&mut config.fuel_type, variant, variant.name());
+                                    ui.selectable_value(
+                                        &mut config.fuel_type,
+                                        variant,
+                                        variant.name(),
+                                    );
                                 }
                             });
                     });
@@ -413,11 +392,15 @@ fn render_menu_ui(
                     if config.use_weather_preset {
                         ui.horizontal(|ui| {
                             ui.label("Weather Preset:");
-                            egui::ComboBox::from_label("")
+                            egui::ComboBox::new("weather-preset", "")
                                 .selected_text(config.weather_preset.name())
                                 .show_ui(ui, |ui| {
                                     for variant in WeatherPresetType::all() {
-                                        ui.selectable_value(&mut config.weather_preset, variant, variant.name());
+                                        ui.selectable_value(
+                                            &mut config.weather_preset,
+                                            variant,
+                                            variant.name(),
+                                        );
                                     }
                                 });
                         });
@@ -608,7 +591,7 @@ fn init_simulation_system(
     for entity in camera_query.iter() {
         commands.entity(entity).despawn();
     }
-    
+
     // Initialize simulation state
     commands.init_resource::<SimulationState>();
     menu_state.simulation_initialized = true;
