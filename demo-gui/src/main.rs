@@ -180,7 +180,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(EguiPlugin)
+        .add_plugins(EguiPlugin::default())
         .init_resource::<DemoConfig>()
         .init_resource::<MenuState>()
         .init_resource::<FpsCounter>()
@@ -260,8 +260,8 @@ fn render_menu_ui(
     mut contexts: EguiContexts,
     mut config: ResMut<DemoConfig>,
     mut menu_state: ResMut<MenuState>,
-) -> Result<(), String> {
-    let ctx = contexts.ctx_mut().map_err(|e| format!("Failed to get egui context: {:?}", e))?;
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
 
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
@@ -434,7 +434,7 @@ fn render_menu_ui(
             ui.add_space(20.0);
         });
     });
-    
+
     Ok(())
 }
 
@@ -954,8 +954,8 @@ fn update_camera_controls(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut Transform, With<MainCamera>>,
     time: Res<Time>,
-) -> Result<(), String> {
-    let mut transform = query.single_mut().map_err(|e| format!("Failed to get camera transform: {:?}", e))?;
+) -> Result {
+    let mut transform = query.single_mut()?;
     let speed = 50.0 * time.delta_secs();
     let rotation_speed = 1.0 * time.delta_secs();
 
@@ -974,12 +974,15 @@ fn update_camera_controls(
     if keyboard.pressed(KeyCode::ArrowRight) {
         transform.rotate_y(-rotation_speed);
     }
-    
+
     Ok(())
 }
 
 /// Update UI text
-fn update_ui(sim_state: Res<SimulationState>, mut query: Query<&mut Text, With<StatsText>>) -> Result<(), String> {
+fn update_ui(
+    sim_state: Res<SimulationState>,
+    mut query: Query<&mut Text, With<StatsText>>,
+) -> Result {
     let stats = sim_state.simulation.get_stats();
     let weather = &sim_state.simulation.weather;
 
@@ -1030,7 +1033,7 @@ fn update_ui(sim_state: Res<SimulationState>, mut query: Query<&mut Text, With<S
             weather.fire_danger_rating(),
         );
     }
-    
+
     Ok(())
 }
 
@@ -1041,8 +1044,8 @@ fn update_tooltip(
     fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
     sim_state: Res<SimulationState>,
     mut tooltip_query: Query<(&mut Text, &mut Node, &mut Visibility), With<TooltipText>>,
-) -> Result<(), String> {
-    let window = windows.single().map_err(|e| format!("Failed to get window: {:?}", e))?;
+) -> Result {
+    let window = windows.single()?;
 
     let Some(cursor_position) = window.cursor_position() else {
         // Hide tooltip if cursor not in window
@@ -1052,11 +1055,10 @@ fn update_tooltip(
         return Ok(());
     };
 
-    let (camera, camera_transform) = camera_query.single().map_err(|e| format!("Failed to get camera: {:?}", e))?;
+    let (camera, camera_transform) = camera_query.single()?;
 
     // Cast ray from camera through cursor position
-    let ray = camera.viewport_to_world(camera_transform, cursor_position)
-        .map_err(|e| format!("Failed to get viewport ray: {:?}", e))?;
+    let ray = camera.viewport_to_world(camera_transform, cursor_position)?;
 
     // Find closest fuel element intersecting with ray
     let mut closest_element: Option<(u32, f32)> = None;
@@ -1130,7 +1132,7 @@ fn update_tooltip(
             *visibility = Visibility::Hidden;
         }
     }
-    
+
     Ok(())
 }
 
