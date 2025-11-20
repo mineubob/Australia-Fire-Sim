@@ -2,8 +2,8 @@
 //!
 //! This demo provides a real-time 3D visualization of the fire simulation with interactive controls.
 
-use bevy::{input::mouse::MouseWheel, prelude::*, ui::*};
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy::{input::mouse::MouseWheel, prelude::*};
+use bevy_egui::EguiPlugin;
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
     Vec3 as SimVec3, WeatherSystem,
@@ -88,7 +88,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Australia Fire Simulation - Bevy Demo".into(),
-                resolution: (1280., 720.).into(),
+                resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()
@@ -368,8 +368,7 @@ fn setup_menu(mut commands: Commands) {
                     ..default()
                 },
                 TextColor(Color::srgb(0.8, 0.8, 0.8)),
-                Node::default(),
-                Style {
+                Node {
                     margin: UiRect::new(Val::Px(0.0), Val::Px(0.0), Val::Px(10.0), Val::Px(30.0)),
                     ..default()
                 },
@@ -516,7 +515,7 @@ fn setup_menu(mut commands: Commands) {
         });
 }
 
-fn add_config_section(parent: &mut ChildBuilder, title: &str) {
+fn add_config_section(parent: &mut ChildSpawnerCommands, title: &str) {
     parent.spawn((
         Text::new(title),
         TextFont {
@@ -532,7 +531,7 @@ fn add_config_section(parent: &mut ChildBuilder, title: &str) {
 }
 
 fn add_numeric_config(
-    parent: &mut ChildBuilder,
+    parent: &mut ChildSpawnerCommands,
     label: &str,
     dec_button: ConfigButton,
     inc_button: ConfigButton,
@@ -626,7 +625,7 @@ fn add_numeric_config(
         });
 }
 
-fn add_cycle_config(parent: &mut ChildBuilder, label: &str, cycle_button: ConfigButton) {
+fn add_cycle_config(parent: &mut ChildSpawnerCommands, label: &str, cycle_button: ConfigButton) {
     parent
         .spawn(Node {
             flex_direction: FlexDirection::Row,
@@ -694,7 +693,8 @@ fn handle_menu_interactions(
                 if start_button.is_some() {
                     // Hide menu
                     for entity in menu_query.iter() {
-                        commands.entity(entity).despawn_recursive();
+                        commands.entity(entity).despawn_children();
+                        commands.entity(entity).despawn();
                     }
                     // Despawn menu camera
                     for entity in camera_query.iter() {
@@ -854,16 +854,16 @@ fn update_config_display(config: Res<DemoConfig>, mut query: Query<(&mut Text, &
 
 /// Handle mouse wheel scrolling for menu panel
 fn handle_menu_scroll(
-    mut scroll_events: EventReader<MouseWheel>,
-    scroll_query: Query<(&Node, &Children), With<ScrollablePanel>>,
-    mut children_query: Query<&mut Style>,
+    mut scroll_events: MessageReader<MouseWheel>,
+    scroll_query: Query<(&ComputedNode, &Children), With<ScrollablePanel>>,
+    mut children_query: Query<&mut Node>,
 ) {
     for event in scroll_events.read() {
         for (panel_node, children) in &scroll_query {
             if let Some(&child_entity) = children.first() {
-                if let Ok(mut child_style) = children_query.get_mut(child_entity) {
+                if let Ok(mut child_node) = children_query.get_mut(child_entity) {
                     // Get current top position (or 0 if not set)
-                    let current_top = match child_style.top {
+                    let current_top = match child_node.top {
                         Val::Px(px) => px,
                         _ => 0.0,
                     };
@@ -878,11 +878,11 @@ fn handle_menu_scroll(
                     // Estimate content height (we'll allow scrolling and clamp)
                     // Max scroll is 0, min scroll allows content to scroll up
                     let max_scroll = 0.0;
-                    let min_scroll = -(1000.0 - container_height).max(0.0); // Allow up to 1000px of content
+                    let min_scroll = -(1000.0 - container_height).max(0.0_f32); // Allow up to 1000px of content
                     let clamped_top = new_top.clamp(min_scroll, max_scroll);
 
                     // Apply new scroll position to the child (content)
-                    child_style.top = Val::Px(clamped_top);
+                    child_node.top = Val::Px(clamped_top);
                 }
             }
         }
@@ -1076,12 +1076,12 @@ fn spawn_terrain(
     // Create mesh
     let mut mesh = Mesh::new(
         bevy::render::render_resource::PrimitiveTopology::TriangleList,
-        bevy::render::render_asset::RenderAssetUsages::default(),
+        bevy::asset::RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
+    mesh.insert_indices(bevy::mesh::Indices::U32(indices));
 
     let terrain_mesh = meshes.add(mesh);
     let terrain_material = materials.add(StandardMaterial {
@@ -1255,7 +1255,7 @@ fn update_simulation(time: Res<Time>, mut sim_state: ResMut<SimulationState>) {
 fn update_fuel_visuals(
     sim_state: Res<SimulationState>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    query: Query<(&FuelVisual, &Handle<StandardMaterial>)>,
+    query: Query<(&FuelVisual, &MeshMaterial3d<StandardMaterial>)>,
 ) {
     for (fuel_visual, material_handle) in query.iter() {
         if let Some(element) = sim_state
@@ -1264,7 +1264,7 @@ fn update_fuel_visuals(
             .into_iter()
             .find(|e| e.id == fuel_visual.element_id)
         {
-            if let Some(material) = materials.get_mut(material_handle) {
+            if let Some(material) = materials.get_mut(&material_handle.0) {
                 if element.is_ignited() {
                     // Calculate color based on temperature
                     let temp_factor = (element.temperature() / 1200.0).clamp(0.0, 1.0);
@@ -1373,7 +1373,7 @@ fn update_tooltip(
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
     sim_state: Res<SimulationState>,
-    mut tooltip_query: Query<(&mut Text, &mut Style, &mut Visibility), With<TooltipText>>,
+    mut tooltip_query: Query<(&mut Text, &mut Node, &mut Visibility), With<TooltipText>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -1392,7 +1392,7 @@ fn update_tooltip(
     };
 
     // Cast ray from camera through cursor position
-    let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
         return;
     };
 
@@ -1432,7 +1432,7 @@ fn update_tooltip(
                 .find(|e| e.id == element_id)
             {
                 // Show tooltip with element details
-                text.sections[0].value = format!(
+                text.0 = format!(
                     "Fuel Element #{}\n\
                      Position: ({:.1}, {:.1}, {:.1})\n\
                      Temperature: {:.0}°C\n\
