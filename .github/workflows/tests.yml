@@ -32,7 +32,7 @@ jobs:
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "test"
+          shared-key: "ubuntu-latest"
           cache-on-failure: true
       
       - name: Run tests
@@ -65,7 +65,7 @@ jobs:
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "clippy"
+          shared-key: "ubuntu-latest"
           cache-on-failure: true
           
       - name: Run clippy
@@ -111,7 +111,7 @@ jobs:
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "build-${{ matrix.os }}"
+          shared-key: "${{ matrix.os }}"
           cache-on-failure: true
         
       - name: Build
