@@ -2,8 +2,8 @@
 //!
 //! This demo provides a real-time 3D visualization of the fire simulation with interactive controls.
 
-use bevy::{input::mouse::MouseWheel, prelude::*};
-use bevy_egui::EguiPlugin;
+use bevy::prelude::*;
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
     Vec3 as SimVec3, WeatherSystem,
@@ -61,6 +61,24 @@ pub enum TerrainType {
     Valley,
 }
 
+impl TerrainType {
+    fn name(self) -> &'static str {
+        match self {
+            TerrainType::Flat => "Flat",
+            TerrainType::Hill => "Hill",
+            TerrainType::Valley => "Valley",
+        }
+    }
+
+    fn cycle(self) -> Self {
+        match self {
+            TerrainType::Flat => TerrainType::Hill,
+            TerrainType::Hill => TerrainType::Valley,
+            TerrainType::Valley => TerrainType::Flat,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum FuelType {
     DryGrass,
@@ -80,6 +98,26 @@ impl FuelType {
             FuelType::DeadWood => Fuel::dead_wood_litter(),
         }
     }
+
+    fn name(self) -> &'static str {
+        match self {
+            FuelType::DryGrass => "Dry Grass",
+            FuelType::EucalyptusStringybark => "Eucalyptus Stringybark",
+            FuelType::EucalyptusSmoothBark => "Eucalyptus Smooth Bark",
+            FuelType::Shrubland => "Shrubland",
+            FuelType::DeadWood => "Dead Wood",
+        }
+    }
+
+    fn cycle(self) -> Self {
+        match self {
+            FuelType::DryGrass => FuelType::EucalyptusStringybark,
+            FuelType::EucalyptusStringybark => FuelType::EucalyptusSmoothBark,
+            FuelType::EucalyptusSmoothBark => FuelType::Shrubland,
+            FuelType::Shrubland => FuelType::DeadWood,
+            FuelType::DeadWood => FuelType::DryGrass,
+        }
+    }
 }
 
 /// Main entry point
@@ -97,16 +135,7 @@ fn main() {
         .init_resource::<DemoConfig>()
         .init_resource::<MenuState>()
         .init_resource::<FpsCounter>()
-        .add_systems(Startup, setup_menu)
-        .add_systems(
-            Update,
-            (
-                handle_menu_interactions,
-                update_config_display,
-                handle_menu_scroll,
-            )
-                .run_if(in_menu),
-        )
+        .add_systems(Update, render_menu_ui.run_if(in_menu))
         .add_systems(
             Update,
             (
@@ -175,6 +204,141 @@ fn should_setup_scene(menu_state: Res<MenuState>) -> bool {
 
 fn simulation_running(menu_state: Res<MenuState>) -> bool {
     !menu_state.in_menu && menu_state.simulation_initialized && menu_state.scene_setup
+}
+
+/// Render egui menu UI
+fn render_menu_ui(
+    mut contexts: EguiContexts,
+    mut config: ResMut<DemoConfig>,
+    mut menu_state: ResMut<MenuState>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
+    
+    egui::CentralPanel::default().show(ctx, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.add_space(20.0);
+            ui.heading(egui::RichText::new("Australia Fire Simulation").size(48.0).color(egui::Color32::from_rgb(255, 204, 51)));
+            ui.add_space(10.0);
+            ui.label(egui::RichText::new("Configure Simulation Parameters").size(24.0).color(egui::Color32::from_rgb(204, 204, 204)));
+            ui.add_space(30.0);
+        });
+
+        egui::ScrollArea::vertical()
+            .max_height(450.0)
+            .show(ui, |ui| {
+                ui.set_max_width(700.0);
+                
+                // Terrain Settings
+                ui.group(|ui| {
+                    ui.heading(egui::RichText::new("TERRAIN SETTINGS").size(20.0).color(egui::Color32::from_rgb(255, 204, 51)));
+                    ui.add_space(10.0);
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Map Width (m):");
+                        ui.add(egui::Slider::new(&mut config.map_width, 50.0..=500.0).text("m"));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Map Height (m):");
+                        ui.add(egui::Slider::new(&mut config.map_height, 50.0..=500.0).text("m"));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Terrain Type:");
+                        if ui.button(config.terrain_type.name()).clicked() {
+                            config.terrain_type = config.terrain_type.cycle();
+                        }
+                    });
+                });
+                
+                ui.add_space(10.0);
+                
+                // Fire Settings
+                ui.group(|ui| {
+                    ui.heading(egui::RichText::new("FIRE SETTINGS").size(20.0).color(egui::Color32::from_rgb(255, 204, 51)));
+                    ui.add_space(10.0);
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Elements X:");
+                        ui.add(egui::Slider::new(&mut config.elements_x, 5..=20));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Elements Y:");
+                        ui.add(egui::Slider::new(&mut config.elements_y, 5..=20));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Fuel Mass (kg):");
+                        ui.add(egui::Slider::new(&mut config.fuel_mass, 1.0..=20.0).text("kg"));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Fuel Type:");
+                        if ui.button(config.fuel_type.name()).clicked() {
+                            config.fuel_type = config.fuel_type.cycle();
+                        }
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Initial Ignitions:");
+                        ui.add(egui::Slider::new(&mut config.initial_ignitions, 1..=20));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Spacing (m):");
+                        ui.add(egui::Slider::new(&mut config.spacing, 5.0..=15.0).text("m"));
+                    });
+                });
+                
+                ui.add_space(10.0);
+                
+                // Weather Settings
+                ui.group(|ui| {
+                    ui.heading(egui::RichText::new("WEATHER SETTINGS").size(20.0).color(egui::Color32::from_rgb(255, 204, 51)));
+                    ui.add_space(10.0);
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Temperature (°C):");
+                        ui.add(egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Humidity:");
+                        ui.add(egui::Slider::new(&mut config.humidity, 0.05..=0.60).text(""));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Wind Speed (km/h):");
+                        ui.add(egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Wind Direction (°):");
+                        ui.add(egui::Slider::new(&mut config.wind_direction, 0.0..=360.0).text("°"));
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Drought Factor:");
+                        ui.add(egui::Slider::new(&mut config.drought_factor, 1.0..=20.0));
+                    });
+                });
+                
+                ui.add_space(20.0);
+            });
+
+        ui.vertical_centered(|ui| {
+            if ui.add_sized(
+                [300.0, 60.0],
+                egui::Button::new(egui::RichText::new("START SIMULATION").size(24.0))
+            ).clicked() {
+                menu_state.in_menu = false;
+            }
+            ui.add_space(20.0);
+        });
+    });
 }
 
 /// Simulation state resource
@@ -285,609 +449,6 @@ struct StatsPanel;
 
 #[derive(Component)]
 struct FpsText;
-
-/// Menu components
-#[derive(Component)]
-struct MenuUI;
-
-#[derive(Component)]
-struct MenuCamera;
-
-#[derive(Component)]
-struct StartButton;
-
-#[derive(Component, Clone, Copy)]
-enum ConfigButton {
-    IncrementMapWidth,
-    DecrementMapWidth,
-    IncrementMapHeight,
-    DecrementMapHeight,
-    IncrementElementsX,
-    DecrementElementsX,
-    IncrementElementsY,
-    DecrementElementsY,
-    IncrementFuelMass,
-    DecrementFuelMass,
-    IncrementInitialIgnitions,
-    DecrementInitialIgnitions,
-    IncrementSpacing,
-    DecrementSpacing,
-    IncrementTemperature,
-    DecrementTemperature,
-    IncrementHumidity,
-    DecrementHumidity,
-    IncrementWindSpeed,
-    DecrementWindSpeed,
-    IncrementWindDirection,
-    DecrementWindDirection,
-    IncrementDroughtFactor,
-    DecrementDroughtFactor,
-    CycleTerrainType,
-    CycleFuelType,
-}
-
-#[derive(Component)]
-struct ConfigValueText(ConfigButton);
-
-#[derive(Component)]
-struct ScrollablePanel;
-
-/// Setup menu UI
-fn setup_menu(mut commands: Commands) {
-    // Spawn a 2D camera for the UI
-    commands.spawn((Camera2d, MenuCamera));
-
-    commands
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.1, 0.1, 0.15)),
-            MenuUI,
-        ))
-        .with_children(|parent| {
-            // Title
-            parent.spawn((
-                Text::new("Australia Fire Simulation"),
-                TextFont {
-                    font_size: 48.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(1.0, 0.8, 0.2)),
-            ));
-
-            parent.spawn((
-                Text::new("Configure Simulation Parameters"),
-                TextFont {
-                    font_size: 24.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.8, 0.8, 0.8)),
-                Node {
-                    margin: UiRect::new(Val::Px(0.0), Val::Px(0.0), Val::Px(10.0), Val::Px(30.0)),
-                    ..default()
-                },
-            ));
-
-            // Scrollable config panel container
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Px(700.0),
-                        max_height: Val::Px(450.0),
-                        overflow: Overflow::clip_y(),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.2, 0.2, 0.25, 0.9)),
-                    ScrollablePanel,
-                ))
-                .with_children(|scroll_container| {
-                    // Inner scrollable content
-                    scroll_container
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Column,
-                            padding: UiRect::all(Val::Px(20.0)),
-                            row_gap: Val::Px(10.0),
-                            width: Val::Percent(100.0),
-                            ..default()
-                        })
-                        .with_children(|config_panel| {
-                            add_config_section(config_panel, "TERRAIN SETTINGS");
-                            add_numeric_config(
-                                config_panel,
-                                "Map Width (m):",
-                                ConfigButton::DecrementMapWidth,
-                                ConfigButton::IncrementMapWidth,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Map Height (m):",
-                                ConfigButton::DecrementMapHeight,
-                                ConfigButton::IncrementMapHeight,
-                            );
-                            add_cycle_config(
-                                config_panel,
-                                "Terrain Type:",
-                                ConfigButton::CycleTerrainType,
-                            );
-
-                            add_config_section(config_panel, "FIRE SETTINGS");
-                            add_numeric_config(
-                                config_panel,
-                                "Grid Width:",
-                                ConfigButton::DecrementElementsX,
-                                ConfigButton::IncrementElementsX,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Grid Height:",
-                                ConfigButton::DecrementElementsY,
-                                ConfigButton::IncrementElementsY,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Fuel Mass (kg):",
-                                ConfigButton::DecrementFuelMass,
-                                ConfigButton::IncrementFuelMass,
-                            );
-                            add_cycle_config(
-                                config_panel,
-                                "Fuel Type:",
-                                ConfigButton::CycleFuelType,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Initial Ignitions:",
-                                ConfigButton::DecrementInitialIgnitions,
-                                ConfigButton::IncrementInitialIgnitions,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Spacing (m):",
-                                ConfigButton::DecrementSpacing,
-                                ConfigButton::IncrementSpacing,
-                            );
-
-                            add_config_section(config_panel, "WEATHER SETTINGS");
-                            add_numeric_config(
-                                config_panel,
-                                "Temperature (°C):",
-                                ConfigButton::DecrementTemperature,
-                                ConfigButton::IncrementTemperature,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Humidity (0-1):",
-                                ConfigButton::DecrementHumidity,
-                                ConfigButton::IncrementHumidity,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Wind Speed (m/s):",
-                                ConfigButton::DecrementWindSpeed,
-                                ConfigButton::IncrementWindSpeed,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Wind Direction (°):",
-                                ConfigButton::DecrementWindDirection,
-                                ConfigButton::IncrementWindDirection,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Drought Factor:",
-                                ConfigButton::DecrementDroughtFactor,
-                                ConfigButton::IncrementDroughtFactor,
-                            );
-                        });
-                });
-
-            // START button
-            parent
-                .spawn((
-                    Button,
-                    Node {
-                        width: Val::Px(300.0),
-                        height: Val::Px(60.0),
-                        margin: UiRect::top(Val::Px(30.0)),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.2, 0.6, 0.2)),
-                    StartButton,
-                ))
-                .with_children(|button| {
-                    button.spawn((
-                        Text::new("START SIMULATION"),
-                        TextFont {
-                            font_size: 24.0,
-                            ..default()
-                        },
-                        TextColor(Color::WHITE),
-                    ));
-                });
-        });
-}
-
-fn add_config_section(parent: &mut ChildSpawnerCommands, title: &str) {
-    parent.spawn((
-        Text::new(title),
-        TextFont {
-            font_size: 20.0,
-            ..default()
-        },
-        TextColor(Color::srgb(1.0, 0.8, 0.2)),
-        Node {
-            margin: UiRect::top(Val::Px(10.0)),
-            ..default()
-        },
-    ));
-}
-
-fn add_numeric_config(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    dec_button: ConfigButton,
-    inc_button: ConfigButton,
-) {
-    parent
-        .spawn(Node {
-            flex_direction: FlexDirection::Row,
-            justify_content: JustifyContent::SpaceBetween,
-            align_items: AlignItems::Center,
-            width: Val::Percent(100.0),
-            ..default()
-        })
-        .with_children(|row| {
-            row.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.9, 0.9, 0.9)),
-            ));
-
-            row.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(10.0),
-                ..default()
-            })
-            .with_children(|controls| {
-                // Decrement button
-                controls
-                    .spawn((
-                        Button,
-                        Node {
-                            width: Val::Px(30.0),
-                            height: Val::Px(30.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
-                        dec_button,
-                    ))
-                    .with_children(|btn| {
-                        btn.spawn((
-                            Text::new("-"),
-                            TextFont {
-                                font_size: 20.0,
-                                ..default()
-                            },
-                            TextColor(Color::WHITE),
-                        ));
-                    });
-
-                // Value display
-                controls.spawn((
-                    Text::new("0"),
-                    TextFont {
-                        font_size: 16.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.7, 0.9, 1.0)),
-                    ConfigValueText(inc_button),
-                ));
-
-                // Increment button
-                controls
-                    .spawn((
-                        Button,
-                        Node {
-                            width: Val::Px(30.0),
-                            height: Val::Px(30.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
-                        inc_button,
-                    ))
-                    .with_children(|btn| {
-                        btn.spawn((
-                            Text::new("+"),
-                            TextFont {
-                                font_size: 20.0,
-                                ..default()
-                            },
-                            TextColor(Color::WHITE),
-                        ));
-                    });
-            });
-        });
-}
-
-fn add_cycle_config(parent: &mut ChildSpawnerCommands, label: &str, cycle_button: ConfigButton) {
-    parent
-        .spawn(Node {
-            flex_direction: FlexDirection::Row,
-            justify_content: JustifyContent::SpaceBetween,
-            align_items: AlignItems::Center,
-            width: Val::Percent(100.0),
-            ..default()
-        })
-        .with_children(|row| {
-            row.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.9, 0.9, 0.9)),
-            ));
-
-            row.spawn((
-                Button,
-                Node {
-                    padding: UiRect::all(Val::Px(8.0)),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
-                cycle_button,
-            ))
-            .with_children(|btn| {
-                btn.spawn((
-                    Text::new("Value"),
-                    TextFont {
-                        font_size: 16.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.7, 0.9, 1.0)),
-                    ConfigValueText(cycle_button),
-                ));
-            });
-        });
-}
-
-#[allow(clippy::type_complexity)] // Allow the complex type.
-/// Handle menu button interactions
-fn handle_menu_interactions(
-    mut config: ResMut<DemoConfig>,
-    mut menu_state: ResMut<MenuState>,
-    mut interaction_query: Query<
-        (
-            &Interaction,
-            Option<&ConfigButton>,
-            Option<&StartButton>,
-            &mut BackgroundColor,
-        ),
-        Changed<Interaction>,
-    >,
-    menu_query: Query<Entity, With<MenuUI>>,
-    camera_query: Query<Entity, With<MenuCamera>>,
-    mut commands: Commands,
-) {
-    for (interaction, config_button, start_button, mut color) in &mut interaction_query {
-        match *interaction {
-            Interaction::Pressed => {
-                if start_button.is_some() {
-                    // Hide menu
-                    for entity in menu_query.iter() {
-                        commands.entity(entity).despawn_children();
-                        commands.entity(entity).despawn();
-                    }
-                    // Despawn menu camera
-                    for entity in camera_query.iter() {
-                        commands.entity(entity).despawn();
-                    }
-                    menu_state.in_menu = false;
-                } else if let Some(button) = config_button {
-                    // Update config based on button
-                    match button {
-                        ConfigButton::IncrementMapWidth => config.map_width += 10.0,
-                        ConfigButton::DecrementMapWidth => {
-                            config.map_width = (config.map_width - 10.0).max(50.0)
-                        }
-                        ConfigButton::IncrementMapHeight => config.map_height += 10.0,
-                        ConfigButton::DecrementMapHeight => {
-                            config.map_height = (config.map_height - 10.0).max(50.0)
-                        }
-                        ConfigButton::IncrementElementsX => config.elements_x += 1,
-                        ConfigButton::DecrementElementsX => {
-                            config.elements_x = config.elements_x.saturating_sub(1).max(1)
-                        }
-                        ConfigButton::IncrementElementsY => config.elements_y += 1,
-                        ConfigButton::DecrementElementsY => {
-                            config.elements_y = config.elements_y.saturating_sub(1).max(1)
-                        }
-                        ConfigButton::IncrementFuelMass => config.fuel_mass += 0.5,
-                        ConfigButton::DecrementFuelMass => {
-                            config.fuel_mass = (config.fuel_mass - 0.5).max(0.5)
-                        }
-                        ConfigButton::IncrementInitialIgnitions => config.initial_ignitions += 1,
-                        ConfigButton::DecrementInitialIgnitions => {
-                            config.initial_ignitions =
-                                config.initial_ignitions.saturating_sub(1).max(1)
-                        }
-                        ConfigButton::IncrementSpacing => config.spacing += 0.5,
-                        ConfigButton::DecrementSpacing => {
-                            config.spacing = (config.spacing - 0.5).max(1.0)
-                        }
-                        ConfigButton::IncrementTemperature => config.temperature += 1.0,
-                        ConfigButton::DecrementTemperature => {
-                            config.temperature = (config.temperature - 1.0).max(0.0)
-                        }
-                        ConfigButton::IncrementHumidity => {
-                            config.humidity = (config.humidity + 0.01).min(1.0)
-                        }
-                        ConfigButton::DecrementHumidity => {
-                            config.humidity = (config.humidity - 0.01).max(0.0)
-                        }
-                        ConfigButton::IncrementWindSpeed => config.wind_speed += 1.0,
-                        ConfigButton::DecrementWindSpeed => {
-                            config.wind_speed = (config.wind_speed - 1.0).max(0.0)
-                        }
-                        ConfigButton::IncrementWindDirection => {
-                            config.wind_direction = (config.wind_direction + 15.0) % 360.0
-                        }
-                        ConfigButton::DecrementWindDirection => {
-                            config.wind_direction = (config.wind_direction - 15.0 + 360.0) % 360.0
-                        }
-                        ConfigButton::IncrementDroughtFactor => {
-                            config.drought_factor = (config.drought_factor + 0.5).min(20.0)
-                        }
-                        ConfigButton::DecrementDroughtFactor => {
-                            config.drought_factor = (config.drought_factor - 0.5).max(0.0)
-                        }
-                        ConfigButton::CycleTerrainType => {
-                            config.terrain_type = match config.terrain_type {
-                                TerrainType::Flat => TerrainType::Hill,
-                                TerrainType::Hill => TerrainType::Valley,
-                                TerrainType::Valley => TerrainType::Flat,
-                            };
-                        }
-                        ConfigButton::CycleFuelType => {
-                            config.fuel_type = match config.fuel_type {
-                                FuelType::DryGrass => FuelType::EucalyptusStringybark,
-                                FuelType::EucalyptusStringybark => FuelType::EucalyptusSmoothBark,
-                                FuelType::EucalyptusSmoothBark => FuelType::Shrubland,
-                                FuelType::Shrubland => FuelType::DeadWood,
-                                FuelType::DeadWood => FuelType::DryGrass,
-                            };
-                        }
-                    }
-                }
-            }
-            Interaction::Hovered => {
-                if start_button.is_some() {
-                    *color = BackgroundColor(Color::srgb(0.25, 0.7, 0.25));
-                } else {
-                    *color = BackgroundColor(Color::srgb(0.5, 0.5, 0.5));
-                }
-            }
-            Interaction::None => {
-                if start_button.is_some() {
-                    *color = BackgroundColor(Color::srgb(0.2, 0.6, 0.2));
-                } else {
-                    *color = BackgroundColor(Color::srgb(0.4, 0.4, 0.4));
-                }
-            }
-        }
-    }
-}
-
-/// Update config value displays in menu
-fn update_config_display(config: Res<DemoConfig>, mut query: Query<(&mut Text, &ConfigValueText)>) {
-    for (mut text, config_text) in query.iter_mut() {
-        text.0 = match config_text.0 {
-            ConfigButton::IncrementMapWidth | ConfigButton::DecrementMapWidth => {
-                format!("{:.0}", config.map_width)
-            }
-            ConfigButton::IncrementMapHeight | ConfigButton::DecrementMapHeight => {
-                format!("{:.0}", config.map_height)
-            }
-            ConfigButton::IncrementElementsX | ConfigButton::DecrementElementsX => {
-                format!("{}", config.elements_x)
-            }
-            ConfigButton::IncrementElementsY | ConfigButton::DecrementElementsY => {
-                format!("{}", config.elements_y)
-            }
-            ConfigButton::IncrementFuelMass | ConfigButton::DecrementFuelMass => {
-                format!("{:.1}", config.fuel_mass)
-            }
-            ConfigButton::IncrementInitialIgnitions | ConfigButton::DecrementInitialIgnitions => {
-                format!("{}", config.initial_ignitions)
-            }
-            ConfigButton::IncrementSpacing | ConfigButton::DecrementSpacing => {
-                format!("{:.1}", config.spacing)
-            }
-            ConfigButton::IncrementTemperature | ConfigButton::DecrementTemperature => {
-                format!("{:.0}", config.temperature)
-            }
-            ConfigButton::IncrementHumidity | ConfigButton::DecrementHumidity => {
-                format!("{:.2}", config.humidity)
-            }
-            ConfigButton::IncrementWindSpeed | ConfigButton::DecrementWindSpeed => {
-                format!("{:.0}", config.wind_speed)
-            }
-            ConfigButton::IncrementWindDirection | ConfigButton::DecrementWindDirection => {
-                format!("{:.0}", config.wind_direction)
-            }
-            ConfigButton::IncrementDroughtFactor | ConfigButton::DecrementDroughtFactor => {
-                format!("{:.1}", config.drought_factor)
-            }
-            ConfigButton::CycleTerrainType => match config.terrain_type {
-                TerrainType::Flat => "Flat".to_string(),
-                TerrainType::Hill => "Hill".to_string(),
-                TerrainType::Valley => "Valley".to_string(),
-            },
-            ConfigButton::CycleFuelType => match config.fuel_type {
-                FuelType::DryGrass => "Dry Grass".to_string(),
-                FuelType::EucalyptusStringybark => "Eucalyptus Stringybark".to_string(),
-                FuelType::EucalyptusSmoothBark => "Eucalyptus Smooth Bark".to_string(),
-                FuelType::Shrubland => "Shrubland".to_string(),
-                FuelType::DeadWood => "Dead Wood".to_string(),
-            },
-        };
-    }
-}
-
-/// Handle mouse wheel scrolling for menu panel
-fn handle_menu_scroll(
-    mut scroll_events: MessageReader<MouseWheel>,
-    scroll_query: Query<(&ComputedNode, &Children), With<ScrollablePanel>>,
-    mut children_query: Query<&mut Node>,
-) {
-    for event in scroll_events.read() {
-        for (panel_node, children) in &scroll_query {
-            if let Some(&child_entity) = children.first() {
-                if let Ok(mut child_node) = children_query.get_mut(child_entity) {
-                    // Get current top position (or 0 if not set)
-                    let current_top = match child_node.top {
-                        Val::Px(px) => px,
-                        _ => 0.0,
-                    };
-
-                    // Calculate new scroll position (scroll down = negative, scroll up = positive)
-                    let scroll_amount = event.y * 30.0; // 30 pixels per scroll tick
-                    let new_top = current_top + scroll_amount;
-
-                    // Get container height
-                    let container_height = panel_node.size().y;
-
-                    // Estimate content height (we'll allow scrolling and clamp)
-                    // Max scroll is 0, min scroll allows content to scroll up
-                    let max_scroll = 0.0;
-                    let min_scroll = -(1000.0 - container_height).max(0.0_f32); // Allow up to 1000px of content
-                    let clamped_top = new_top.clamp(min_scroll, max_scroll);
-
-                    // Apply new scroll position to the child (content)
-                    child_node.top = Val::Px(clamped_top);
-                }
-            }
-        }
-    }
-}
 
 /// Initialize simulation when transitioning from menu
 fn init_simulation_system(mut commands: Commands, mut menu_state: ResMut<MenuState>) {
