@@ -1090,7 +1090,10 @@ fn update_tooltip(
         return Ok(());
     };
 
-    let (camera, camera_transform) = camera_query.single()?;
+    // Camera might not be ready on first frame after scene setup
+    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+        return Ok(()); // Silently skip if camera not ready yet
+    };
 
     // Cast ray from camera through cursor position
     let ray = camera.viewport_to_world(camera_transform, cursor_position)?;
