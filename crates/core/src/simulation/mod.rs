@@ -476,6 +476,14 @@ impl FireSimulation {
             .collect()
     }
 
+    /// Get all fuel elements (both burning and unburned)
+    pub fn get_all_elements(&self) -> Vec<&FuelElement> {
+        self.elements
+            .iter()
+            .filter_map(|opt| opt.as_ref())
+            .collect()
+    }
+
     /// Get grid cell at position
     pub fn get_cell_at_position(&self, pos: Vec3) -> Option<&GridCell> {
         self.grid.cell_at_position(pos)
@@ -497,6 +505,11 @@ impl FireSimulation {
             total_fuel_consumed: self.total_fuel_consumed,
             simulation_time: self.simulation_time,
         }
+    }
+
+    /// Get terrain data
+    pub fn get_terrain(&self) -> &TerrainData {
+        &self.grid.terrain
     }
 }
 
