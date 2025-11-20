@@ -9,8 +9,7 @@ authors = ["Fire Sim Team"]
 license = "MIT"
 
 [workspace.dependencies]
-rayon = "1.8"
-nalgebra = { version = "0.32", features = ["serde-serialize"] }
-rust-sdl2 = { version = "0.34", features = ["image"] }
-rand = "0.8"
+rayon = "1.11"
+nalgebra = { version = "0.34", features = ["serde-serialize"] }
+rand = "0.9"
 serde = { version = "1.0", features = ["derive"] }

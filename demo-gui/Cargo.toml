@@ -12,29 +12,5 @@ path = "src/main.rs"
 [dependencies]
 fire-sim-core = { path = "../crates/core" }
 nalgebra.workspace = true
-
-# Bevy game engine (minimal features for CI compatibility)
-# Upgraded to 0.17.3 with bevy-egui for menu system
-bevy = { version = "0.17", default-features = false, features = [
-    "animation",
-    "bevy_asset",
-    "bevy_scene",
-    "bevy_winit",
-    "bevy_core_pipeline",
-    "bevy_pbr",
-    "bevy_gltf",
-    "bevy_render",
-    "bevy_sprite",
-    "bevy_text",
-    "bevy_ui",
-    "multi_threaded",
-    "png",
-    "hdr",
-    "x11",
-    "bevy_gizmos",
-    "tonemapping_luts",
-    "default_font",
-] }
-
-# bevy-egui for menu UI
+bevy = { version = "0.17" }
 bevy_egui = "0.38"
