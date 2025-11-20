@@ -581,6 +581,10 @@ struct StatsPanel;
 #[derive(Component)]
 struct FpsText;
 
+/// Marker for terrain mesh
+#[derive(Component)]
+struct TerrainMesh;
+
 /// Initialize simulation when transitioning from menu
 fn init_simulation_system(
     mut commands: Commands,
@@ -794,6 +798,7 @@ fn spawn_terrain(
         Mesh3d(terrain_mesh),
         MeshMaterial3d(terrain_material),
         Transform::from_xyz(0.0, 0.0, 0.0),
+        TerrainMesh,
     ));
 }
 
@@ -827,7 +832,7 @@ fn setup_ui(commands: &mut Commands) {
 
                 // Controls text
                 left.spawn((
-                    Text::new("Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  W - Add Water Suppression\n  Arrow Keys - Camera\n  Hover - Element Details"),
+                    Text::new("Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  W - Add Water Suppression\n  ESC - Return to Menu\n  Arrow Keys - Camera\n  Hover - Element Details"),
                     TextFont {
                         font_size: 14.0,
                         ..default()
@@ -1182,6 +1187,16 @@ fn handle_controls(
     config: Res<DemoConfig>,
     windows: Query<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut menu_state: ResMut<MenuState>,
+    mut commands: Commands,
+    scene_entities: Query<Entity, Or<(
+        With<MainCamera>,
+        With<DirectionalLight>,
+        With<FuelVisual>,
+        With<StatsPanel>,
+        With<ControlsText>,
+        With<TerrainMesh>,
+    )>>,
 ) {
     // Pause/Resume
     if keyboard.just_pressed(KeyCode::Space) {
@@ -1318,5 +1333,24 @@ fn handle_controls(
                 }
             }
         }
+    }
+
+    // Return to main menu
+    if keyboard.just_pressed(KeyCode::Escape) {
+        // Despawn all scene entities (camera, lights, UI, fuel visuals, terrain)
+        for entity in scene_entities.iter() {
+            commands.entity(entity).despawn();
+        }
+
+        // Reset menu state to show menu again
+        menu_state.in_menu = true;
+        menu_state.simulation_initialized = false;
+        menu_state.scene_setup = false;
+
+        // Clear fuel entity map
+        sim_state.fuel_entity_map.clear();
+
+        // Spawn Camera2d for menu
+        commands.spawn(Camera2d);
     }
 }
