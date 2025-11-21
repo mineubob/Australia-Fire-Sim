@@ -1313,7 +1313,7 @@ fn handle_controls(
                                 let mut closest_id: Option<u32> = None;
                                 let mut closest_dist = f32::MAX;
 
-                                for element in elements {
+                                for element in &elements {
                                     let dx = element.position.x - ignite_x;
                                     let dy = element.position.y - ignite_y;
                                     let dist = (dx * dx + dy * dy).sqrt();
