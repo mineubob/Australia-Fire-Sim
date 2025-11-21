@@ -280,169 +280,158 @@ fn render_menu_ui(
             ui.add_space(30.0);
         });
 
-        egui::ScrollArea::vertical()
-            .max_height(450.0)
-            .show(ui, |ui| {
-                ui.set_max_width(700.0);
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.set_max_width(700.0);
 
-                // Terrain Settings
-                ui.group(|ui| {
-                    ui.heading(
-                        egui::RichText::new("TERRAIN SETTINGS")
-                            .size(20.0)
-                            .color(egui::Color32::from_rgb(255, 204, 51)),
-                    );
-                    ui.add_space(10.0);
-
-                    ui.horizontal(|ui| {
-                        ui.label("Map Width (m):");
-                        ui.add(egui::Slider::new(&mut config.map_width, 50.0..=500.0).text("m"));
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Map Height (m):");
-                        ui.add(egui::Slider::new(&mut config.map_height, 50.0..=500.0).text("m"));
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Terrain Type:");
-                        egui::ComboBox::new("terrain-type", "")
-                            .selected_text(config.terrain_type.name())
-                            .show_ui(ui, |ui| {
-                                for variant in TerrainType::all() {
-                                    ui.selectable_value(
-                                        &mut config.terrain_type,
-                                        variant,
-                                        variant.name(),
-                                    );
-                                }
-                            });
-                    });
-                });
-
+            // Terrain Settings
+            ui.group(|ui| {
+                ui.heading(
+                    egui::RichText::new("TERRAIN SETTINGS")
+                        .size(20.0)
+                        .color(egui::Color32::from_rgb(255, 204, 51)),
+                );
                 ui.add_space(10.0);
 
-                // Fire Settings
-                ui.group(|ui| {
-                    ui.heading(
-                        egui::RichText::new("FIRE SETTINGS")
-                            .size(20.0)
-                            .color(egui::Color32::from_rgb(255, 204, 51)),
-                    );
-                    ui.add_space(10.0);
-
-                    // Guard for spacing > 0 and ensure at least 1
-                    let max_x = ((config.map_width / config.spacing).floor() as usize).max(1);
-                    let max_y = ((config.map_height / config.spacing).floor() as usize).max(1);
-
-                    ui.horizontal(|ui| {
-                        ui.label("Elements X:");
-                        ui.add(egui::Slider::new(&mut config.elements_x, 1..=max_x));
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Elements Y:");
-                        ui.add(egui::Slider::new(&mut config.elements_y, 1..=max_y));
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Fuel Mass (kg):");
-                        ui.add(egui::Slider::new(&mut config.fuel_mass, 1.0..=20.0).text("kg"));
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Fuel Type:");
-                        egui::ComboBox::new("fuel-type", "")
-                            .selected_text(config.fuel_type.name())
-                            .show_ui(ui, |ui| {
-                                for variant in FuelType::all() {
-                                    ui.selectable_value(
-                                        &mut config.fuel_type,
-                                        variant,
-                                        variant.name(),
-                                    );
-                                }
-                            });
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Spacing (m):");
-                        ui.add(egui::Slider::new(&mut config.spacing, 5.0..=15.0).text("m"));
-                    });
+                ui.horizontal(|ui| {
+                    ui.label("Map Width (m):");
+                    ui.add(egui::Slider::new(&mut config.map_width, 50.0..=500.0).text("m"));
                 });
 
-                ui.add_space(10.0);
-
-                // Weather Settings
-                ui.group(|ui| {
-                    ui.heading(
-                        egui::RichText::new("WEATHER SETTINGS")
-                            .size(20.0)
-                            .color(egui::Color32::from_rgb(255, 204, 51)),
-                    );
-                    ui.add_space(10.0);
-
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut config.use_weather_preset, "Use Weather Preset");
-                    });
-
-                    if config.use_weather_preset {
-                        ui.horizontal(|ui| {
-                            ui.label("Weather Preset:");
-                            egui::ComboBox::new("weather-preset", "")
-                                .selected_text(config.weather_preset.name())
-                                .show_ui(ui, |ui| {
-                                    for variant in WeatherPresetType::all() {
-                                        ui.selectable_value(
-                                            &mut config.weather_preset,
-                                            variant,
-                                            variant.name(),
-                                        );
-                                    }
-                                });
-                        });
-                        ui.label(
-                            egui::RichText::new("(Dynamic weather will be simulated)")
-                                .size(12.0)
-                                .color(egui::Color32::GRAY),
-                        );
-                    } else {
-                        ui.horizontal(|ui| {
-                            ui.label("Temperature (°C):");
-                            ui.add(
-                                egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"),
-                            );
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Humidity (%):");
-                            ui.add(egui::Slider::new(&mut config.humidity, 1.0..=80.0).text("%"));
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Wind Speed (km/h):");
-                            ui.add(
-                                egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"),
-                            );
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Wind Direction (°):");
-                            ui.add(
-                                egui::Slider::new(&mut config.wind_direction, 0.0..=360.0)
-                                    .text("°"),
-                            );
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Drought Factor:");
-                            ui.add(egui::Slider::new(&mut config.drought_factor, 1.0..=20.0));
-                        });
-                    }
+                ui.horizontal(|ui| {
+                    ui.label("Map Height (m):");
+                    ui.add(egui::Slider::new(&mut config.map_height, 50.0..=500.0).text("m"));
                 });
 
-                ui.add_space(20.0);
+                ui.horizontal(|ui| {
+                    ui.label("Terrain Type:");
+                    egui::ComboBox::new("terrain-type", "")
+                        .selected_text(config.terrain_type.name())
+                        .show_ui(ui, |ui| {
+                            for variant in TerrainType::all() {
+                                ui.selectable_value(
+                                    &mut config.terrain_type,
+                                    variant,
+                                    variant.name(),
+                                );
+                            }
+                        });
+                });
             });
+
+            ui.add_space(10.0);
+
+            // Fire Settings
+            ui.group(|ui| {
+                ui.heading(
+                    egui::RichText::new("FIRE SETTINGS")
+                        .size(20.0)
+                        .color(egui::Color32::from_rgb(255, 204, 51)),
+                );
+                ui.add_space(10.0);
+
+                // Guard for spacing > 0 and ensure at least 1
+                let max_x = ((config.map_width / config.spacing).floor() as usize).max(1);
+                let max_y = ((config.map_height / config.spacing).floor() as usize).max(1);
+
+                ui.horizontal(|ui| {
+                    ui.label("Elements X:");
+                    ui.add(egui::Slider::new(&mut config.elements_x, 1..=max_x));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Elements Y:");
+                    ui.add(egui::Slider::new(&mut config.elements_y, 1..=max_y));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Fuel Mass (kg):");
+                    ui.add(egui::Slider::new(&mut config.fuel_mass, 1.0..=20.0).text("kg"));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Fuel Type:");
+                    egui::ComboBox::new("fuel-type", "")
+                        .selected_text(config.fuel_type.name())
+                        .show_ui(ui, |ui| {
+                            for variant in FuelType::all() {
+                                ui.selectable_value(&mut config.fuel_type, variant, variant.name());
+                            }
+                        });
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Spacing (m):");
+                    ui.add(egui::Slider::new(&mut config.spacing, 5.0..=20.0).text("m"));
+                });
+            });
+
+            ui.add_space(10.0);
+
+            // Weather Settings
+            ui.group(|ui| {
+                ui.heading(
+                    egui::RichText::new("WEATHER SETTINGS")
+                        .size(20.0)
+                        .color(egui::Color32::from_rgb(255, 204, 51)),
+                );
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut config.use_weather_preset, "Use Weather Preset");
+                });
+
+                if config.use_weather_preset {
+                    ui.horizontal(|ui| {
+                        ui.label("Weather Preset:");
+                        egui::ComboBox::new("weather-preset", "")
+                            .selected_text(config.weather_preset.name())
+                            .show_ui(ui, |ui| {
+                                for variant in WeatherPresetType::all() {
+                                    ui.selectable_value(
+                                        &mut config.weather_preset,
+                                        variant,
+                                        variant.name(),
+                                    );
+                                }
+                            });
+                    });
+                    ui.label(
+                        egui::RichText::new("(Dynamic weather will be simulated)")
+                            .size(12.0)
+                            .color(egui::Color32::GRAY),
+                    );
+                } else {
+                    ui.horizontal(|ui| {
+                        ui.label("Temperature (°C):");
+                        ui.add(egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Humidity (%):");
+                        ui.add(egui::Slider::new(&mut config.humidity, 1.0..=80.0).text("%"));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Wind Speed (km/h):");
+                        ui.add(egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Wind Direction (°):");
+                        ui.add(
+                            egui::Slider::new(&mut config.wind_direction, 0.0..=360.0).text("°"),
+                        );
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Drought Factor:");
+                        ui.add(egui::Slider::new(&mut config.drought_factor, 1.0..=20.0));
+                    });
+                }
+            });
+
+            ui.add_space(20.0);
+        });
 
         ui.vertical_centered(|ui| {
             if ui
