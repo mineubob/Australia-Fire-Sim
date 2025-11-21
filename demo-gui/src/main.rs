@@ -1065,7 +1065,7 @@ fn update_ui(
                 .map(|e| e.temperature())
                 .fold(0.0f32, f32::max),
             weather.temperature,
-            weather.humidity * 100.0,
+            (weather.humidity * 100.0).min(100.0),
             weather.wind_speed,
             weather.wind_direction,
             weather.drought_factor,
@@ -1298,6 +1298,14 @@ fn handle_controls(
         // Try to get cursor position and convert to world coordinates
         if let Ok(window) = windows.single() {
             if let Some(cursor_position) = window.cursor_position() {
+                println!(
+                    "DEBUG: Cursor at ({:.2}, {:.2}), window size: {:.2}x{:.2}",
+                    cursor_position.x,
+                    cursor_position.y,
+                    window.width(),
+                    window.height()
+                );
+
                 // Validate cursor is within window bounds
                 if cursor_position.x >= 0.0
                     && cursor_position.y >= 0.0
@@ -1363,11 +1371,23 @@ fn handle_controls(
                                             );
                                         }
                                     }
+                                } else {
+                                    println!("DEBUG: Ray intersection behind camera (t = {:.2})", t);
                                 }
+                            } else {
+                                println!("DEBUG: Ray nearly parallel to ground");
                             }
+                        } else {
+                            println!("DEBUG: Failed to cast ray from camera");
                         }
+                    } else {
+                        println!("DEBUG: Camera not available");
                     }
+                } else {
+                    println!("DEBUG: Cursor outside window bounds");
                 }
+            } else {
+                println!("DEBUG: No cursor position available");
             }
         }
     }
