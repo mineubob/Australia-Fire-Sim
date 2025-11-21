@@ -422,8 +422,8 @@ fn render_menu_ui(
                         });
 
                         ui.horizontal(|ui| {
-                            ui.label("Humidity:");
-                            ui.add(egui::Slider::new(&mut config.humidity, 0.05..=0.60).text(""));
+                            ui.label("Humidity (%):");
+                            ui.add(egui::Slider::new(&mut config.humidity, 0.05..=0.60).text("%"));
                         });
 
                         ui.horizontal(|ui| {
@@ -1296,49 +1296,71 @@ fn handle_controls(
     // Manual ignition at cursor position
     if keyboard.just_pressed(KeyCode::KeyI) {
         // Try to get cursor position and convert to world coordinates
-        if let Ok(window) = windows.single() {
+        if let Ok(window) = windows.get_single() {
             if let Some(cursor_position) = window.cursor_position() {
-                if let Ok((camera, camera_transform)) = camera_query.single() {
-                    // Cast ray from camera through cursor position
-                    if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
-                        // Find intersection with ground plane (z = 0)
-                        let ray_dir = *ray.direction;
+                // Validate cursor is within window bounds
+                if cursor_position.x >= 0.0
+                    && cursor_position.y >= 0.0
+                    && cursor_position.x <= window.width()
+                    && cursor_position.y <= window.height()
+                {
+                    if let Ok((camera, camera_transform)) = camera_query.get_single() {
+                        // Cast ray from camera through cursor position
+                        if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
+                        {
+                            // Find intersection with ground plane (z = 0)
+                            let ray_dir = *ray.direction;
 
-                        if ray_dir.z.abs() > 0.001 {
-                            let t = -ray.origin.z / ray_dir.z;
+                            if ray_dir.z.abs() > 0.001 {
+                                let t = -ray.origin.z / ray_dir.z;
 
-                            if t > 0.0 {
-                                // Intersection point is in front of camera
-                                let ignite_x = ray.origin.x + t * ray_dir.x;
-                                let ignite_y = ray.origin.y + t * ray_dir.y;
+                                if t > 0.0 {
+                                    // Intersection point is in front of camera
+                                    let ignite_x = ray.origin.x + t * ray_dir.x;
+                                    let ignite_y = ray.origin.y + t * ray_dir.y;
 
-                                // Find the closest fuel element to cursor position and ignite it
-                                let elements = sim_state.simulation.get_all_elements();
-                                let mut closest_id: Option<u32> = None;
-                                let mut closest_dist = f32::MAX;
-
-                                for element in &elements {
-                                    let dx = element.position.x - ignite_x;
-                                    let dy = element.position.y - ignite_y;
-                                    let dist = (dx * dx + dy * dy).sqrt();
-
-                                    if dist < closest_dist && dist < 10.0 {
-                                        // Within 10m
-                                        closest_dist = dist;
-                                        closest_id = Some(element.id);
-                                    }
-                                }
-
-                                // Ignite the closest element
-                                if let Some(id) = closest_id {
                                     println!(
-                                        "Igniting element {} at distance {:.2}m from cursor",
-                                        id, closest_dist
+                                        "Cursor world position: ({:.2}, {:.2})",
+                                        ignite_x, ignite_y
                                     );
-                                    sim_state.simulation.ignite_element(id, 600.0);
-                                } else {
-                                    println!("No fuel element found within 10m of cursor position ({:.2}, {:.2})", ignite_x, ignite_y);
-                                    println!("Total fuel elements: {}", elements.len());
+
+                                    // Find the closest fuel element to cursor position and ignite it
+                                    let elements = sim_state.simulation.get_all_elements();
+                                    let mut closest_id: Option<u32> = None;
+                                    let mut closest_dist = f32::MAX;
+
+                                    for element in &elements {
+                                        let dx = element.position.x - ignite_x;
+                                        let dy = element.position.y - ignite_y;
+                                        let dist = (dx * dx + dy * dy).sqrt();
+
+                                        if dist < closest_dist && dist < 10.0 {
+                                            // Within 10m
+                                            closest_dist = dist;
+                                            closest_id = Some(element.id);
+                                        }
+                                    }
+
+                                    // Ignite the closest element
+                                    if let Some(id) = closest_id {
+                                        println!(
+                                            "Igniting element {} at distance {:.2}m from cursor",
+                                            id, closest_dist
+                                        );
+                                        sim_state.simulation.ignite_element(id, 600.0);
+                                    } else {
+                                        println!(
+                                            "No fuel element found within 10m of cursor position ({:.2}, {:.2})",
+                                            ignite_x, ignite_y
+                                        );
+                                        println!("Total fuel elements: {}", elements.len());
+                                        if let Some(first) = elements.first() {
+                                            println!(
+                                                "First element position: ({:.2}, {:.2}, {:.2})",
+                                                first.position.x, first.position.y, first.position.z
+                                            );
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1351,53 +1373,69 @@ fn handle_controls(
     // Add water suppression at cursor position
     if keyboard.just_pressed(KeyCode::KeyW) {
         // Try to get cursor position and convert to world coordinates
-        if let Ok(window) = windows.single() {
+        if let Ok(window) = windows.get_single() {
             if let Some(cursor_position) = window.cursor_position() {
-                if let Ok((camera, camera_transform)) = camera_query.single() {
-                    // Cast ray from camera through cursor position
-                    if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
-                        // Find intersection with ground plane (z = 0)
-                        // Ray equation: P = origin + t * direction
-                        // Ground plane: z = 0
-                        // Solve for t: origin.z + t * direction.z = 0
-                        let ray_dir = *ray.direction;
+                // Validate cursor is within window bounds
+                if cursor_position.x >= 0.0
+                    && cursor_position.y >= 0.0
+                    && cursor_position.x <= window.width()
+                    && cursor_position.y <= window.height()
+                {
+                    if let Ok((camera, camera_transform)) = camera_query.get_single() {
+                        // Cast ray from camera through cursor position
+                        if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
+                        {
+                            // Find intersection with ground plane (z = 0)
+                            // Ray equation: P = origin + t * direction
+                            // Ground plane: z = 0
+                            // Solve for t: origin.z + t * direction.z = 0
+                            let ray_dir = *ray.direction;
 
-                        if ray_dir.z.abs() > 0.001 {
-                            // Ray intersects ground plane
-                            let t = -ray.origin.z / ray_dir.z;
+                            if ray_dir.z.abs() > 0.001 {
+                                // Ray intersects ground plane
+                                let t = -ray.origin.z / ray_dir.z;
 
-                            if t > 0.0 {
-                                // Intersection point is in front of camera
-                                let drop_x = ray.origin.x + t * ray_dir.x;
-                                let drop_y = ray.origin.y + t * ray_dir.y;
+                                if t > 0.0 {
+                                    // Intersection point is in front of camera
+                                    let drop_x = ray.origin.x + t * ray_dir.x;
+                                    let drop_y = ray.origin.y + t * ray_dir.y;
 
-                                // Get terrain elevation at drop position
-                                let terrain_elevation = sim_state
-                                    .simulation
-                                    .get_terrain()
-                                    .elevation_at(drop_x, drop_y);
-                                let drop_altitude = terrain_elevation + 60.0; // Start 60m above terrain
+                                    // Get terrain elevation at drop position
+                                    let terrain_elevation = sim_state
+                                        .simulation
+                                        .get_terrain()
+                                        .elevation_at(drop_x, drop_y);
+                                    let drop_altitude = terrain_elevation + 60.0; // Start 60m above terrain
 
-                                println!(
-                                    "Dropping water at ({:.2}, {:.2}, {:.2}) - 30 droplets",
-                                    drop_x, drop_y, drop_altitude
-                                );
-
-                                // Add water droplets in a circular pattern at cursor position
-                                for i in 0..30 {
-                                    let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
-                                    let radius = 25.0;
-                                    let droplet = SuppressionDroplet::new(
-                                        SimVec3::new(
-                                            drop_x + angle.cos() * radius,
-                                            drop_y + angle.sin() * radius,
-                                            drop_altitude,
-                                        ),
-                                        SimVec3::new(0.0, 0.0, -5.0),
-                                        10.0,
-                                        SuppressionAgent::Water,
+                                    println!(
+                                        "Dropping water at ({:.2}, {:.2}, {:.2}) - 30 droplets",
+                                        drop_x, drop_y, drop_altitude
                                     );
-                                    sim_state.simulation.add_suppression_droplet(droplet);
+
+                                    // Add water droplets in a circular pattern at cursor position
+                                    for i in 0..30 {
+                                        let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
+                                        let radius = 25.0;
+                                        let droplet = SuppressionDroplet::new(
+                                            SimVec3::new(
+                                                drop_x + angle.cos() * radius,
+                                                drop_y + angle.sin() * radius,
+                                                drop_altitude,
+                                            ),
+                                            SimVec3::new(0.0, 0.0, -5.0),
+                                            10.0,
+                                            SuppressionAgent::Water,
+                                        );
+                                        sim_state.simulation.add_suppression_droplet(droplet);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
                                 }
                             }
                         }
