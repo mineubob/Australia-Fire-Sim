@@ -521,8 +521,10 @@ impl FromWorld for SimulationState {
         // Add fuel elements in a grid
         let center_x = config.map_width / 2.0;
         let center_y = config.map_height / 2.0;
-        let start_x = center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
-        let start_y = center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
+        let start_x =
+            center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
+        let start_y =
+            center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
 
         for i in 0..config.elements_x {
             for j in 0..config.elements_y {
@@ -1260,8 +1262,10 @@ fn handle_controls(
         // Add fuel elements in a grid
         let center_x = config.map_width / 2.0;
         let center_y = config.map_height / 2.0;
-        let start_x = center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
-        let start_y = center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
+        let start_x =
+            center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
+        let start_y =
+            center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
 
         for i in 0..config.elements_x {
             for j in 0..config.elements_y {
@@ -1327,7 +1331,10 @@ fn handle_controls(
 
                                 // Ignite the closest element
                                 if let Some(id) = closest_id {
-                                    println!("Igniting element {} at distance {:.2}m from cursor", id, closest_dist);
+                                    println!(
+                                        "Igniting element {} at distance {:.2}m from cursor",
+                                        id, closest_dist
+                                    );
                                     sim_state.simulation.ignite_element(id, 600.0);
                                 } else {
                                     println!("No fuel element found within 10m of cursor position ({:.2}, {:.2})", ignite_x, ignite_y);
@@ -1363,12 +1370,18 @@ fn handle_controls(
                                 // Intersection point is in front of camera
                                 let drop_x = ray.origin.x + t * ray_dir.x;
                                 let drop_y = ray.origin.y + t * ray_dir.y;
-                                
+
                                 // Get terrain elevation at drop position
-                                let terrain_elevation = sim_state.simulation.get_terrain().elevation_at(drop_x, drop_y);
+                                let terrain_elevation = sim_state
+                                    .simulation
+                                    .get_terrain()
+                                    .elevation_at(drop_x, drop_y);
                                 let drop_altitude = terrain_elevation + 60.0; // Start 60m above terrain
-                                
-                                println!("Dropping water at ({:.2}, {:.2}, {:.2}) - 30 droplets", drop_x, drop_y, drop_altitude);
+
+                                println!(
+                                    "Dropping water at ({:.2}, {:.2}, {:.2}) - 30 droplets",
+                                    drop_x, drop_y, drop_altitude
+                                );
 
                                 // Add water droplets in a circular pattern at cursor position
                                 for i in 0..30 {
