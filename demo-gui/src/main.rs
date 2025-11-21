@@ -1298,20 +1298,23 @@ fn handle_controls(
                         // Cast ray from camera through cursor position
                         if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
                         {
-                            // Find intersection with ground plane (z = 0)
+                            // Find intersection with ground plane (y = 0 in Bevy, which is horizontal)
+                            // Note: Bevy uses Y-up, so ground plane is at y=0
                             let ray_dir = *ray.direction;
 
-                            if ray_dir.z.abs() > 0.001 {
-                                let t = -ray.origin.z / ray_dir.z;
+                            if ray_dir.y.abs() > 0.001 {
+                                let t = -ray.origin.y / ray_dir.y;
 
                                 if t > 0.0 {
                                     // Intersection point is in front of camera
+                                    // Bevy world coords: (x, y, z) where y is vertical
+                                    // Sim coords map to Bevy as: sim(x,y,z) -> bevy(x,z,y)
                                     let ignite_x = ray.origin.x + t * ray_dir.x;
-                                    let ignite_y = ray.origin.y + t * ray_dir.y;
+                                    let ignite_z = ray.origin.z + t * ray_dir.z;
 
                                     println!(
-                                        "Cursor world position: ({:.2}, {:.2})",
-                                        ignite_x, ignite_y
+                                        "Cursor world position (Bevy X,Z): ({:.2}, {:.2})",
+                                        ignite_x, ignite_z
                                     );
 
                                     // Find the closest fuel element to cursor position and ignite it
@@ -1320,9 +1323,11 @@ fn handle_controls(
                                     let mut closest_dist = f32::MAX;
 
                                     for element in &elements {
+                                        // element.position is sim coords (x, y)
+                                        // which correspond to Bevy coords (x, z)
                                         let dx = element.position.x - ignite_x;
-                                        let dy = element.position.y - ignite_y;
-                                        let dist = (dx * dx + dy * dy).sqrt();
+                                        let dz = element.position.y - ignite_z;
+                                        let dist = (dx * dx + dz * dz).sqrt();
 
                                         if dist < closest_dist && dist < 10.0 {
                                             // Within 10m
@@ -1340,16 +1345,15 @@ fn handle_controls(
                                         sim_state.simulation.ignite_element(id, 600.0);
                                     } else {
                                         println!(
-                                            "No fuel element found within 10m of cursor position ({:.2}, {:.2})",
-                                            ignite_x, ignite_y
+                                            "No fuel element found within 10m of cursor position (Bevy X,Z): ({:.2}, {:.2})",
+                                            ignite_x, ignite_z
                                         );
                                         println!("Total fuel elements: {}", elements.len());
                                         if let Some(first) = elements.first() {
                                             println!(
-                                                "First element position: ({:.2}, {:.2}, {:.2})",
+                                                "First element sim position (x,y) = Bevy (x,z): ({:.2}, {:.2})",
                                                 first.position.x,
-                                                first.position.y,
-                                                first.position.z
+                                                first.position.y
                                             );
                                         }
                                     }
