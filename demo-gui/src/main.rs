@@ -22,7 +22,6 @@ pub struct DemoConfig {
     pub elements_y: usize,
     pub fuel_mass: f32,
     pub fuel_type: FuelType,
-    pub initial_ignitions: usize,
     pub spacing: f32,
 
     // Weather settings
@@ -45,12 +44,11 @@ impl Default for DemoConfig {
             elements_y: 10,
             fuel_mass: 5.0,
             fuel_type: FuelType::DryGrass,
-            initial_ignitions: 5,
             spacing: 8.0,
             use_weather_preset: false,
             weather_preset: WeatherPresetType::PerthMetro,
             temperature: 35.0,
-            humidity: 0.15,
+            humidity: 15.0,
             wind_speed: 20.0,
             wind_direction: 45.0,
             drought_factor: 10.0,
@@ -334,8 +332,8 @@ fn render_menu_ui(
                     ui.add_space(10.0);
 
                     // Guard for spacing > 0 and ensure at least 1
-                    let max_x = ((config.map_width / config.spacing).floor() as usize + 1).max(1);
-                    let max_y = ((config.map_height / config.spacing).floor() as usize + 1).max(1);
+                    let max_x = ((config.map_width / config.spacing).floor() as usize).max(1);
+                    let max_y = ((config.map_height / config.spacing).floor() as usize).max(1);
 
                     ui.horizontal(|ui| {
                         ui.label("Elements X:");
@@ -365,11 +363,6 @@ fn render_menu_ui(
                                     );
                                 }
                             });
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Initial Ignitions:");
-                        ui.add(egui::Slider::new(&mut config.initial_ignitions, 1..=20));
                     });
 
                     ui.horizontal(|ui| {
@@ -423,7 +416,7 @@ fn render_menu_ui(
 
                         ui.horizontal(|ui| {
                             ui.label("Humidity (%):");
-                            ui.add(egui::Slider::new(&mut config.humidity, 0.05..=0.60).text("%"));
+                            ui.add(egui::Slider::new(&mut config.humidity, 1.0..=80.0).text("%"));
                         });
 
                         ui.horizontal(|ui| {
@@ -1065,7 +1058,7 @@ fn update_ui(
                 .map(|e| e.temperature())
                 .fold(0.0f32, f32::max),
             weather.temperature,
-            (weather.humidity * 100.0).min(100.0),
+            weather.humidity,
             weather.wind_speed,
             weather.wind_direction,
             weather.drought_factor,
@@ -1372,7 +1365,10 @@ fn handle_controls(
                                         }
                                     }
                                 } else {
-                                    println!("DEBUG: Ray intersection behind camera (t = {:.2})", t);
+                                    println!(
+                                        "DEBUG: Ray intersection behind camera (t = {:.2})",
+                                        t
+                                    );
                                 }
                             } else {
                                 println!("DEBUG: Ray nearly parallel to ground");
