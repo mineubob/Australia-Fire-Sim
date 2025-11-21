@@ -1296,7 +1296,7 @@ fn handle_controls(
     // Manual ignition at cursor position
     if keyboard.just_pressed(KeyCode::KeyI) {
         // Try to get cursor position and convert to world coordinates
-        if let Ok(window) = windows.get_single() {
+        if let Ok(window) = windows.single() {
             if let Some(cursor_position) = window.cursor_position() {
                 // Validate cursor is within window bounds
                 if cursor_position.x >= 0.0
@@ -1304,7 +1304,7 @@ fn handle_controls(
                     && cursor_position.x <= window.width()
                     && cursor_position.y <= window.height()
                 {
-                    if let Ok((camera, camera_transform)) = camera_query.get_single() {
+                    if let Ok((camera, camera_transform)) = camera_query.single() {
                         // Cast ray from camera through cursor position
                         if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
                         {
@@ -1357,7 +1357,9 @@ fn handle_controls(
                                         if let Some(first) = elements.first() {
                                             println!(
                                                 "First element position: ({:.2}, {:.2}, {:.2})",
-                                                first.position.x, first.position.y, first.position.z
+                                                first.position.x,
+                                                first.position.y,
+                                                first.position.z
                                             );
                                         }
                                     }
@@ -1373,7 +1375,7 @@ fn handle_controls(
     // Add water suppression at cursor position
     if keyboard.just_pressed(KeyCode::KeyW) {
         // Try to get cursor position and convert to world coordinates
-        if let Ok(window) = windows.get_single() {
+        if let Ok(window) = windows.single() {
             if let Some(cursor_position) = window.cursor_position() {
                 // Validate cursor is within window bounds
                 if cursor_position.x >= 0.0
@@ -1381,7 +1383,7 @@ fn handle_controls(
                     && cursor_position.x <= window.width()
                     && cursor_position.y <= window.height()
                 {
-                    if let Ok((camera, camera_transform)) = camera_query.get_single() {
+                    if let Ok((camera, camera_transform)) = camera_query.single() {
                         // Cast ray from camera through cursor position
                         if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
                         {
@@ -1428,14 +1430,6 @@ fn handle_controls(
                                         );
                                         sim_state.simulation.add_suppression_droplet(droplet);
                                     }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
                                 }
                             }
                         }
