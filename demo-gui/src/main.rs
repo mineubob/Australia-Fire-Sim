@@ -3,6 +3,7 @@
 //! This demo provides a real-time 3D visualization of the fire simulation with interactive controls.
 
 use bevy::prelude::*;
+use bevy::diagnostic::{DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin};
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
@@ -184,6 +185,8 @@ fn main() {
             ..default()
         }))
         .add_plugins(EguiPlugin::default())
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(EntityCountDiagnosticsPlugin::default())
         .init_resource::<DemoConfig>()
         .init_resource::<MenuState>()
         .init_resource::<FpsCounter>()
@@ -1011,15 +1014,42 @@ fn update_camera_controls(
 fn update_ui(
     sim_state: Res<SimulationState>,
     mut query: Query<&mut Text, With<StatsText>>,
+    time: Res<Time>,
+    diagnostics: Res<DiagnosticsStore>,
 ) -> Result {
     let stats = sim_state.simulation.get_stats();
     let weather = &sim_state.simulation.weather;
+
+    // Get FPS from diagnostics
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|fps| fps.smoothed())
+        .unwrap_or(0.0);
+
+    // Get frame time in milliseconds
+    let frame_time = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
+        .and_then(|ft| ft.smoothed())
+        .map(|ft| ft * 1000.0) // Convert to ms
+        .unwrap_or(0.0);
+
+    // Calculate entity count for performance tracking
+    let entity_count = diagnostics
+        .get(&EntityCountDiagnosticsPlugin::ENTITY_COUNT)
+        .and_then(|ec| ec.value())
+        .unwrap_or(0.0);
 
     for mut text in query.iter_mut() {
         text.0 = format!(
             "Simulation Time: {:.1}s\n\
              Status: {}\n\
              Speed: {:.1}x\n\
+             \n\
+             SYSTEM PERFORMANCE\n\
+             FPS: {:.0}\n\
+             Frame Time: {:.2}ms\n\
+             Entities: {:.0}\n\
+             Delta Time: {:.3}s\n\
              \n\
              FIRE STATUS\n\
              Burning Elements: {}\n\
@@ -1044,6 +1074,10 @@ fn update_ui(
                 "RUNNING"
             },
             sim_state.speed,
+            fps,
+            frame_time,
+            entity_count,
+            time.delta_secs(),
             stats.burning_elements,
             stats.total_elements,
             stats.total_fuel_consumed,
