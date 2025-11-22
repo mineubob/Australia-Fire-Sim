@@ -159,7 +159,7 @@ impl WeatherPresetType {
         )
     }
 
-    fn all() -> [Self; 6] {
+    fn all() -> [Self; 7] {
         [
             WeatherPresetType::PerthMetro,
             WeatherPresetType::SouthWest,
@@ -167,6 +167,7 @@ impl WeatherPresetType {
             WeatherPresetType::Goldfields,
             WeatherPresetType::Kimberley,
             WeatherPresetType::Pilbara,
+            WeatherPresetType::Catastrophic,
         ]
     }
 }
