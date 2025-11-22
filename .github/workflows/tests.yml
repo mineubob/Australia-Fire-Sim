@@ -122,7 +122,7 @@ jobs:
         run: cargo build --release --all-features
 
       - name: Upload demo binaries (GUI + Headless)
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: demo-binaries-${{ matrix.os }}
           path: |
