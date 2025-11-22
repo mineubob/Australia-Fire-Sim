@@ -629,14 +629,30 @@ fn setup_game(
         affects_lightmapped_meshes: false,
     });
 
-    // Add camera
+    // Add camera with position based on map size
+    // Calculate camera position to frame the entire map
+    let map_center_x = config.map_width / 2.0;
+    let map_center_z = config.map_height / 2.0;
+    let map_max_dim = config.map_width.max(config.map_height);
+    
+    // Camera distance scales with map size (larger maps need more zoom out)
+    // Base distance for 200x200 map is 150, scale proportionally
+    let camera_distance = (map_max_dim / 200.0) * 150.0;
+    let camera_height = (map_max_dim / 200.0) * 120.0;
+    
+    // Position camera at 45-degree angle to view the map
+    let camera_offset = camera_distance * 0.707; // cos(45°) ≈ 0.707
+    let camera_x = map_center_x + camera_offset;
+    let camera_z = map_center_z + camera_offset;
+    
     commands.spawn((
         Camera3d::default(),
         Camera {
             order: 0, // Render first (3D scene)
             ..default()
         },
-        Transform::from_xyz(150.0, 120.0, 150.0).looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
+        Transform::from_xyz(camera_x, camera_height, camera_z)
+            .looking_at(Vec3::new(map_center_x, 0.0, map_center_z), Vec3::Y),
         MainCamera,
         OnGameScreen,
     ));
