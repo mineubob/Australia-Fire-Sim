@@ -82,8 +82,8 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-  build:
-    name: Build
+  build-dev:
+    name: "Build Debug"
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -94,7 +94,7 @@ jobs:
       - test
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -105,26 +105,66 @@ jobs:
             libwayland-dev \
             libxkbcommon-dev \
             libvulkan-dev
-      
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      
+
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "${{ matrix.os }}"
           cache-on-failure: true
-        
-      - name: Build
+
+      - name: Build (dev/debug)
         run: cargo build --all-features
-        
+
+      - name: Upload dev demo binaries (GUI + Headless)
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-binaries-dev-${{ matrix.os }}
+          path: |
+            target/debug/demo-gui*
+            target/debug/demo-headless*
+  build-release:
+    name: "Build Release"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    needs:
+      - clippy
+      - fmt
+      - test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libudev-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libvulkan-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "${{ matrix.os }}"
+          cache-on-failure: true
+
       - name: Build release
         run: cargo build --release --all-features
 
-      - name: Upload demo binaries (GUI + Headless)
+      - name: Upload release demo binaries (GUI + Headless)
         uses: actions/upload-artifact@v4
         with:
-          name: demo-binaries-${{ matrix.os }}
+          name: demo-binaries-release-${{ matrix.os }}
           path: |
             target/release/demo-gui*
             target/release/demo-headless*
