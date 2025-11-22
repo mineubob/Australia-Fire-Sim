@@ -36,7 +36,7 @@ jobs:
           cache-on-failure: true
       
       - name: Run tests
-        run: cargo test
+        run: cargo test --all-features
 
   clippy:
     name: Clippy
@@ -156,7 +156,7 @@ jobs:
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "${{ matrix.os }}"
+          shared-key: "release-${{ matrix.os }}"
           cache-on-failure: true
 
       - name: Build release
