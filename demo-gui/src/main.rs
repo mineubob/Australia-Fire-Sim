@@ -243,10 +243,12 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-/// Setup menu - no longer needs to spawn camera
-fn setup_menu() {
-    // Camera2d is already spawned in setup_camera at startup
-    // Nothing to do here, but we keep the function for symmetry
+/// Setup menu - reactivate Camera2d for egui rendering
+fn setup_menu(mut camera_query: Query<&mut Camera, With<Camera2d>>) {
+    // Reactivate Camera2d for menu/egui rendering
+    for mut camera in camera_query.iter_mut() {
+        camera.is_active = true;
+    }
 }
 
 /// Cleanup menu entities when exiting menu state
@@ -608,7 +610,13 @@ fn setup_game(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     config: Res<DemoConfig>,
+    mut camera_2d_query: Query<&mut Camera, With<Camera2d>>,
 ) {
+    // Deactivate Camera2d while in game (Camera3d will be used instead)
+    for mut camera in camera_2d_query.iter_mut() {
+        camera.is_active = false;
+    }
+    
     // Initialize simulation state resource
     let mut sim_state = SimulationState::from_config(&config);
     
