@@ -104,7 +104,7 @@ pub fn spawn_embers(
     let count = count.min(50); // Limit per spawn to avoid performance issues
 
     let mut embers = Vec::new();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for _ in 0..count {
         let id = *next_id;
@@ -113,14 +113,14 @@ pub fn spawn_embers(
         // Random initial velocity with strong updraft
         let horizontal_spread = 5.0;
         let velocity = Vec3::new(
-            rng.gen_range(-horizontal_spread..horizontal_spread),
-            rng.gen_range(-horizontal_spread..horizontal_spread),
-            rng.gen_range(8.0..20.0), // Strong updraft
+            rng.random_range(-horizontal_spread..horizontal_spread),
+            rng.random_range(-horizontal_spread..horizontal_spread),
+            rng.random_range(8.0..20.0), // Strong updraft
         );
 
         let ember_position = position + Vec3::new(0.0, 0.0, 2.0);
-        let ember_temp = temperature * rng.gen_range(0.7..0.9);
-        let ember_mass = rng.gen_range(0.0001..0.01);
+        let ember_temp = temperature * rng.random_range(0.7..0.9);
+        let ember_mass = rng.random_range(0.0001..0.01);
 
         embers.push(Ember::new(
             id,

@@ -12,28 +12,6 @@ path = "src/main.rs"
 [dependencies]
 fire-sim-core = { path = "../crates/core" }
 nalgebra.workspace = true
-
-# Bevy game engine (minimal features for CI compatibility)
-# Note: Bevy 0.17 requires extensive API refactoring (42+ breaking changes)
-# TODO: Upgrade to 0.17 requires updating: Text API, Query methods, Transform handling, etc.
-bevy = { version = "0.14", default-features = false, features = [
-    "animation",
-    "bevy_asset",
-    "bevy_scene",
-    "bevy_winit",
-    "bevy_core_pipeline",
-    "bevy_pbr",
-    "bevy_gltf",
-    "bevy_render",
-    "bevy_sprite",
-    "bevy_text",
-    "bevy_ui",
-    "multi_threaded",
-    "png",
-    "hdr",
-    "zstd",
-    "x11",
-    "bevy_gizmos",
-    "tonemapping_luts",
-    "default_font",
-] }
+bevy = "0.17"
+bevy_egui = "0.38"
+sysinfo = "0.37"

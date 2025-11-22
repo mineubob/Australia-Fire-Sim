@@ -2,11 +2,17 @@
 //!
 //! This demo provides a real-time 3D visualization of the fire simulation with interactive controls.
 
-use bevy::{input::mouse::MouseWheel, prelude::*};
+use bevy::diagnostic::{
+    DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin,
+    SystemInformationDiagnosticsPlugin,
+};
+use bevy::prelude::*;
+use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
-    Vec3 as SimVec3, WeatherSystem,
+    Vec3 as SimVec3, WeatherPreset, WeatherSystem,
 };
+// sysinfo not needed - using bevy diagnostic plugins instead
 
 /// Configuration for the simulation demo
 #[derive(Clone, Resource)]
@@ -21,10 +27,11 @@ pub struct DemoConfig {
     pub elements_y: usize,
     pub fuel_mass: f32,
     pub fuel_type: FuelType,
-    pub initial_ignitions: usize,
     pub spacing: f32,
 
     // Weather settings
+    pub use_weather_preset: bool,
+    pub weather_preset: WeatherPresetType,
     pub temperature: f32,
     pub humidity: f32,
     pub wind_speed: f32,
@@ -37,15 +44,16 @@ impl Default for DemoConfig {
         Self {
             map_width: 200.0,
             map_height: 200.0,
-            terrain_type: TerrainType::Hill,
+            terrain_type: TerrainType::Valley,
             elements_x: 10,
             elements_y: 10,
             fuel_mass: 5.0,
             fuel_type: FuelType::DryGrass,
-            initial_ignitions: 5,
             spacing: 8.0,
+            use_weather_preset: false,
+            weather_preset: WeatherPresetType::PerthMetro,
             temperature: 35.0,
-            humidity: 0.15,
+            humidity: 15.0,
             wind_speed: 20.0,
             wind_direction: 45.0,
             drought_factor: 10.0,
@@ -58,6 +66,20 @@ pub enum TerrainType {
     Flat,
     Hill,
     Valley,
+}
+
+impl TerrainType {
+    fn name(self) -> &'static str {
+        match self {
+            TerrainType::Flat => "Flat",
+            TerrainType::Hill => "Hill",
+            TerrainType::Valley => "Valley",
+        }
+    }
+
+    fn all() -> [Self; 3] {
+        [TerrainType::Flat, TerrainType::Hill, TerrainType::Valley]
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -79,6 +101,80 @@ impl FuelType {
             FuelType::DeadWood => Fuel::dead_wood_litter(),
         }
     }
+
+    fn name(self) -> &'static str {
+        match self {
+            FuelType::DryGrass => "Dry Grass",
+            FuelType::EucalyptusStringybark => "Eucalyptus Stringybark",
+            FuelType::EucalyptusSmoothBark => "Eucalyptus Smooth Bark",
+            FuelType::Shrubland => "Shrubland",
+            FuelType::DeadWood => "Dead Wood",
+        }
+    }
+
+    fn all() -> [Self; 5] {
+        [
+            FuelType::DryGrass,
+            FuelType::EucalyptusStringybark,
+            FuelType::EucalyptusSmoothBark,
+            FuelType::Shrubland,
+            FuelType::DeadWood,
+        ]
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum WeatherPresetType {
+    PerthMetro,
+    SouthWest,
+    Wheatbelt,
+    Goldfields,
+    Kimberley,
+    Pilbara,
+    Catastrophic,
+}
+
+impl WeatherPresetType {
+    fn name(self) -> &'static str {
+        match self {
+            WeatherPresetType::PerthMetro => "Perth Metro",
+            WeatherPresetType::SouthWest => "South West",
+            WeatherPresetType::Wheatbelt => "Wheatbelt",
+            WeatherPresetType::Goldfields => "Goldfields",
+            WeatherPresetType::Kimberley => "Kimberley",
+            WeatherPresetType::Pilbara => "Pilbara",
+            WeatherPresetType::Catastrophic => "Catastrophic",
+        }
+    }
+
+    fn to_system(self) -> WeatherSystem {
+        WeatherSystem::from_preset(
+            match self {
+                WeatherPresetType::PerthMetro => WeatherPreset::perth_metro(),
+                WeatherPresetType::SouthWest => WeatherPreset::south_west(),
+                WeatherPresetType::Wheatbelt => WeatherPreset::wheatbelt(),
+                WeatherPresetType::Goldfields => WeatherPreset::goldfields(),
+                WeatherPresetType::Kimberley => WeatherPreset::kimberley(),
+                WeatherPresetType::Pilbara => WeatherPreset::pilbara(),
+                WeatherPresetType::Catastrophic => return WeatherSystem::catastrophic(),
+            },
+            3,
+            14.00,
+            fire_sim_core::ClimatePattern::Neutral,
+        )
+    }
+
+    fn all() -> [Self; 7] {
+        [
+            WeatherPresetType::PerthMetro,
+            WeatherPresetType::SouthWest,
+            WeatherPresetType::Wheatbelt,
+            WeatherPresetType::Goldfields,
+            WeatherPresetType::Kimberley,
+            WeatherPresetType::Pilbara,
+            WeatherPresetType::Catastrophic,
+        ]
+    }
 }
 
 /// Main entry point
@@ -87,24 +183,19 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Australia Fire Simulation - Bevy Demo".into(),
-                resolution: (1280., 720.).into(),
+                resolution: (1280, 720).into(),
                 ..default()
             }),
             ..default()
         }))
+        .add_plugins(EguiPlugin::default())
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(EntityCountDiagnosticsPlugin::default())
+        .add_plugins(SystemInformationDiagnosticsPlugin)
         .init_resource::<DemoConfig>()
         .init_resource::<MenuState>()
-        .init_resource::<FpsCounter>()
-        .add_systems(Startup, setup_menu)
-        .add_systems(
-            Update,
-            (
-                handle_menu_interactions,
-                update_config_display,
-                handle_menu_scroll,
-            )
-                .run_if(in_menu),
-        )
+        .add_systems(Startup, setup_menu_camera)
+        .add_systems(EguiPrimaryContextPass, render_menu_ui.run_if(in_menu))
         .add_systems(
             Update,
             (
@@ -116,28 +207,9 @@ fn main() {
                 update_ui.run_if(simulation_running),
                 handle_controls.run_if(simulation_running),
                 update_tooltip.run_if(simulation_running),
-                update_fps.run_if(simulation_running),
             ),
         )
         .run();
-}
-
-/// FPS counter resource
-#[derive(Resource)]
-struct FpsCounter {
-    frame_count: u32,
-    timer: f32,
-    fps: f32,
-}
-
-impl Default for FpsCounter {
-    fn default() -> Self {
-        Self {
-            frame_count: 0,
-            timer: 0.0,
-            fps: 60.0,
-        }
-    }
 }
 
 /// Menu state resource
@@ -175,6 +247,206 @@ fn simulation_running(menu_state: Res<MenuState>) -> bool {
     !menu_state.in_menu && menu_state.simulation_initialized && menu_state.scene_setup
 }
 
+/// Setup camera for menu UI (required for egui to work)
+fn setup_menu_camera(mut commands: Commands) {
+    commands.spawn(Camera2d);
+}
+
+/// Render egui menu UI
+fn render_menu_ui(
+    mut contexts: EguiContexts,
+    mut config: ResMut<DemoConfig>,
+    mut menu_state: ResMut<MenuState>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
+
+    egui::CentralPanel::default().show(ctx, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.add_space(20.0);
+            ui.heading(
+                egui::RichText::new("Australia Fire Simulation")
+                    .size(48.0)
+                    .color(egui::Color32::from_rgb(255, 204, 51)),
+            );
+            ui.add_space(10.0);
+            ui.label(
+                egui::RichText::new("Configure Simulation Parameters")
+                    .size(24.0)
+                    .color(egui::Color32::from_rgb(204, 204, 204)),
+            );
+            ui.add_space(30.0);
+        });
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.set_max_width(700.0);
+
+            // Terrain Settings
+            ui.group(|ui| {
+                ui.heading(
+                    egui::RichText::new("TERRAIN SETTINGS")
+                        .size(20.0)
+                        .color(egui::Color32::from_rgb(255, 204, 51)),
+                );
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    ui.label("Map Width (m):");
+                    ui.add(egui::Slider::new(&mut config.map_width, 50.0..=500.0).text("m"));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Map Height (m):");
+                    ui.add(egui::Slider::new(&mut config.map_height, 50.0..=500.0).text("m"));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Terrain Type:");
+                    egui::ComboBox::new("terrain-type", "")
+                        .selected_text(config.terrain_type.name())
+                        .show_ui(ui, |ui| {
+                            for variant in TerrainType::all() {
+                                ui.selectable_value(
+                                    &mut config.terrain_type,
+                                    variant,
+                                    variant.name(),
+                                );
+                            }
+                        });
+                });
+            });
+
+            ui.add_space(10.0);
+
+            // Fire Settings
+            ui.group(|ui| {
+                ui.heading(
+                    egui::RichText::new("FIRE SETTINGS")
+                        .size(20.0)
+                        .color(egui::Color32::from_rgb(255, 204, 51)),
+                );
+                ui.add_space(10.0);
+
+                // Guard for spacing > 0 and ensure at least 1
+                let max_x = ((config.map_width / config.spacing).floor() as usize).max(1);
+                let max_y = ((config.map_height / config.spacing).floor() as usize).max(1);
+
+                ui.horizontal(|ui| {
+                    ui.label("Elements X:");
+                    ui.add(egui::Slider::new(&mut config.elements_x, 1..=max_x));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Elements Y:");
+                    ui.add(egui::Slider::new(&mut config.elements_y, 1..=max_y));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Fuel Mass (kg):");
+                    ui.add(egui::Slider::new(&mut config.fuel_mass, 1.0..=20.0).text("kg"));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Fuel Type:");
+                    egui::ComboBox::new("fuel-type", "")
+                        .selected_text(config.fuel_type.name())
+                        .show_ui(ui, |ui| {
+                            for variant in FuelType::all() {
+                                ui.selectable_value(&mut config.fuel_type, variant, variant.name());
+                            }
+                        });
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Spacing (m):");
+                    ui.add(egui::Slider::new(&mut config.spacing, 5.0..=20.0).text("m"));
+                });
+            });
+
+            ui.add_space(10.0);
+
+            // Weather Settings
+            ui.group(|ui| {
+                ui.heading(
+                    egui::RichText::new("WEATHER SETTINGS")
+                        .size(20.0)
+                        .color(egui::Color32::from_rgb(255, 204, 51)),
+                );
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut config.use_weather_preset, "Use Weather Preset");
+                });
+
+                if config.use_weather_preset {
+                    ui.horizontal(|ui| {
+                        ui.label("Weather Preset:");
+                        egui::ComboBox::new("weather-preset", "")
+                            .selected_text(config.weather_preset.name())
+                            .show_ui(ui, |ui| {
+                                for variant in WeatherPresetType::all() {
+                                    ui.selectable_value(
+                                        &mut config.weather_preset,
+                                        variant,
+                                        variant.name(),
+                                    );
+                                }
+                            });
+                    });
+                    ui.label(
+                        egui::RichText::new("(Dynamic weather will be simulated)")
+                            .size(12.0)
+                            .color(egui::Color32::GRAY),
+                    );
+                } else {
+                    ui.horizontal(|ui| {
+                        ui.label("Temperature (°C):");
+                        ui.add(egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Humidity (%):");
+                        ui.add(egui::Slider::new(&mut config.humidity, 1.0..=80.0).text("%"));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Wind Speed (km/h):");
+                        ui.add(egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Wind Direction (°):");
+                        ui.add(
+                            egui::Slider::new(&mut config.wind_direction, 0.0..=360.0).text("°"),
+                        );
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Drought Factor:");
+                        ui.add(egui::Slider::new(&mut config.drought_factor, 1.0..=20.0));
+                    });
+                }
+            });
+
+            ui.add_space(20.0);
+        });
+
+        ui.vertical_centered(|ui| {
+            if ui
+                .add_sized(
+                    [300.0, 60.0],
+                    egui::Button::new(egui::RichText::new("START SIMULATION").size(24.0)),
+                )
+                .clicked()
+            {
+                menu_state.in_menu = false;
+            }
+            ui.add_space(20.0);
+        });
+    });
+
+    Ok(())
+}
+
 /// Simulation state resource
 #[derive(Resource)]
 struct SimulationState {
@@ -208,20 +480,28 @@ impl FromWorld for SimulationState {
         let mut sim = FireSimulation::new(5.0, terrain);
 
         // Set weather conditions from config
-        let weather = WeatherSystem::new(
-            config.temperature,
-            config.humidity,
-            config.wind_speed,
-            config.wind_direction,
-            config.drought_factor,
-        );
+        let weather = if config.use_weather_preset {
+            // Use dynamic weather preset
+            config.weather_preset.to_system()
+        } else {
+            // Use static weather values
+            WeatherSystem::new(
+                config.temperature,
+                config.humidity,
+                config.wind_speed,
+                config.wind_direction,
+                config.drought_factor,
+            )
+        };
         sim.set_weather(weather);
 
         // Add fuel elements in a grid
         let center_x = config.map_width / 2.0;
         let center_y = config.map_height / 2.0;
-        let start_x = center_x - (config.elements_x as f32 * config.spacing) / 2.0;
-        let start_y = center_y - (config.elements_y as f32 * config.spacing) / 2.0;
+        let start_x =
+            center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
+        let start_y =
+            center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
 
         for i in 0..config.elements_x {
             for j in 0..config.elements_y {
@@ -240,13 +520,7 @@ impl FromWorld for SimulationState {
             }
         }
 
-        // Ignite elements based on config
-        for id in 0..config
-            .initial_ignitions
-            .min(config.elements_x * config.elements_y)
-        {
-            sim.ignite_element(id as u32, 600.0);
-        }
+        // No auto-ignition - user will manually ignite fuel elements with 'I' key
 
         Self {
             simulation: sim,
@@ -281,647 +555,21 @@ struct TooltipText;
 #[derive(Component)]
 struct StatsPanel;
 
+/// Marker for terrain mesh
 #[derive(Component)]
-struct FpsText;
-
-/// Menu components
-#[derive(Component)]
-struct MenuUI;
-
-#[derive(Component)]
-struct MenuCamera;
-
-#[derive(Component)]
-struct StartButton;
-
-#[derive(Component, Clone, Copy)]
-enum ConfigButton {
-    IncrementMapWidth,
-    DecrementMapWidth,
-    IncrementMapHeight,
-    DecrementMapHeight,
-    IncrementElementsX,
-    DecrementElementsX,
-    IncrementElementsY,
-    DecrementElementsY,
-    IncrementFuelMass,
-    DecrementFuelMass,
-    IncrementInitialIgnitions,
-    DecrementInitialIgnitions,
-    IncrementSpacing,
-    DecrementSpacing,
-    IncrementTemperature,
-    DecrementTemperature,
-    IncrementHumidity,
-    DecrementHumidity,
-    IncrementWindSpeed,
-    DecrementWindSpeed,
-    IncrementWindDirection,
-    DecrementWindDirection,
-    IncrementDroughtFactor,
-    DecrementDroughtFactor,
-    CycleTerrainType,
-    CycleFuelType,
-}
-
-#[derive(Component)]
-struct ConfigValueText(ConfigButton);
-
-#[derive(Component)]
-struct ScrollablePanel;
-
-/// Setup menu UI
-fn setup_menu(mut commands: Commands) {
-    // Spawn a 2D camera for the UI
-    commands.spawn((Camera2dBundle::default(), MenuCamera));
-
-    commands
-        .spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: BackgroundColor(Color::srgb(0.1, 0.1, 0.15)),
-                ..default()
-            },
-            MenuUI,
-        ))
-        .with_children(|parent| {
-            // Title
-            parent.spawn(TextBundle::from_section(
-                "Australia Fire Simulation",
-                TextStyle {
-                    font_size: 48.0,
-                    color: Color::srgb(1.0, 0.8, 0.2),
-                    ..default()
-                },
-            ));
-
-            parent.spawn(
-                TextBundle::from_section(
-                    "Configure Simulation Parameters",
-                    TextStyle {
-                        font_size: 24.0,
-                        color: Color::srgb(0.8, 0.8, 0.8),
-                        ..default()
-                    },
-                )
-                .with_style(Style {
-                    margin: UiRect::new(Val::Px(0.0), Val::Px(0.0), Val::Px(10.0), Val::Px(30.0)),
-                    ..default()
-                }),
-            );
-
-            // Scrollable config panel container
-            parent
-                .spawn((
-                    NodeBundle {
-                        style: Style {
-                            width: Val::Px(700.0),
-                            max_height: Val::Px(450.0),
-                            overflow: Overflow::clip_y(),
-                            ..default()
-                        },
-                        background_color: BackgroundColor(Color::srgba(0.2, 0.2, 0.25, 0.9)),
-                        ..default()
-                    },
-                    ScrollablePanel,
-                ))
-                .with_children(|scroll_container| {
-                    // Inner scrollable content
-                    scroll_container
-                        .spawn(NodeBundle {
-                            style: Style {
-                                flex_direction: FlexDirection::Column,
-                                padding: UiRect::all(Val::Px(20.0)),
-                                row_gap: Val::Px(10.0),
-                                width: Val::Percent(100.0),
-                                ..default()
-                            },
-                            ..default()
-                        })
-                        .with_children(|config_panel| {
-                            add_config_section(config_panel, "TERRAIN SETTINGS");
-                            add_numeric_config(
-                                config_panel,
-                                "Map Width (m):",
-                                ConfigButton::DecrementMapWidth,
-                                ConfigButton::IncrementMapWidth,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Map Height (m):",
-                                ConfigButton::DecrementMapHeight,
-                                ConfigButton::IncrementMapHeight,
-                            );
-                            add_cycle_config(
-                                config_panel,
-                                "Terrain Type:",
-                                ConfigButton::CycleTerrainType,
-                            );
-
-                            add_config_section(config_panel, "FIRE SETTINGS");
-                            add_numeric_config(
-                                config_panel,
-                                "Grid Width:",
-                                ConfigButton::DecrementElementsX,
-                                ConfigButton::IncrementElementsX,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Grid Height:",
-                                ConfigButton::DecrementElementsY,
-                                ConfigButton::IncrementElementsY,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Fuel Mass (kg):",
-                                ConfigButton::DecrementFuelMass,
-                                ConfigButton::IncrementFuelMass,
-                            );
-                            add_cycle_config(
-                                config_panel,
-                                "Fuel Type:",
-                                ConfigButton::CycleFuelType,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Initial Ignitions:",
-                                ConfigButton::DecrementInitialIgnitions,
-                                ConfigButton::IncrementInitialIgnitions,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Spacing (m):",
-                                ConfigButton::DecrementSpacing,
-                                ConfigButton::IncrementSpacing,
-                            );
-
-                            add_config_section(config_panel, "WEATHER SETTINGS");
-                            add_numeric_config(
-                                config_panel,
-                                "Temperature (°C):",
-                                ConfigButton::DecrementTemperature,
-                                ConfigButton::IncrementTemperature,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Humidity (0-1):",
-                                ConfigButton::DecrementHumidity,
-                                ConfigButton::IncrementHumidity,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Wind Speed (m/s):",
-                                ConfigButton::DecrementWindSpeed,
-                                ConfigButton::IncrementWindSpeed,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Wind Direction (°):",
-                                ConfigButton::DecrementWindDirection,
-                                ConfigButton::IncrementWindDirection,
-                            );
-                            add_numeric_config(
-                                config_panel,
-                                "Drought Factor:",
-                                ConfigButton::DecrementDroughtFactor,
-                                ConfigButton::IncrementDroughtFactor,
-                            );
-                        });
-                });
-
-            // START button
-            parent
-                .spawn((
-                    ButtonBundle {
-                        style: Style {
-                            width: Val::Px(300.0),
-                            height: Val::Px(60.0),
-                            margin: UiRect::top(Val::Px(30.0)),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        background_color: BackgroundColor(Color::srgb(0.2, 0.6, 0.2)),
-                        ..default()
-                    },
-                    StartButton,
-                ))
-                .with_children(|button| {
-                    button.spawn(TextBundle::from_section(
-                        "START SIMULATION",
-                        TextStyle {
-                            font_size: 24.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    ));
-                });
-        });
-}
-
-fn add_config_section(parent: &mut ChildBuilder, title: &str) {
-    parent.spawn(
-        TextBundle::from_section(
-            title,
-            TextStyle {
-                font_size: 20.0,
-                color: Color::srgb(1.0, 0.8, 0.2),
-                ..default()
-            },
-        )
-        .with_style(Style {
-            margin: UiRect::top(Val::Px(10.0)),
-            ..default()
-        }),
-    );
-}
-
-fn add_numeric_config(
-    parent: &mut ChildBuilder,
-    label: &str,
-    dec_button: ConfigButton,
-    inc_button: ConfigButton,
-) {
-    parent
-        .spawn(NodeBundle {
-            style: Style {
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
-                width: Val::Percent(100.0),
-                ..default()
-            },
-            ..default()
-        })
-        .with_children(|row| {
-            row.spawn(TextBundle::from_section(
-                label,
-                TextStyle {
-                    font_size: 16.0,
-                    color: Color::srgb(0.9, 0.9, 0.9),
-                    ..default()
-                },
-            ));
-
-            row.spawn(NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(10.0),
-                    ..default()
-                },
-                ..default()
-            })
-            .with_children(|controls| {
-                // Decrement button
-                controls
-                    .spawn((
-                        ButtonBundle {
-                            style: Style {
-                                width: Val::Px(30.0),
-                                height: Val::Px(30.0),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            background_color: BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
-                            ..default()
-                        },
-                        dec_button,
-                    ))
-                    .with_children(|btn| {
-                        btn.spawn(TextBundle::from_section(
-                            "-",
-                            TextStyle {
-                                font_size: 20.0,
-                                color: Color::WHITE,
-                                ..default()
-                            },
-                        ));
-                    });
-
-                // Value display
-                controls.spawn((
-                    TextBundle::from_section(
-                        "0",
-                        TextStyle {
-                            font_size: 16.0,
-                            color: Color::srgb(0.7, 0.9, 1.0),
-                            ..default()
-                        },
-                    ),
-                    ConfigValueText(inc_button),
-                ));
-
-                // Increment button
-                controls
-                    .spawn((
-                        ButtonBundle {
-                            style: Style {
-                                width: Val::Px(30.0),
-                                height: Val::Px(30.0),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            background_color: BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
-                            ..default()
-                        },
-                        inc_button,
-                    ))
-                    .with_children(|btn| {
-                        btn.spawn(TextBundle::from_section(
-                            "+",
-                            TextStyle {
-                                font_size: 20.0,
-                                color: Color::WHITE,
-                                ..default()
-                            },
-                        ));
-                    });
-            });
-        });
-}
-
-fn add_cycle_config(parent: &mut ChildBuilder, label: &str, cycle_button: ConfigButton) {
-    parent
-        .spawn(NodeBundle {
-            style: Style {
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
-                width: Val::Percent(100.0),
-                ..default()
-            },
-            ..default()
-        })
-        .with_children(|row| {
-            row.spawn(TextBundle::from_section(
-                label,
-                TextStyle {
-                    font_size: 16.0,
-                    color: Color::srgb(0.9, 0.9, 0.9),
-                    ..default()
-                },
-            ));
-
-            row.spawn((
-                ButtonBundle {
-                    style: Style {
-                        padding: UiRect::all(Val::Px(8.0)),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    background_color: BackgroundColor(Color::srgb(0.4, 0.4, 0.4)),
-                    ..default()
-                },
-                cycle_button,
-            ))
-            .with_children(|btn| {
-                btn.spawn((
-                    TextBundle::from_section(
-                        "Value",
-                        TextStyle {
-                            font_size: 16.0,
-                            color: Color::srgb(0.7, 0.9, 1.0),
-                            ..default()
-                        },
-                    ),
-                    ConfigValueText(cycle_button),
-                ));
-            });
-        });
-}
-
-#[allow(clippy::type_complexity)] // Allow the complex type.
-/// Handle menu button interactions
-fn handle_menu_interactions(
-    mut config: ResMut<DemoConfig>,
-    mut menu_state: ResMut<MenuState>,
-    mut interaction_query: Query<
-        (
-            &Interaction,
-            Option<&ConfigButton>,
-            Option<&StartButton>,
-            &mut BackgroundColor,
-        ),
-        Changed<Interaction>,
-    >,
-    menu_query: Query<Entity, With<MenuUI>>,
-    camera_query: Query<Entity, With<MenuCamera>>,
-    mut commands: Commands,
-) {
-    for (interaction, config_button, start_button, mut color) in &mut interaction_query {
-        match *interaction {
-            Interaction::Pressed => {
-                if start_button.is_some() {
-                    // Hide menu
-                    for entity in menu_query.iter() {
-                        commands.entity(entity).despawn_recursive();
-                    }
-                    // Despawn menu camera
-                    for entity in camera_query.iter() {
-                        commands.entity(entity).despawn();
-                    }
-                    menu_state.in_menu = false;
-                } else if let Some(button) = config_button {
-                    // Update config based on button
-                    match button {
-                        ConfigButton::IncrementMapWidth => config.map_width += 10.0,
-                        ConfigButton::DecrementMapWidth => {
-                            config.map_width = (config.map_width - 10.0).max(50.0)
-                        }
-                        ConfigButton::IncrementMapHeight => config.map_height += 10.0,
-                        ConfigButton::DecrementMapHeight => {
-                            config.map_height = (config.map_height - 10.0).max(50.0)
-                        }
-                        ConfigButton::IncrementElementsX => config.elements_x += 1,
-                        ConfigButton::DecrementElementsX => {
-                            config.elements_x = config.elements_x.saturating_sub(1).max(1)
-                        }
-                        ConfigButton::IncrementElementsY => config.elements_y += 1,
-                        ConfigButton::DecrementElementsY => {
-                            config.elements_y = config.elements_y.saturating_sub(1).max(1)
-                        }
-                        ConfigButton::IncrementFuelMass => config.fuel_mass += 0.5,
-                        ConfigButton::DecrementFuelMass => {
-                            config.fuel_mass = (config.fuel_mass - 0.5).max(0.5)
-                        }
-                        ConfigButton::IncrementInitialIgnitions => config.initial_ignitions += 1,
-                        ConfigButton::DecrementInitialIgnitions => {
-                            config.initial_ignitions =
-                                config.initial_ignitions.saturating_sub(1).max(1)
-                        }
-                        ConfigButton::IncrementSpacing => config.spacing += 0.5,
-                        ConfigButton::DecrementSpacing => {
-                            config.spacing = (config.spacing - 0.5).max(1.0)
-                        }
-                        ConfigButton::IncrementTemperature => config.temperature += 1.0,
-                        ConfigButton::DecrementTemperature => {
-                            config.temperature = (config.temperature - 1.0).max(0.0)
-                        }
-                        ConfigButton::IncrementHumidity => {
-                            config.humidity = (config.humidity + 0.01).min(1.0)
-                        }
-                        ConfigButton::DecrementHumidity => {
-                            config.humidity = (config.humidity - 0.01).max(0.0)
-                        }
-                        ConfigButton::IncrementWindSpeed => config.wind_speed += 1.0,
-                        ConfigButton::DecrementWindSpeed => {
-                            config.wind_speed = (config.wind_speed - 1.0).max(0.0)
-                        }
-                        ConfigButton::IncrementWindDirection => {
-                            config.wind_direction = (config.wind_direction + 15.0) % 360.0
-                        }
-                        ConfigButton::DecrementWindDirection => {
-                            config.wind_direction = (config.wind_direction - 15.0 + 360.0) % 360.0
-                        }
-                        ConfigButton::IncrementDroughtFactor => {
-                            config.drought_factor = (config.drought_factor + 0.5).min(20.0)
-                        }
-                        ConfigButton::DecrementDroughtFactor => {
-                            config.drought_factor = (config.drought_factor - 0.5).max(0.0)
-                        }
-                        ConfigButton::CycleTerrainType => {
-                            config.terrain_type = match config.terrain_type {
-                                TerrainType::Flat => TerrainType::Hill,
-                                TerrainType::Hill => TerrainType::Valley,
-                                TerrainType::Valley => TerrainType::Flat,
-                            };
-                        }
-                        ConfigButton::CycleFuelType => {
-                            config.fuel_type = match config.fuel_type {
-                                FuelType::DryGrass => FuelType::EucalyptusStringybark,
-                                FuelType::EucalyptusStringybark => FuelType::EucalyptusSmoothBark,
-                                FuelType::EucalyptusSmoothBark => FuelType::Shrubland,
-                                FuelType::Shrubland => FuelType::DeadWood,
-                                FuelType::DeadWood => FuelType::DryGrass,
-                            };
-                        }
-                    }
-                }
-            }
-            Interaction::Hovered => {
-                if start_button.is_some() {
-                    *color = BackgroundColor(Color::srgb(0.25, 0.7, 0.25));
-                } else {
-                    *color = BackgroundColor(Color::srgb(0.5, 0.5, 0.5));
-                }
-            }
-            Interaction::None => {
-                if start_button.is_some() {
-                    *color = BackgroundColor(Color::srgb(0.2, 0.6, 0.2));
-                } else {
-                    *color = BackgroundColor(Color::srgb(0.4, 0.4, 0.4));
-                }
-            }
-        }
-    }
-}
-
-/// Update config value displays in menu
-fn update_config_display(config: Res<DemoConfig>, mut query: Query<(&mut Text, &ConfigValueText)>) {
-    for (mut text, config_text) in query.iter_mut() {
-        text.sections[0].value = match config_text.0 {
-            ConfigButton::IncrementMapWidth | ConfigButton::DecrementMapWidth => {
-                format!("{:.0}", config.map_width)
-            }
-            ConfigButton::IncrementMapHeight | ConfigButton::DecrementMapHeight => {
-                format!("{:.0}", config.map_height)
-            }
-            ConfigButton::IncrementElementsX | ConfigButton::DecrementElementsX => {
-                format!("{}", config.elements_x)
-            }
-            ConfigButton::IncrementElementsY | ConfigButton::DecrementElementsY => {
-                format!("{}", config.elements_y)
-            }
-            ConfigButton::IncrementFuelMass | ConfigButton::DecrementFuelMass => {
-                format!("{:.1}", config.fuel_mass)
-            }
-            ConfigButton::IncrementInitialIgnitions | ConfigButton::DecrementInitialIgnitions => {
-                format!("{}", config.initial_ignitions)
-            }
-            ConfigButton::IncrementSpacing | ConfigButton::DecrementSpacing => {
-                format!("{:.1}", config.spacing)
-            }
-            ConfigButton::IncrementTemperature | ConfigButton::DecrementTemperature => {
-                format!("{:.0}", config.temperature)
-            }
-            ConfigButton::IncrementHumidity | ConfigButton::DecrementHumidity => {
-                format!("{:.2}", config.humidity)
-            }
-            ConfigButton::IncrementWindSpeed | ConfigButton::DecrementWindSpeed => {
-                format!("{:.0}", config.wind_speed)
-            }
-            ConfigButton::IncrementWindDirection | ConfigButton::DecrementWindDirection => {
-                format!("{:.0}", config.wind_direction)
-            }
-            ConfigButton::IncrementDroughtFactor | ConfigButton::DecrementDroughtFactor => {
-                format!("{:.1}", config.drought_factor)
-            }
-            ConfigButton::CycleTerrainType => match config.terrain_type {
-                TerrainType::Flat => "Flat".to_string(),
-                TerrainType::Hill => "Hill".to_string(),
-                TerrainType::Valley => "Valley".to_string(),
-            },
-            ConfigButton::CycleFuelType => match config.fuel_type {
-                FuelType::DryGrass => "Dry Grass".to_string(),
-                FuelType::EucalyptusStringybark => "Eucalyptus Stringybark".to_string(),
-                FuelType::EucalyptusSmoothBark => "Eucalyptus Smooth Bark".to_string(),
-                FuelType::Shrubland => "Shrubland".to_string(),
-                FuelType::DeadWood => "Dead Wood".to_string(),
-            },
-        };
-    }
-}
-
-/// Handle mouse wheel scrolling for menu panel
-fn handle_menu_scroll(
-    mut scroll_events: EventReader<MouseWheel>,
-    scroll_query: Query<(&Node, &Children), With<ScrollablePanel>>,
-    mut children_query: Query<&mut Style>,
-) {
-    for event in scroll_events.read() {
-        for (panel_node, children) in &scroll_query {
-            if let Some(&child_entity) = children.first() {
-                if let Ok(mut child_style) = children_query.get_mut(child_entity) {
-                    // Get current top position (or 0 if not set)
-                    let current_top = match child_style.top {
-                        Val::Px(px) => px,
-                        _ => 0.0,
-                    };
-
-                    // Calculate new scroll position (scroll down = negative, scroll up = positive)
-                    let scroll_amount = event.y * 30.0; // 30 pixels per scroll tick
-                    let new_top = current_top + scroll_amount;
-
-                    // Get container height
-                    let container_height = panel_node.size().y;
-
-                    // Estimate content height (we'll allow scrolling and clamp)
-                    // Max scroll is 0, min scroll allows content to scroll up
-                    let max_scroll = 0.0;
-                    let min_scroll = -(1000.0 - container_height).max(0.0); // Allow up to 1000px of content
-                    let clamped_top = new_top.clamp(min_scroll, max_scroll);
-
-                    // Apply new scroll position to the child (content)
-                    child_style.top = Val::Px(clamped_top);
-                }
-            }
-        }
-    }
-}
+struct TerrainMesh;
 
 /// Initialize simulation when transitioning from menu
-fn init_simulation_system(mut commands: Commands, mut menu_state: ResMut<MenuState>) {
+fn init_simulation_system(
+    mut commands: Commands,
+    mut menu_state: ResMut<MenuState>,
+    camera_query: Query<Entity, (With<Camera2d>, Without<Camera3d>)>,
+) {
+    // Remove menu camera (Camera2d) since we'll add a Camera3d for the simulation
+    for entity in camera_query.iter() {
+        commands.entity(entity).despawn();
+    }
+
     // Initialize simulation state
     commands.init_resource::<SimulationState>();
     menu_state.simulation_initialized = true;
@@ -932,9 +580,14 @@ fn setup_scene(
     commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<StandardMaterial>>,
-    sim_state: ResMut<SimulationState>,
+    sim_state: Option<ResMut<SimulationState>>,
     mut menu_state: ResMut<MenuState>,
 ) {
+    // Wait until SimulationState resource exists
+    let Some(sim_state) = sim_state else {
+        return;
+    };
+
     setup(commands, meshes, materials, sim_state);
     menu_state.scene_setup = true;
 }
@@ -947,29 +600,26 @@ fn setup(
     mut sim_state: ResMut<SimulationState>,
 ) {
     // Add light
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
+    commands.spawn((
+        DirectionalLight {
             illuminance: 10000.0,
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(50.0, 100.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    });
+        Transform::from_xyz(50.0, 100.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
 
     // Add ambient light
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
         brightness: 200.0,
+        affects_lightmapped_meshes: false,
     });
 
     // Add camera
     commands.spawn((
-        Camera3dBundle {
-            transform: Transform::from_xyz(150.0, 120.0, 150.0)
-                .looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
-            ..default()
-        },
+        Camera3d::default(),
+        Transform::from_xyz(150.0, 120.0, 150.0).looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
         MainCamera,
     ));
 
@@ -1004,12 +654,9 @@ fn setup(
 
         let entity = commands
             .spawn((
-                PbrBundle {
-                    mesh: cube_mesh.clone(),
-                    material,
-                    transform: Transform::from_xyz(pos.x, pos.z, pos.y),
-                    ..default()
-                },
+                Mesh3d(cube_mesh.clone()),
+                MeshMaterial3d(material),
+                Transform::from_xyz(pos.x, pos.z, pos.y),
                 FuelVisual { element_id },
             ))
             .id();
@@ -1112,12 +759,12 @@ fn spawn_terrain(
     // Create mesh
     let mut mesh = Mesh::new(
         bevy::render::render_resource::PrimitiveTopology::TriangleList,
-        bevy::render::render_asset::RenderAssetUsages::default(),
+        bevy::asset::RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
+    mesh.insert_indices(bevy::mesh::Indices::U32(indices));
 
     let terrain_mesh = meshes.add(mesh);
     let terrain_material = materials.add(StandardMaterial {
@@ -1126,99 +773,86 @@ fn spawn_terrain(
         ..default()
     });
 
-    commands.spawn(PbrBundle {
-        mesh: terrain_mesh,
-        material: terrain_material,
-        transform: Transform::from_xyz(0.0, 0.0, 0.0),
-        ..default()
-    });
+    commands.spawn((
+        Mesh3d(terrain_mesh),
+        MeshMaterial3d(terrain_material),
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        TerrainMesh,
+    ));
 }
 
 fn setup_ui(commands: &mut Commands) {
     // Root UI container - fills entire screen
     commands
-        .spawn(NodeBundle {
-            style: Style {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                ..default()
-            },
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
             ..default()
         })
         .with_children(|parent| {
             // Left side - Title and controls
-            parent.spawn(NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
-                    ..default()
-                },
+            parent.spawn(Node {
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(10.0)),
                 ..default()
             })
             .with_children(|left| {
                 // Title
-                left.spawn(TextBundle::from_section(
-                    "Australia Fire Simulation",
-                    TextStyle {
+                left.spawn((
+                    Text::new("Australia Fire Simulation"),
+                    TextFont {
                         font_size: 28.0,
-                        color: Color::WHITE,
                         ..default()
                     },
+                    TextColor(Color::WHITE),
                 ));
 
                 // Controls text
                 left.spawn((
-                    TextBundle::from_section(
-                        "Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  W - Add Water Suppression\n  Arrow Keys - Camera\n  Hover - Element Details",
-                        TextStyle {
-                            font_size: 14.0,
-                            color: Color::srgb(0.6, 0.6, 0.6),
-                            ..default()
-                        },
-                    ),
+                    Text::new("Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  I - Ignite Fuel (at cursor)\n  W - Add Water Suppression\n  ESC - Return to Menu\n  Arrow Keys - Camera\n  Hover - Element Details"),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.6, 0.6, 0.6)),
                     ControlsText,
                 ));
             });
 
             // Right side - Stats panel with background box
             parent.spawn((
-                NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Column,
-                        padding: UiRect::all(Val::Px(15.0)),
-                        margin: UiRect::all(Val::Px(10.0)),
-                        width: Val::Px(400.0),
-                        max_height: Val::Percent(90.0),
-                        ..default()
-                    },
-                    background_color: BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.85)),
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(15.0)),
+                    margin: UiRect::all(Val::Px(10.0)),
+                    width: Val::Px(400.0),
+                    max_height: Val::Percent(90.0),
                     ..default()
                 },
+                BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.85)),
                 StatsPanel,
             ))
             .with_children(|panel| {
                 // Stats heading
-                panel.spawn(TextBundle::from_section(
-                    "SIMULATION STATISTICS",
-                    TextStyle {
+                panel.spawn((
+                    Text::new("SIMULATION STATISTICS"),
+                    TextFont {
                         font_size: 20.0,
-                        color: Color::srgb(1.0, 0.8, 0.2),
                         ..default()
                     },
+                    TextColor(Color::srgb(1.0, 0.8, 0.2)),
                 ));
 
                 // Stats text
                 panel.spawn((
-                    TextBundle::from_section(
-                        "Initializing...",
-                        TextStyle {
-                            font_size: 16.0,
-                            color: Color::srgb(0.9, 0.9, 0.9),
-                            ..default()
-                        },
-                    ),
+                    Text::new("Initializing..."),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.9, 0.9, 0.9)),
                     StatsText,
                 ));
             });
@@ -1226,72 +860,41 @@ fn setup_ui(commands: &mut Commands) {
 
     // Tooltip (hidden by default)
     commands.spawn((
-        TextBundle {
-            style: Style {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(0.0),
-                padding: UiRect::all(Val::Px(8.0)),
-                ..default()
-            },
-            text: Text::from_section(
-                "",
-                TextStyle {
-                    font_size: 14.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            ),
-            background_color: BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
-            visibility: Visibility::Hidden,
+        Text::new(""),
+        TextFont {
+            font_size: 14.0,
             ..default()
         },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            top: Val::Px(0.0),
+            padding: UiRect::all(Val::Px(8.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
+        Visibility::Hidden,
         TooltipText,
     ));
 
     // FPS counter (top-right corner)
     commands.spawn((
-        TextBundle {
-            style: Style {
-                position_type: PositionType::Absolute,
-                right: Val::Px(10.0),
-                top: Val::Px(10.0),
-                padding: UiRect::all(Val::Px(5.0)),
-                ..default()
-            },
-            text: Text::from_section(
-                "FPS: 60",
-                TextStyle {
-                    font_size: 16.0,
-                    color: Color::srgb(1.0, 1.0, 0.0),
-                    ..default()
-                },
-            ),
-            background_color: BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+        Text::new("FPS: 60"),
+        TextFont {
+            font_size: 16.0,
             ..default()
         },
-        FpsText,
+        TextColor(Color::srgb(1.0, 1.0, 0.0)),
+        Node {
+            position_type: PositionType::Absolute,
+            right: Val::Px(10.0),
+            top: Val::Px(10.0),
+            padding: UiRect::all(Val::Px(5.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
     ));
-}
-
-/// Update FPS counter
-fn update_fps(
-    time: Res<Time>,
-    mut fps_counter: ResMut<FpsCounter>,
-    mut query: Query<&mut Text, With<FpsText>>,
-) {
-    fps_counter.frame_count += 1;
-    fps_counter.timer += time.delta_seconds();
-
-    if fps_counter.timer >= 1.0 {
-        fps_counter.fps = fps_counter.frame_count as f32 / fps_counter.timer;
-        fps_counter.frame_count = 0;
-        fps_counter.timer = 0.0;
-
-        for mut text in query.iter_mut() {
-            text.sections[0].value = format!("FPS: {:.0}", fps_counter.fps);
-        }
-    }
 }
 
 /// Update the simulation
@@ -1301,7 +904,7 @@ fn update_simulation(time: Res<Time>, mut sim_state: ResMut<SimulationState>) {
     }
 
     // Accumulate time with speed multiplier
-    sim_state.time_accumulator += time.delta_seconds() * sim_state.speed;
+    sim_state.time_accumulator += time.delta_secs() * sim_state.speed;
 
     // Update simulation at 10 FPS (0.1 second timesteps)
     let timestep = 0.1;
@@ -1315,7 +918,7 @@ fn update_simulation(time: Res<Time>, mut sim_state: ResMut<SimulationState>) {
 fn update_fuel_visuals(
     sim_state: Res<SimulationState>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    query: Query<(&FuelVisual, &Handle<StandardMaterial>)>,
+    query: Query<(&FuelVisual, &MeshMaterial3d<StandardMaterial>)>,
 ) {
     for (fuel_visual, material_handle) in query.iter() {
         if let Some(element) = sim_state
@@ -1324,7 +927,7 @@ fn update_fuel_visuals(
             .into_iter()
             .find(|e| e.id == fuel_visual.element_id)
         {
-            if let Some(material) = materials.get_mut(material_handle) {
+            if let Some(material) = materials.get_mut(&material_handle.0) {
                 if element.is_ignited() {
                     // Calculate color based on temperature
                     let temp_factor = (element.temperature() / 1200.0).clamp(0.0, 1.0);
@@ -1349,12 +952,10 @@ fn update_camera_controls(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut Transform, With<MainCamera>>,
     time: Res<Time>,
-) {
-    let Ok(mut transform) = query.get_single_mut() else {
-        return;
-    };
-    let speed = 50.0 * time.delta_seconds();
-    let rotation_speed = 1.0 * time.delta_seconds();
+) -> Result {
+    let mut transform = query.single_mut()?;
+    let speed = 50.0 * time.delta_secs();
+    let rotation_speed = 1.0 * time.delta_secs();
 
     // Movement
     if keyboard.pressed(KeyCode::ArrowUp) {
@@ -1371,18 +972,66 @@ fn update_camera_controls(
     if keyboard.pressed(KeyCode::ArrowRight) {
         transform.rotate_y(-rotation_speed);
     }
+
+    Ok(())
 }
 
 /// Update UI text
-fn update_ui(sim_state: Res<SimulationState>, mut query: Query<&mut Text, With<StatsText>>) {
+fn update_ui(
+    sim_state: Res<SimulationState>,
+    mut query: Query<&mut Text, With<StatsText>>,
+    time: Res<Time>,
+    diagnostics: Res<DiagnosticsStore>,
+) -> Result {
     let stats = sim_state.simulation.get_stats();
     let weather = &sim_state.simulation.weather;
 
+    // Get FPS from diagnostics
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|fps| fps.smoothed())
+        .unwrap_or(0.0);
+
+    // Get frame time in milliseconds
+    let frame_time = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
+        .and_then(|ft| ft.smoothed())
+        .map(|ft| ft * 1000.0) // Convert to ms
+        .unwrap_or(0.0);
+
+    // Calculate entity count for performance tracking
+    let entity_count = diagnostics
+        .get(&EntityCountDiagnosticsPlugin::ENTITY_COUNT)
+        .and_then(|ec| ec.value())
+        .unwrap_or(0.0);
+
+    // Get CPU usage from system information diagnostics
+    let cpu_usage = diagnostics
+        .get(&SystemInformationDiagnosticsPlugin::SYSTEM_CPU_USAGE)
+        .and_then(|cpu| cpu.smoothed())
+        .unwrap_or(0.0);
+
+    // Get memory usage from system information diagnostics
+    let mem_usage = diagnostics
+        .get(&SystemInformationDiagnosticsPlugin::SYSTEM_MEM_USAGE)
+        .and_then(|mem| mem.smoothed())
+        .unwrap_or(0.0);
+
     for mut text in query.iter_mut() {
-        text.sections[0].value = format!(
+        text.0 = format!(
             "Simulation Time: {:.1}s\n\
              Status: {}\n\
              Speed: {:.1}x\n\
+             \n\
+             SYSTEM PERFORMANCE\n\
+             FPS: {:.0}\n\
+             Frame Time: {:.2}ms\n\
+             Entities: {:.0}\n\
+             Delta Time: {:.3}s\n\
+             \n\
+             HARDWARE PERFORMANCE\n\
+             CPU Usage: {:.1}%\n\
+             Memory Usage: {:.1} MB\n\
              \n\
              FIRE STATUS\n\
              Burning Elements: {}\n\
@@ -1407,6 +1056,12 @@ fn update_ui(sim_state: Res<SimulationState>, mut query: Query<&mut Text, With<S
                 "RUNNING"
             },
             sim_state.speed,
+            fps,
+            frame_time,
+            entity_count,
+            time.delta_secs(),
+            cpu_usage,
+            mem_usage,
             stats.burning_elements,
             stats.total_elements,
             stats.total_fuel_consumed,
@@ -1417,7 +1072,7 @@ fn update_ui(sim_state: Res<SimulationState>, mut query: Query<&mut Text, With<S
                 .map(|e| e.temperature())
                 .fold(0.0f32, f32::max),
             weather.temperature,
-            weather.humidity * 100.0,
+            weather.humidity,
             weather.wind_speed,
             weather.wind_direction,
             weather.drought_factor,
@@ -1425,6 +1080,8 @@ fn update_ui(sim_state: Res<SimulationState>, mut query: Query<&mut Text, With<S
             weather.fire_danger_rating(),
         );
     }
+
+    Ok(())
 }
 
 /// Update tooltip on hover
@@ -1433,28 +1090,25 @@ fn update_tooltip(
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
     sim_state: Res<SimulationState>,
-    mut tooltip_query: Query<(&mut Text, &mut Style, &mut Visibility), With<TooltipText>>,
-) {
-    let Ok(window) = windows.get_single() else {
-        return;
-    };
+    mut tooltip_query: Query<(&mut Text, &mut Node, &mut Visibility), With<TooltipText>>,
+) -> Result {
+    let window = windows.single()?;
 
     let Some(cursor_position) = window.cursor_position() else {
         // Hide tooltip if cursor not in window
         for (_, _, mut visibility) in tooltip_query.iter_mut() {
             *visibility = Visibility::Hidden;
         }
-        return;
+        return Ok(());
     };
 
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
-        return;
+    // Camera might not be ready on first frame after scene setup
+    let Ok((camera, camera_transform)) = camera_query.single() else {
+        return Ok(()); // Silently skip if camera not ready yet
     };
 
     // Cast ray from camera through cursor position
-    let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
-        return;
-    };
+    let ray = camera.viewport_to_world(camera_transform, cursor_position)?;
 
     // Find closest fuel element intersecting with ray
     let mut closest_element: Option<(u32, f32)> = None;
@@ -1492,8 +1146,8 @@ fn update_tooltip(
                 .find(|e| e.id == element_id)
             {
                 // Show tooltip with element details
-                text.sections[0].value = format!(
-                    "Fuel Element #{}\n\
+                text.0 = format!(
+                    "Fuel Element #{} ({})\n\
                      Position: ({:.1}, {:.1}, {:.1})\n\
                      Temperature: {:.0}°C\n\
                      Fuel Remaining: {:.2} kg\n\
@@ -1501,6 +1155,7 @@ fn update_tooltip(
                      Status: {}\n\
                      Flame Height: {:.2} m",
                     element.id,
+                    element.fuel.name,
                     element.position.x,
                     element.position.y,
                     element.position.z,
@@ -1528,13 +1183,37 @@ fn update_tooltip(
             *visibility = Visibility::Hidden;
         }
     }
+
+    Ok(())
 }
 
+/// Query for all sim related entities in the scene.
+type SceneEntitiesQuery<'world, 'state> = Query<
+    'world,
+    'state,
+    Entity,
+    Or<(
+        With<MainCamera>,
+        With<DirectionalLight>,
+        With<FuelVisual>,
+        With<StatsPanel>,
+        With<ControlsText>,
+        With<TerrainMesh>,
+    )>,
+>;
+
+// Control's require lots of args.
+#[allow(clippy::too_many_arguments)]
 /// Handle user controls
 fn handle_controls(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut sim_state: ResMut<SimulationState>,
     config: Res<DemoConfig>,
+    windows: Query<&Window>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut menu_state: ResMut<MenuState>,
+    mut commands: Commands,
+    scene_entities: SceneEntitiesQuery,
 ) {
     // Pause/Resume
     if keyboard.just_pressed(KeyCode::Space) {
@@ -1570,20 +1249,28 @@ fn handle_controls(
         let mut sim = FireSimulation::new(5.0, terrain);
 
         // Set weather conditions from config
-        let weather = WeatherSystem::new(
-            config.temperature,
-            config.humidity,
-            config.wind_speed,
-            config.wind_direction,
-            config.drought_factor,
-        );
+        let weather = if config.use_weather_preset {
+            // Use dynamic weather preset
+            config.weather_preset.to_system()
+        } else {
+            // Use static weather values
+            WeatherSystem::new(
+                config.temperature,
+                config.humidity,
+                config.wind_speed,
+                config.wind_direction,
+                config.drought_factor,
+            )
+        };
         sim.set_weather(weather);
 
         // Add fuel elements in a grid
         let center_x = config.map_width / 2.0;
         let center_y = config.map_height / 2.0;
-        let start_x = center_x - (config.elements_x as f32 * config.spacing) / 2.0;
-        let start_y = center_y - (config.elements_y as f32 * config.spacing) / 2.0;
+        let start_x =
+            center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
+        let start_y =
+            center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
 
         for i in 0..config.elements_x {
             for j in 0..config.elements_y {
@@ -1602,13 +1289,7 @@ fn handle_controls(
             }
         }
 
-        // Ignite elements based on config
-        for id in 0..config
-            .initial_ignitions
-            .min(config.elements_x * config.elements_y)
-        {
-            sim.ignite_element(id as u32, 600.0);
-        }
+        // No auto-ignition - user will manually ignite fuel elements with 'I' key
 
         sim_state.simulation = sim;
         sim_state.paused = false;
@@ -1617,27 +1298,195 @@ fn handle_controls(
         // Note: Fuel entity map is not cleared - entities will be updated in update_fuel_visuals
     }
 
-    // Add water suppression
-    if keyboard.just_pressed(KeyCode::KeyW) {
-        let center_x = config.map_width / 2.0;
-        let center_y = config.map_height / 2.0;
-        let drop_altitude = 60.0;
+    // Manual ignition at cursor position
+    if keyboard.just_pressed(KeyCode::KeyI) {
+        // Try to get cursor position and convert to world coordinates
+        if let Ok(window) = windows.single() {
+            if let Some(cursor_position) = window.cursor_position() {
+                println!(
+                    "DEBUG: Cursor at ({:.2}, {:.2}), window size: {:.2}x{:.2}",
+                    cursor_position.x,
+                    cursor_position.y,
+                    window.width(),
+                    window.height()
+                );
 
-        // Add water droplets in a circular pattern
-        for i in 0..30 {
-            let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
-            let radius = 25.0;
-            let droplet = SuppressionDroplet::new(
-                SimVec3::new(
-                    center_x + angle.cos() * radius,
-                    center_y + angle.sin() * radius,
-                    drop_altitude,
-                ),
-                SimVec3::new(0.0, 0.0, -5.0),
-                10.0,
-                SuppressionAgent::Water,
-            );
-            sim_state.simulation.add_suppression_droplet(droplet);
+                // Validate cursor is within window bounds
+                if cursor_position.x >= 0.0
+                    && cursor_position.y >= 0.0
+                    && cursor_position.x <= window.width()
+                    && cursor_position.y <= window.height()
+                {
+                    if let Ok((camera, camera_transform)) = camera_query.single() {
+                        // Cast ray from camera through cursor position
+                        if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
+                        {
+                            // Find intersection with ground plane (y = 0 in Bevy, which is horizontal)
+                            // Note: Bevy uses Y-up, so ground plane is at y=0
+                            let ray_dir = *ray.direction;
+
+                            if ray_dir.y.abs() > 0.001 {
+                                let t = -ray.origin.y / ray_dir.y;
+
+                                if t > 0.0 {
+                                    // Intersection point is in front of camera
+                                    // Bevy world coords: (x, y, z) where y is vertical
+                                    // Sim coords map to Bevy as: sim(x,y,z) -> bevy(x,z,y)
+                                    let ignite_x = ray.origin.x + t * ray_dir.x;
+                                    let ignite_z = ray.origin.z + t * ray_dir.z;
+
+                                    println!(
+                                        "Cursor world position (Bevy X,Z): ({:.2}, {:.2})",
+                                        ignite_x, ignite_z
+                                    );
+
+                                    // Find the closest fuel element to cursor position and ignite it
+                                    let elements = sim_state.simulation.get_all_elements();
+                                    let mut closest_id: Option<u32> = None;
+                                    let mut closest_dist = f32::MAX;
+
+                                    for element in &elements {
+                                        // element.position is sim coords (x, y)
+                                        // which correspond to Bevy coords (x, z)
+                                        let dx = element.position.x - ignite_x;
+                                        let dz = element.position.y - ignite_z;
+                                        let dist = (dx * dx + dz * dz).sqrt();
+
+                                        if dist < closest_dist && dist < 10.0 {
+                                            // Within 10m
+                                            closest_dist = dist;
+                                            closest_id = Some(element.id);
+                                        }
+                                    }
+
+                                    // Ignite the closest element
+                                    if let Some(id) = closest_id {
+                                        println!(
+                                            "Igniting element {} at distance {:.2}m from cursor",
+                                            id, closest_dist
+                                        );
+                                        sim_state.simulation.ignite_element(id, 600.0);
+                                    } else {
+                                        println!(
+                                            "No fuel element found within 10m of cursor position (Bevy X,Z): ({:.2}, {:.2})",
+                                            ignite_x, ignite_z
+                                        );
+                                        println!("Total fuel elements: {}", elements.len());
+                                        if let Some(first) = elements.first() {
+                                            println!(
+                                                "First element sim position (x,y) = Bevy (x,z): ({:.2}, {:.2})",
+                                                first.position.x,
+                                                first.position.y
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    println!(
+                                        "DEBUG: Ray intersection behind camera (t = {:.2})",
+                                        t
+                                    );
+                                }
+                            } else {
+                                println!("DEBUG: Ray nearly parallel to ground");
+                            }
+                        } else {
+                            println!("DEBUG: Failed to cast ray from camera");
+                        }
+                    } else {
+                        println!("DEBUG: Camera not available");
+                    }
+                } else {
+                    println!("DEBUG: Cursor outside window bounds");
+                }
+            } else {
+                println!("DEBUG: No cursor position available");
+            }
         }
+    }
+
+    // Add water suppression at cursor position
+    if keyboard.just_pressed(KeyCode::KeyW) {
+        // Try to get cursor position and convert to world coordinates
+        if let Ok(window) = windows.single() {
+            if let Some(cursor_position) = window.cursor_position() {
+                // Validate cursor is within window bounds
+                if cursor_position.x >= 0.0
+                    && cursor_position.y >= 0.0
+                    && cursor_position.x <= window.width()
+                    && cursor_position.y <= window.height()
+                {
+                    if let Ok((camera, camera_transform)) = camera_query.single() {
+                        // Cast ray from camera through cursor position
+                        if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
+                        {
+                            // Find intersection with ground plane (z = 0)
+                            // Ray equation: P = origin + t * direction
+                            // Ground plane: z = 0
+                            // Solve for t: origin.z + t * direction.z = 0
+                            let ray_dir = *ray.direction;
+
+                            if ray_dir.z.abs() > 0.001 {
+                                // Ray intersects ground plane
+                                let t = -ray.origin.z / ray_dir.z;
+
+                                if t > 0.0 {
+                                    // Intersection point is in front of camera
+                                    let drop_x = ray.origin.x + t * ray_dir.x;
+                                    let drop_y = ray.origin.y + t * ray_dir.y;
+
+                                    // Get terrain elevation at drop position
+                                    let terrain_elevation = sim_state
+                                        .simulation
+                                        .get_terrain()
+                                        .elevation_at(drop_x, drop_y);
+                                    let drop_altitude = terrain_elevation + 60.0; // Start 60m above terrain
+
+                                    println!(
+                                        "Dropping water at ({:.2}, {:.2}, {:.2}) - 30 droplets",
+                                        drop_x, drop_y, drop_altitude
+                                    );
+
+                                    // Add water droplets in a circular pattern at cursor position
+                                    for i in 0..30 {
+                                        let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
+                                        let radius = 25.0;
+                                        let droplet = SuppressionDroplet::new(
+                                            SimVec3::new(
+                                                drop_x + angle.cos() * radius,
+                                                drop_y + angle.sin() * radius,
+                                                drop_altitude,
+                                            ),
+                                            SimVec3::new(0.0, 0.0, -5.0),
+                                            10.0,
+                                            SuppressionAgent::Water,
+                                        );
+                                        sim_state.simulation.add_suppression_droplet(droplet);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Return to main menu
+    if keyboard.just_pressed(KeyCode::Escape) {
+        // Despawn all scene entities (camera, lights, UI, fuel visuals, terrain)
+        for entity in scene_entities.iter() {
+            commands.entity(entity).despawn();
+        }
+
+        // Reset menu state to show menu again
+        menu_state.in_menu = true;
+        menu_state.simulation_initialized = false;
+        menu_state.scene_setup = false;
+
+        // Clear fuel entity map
+        sim_state.fuel_entity_map.clear();
+
+        // Spawn Camera2d for menu
+        commands.spawn(Camera2d);
     }
 }

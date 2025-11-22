@@ -1,6 +1,5 @@
 //! Grid-based simulation modules
 
-pub mod element_grid_coupling;
 pub mod simulation_grid;
 pub mod terrain;
 

@@ -227,6 +227,57 @@ pub struct WeatherPreset {
 }
 
 impl WeatherPreset {
+    /// Catastrophic preset - Extreme fire weather (Code Red)
+    pub fn catastrophic() -> Self {
+        WeatherPreset {
+            name: "Catastrophic".to_string(),
+            monthly_temps: [
+                (42.0, 46.0), // Jan
+                (42.0, 46.0), // Feb
+                (41.0, 45.0), // Mar
+                (40.0, 44.0), // Apr
+                (40.0, 42.0), // May
+                (40.0, 41.0), // Jun
+                (40.0, 41.0), // Jul
+                (40.0, 41.0), // Aug
+                (40.0, 42.0), // Sep
+                (41.0, 44.0), // Oct
+                (41.0, 45.0), // Nov
+                (42.0, 46.0), // Dec
+            ],
+            el_nino_temp_mod: 0.0,
+            la_nina_temp_mod: 0.0,
+            summer_humidity: 10.0,
+            autumn_humidity: 10.0,
+            winter_humidity: 10.0,
+            spring_humidity: 10.0,
+            el_nino_humidity_mod: 0.0,
+            la_nina_humidity_mod: 0.0,
+            summer_wind: 60.0,
+            autumn_wind: 60.0,
+            winter_wind: 60.0,
+            spring_wind: 60.0,
+            heatwave_temp_bonus: 0.0,
+            base_pressure: 1005.0,
+            heatwave_pressure_drop: 0.0,
+            summer_pressure_mod: 0.0,
+            winter_pressure_mod: 0.0,
+            summer_solar_max: 1200.0,
+            autumn_solar_max: 1200.0,
+            winter_solar_max: 1200.0,
+            spring_solar_max: 1200.0,
+            summer_drought_rate: 0.0,
+            autumn_drought_rate: 0.0,
+            winter_drought_rate: 0.0,
+            spring_drought_rate: 0.0,
+            el_nino_drought_mod: 0.0,
+            la_nina_drought_mod: 0.0,
+            summer_curing: 100.0,
+            autumn_curing: 100.0,
+            winter_curing: 100.0,
+            spring_curing: 100.0,
+        }
+    }
     /// Perth Metro preset - Mediterranean climate with hot dry summers
     pub fn perth_metro() -> Self {
         WeatherPreset {
@@ -763,6 +814,27 @@ pub struct WeatherSystem {
 }
 
 impl WeatherSystem {
+    /// Create extreme weather (catastrophic conditions) using the catastrophic preset
+    pub fn catastrophic() -> Self {
+        let mut system = WeatherSystem::from_preset(
+            WeatherPreset::catastrophic(),
+            15,   // day_of_year (mid-January)
+            14.0, // time_of_day (2pm)
+            ClimatePattern::ElNino,
+        );
+        system.drought_factor = 10.0;
+        system.temperature = 45.0;
+        system.humidity = 10.0;
+        system.wind_speed = 60.0;
+        system.wind_direction = 0.0;
+        system.target_temperature = 45.0;
+        system.target_humidity = 10.0;
+        system.target_wind_speed = 60.0;
+        system.target_wind_direction = 0.0;
+        system.is_heatwave = true;
+        system.heatwave_days_remaining = 5;
+        system
+    }
     /// Create a new weather system
     pub fn new(
         temperature: f32,
@@ -851,28 +923,6 @@ impl Default for WeatherSystem {
 }
 
 impl WeatherSystem {
-    /// Create extreme weather (catastrophic conditions)
-    pub fn catastrophic() -> Self {
-        WeatherSystem {
-            temperature: 45.0,
-            humidity: 10.0,
-            wind_speed: 60.0,
-            wind_direction: 0.0,
-            drought_factor: 10.0,
-            time_of_day: 14.0,
-            day_of_year: 15,
-            weather_front_progress: 0.0,
-            target_temperature: 45.0,
-            target_humidity: 10.0,
-            target_wind_speed: 60.0,
-            target_wind_direction: 0.0,
-            preset: None,
-            climate_pattern: ClimatePattern::ElNino, // El Niño contributes to extreme conditions
-            is_heatwave: true,
-            heatwave_days_remaining: 5,
-        }
-    }
-
     /// Calculate McArthur Forest Fire Danger Index (Mark 5)
     ///
     /// The FFDI is the primary fire danger metric used in Australia.

@@ -12,7 +12,7 @@ use crate::core_types::ember::Ember;
 use crate::core_types::fuel::Fuel;
 use crate::core_types::spatial::SpatialIndex;
 use crate::core_types::weather::WeatherSystem;
-use crate::grid::element_grid_coupling::*;
+use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise, update_wind_field};
 use crate::grid::{GridCell, SimulationGrid, TerrainData};
 use crate::physics::SuppressionDroplet;
 use rayon::prelude::*;
