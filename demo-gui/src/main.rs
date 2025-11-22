@@ -219,11 +219,13 @@ fn main() {
                 update_simulation,
                 update_fuel_visuals,
                 update_camera_controls,
-                update_ui,
                 handle_controls,
-                update_tooltip,
             )
                 .run_if(in_state(GameState::InGame)),
+        )
+        .add_systems(
+            EguiPrimaryContextPass,
+            update_ui.run_if(in_state(GameState::InGame)),
         )
         .run();
 }
@@ -458,7 +460,7 @@ fn render_menu_ui(
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Wind Direction (°):");
+                        ui.label("Wind Direction (degrees):");
                         ui.add(
                             egui::Slider::new(&mut config.wind_direction, 0.0..=360.0).text("°"),
                         );
@@ -816,125 +818,9 @@ fn spawn_terrain(
     ));
 }
 
-fn setup_ui(commands: &mut Commands) {
-    // Root UI container - fills entire screen
-    commands
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::SpaceBetween,
-                ..default()
-            },
-            OnGameScreen,
-        ))
-        .with_children(|parent| {
-            // Left side - Title and controls
-            parent.spawn(Node {
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(10.0)),
-                ..default()
-            })
-            .with_children(|left| {
-                // Title
-                left.spawn((
-                    Text::new("Australia Fire Simulation"),
-                    TextFont {
-                        font_size: 28.0,
-                        ..default()
-                    },
-                    TextColor(Color::WHITE),
-                ));
-
-                // Controls text
-                left.spawn((
-                    Text::new("Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  I - Ignite Fuel (at cursor)\n  W - Add Water Suppression\n  ESC - Return to Menu\n  Arrow Keys - Camera\n  Hover - Element Details"),
-                    TextFont {
-                        font_size: 14.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.6, 0.6, 0.6)),
-                    ControlsText,
-                ));
-            });
-
-            // Right side - Stats panel with background box
-            parent.spawn((
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(15.0)),
-                    margin: UiRect::all(Val::Px(10.0)),
-                    width: Val::Px(400.0),
-                    max_height: Val::Percent(90.0),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.85)),
-                StatsPanel,
-            ))
-            .with_children(|panel| {
-                // Stats heading
-                panel.spawn((
-                    Text::new("SIMULATION STATISTICS"),
-                    TextFont {
-                        font_size: 20.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(1.0, 0.8, 0.2)),
-                ));
-
-                // Stats text
-                panel.spawn((
-                    Text::new("Initializing..."),
-                    TextFont {
-                        font_size: 16.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.9, 0.9, 0.9)),
-                    StatsText,
-                ));
-            });
-        });
-
-    // Tooltip (hidden by default)
-    commands.spawn((
-        Text::new(""),
-        TextFont {
-            font_size: 14.0,
-            ..default()
-        },
-        TextColor(Color::WHITE),
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(0.0),
-            top: Val::Px(0.0),
-            padding: UiRect::all(Val::Px(8.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
-        Visibility::Hidden,
-        TooltipText,
-        OnGameScreen,
-    ));
-
-    // FPS counter (top-right corner)
-    commands.spawn((
-        Text::new("FPS: 60"),
-        TextFont {
-            font_size: 16.0,
-            ..default()
-        },
-        TextColor(Color::srgb(1.0, 1.0, 0.0)),
-        Node {
-            position_type: PositionType::Absolute,
-            right: Val::Px(10.0),
-            top: Val::Px(10.0),
-            padding: UiRect::all(Val::Px(5.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
-        OnGameScreen,
-    ));
+fn setup_ui(_commands: &mut Commands) {
+    // No longer need to spawn UI entities - egui will handle it all
+    // We'll keep this function for consistency but it's now empty
 }
 
 /// Update the simulation
@@ -1016,12 +902,15 @@ fn update_camera_controls(
     Ok(())
 }
 
-/// Update UI text
+/// Render game UI using egui
 fn update_ui(
+    mut contexts: EguiContexts,
     sim_state: Res<SimulationState>,
-    mut query: Query<&mut Text, With<StatsText>>,
     time: Res<Time>,
     diagnostics: Res<DiagnosticsStore>,
+    windows: Query<&Window>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
 ) -> Result {
     let stats = sim_state.simulation.get_stats();
     let weather = &sim_state.simulation.weather;
@@ -1057,177 +946,152 @@ fn update_ui(
         .and_then(|mem| mem.smoothed())
         .unwrap_or(0.0);
 
-    for mut text in query.iter_mut() {
-        text.0 = format!(
-            "Simulation Time: {:.1}s\n\
-             Status: {}\n\
-             Speed: {:.1}x\n\
-             \n\
-             SYSTEM PERFORMANCE\n\
-             FPS: {:.0}\n\
-             Frame Time: {:.2}ms\n\
-             Entities: {:.0}\n\
-             Delta Time: {:.3}s\n\
-             \n\
-             HARDWARE PERFORMANCE\n\
-             CPU Usage: {:.1}%\n\
-             Memory Usage: {:.1} MB\n\
-             \n\
-             FIRE STATUS\n\
-             Burning Elements: {}\n\
-             Total Elements: {}\n\
-             Fuel Consumed: {:.1} kg\n\
-             Max Temperature: {:.0}°C\n\
-             \n\
-             WEATHER CONDITIONS\n\
-             Temperature: {:.0}°C\n\
-             Humidity: {:.0}%\n\
-             Wind Speed: {:.1} m/s\n\
-             Wind Direction: {:.0}°\n\
-             Drought Factor: {:.1}\n\
-             \n\
-             FIRE DANGER\n\
-             FFDI: {:.1}\n\
-             Rating: {}",
-            stats.simulation_time,
-            if sim_state.paused {
-                "PAUSED"
-            } else {
-                "RUNNING"
-            },
-            sim_state.speed,
-            fps,
-            frame_time,
-            entity_count,
-            time.delta_secs(),
-            cpu_usage,
-            mem_usage,
-            stats.burning_elements,
-            stats.total_elements,
-            stats.total_fuel_consumed,
-            sim_state
-                .simulation
-                .get_all_elements()
-                .iter()
-                .map(|e| e.temperature())
-                .fold(0.0f32, f32::max),
-            weather.temperature,
-            weather.humidity,
-            weather.wind_speed,
-            weather.wind_direction,
-            weather.drought_factor,
-            weather.calculate_ffdi(),
-            weather.fire_danger_rating(),
-        );
-    }
-
-    Ok(())
-}
-
-/// Update tooltip on hover
-fn update_tooltip(
-    windows: Query<&Window>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
-    sim_state: Res<SimulationState>,
-    mut tooltip_query: Query<(&mut Text, &mut Node, &mut Visibility), With<TooltipText>>,
-) -> Result {
-    let window = windows.single()?;
-
-    let Some(cursor_position) = window.cursor_position() else {
-        // Hide tooltip if cursor not in window
-        for (_, _, mut visibility) in tooltip_query.iter_mut() {
-            *visibility = Visibility::Hidden;
-        }
-        return Ok(());
+    // Calculate wind direction arrow based on angle
+    // Wind direction is where the wind is coming FROM (meteorological convention)
+    let wind_arrow = match weather.wind_direction as i32 {
+        337..=360 | 0..=22 => "↓",   // North wind (coming from north, blowing south)
+        23..=67 => "↙",              // Northeast wind
+        68..=112 => "←",             // East wind (coming from east, blowing west)
+        113..=157 => "↖",            // Southeast wind
+        158..=202 => "↑",            // South wind (coming from south, blowing north)
+        203..=247 => "↗",            // Southwest wind
+        248..=292 => "→",            // West wind (coming from west, blowing east)
+        293..=336 => "↘",            // Northwest wind
+        _ => "?",
     };
 
-    // Camera might not be ready on first frame after scene setup
-    let Ok((camera, camera_transform)) = camera_query.single() else {
-        return Ok(()); // Silently skip if camera not ready yet
-    };
+    let ctx = contexts.ctx_mut()?;
 
-    // Cast ray from camera through cursor position
-    // The viewport might not be ready on the first frame, so handle the error gracefully
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
-        // Hide tooltip if viewport not ready
-        for (_, _, mut visibility) in tooltip_query.iter_mut() {
-            *visibility = Visibility::Hidden;
-        }
-        return Ok(());
-    };
+    // Title and controls panel (top-left)
+    egui::Window::new("Australia Fire Simulation")
+        .anchor(egui::Align2::LEFT_TOP, [10.0, 10.0])
+        .resizable(false)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            ui.colored_label(egui::Color32::LIGHT_GRAY, "Controls:");
+            ui.label("  SPACE - Pause/Resume");
+            ui.label("  [ / ] - Speed Down/Up");
+            ui.label("  R - Reset");
+            ui.label("  I - Ignite Fuel (at cursor)");
+            ui.label("  W - Add Water Suppression");
+            ui.label("  ESC - Return to Menu");
+            ui.label("  Arrow Keys - Camera");
+            ui.label("  Hover - Element Details");
+        });
 
-    // Find closest fuel element intersecting with ray
-    let mut closest_element: Option<(u32, f32)> = None;
+    // Stats panel (right side)
+    egui::Window::new("SIMULATION STATISTICS")
+        .anchor(egui::Align2::RIGHT_TOP, [-10.0, 10.0])
+        .default_width(400.0)
+        .resizable(false)
+        .collapsible(true)
+        .show(ctx, |ui| {
+            ui.label(format!("Simulation Time: {:.1}s", stats.simulation_time));
+            ui.label(format!("Status: {}", if sim_state.paused { "PAUSED" } else { "RUNNING" }));
+            ui.label(format!("Speed: {:.1}x", sim_state.speed));
+            
+            ui.separator();
+            ui.heading("SYSTEM PERFORMANCE");
+            ui.label(format!("FPS: {:.0}", fps));
+            ui.label(format!("Frame Time: {:.2}ms", frame_time));
+            ui.label(format!("Entities: {:.0}", entity_count));
+            ui.label(format!("Delta Time: {:.3}s", time.delta_secs()));
+            
+            ui.separator();
+            ui.heading("HARDWARE PERFORMANCE");
+            ui.label(format!("CPU Usage: {:.1}%", cpu_usage));
+            ui.label(format!("Memory Usage: {:.1} MB", mem_usage));
+            
+            ui.separator();
+            ui.heading("FIRE STATUS");
+            ui.label(format!("Burning Elements: {}", stats.burning_elements));
+            ui.label(format!("Total Elements: {}", stats.total_elements));
+            ui.label(format!("Fuel Consumed: {:.1} kg", stats.total_fuel_consumed));
+            ui.label(format!("Max Temperature: {:.0}°C", 
+                sim_state
+                    .simulation
+                    .get_all_elements()
+                    .iter()
+                    .map(|e| e.temperature())
+                    .fold(0.0f32, f32::max)));
+            
+            ui.separator();
+            ui.heading("WEATHER CONDITIONS");
+            ui.label(format!("Temperature: {:.0}°C", weather.temperature));
+            ui.label(format!("Humidity: {:.0}%", weather.humidity));
+            ui.label(format!("Wind Speed: {:.1} m/s", weather.wind_speed));
+            ui.label(format!("Wind Direction: {:.0}° {}", weather.wind_direction, wind_arrow));
+            ui.label(format!("Drought Factor: {:.1}", weather.drought_factor));
+            
+            ui.separator();
+            ui.heading("FIRE DANGER");
+            ui.label(format!("FFDI: {:.1}", weather.calculate_ffdi()));
+            ui.label(format!("Rating: {}", weather.fire_danger_rating()));
+        });
 
-    for (transform, fuel_visual) in fuel_query.iter() {
-        let element_pos = transform.translation();
-
-        // Simple sphere collision (2m radius for the cube)
-        let to_element = element_pos - ray.origin;
-        let ray_dir = *ray.direction; // Convert Dir3 to Vec3
-        let projection = to_element.dot(ray_dir);
-
-        if projection > 0.0 {
-            let closest_point = ray.origin + ray_dir * projection;
-            let distance_to_ray = (element_pos - closest_point).length();
-
-            if distance_to_ray < 2.0 {
-                // Cube is 2x2x2
-                let distance = projection;
-                if closest_element.is_none() || distance < closest_element.unwrap().1 {
-                    closest_element = Some((fuel_visual.element_id, distance));
+    // Tooltip on hover
+    if let Ok(window) = windows.single() {
+        if let Some(cursor_position) = window.cursor_position() {
+            if let Ok((camera, camera_transform)) = camera_query.single() {
+                // Convert cursor position to world ray
+                if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+                    // Find closest fuel element to ray
+                    let mut closest_element: Option<(u32, f32)> = None;
+                    
+                    for (transform, fuel_visual) in fuel_query.iter() {
+                        let element_pos = transform.translation();
+                        let to_element = element_pos - ray.origin;
+                        let projection = to_element.dot(*ray.direction);
+                        
+                        if projection > 0.0 {
+                            let closest_point = ray.origin + ray.direction * projection;
+                            let distance = (element_pos - closest_point).length();
+                            
+                            if distance < 2.0 {
+                                if let Some((_, current_dist)) = closest_element {
+                                    if distance < current_dist {
+                                        closest_element = Some((fuel_visual.element_id, distance));
+                                    }
+                                } else {
+                                    closest_element = Some((fuel_visual.element_id, distance));
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Show tooltip if we found an element
+                    if let Some((element_id, _)) = closest_element {
+                        if let Some(element) = sim_state
+                            .simulation
+                            .get_all_elements()
+                            .into_iter()
+                            .find(|e| e.id == element_id)
+                        {
+                            egui::Area::new(egui::Id::new("fuel_tooltip"))
+                                .fixed_pos(ctx.pointer_latest_pos().unwrap_or_default() + egui::vec2(15.0, 15.0))
+                                .show(ctx, |ui| {
+                                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                        ui.label(format!("Fuel Element #{} ({})", element.id, element.fuel.name));
+                                        ui.label(format!("Position: ({:.1}, {:.1}, {:.1})", 
+                                            element.position.x, element.position.y, element.position.z));
+                                        ui.label(format!("Temperature: {:.0}°C", element.temperature()));
+                                        ui.label(format!("Fuel Remaining: {:.2} kg", element.fuel_remaining()));
+                                        ui.label(format!("Moisture: {:.1}%", element.moisture_fraction() * 100.0));
+                                        ui.label(format!("Status: {}", 
+                                            if element.is_ignited() {
+                                                "BURNING"
+                                            } else if element.fuel_remaining() < 0.1 {
+                                                "CONSUMED"
+                                            } else {
+                                                "Unburned"
+                                            }));
+                                        ui.label(format!("Flame Height: {:.2} m", element.flame_height()));
+                                    });
+                                });
+                        }
+                    }
                 }
             }
-        }
-    }
-
-    // Update tooltip
-    for (mut text, mut style, mut visibility) in tooltip_query.iter_mut() {
-        if let Some((element_id, _)) = closest_element {
-            // Find the element in simulation
-            if let Some(element) = sim_state
-                .simulation
-                .get_all_elements()
-                .into_iter()
-                .find(|e| e.id == element_id)
-            {
-                // Show tooltip with element details
-                text.0 = format!(
-                    "Fuel Element #{} ({})\n\
-                     Position: ({:.1}, {:.1}, {:.1})\n\
-                     Temperature: {:.0}°C\n\
-                     Fuel Remaining: {:.2} kg\n\
-                     Moisture: {:.1}%\n\
-                     Status: {}\n\
-                     Flame Height: {:.2} m",
-                    element.id,
-                    element.fuel.name,
-                    element.position.x,
-                    element.position.y,
-                    element.position.z,
-                    element.temperature(),
-                    element.fuel_remaining(),
-                    element.moisture_fraction() * 100.0,
-                    if element.is_ignited() {
-                        "BURNING"
-                    } else if element.fuel_remaining() < 0.1 {
-                        "CONSUMED"
-                    } else {
-                        "Unburned"
-                    },
-                    element.flame_height(),
-                );
-
-                // Position tooltip near cursor
-                style.left = Val::Px(cursor_position.x + 15.0);
-                style.top = Val::Px(cursor_position.y + 15.0);
-                *visibility = Visibility::Visible;
-            } else {
-                *visibility = Visibility::Hidden;
-            }
-        } else {
-            *visibility = Visibility::Hidden;
         }
     }
 
