@@ -240,15 +240,20 @@ struct OnGameScreen;
 fn setup_camera(mut commands: Commands) {
     // Spawn Camera2d without OnMenuScreen marker so it persists across state transitions
     // This is required for egui to work properly
-    commands.spawn(Camera2d);
+    // Set order to 1 so it renders after Camera3d (order 0), placing UI on top
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 1,
+            ..default()
+        },
+    ));
 }
 
-/// Setup menu - reactivate Camera2d for egui rendering
-fn setup_menu(mut camera_query: Query<&mut Camera, With<Camera2d>>) {
-    // Reactivate Camera2d for menu/egui rendering
-    for mut camera in camera_query.iter_mut() {
-        camera.is_active = true;
-    }
+/// Setup menu - Camera2d stays active
+fn setup_menu() {
+    // Camera2d is already spawned in setup_camera at startup and stays active
+    // Nothing to do here, but we keep the function for symmetry
 }
 
 /// Cleanup menu entities when exiting menu state
@@ -610,12 +615,10 @@ fn setup_game(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     config: Res<DemoConfig>,
-    mut camera_2d_query: Query<&mut Camera, With<Camera2d>>,
 ) {
-    // Deactivate Camera2d while in game (Camera3d will be used instead)
-    for mut camera in camera_2d_query.iter_mut() {
-        camera.is_active = false;
-    }
+    // Camera2d (order 1) stays active for UI overlay
+    // Camera3d (order 0) renders the 3D scene first
+    // Different orders prevent rendering conflicts
     
     // Initialize simulation state resource
     let mut sim_state = SimulationState::from_config(&config);
@@ -641,6 +644,10 @@ fn setup_game(
     // Add camera
     commands.spawn((
         Camera3d::default(),
+        Camera {
+            order: 0,  // Render first (3D scene)
+            ..default()
+        },
         Transform::from_xyz(150.0, 120.0, 150.0).looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
         MainCamera,
         OnGameScreen,
