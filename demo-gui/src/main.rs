@@ -1110,7 +1110,14 @@ fn update_tooltip(
     };
 
     // Cast ray from camera through cursor position
-    let ray = camera.viewport_to_world(camera_transform, cursor_position)?;
+    // The viewport might not be ready on the first frame, so handle the error gracefully
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
+        // Hide tooltip if viewport not ready
+        for (_, _, mut visibility) in tooltip_query.iter_mut() {
+            *visibility = Visibility::Hidden;
+        }
+        return Ok(());
+    };
 
     // Find closest fuel element intersecting with ray
     let mut closest_element: Option<(u32, f32)> = None;
