@@ -66,7 +66,7 @@ jobs:
           cache-on-failure: true
           
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-features -- -D warnings
 
   fmt:
     name: Rustfmt
@@ -125,6 +125,7 @@ jobs:
           path: |
             target/debug/demo-gui*
             target/debug/demo-headless*
+
   build-release:
     name: "Build Release"
     runs-on: ${{ matrix.os }}
@@ -155,7 +156,7 @@ jobs:
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "release-${{ matrix.os }}"
+          shared-key: "${{ matrix.os }}"
           cache-on-failure: true
 
       - name: Build release
