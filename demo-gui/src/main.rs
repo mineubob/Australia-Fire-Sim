@@ -3,12 +3,13 @@
 //! This demo provides a real-time 3D visualization of the fire simulation with interactive controls.
 
 use bevy::prelude::*;
-use bevy::diagnostic::{DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin};
+use bevy::diagnostic::{DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin, SystemInformationDiagnosticsPlugin};
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
     Vec3 as SimVec3, WeatherPreset, WeatherSystem,
 };
+// sysinfo not needed - using bevy diagnostic plugins instead
 
 /// Configuration for the simulation demo
 #[derive(Clone, Resource)]
@@ -187,9 +188,9 @@ fn main() {
         .add_plugins(EguiPlugin::default())
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(EntityCountDiagnosticsPlugin::default())
+        .add_plugins(SystemInformationDiagnosticsPlugin::default())
         .init_resource::<DemoConfig>()
         .init_resource::<MenuState>()
-        .init_resource::<FpsCounter>()
         .add_systems(Startup, setup_menu_camera)
         .add_systems(EguiPrimaryContextPass, render_menu_ui.run_if(in_menu))
         .add_systems(
@@ -203,28 +204,9 @@ fn main() {
                 update_ui.run_if(simulation_running),
                 handle_controls.run_if(simulation_running),
                 update_tooltip.run_if(simulation_running),
-                update_fps.run_if(simulation_running),
             ),
         )
         .run();
-}
-
-/// FPS counter resource
-#[derive(Resource)]
-struct FpsCounter {
-    frame_count: u32,
-    timer: f32,
-    fps: f32,
-}
-
-impl Default for FpsCounter {
-    fn default() -> Self {
-        Self {
-            frame_count: 0,
-            timer: 0.0,
-            fps: 60.0,
-        }
-    }
 }
 
 /// Menu state resource
@@ -570,9 +552,6 @@ struct TooltipText;
 #[derive(Component)]
 struct StatsPanel;
 
-#[derive(Component)]
-struct FpsText;
-
 /// Marker for terrain mesh
 #[derive(Component)]
 struct TerrainMesh;
@@ -598,9 +577,14 @@ fn setup_scene(
     commands: Commands,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<StandardMaterial>>,
-    sim_state: ResMut<SimulationState>,
+    sim_state: Option<ResMut<SimulationState>>,
     mut menu_state: ResMut<MenuState>,
 ) {
+    // Wait until SimulationState resource exists
+    let Some(sim_state) = sim_state else {
+        return;
+    };
+    
     setup(commands, meshes, materials, sim_state);
     menu_state.scene_setup = true;
 }
@@ -907,29 +891,9 @@ fn setup_ui(commands: &mut Commands) {
             ..default()
         },
         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
-        FpsText,
     ));
 }
 
-/// Update FPS counter
-fn update_fps(
-    time: Res<Time>,
-    mut fps_counter: ResMut<FpsCounter>,
-    mut query: Query<&mut Text, With<FpsText>>,
-) {
-    fps_counter.frame_count += 1;
-    fps_counter.timer += time.delta_secs();
-
-    if fps_counter.timer >= 1.0 {
-        fps_counter.fps = fps_counter.frame_count as f32 / fps_counter.timer;
-        fps_counter.frame_count = 0;
-        fps_counter.timer = 0.0;
-
-        for mut text in query.iter_mut() {
-            text.0 = format!("FPS: {:.0}", fps_counter.fps);
-        }
-    }
-}
 
 /// Update the simulation
 fn update_simulation(time: Res<Time>, mut sim_state: ResMut<SimulationState>) {
@@ -1039,6 +1003,18 @@ fn update_ui(
         .and_then(|ec| ec.value())
         .unwrap_or(0.0);
 
+    // Get CPU usage from system information diagnostics
+    let cpu_usage = diagnostics
+        .get(&SystemInformationDiagnosticsPlugin::SYSTEM_CPU_USAGE)
+        .and_then(|cpu| cpu.smoothed())
+        .unwrap_or(0.0);
+
+    // Get memory usage from system information diagnostics
+    let mem_usage = diagnostics
+        .get(&SystemInformationDiagnosticsPlugin::SYSTEM_MEM_USAGE)
+        .and_then(|mem| mem.smoothed())
+        .unwrap_or(0.0);
+
     for mut text in query.iter_mut() {
         text.0 = format!(
             "Simulation Time: {:.1}s\n\
@@ -1050,6 +1026,10 @@ fn update_ui(
              Frame Time: {:.2}ms\n\
              Entities: {:.0}\n\
              Delta Time: {:.3}s\n\
+             \n\
+             HARDWARE PERFORMANCE\n\
+             CPU Usage: {:.1}%\n\
+             Memory Usage: {:.1} MB\n\
              \n\
              FIRE STATUS\n\
              Burning Elements: {}\n\
@@ -1078,6 +1058,8 @@ fn update_ui(
             frame_time,
             entity_count,
             time.delta_secs(),
+            cpu_usage,
+            mem_usage,
             stats.burning_elements,
             stats.total_elements,
             stats.total_fuel_consumed,
