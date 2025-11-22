@@ -202,6 +202,7 @@ fn main() {
         .add_plugins(SystemInformationDiagnosticsPlugin)
         .init_resource::<DemoConfig>()
         .init_state::<GameState>()
+        .add_systems(Startup, setup_camera)
         // Menu state systems
         .add_systems(OnEnter(GameState::Menu), setup_menu)
         .add_systems(OnExit(GameState::Menu), cleanup_menu)
@@ -235,10 +236,17 @@ struct OnMenuScreen;
 #[derive(Component)]
 struct OnGameScreen;
 
-/// Setup menu camera and UI
-fn setup_menu(mut commands: Commands) {
-    // Spawn camera for menu
-    commands.spawn((Camera2d, OnMenuScreen));
+/// Setup persistent camera for UI rendering (egui needs this)
+fn setup_camera(mut commands: Commands) {
+    // Spawn Camera2d without OnMenuScreen marker so it persists across state transitions
+    // This is required for egui to work properly
+    commands.spawn(Camera2d);
+}
+
+/// Setup menu - no longer needs to spawn camera
+fn setup_menu() {
+    // Camera2d is already spawned in setup_camera at startup
+    // Nothing to do here, but we keep the function for symmetry
 }
 
 /// Cleanup menu entities when exiting menu state
