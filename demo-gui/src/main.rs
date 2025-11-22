@@ -177,6 +177,14 @@ impl WeatherPresetType {
     }
 }
 
+// Enum that will be used as a global state for the game
+#[derive(Clone, Copy, Default, Eq, PartialEq, Debug, Hash, States)]
+enum GameState {
+    #[default]
+    Menu,
+    InGame,
+}
+
 /// Main entry point
 fn main() {
     App::new()
@@ -193,70 +201,76 @@ fn main() {
         .add_plugins(EntityCountDiagnosticsPlugin::default())
         .add_plugins(SystemInformationDiagnosticsPlugin)
         .init_resource::<DemoConfig>()
-        .init_resource::<MenuState>()
-        .add_systems(Startup, setup_menu_camera)
-        .add_systems(EguiPrimaryContextPass, render_menu_ui.run_if(in_menu))
+        .init_state::<GameState>()
+        // Menu state systems
+        .add_systems(OnEnter(GameState::Menu), setup_menu)
+        .add_systems(OnExit(GameState::Menu), cleanup_menu)
+        .add_systems(
+            EguiPrimaryContextPass,
+            render_menu_ui.run_if(in_state(GameState::Menu)),
+        )
+        // Game state systems
+        .add_systems(OnEnter(GameState::InGame), setup_game)
+        .add_systems(OnExit(GameState::InGame), cleanup_game)
         .add_systems(
             Update,
             (
-                init_simulation_system.run_if(should_start_simulation),
-                setup_scene.run_if(should_setup_scene),
-                update_simulation.run_if(simulation_running),
-                update_fuel_visuals.run_if(simulation_running),
-                update_camera_controls.run_if(simulation_running),
-                update_ui.run_if(simulation_running),
-                handle_controls.run_if(simulation_running),
-                update_tooltip.run_if(simulation_running),
-            ),
+                update_simulation,
+                update_fuel_visuals,
+                update_camera_controls,
+                update_ui,
+                handle_controls,
+                update_tooltip,
+            )
+                .run_if(in_state(GameState::InGame)),
         )
         .run();
 }
 
-/// Menu state resource
-#[derive(Resource)]
-struct MenuState {
-    in_menu: bool,
-    simulation_initialized: bool,
-    scene_setup: bool,
+/// Tag component for menu entities
+#[derive(Component)]
+struct OnMenuScreen;
+
+/// Tag component for game entities
+#[derive(Component)]
+struct OnGameScreen;
+
+/// Setup menu camera and UI
+fn setup_menu(mut commands: Commands) {
+    // Spawn camera for menu
+    commands.spawn((Camera2d, OnMenuScreen));
 }
 
-impl Default for MenuState {
-    fn default() -> Self {
-        Self {
-            in_menu: true,
-            simulation_initialized: false,
-            scene_setup: false,
-        }
+/// Cleanup menu entities when exiting menu state
+fn cleanup_menu(mut commands: Commands, query: Query<Entity, With<OnMenuScreen>>) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn();
     }
 }
 
-// Run conditions
-fn in_menu(menu_state: Res<MenuState>) -> bool {
-    menu_state.in_menu
-}
-
-fn should_start_simulation(menu_state: Res<MenuState>) -> bool {
-    !menu_state.in_menu && !menu_state.simulation_initialized
-}
-
-fn should_setup_scene(menu_state: Res<MenuState>) -> bool {
-    !menu_state.in_menu && menu_state.simulation_initialized && !menu_state.scene_setup
-}
-
-fn simulation_running(menu_state: Res<MenuState>) -> bool {
-    !menu_state.in_menu && menu_state.simulation_initialized && menu_state.scene_setup
-}
-
-/// Setup camera for menu UI (required for egui to work)
-fn setup_menu_camera(mut commands: Commands) {
-    commands.spawn(Camera2d);
+/// Cleanup game entities when exiting game state
+fn cleanup_game(
+    mut commands: Commands, 
+    query: Query<Entity, With<OnGameScreen>>,
+    mut sim_state: ResMut<SimulationState>,
+) {
+    // Despawn all game entities
+    for entity in query.iter() {
+        commands.entity(entity).despawn();
+    }
+    
+    // Clear fuel entity map
+    sim_state.fuel_entity_map.clear();
+    
+    // Remove ambient light resource
+    commands.remove_resource::<AmbientLight>();
 }
 
 /// Render egui menu UI
 fn render_menu_ui(
     mut contexts: EguiContexts,
     mut config: ResMut<DemoConfig>,
-    mut menu_state: ResMut<MenuState>,
+    mut next_state: ResMut<NextState<GameState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
 
@@ -438,7 +452,7 @@ fn render_menu_ui(
                 )
                 .clicked()
             {
-                menu_state.in_menu = false;
+                next_state.set(GameState::InGame);
             }
             ui.add_space(20.0);
         });
@@ -460,6 +474,12 @@ struct SimulationState {
 impl FromWorld for SimulationState {
     fn from_world(world: &mut World) -> Self {
         let config = world.resource::<DemoConfig>().clone();
+        Self::from_config(&config)
+    }
+}
+
+impl SimulationState {
+    fn from_config(config: &DemoConfig) -> Self {
 
         // Create terrain based on config
         let terrain = match config.terrain_type {
@@ -559,46 +579,16 @@ struct StatsPanel;
 #[derive(Component)]
 struct TerrainMesh;
 
-/// Initialize simulation when transitioning from menu
-fn init_simulation_system(
-    mut commands: Commands,
-    mut menu_state: ResMut<MenuState>,
-    camera_query: Query<Entity, (With<Camera2d>, Without<Camera3d>)>,
-) {
-    // Remove menu camera (Camera2d) since we'll add a Camera3d for the simulation
-    for entity in camera_query.iter() {
-        commands.entity(entity).despawn();
-    }
-
-    // Initialize simulation state
-    commands.init_resource::<SimulationState>();
-    menu_state.simulation_initialized = true;
-}
-
-/// Setup the 3D scene after simulation is initialized
-fn setup_scene(
-    commands: Commands,
-    meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<StandardMaterial>>,
-    sim_state: Option<ResMut<SimulationState>>,
-    mut menu_state: ResMut<MenuState>,
-) {
-    // Wait until SimulationState resource exists
-    let Some(sim_state) = sim_state else {
-        return;
-    };
-
-    setup(commands, meshes, materials, sim_state);
-    menu_state.scene_setup = true;
-}
-
-/// Setup the 3D scene
-fn setup(
+/// Setup game when transitioning from menu
+fn setup_game(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut sim_state: ResMut<SimulationState>,
+    config: Res<DemoConfig>,
 ) {
+    // Initialize simulation state resource
+    let mut sim_state = SimulationState::from_config(&config);
+    
     // Add light
     commands.spawn((
         DirectionalLight {
@@ -607,6 +597,7 @@ fn setup(
             ..default()
         },
         Transform::from_xyz(50.0, 100.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
+        OnGameScreen,
     ));
 
     // Add ambient light
@@ -621,6 +612,7 @@ fn setup(
         Camera3d::default(),
         Transform::from_xyz(150.0, 120.0, 150.0).looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
         MainCamera,
+        OnGameScreen,
     ));
 
     // Create terrain mesh
@@ -658,6 +650,7 @@ fn setup(
                 MeshMaterial3d(material),
                 Transform::from_xyz(pos.x, pos.z, pos.y),
                 FuelVisual { element_id },
+                OnGameScreen,
             ))
             .id();
 
@@ -666,6 +659,9 @@ fn setup(
 
     // Setup UI
     setup_ui(&mut commands);
+    
+    // Insert simulation state as a resource
+    commands.insert_resource(sim_state);
 }
 
 fn spawn_terrain(
@@ -778,19 +774,23 @@ fn spawn_terrain(
         MeshMaterial3d(terrain_material),
         Transform::from_xyz(0.0, 0.0, 0.0),
         TerrainMesh,
+        OnGameScreen,
     ));
 }
 
 fn setup_ui(commands: &mut Commands) {
     // Root UI container - fills entire screen
     commands
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            flex_direction: FlexDirection::Row,
-            justify_content: JustifyContent::SpaceBetween,
-            ..default()
-        })
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            },
+            OnGameScreen,
+        ))
         .with_children(|parent| {
             // Left side - Title and controls
             parent.spawn(Node {
@@ -876,6 +876,7 @@ fn setup_ui(commands: &mut Commands) {
         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
         Visibility::Hidden,
         TooltipText,
+        OnGameScreen,
     ));
 
     // FPS counter (top-right corner)
@@ -894,6 +895,7 @@ fn setup_ui(commands: &mut Commands) {
             ..default()
         },
         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+        OnGameScreen,
     ));
 }
 
@@ -1187,21 +1189,6 @@ fn update_tooltip(
     Ok(())
 }
 
-/// Query for all sim related entities in the scene.
-type SceneEntitiesQuery<'world, 'state> = Query<
-    'world,
-    'state,
-    Entity,
-    Or<(
-        With<MainCamera>,
-        With<DirectionalLight>,
-        With<FuelVisual>,
-        With<StatsPanel>,
-        With<ControlsText>,
-        With<TerrainMesh>,
-    )>,
->;
-
 // Control's require lots of args.
 #[allow(clippy::too_many_arguments)]
 /// Handle user controls
@@ -1211,9 +1198,7 @@ fn handle_controls(
     config: Res<DemoConfig>,
     windows: Query<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    mut menu_state: ResMut<MenuState>,
-    mut commands: Commands,
-    scene_entities: SceneEntitiesQuery,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
     // Pause/Resume
     if keyboard.just_pressed(KeyCode::Space) {
@@ -1473,20 +1458,7 @@ fn handle_controls(
 
     // Return to main menu
     if keyboard.just_pressed(KeyCode::Escape) {
-        // Despawn all scene entities (camera, lights, UI, fuel visuals, terrain)
-        for entity in scene_entities.iter() {
-            commands.entity(entity).despawn();
-        }
-
-        // Reset menu state to show menu again
-        menu_state.in_menu = true;
-        menu_state.simulation_initialized = false;
-        menu_state.scene_setup = false;
-
-        // Clear fuel entity map
-        sim_state.fuel_entity_map.clear();
-
-        // Spawn Camera2d for menu
-        commands.spawn(Camera2d);
+        // Transition back to menu state - OnExit will handle cleanup automatically
+        next_state.set(GameState::Menu);
     }
 }
