@@ -593,19 +593,6 @@ struct FuelVisual {
 #[derive(Component)]
 struct MainCamera;
 
-/// UI text marker components
-#[derive(Component)]
-struct StatsText;
-
-#[derive(Component)]
-struct ControlsText;
-
-#[derive(Component)]
-struct TooltipText;
-
-#[derive(Component)]
-struct StatsPanel;
-
 /// Marker for terrain mesh
 #[derive(Component)]
 struct TerrainMesh;
