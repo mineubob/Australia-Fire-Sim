@@ -2,8 +2,11 @@
 //!
 //! This demo provides a real-time 3D visualization of the fire simulation with interactive controls.
 
+use bevy::diagnostic::{
+    DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin,
+    SystemInformationDiagnosticsPlugin,
+};
 use bevy::prelude::*;
-use bevy::diagnostic::{DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin, SystemInformationDiagnosticsPlugin};
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use fire_sim_core::{
     FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
@@ -188,7 +191,7 @@ fn main() {
         .add_plugins(EguiPlugin::default())
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(EntityCountDiagnosticsPlugin::default())
-        .add_plugins(SystemInformationDiagnosticsPlugin::default())
+        .add_plugins(SystemInformationDiagnosticsPlugin)
         .init_resource::<DemoConfig>()
         .init_resource::<MenuState>()
         .add_systems(Startup, setup_menu_camera)
@@ -584,7 +587,7 @@ fn setup_scene(
     let Some(sim_state) = sim_state else {
         return;
     };
-    
+
     setup(commands, meshes, materials, sim_state);
     menu_state.scene_setup = true;
 }
@@ -893,7 +896,6 @@ fn setup_ui(commands: &mut Commands) {
         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
     ));
 }
-
 
 /// Update the simulation
 fn update_simulation(time: Res<Time>, mut sim_state: ResMut<SimulationState>) {
