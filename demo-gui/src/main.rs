@@ -252,18 +252,15 @@ fn cleanup_menu(mut commands: Commands, query: Query<Entity, With<OnMenuScreen>>
 fn cleanup_game(
     mut commands: Commands, 
     query: Query<Entity, With<OnGameScreen>>,
-    mut sim_state: ResMut<SimulationState>,
 ) {
     // Despawn all game entities
     for entity in query.iter() {
         commands.entity(entity).despawn();
     }
     
-    // Clear fuel entity map
-    sim_state.fuel_entity_map.clear();
-    
-    // Remove ambient light resource
+    // Remove resources
     commands.remove_resource::<AmbientLight>();
+    commands.remove_resource::<SimulationState>();
 }
 
 /// Render egui menu UI
