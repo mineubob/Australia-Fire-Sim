@@ -32,7 +32,7 @@ jobs:
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "ubuntu-latest"
+          shared-key: "tests-ubuntu-latest"
           cache-on-failure: true
       
       - name: Run tests
@@ -156,7 +156,7 @@ jobs:
       - name: Cache Rust dependencies and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "release-${{ matrix.os }}"
+          shared-key: "${{ matrix.os }}"
           cache-on-failure: true
 
       - name: Build release
