@@ -123,8 +123,10 @@ jobs:
         with:
           name: demo-binaries-dev-${{ matrix.os }}
           path: |
-            target/debug/demo-gui*
-            target/debug/demo-headless*
+            target/debug/demo-gui
+            target/debug/demo-gui.exe
+            target/debug/demo-headless
+            target/debug/demo-headless.exe
 
   build-release:
     name: "Build Release"
@@ -167,5 +169,7 @@ jobs:
         with:
           name: demo-binaries-release-${{ matrix.os }}
           path: |
-            target/release/demo-gui*
-            target/release/demo-headless*
+            target/release/demo-gui
+            target/release/demo-gui.exe
+            target/release/demo-headless
+            target/release/demo-headless.exe
