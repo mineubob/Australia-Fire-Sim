@@ -928,7 +928,10 @@ fn test_ffdi_calibration() {
 - **Testing**: Each physics formula should have a validation test
 - **Documentation**: Explain WHY, not just WHAT (scientific reasoning)
 
+
 ### AI Agents & Tooling
+
+-- **Completion Rule**: AI agents (including Copilot and automation tools) MUST NOT stop, pause, terminate, or ask the user to continue or for permission to proceed until the user's prompt or request is fully implemented. Agents are required to continue working, gathering context, performing actions, and making changes as needed until the task described in the prompt is completely resolved. Only terminate when the prompt is fully satisfied or it is absolutely impossible to continue.
 
 - **Always view full command output**: All AI agents (including the Copilot coding agent and any automation tools) MUST always view and process the full, un-truncated command output when executing or reviewing commands. Shortened or truncated outputs can omit critical details and lead to incorrect conclusions or unsafe changes. If a tool truncates output by default, use options or techniques to capture the complete output (for example: disable paging, use --no-pager or --no-truncate flags, redirect output to a file, or use explicit logging).
 
