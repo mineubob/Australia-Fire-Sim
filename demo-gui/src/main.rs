@@ -248,19 +248,37 @@ fn cleanup_menu(mut commands: Commands, query: Query<Entity, With<OnMenuScreen>>
     }
 }
 
-/// Cleanup game entities when exiting game state
+/// Cleanup game entities when exiting game state  
 fn cleanup_game(
-    mut commands: Commands, 
+    mut commands: Commands,
     query: Query<Entity, With<OnGameScreen>>,
+    children_query: Query<&Children>,
 ) {
-    // Despawn all game entities
+    // Despawn all game entities (including their children recursively)
     for entity in query.iter() {
-        commands.entity(entity).despawn();
+        despawn_with_children_recursive(&mut commands, entity, &children_query);
     }
     
     // Remove resources
     commands.remove_resource::<AmbientLight>();
     commands.remove_resource::<SimulationState>();
+}
+
+/// Recursively despawn an entity and all its children
+fn despawn_with_children_recursive(
+    commands: &mut Commands,
+    entity: Entity,
+    children_query: &Query<&Children>,
+) {
+    // First despawn all children recursively
+    if let Ok(children) = children_query.get(entity) {
+        for child in children.iter() {
+            despawn_with_children_recursive(commands, child, children_query);
+        }
+    }
+    
+    // Then despawn the entity itself
+    commands.entity(entity).despawn();
 }
 
 /// Render egui menu UI
