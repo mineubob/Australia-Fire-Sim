@@ -126,6 +126,7 @@ pub enum WeatherPresetType {
     Goldfields,
     Kimberley,
     Pilbara,
+    Catastrophic,
 }
 
 impl WeatherPresetType {
@@ -137,18 +138,25 @@ impl WeatherPresetType {
             WeatherPresetType::Goldfields => "Goldfields",
             WeatherPresetType::Kimberley => "Kimberley",
             WeatherPresetType::Pilbara => "Pilbara",
+            WeatherPresetType::Catastrophic => "Catastrophic",
         }
     }
 
-    fn to_preset(self) -> WeatherPreset {
-        match self {
-            WeatherPresetType::PerthMetro => WeatherPreset::perth_metro(),
-            WeatherPresetType::SouthWest => WeatherPreset::south_west(),
-            WeatherPresetType::Wheatbelt => WeatherPreset::wheatbelt(),
-            WeatherPresetType::Goldfields => WeatherPreset::goldfields(),
-            WeatherPresetType::Kimberley => WeatherPreset::kimberley(),
-            WeatherPresetType::Pilbara => WeatherPreset::pilbara(),
-        }
+    fn to_system(self) -> WeatherSystem {
+        WeatherSystem::from_preset(
+            match self {
+                WeatherPresetType::PerthMetro => WeatherPreset::perth_metro(),
+                WeatherPresetType::SouthWest => WeatherPreset::south_west(),
+                WeatherPresetType::Wheatbelt => WeatherPreset::wheatbelt(),
+                WeatherPresetType::Goldfields => WeatherPreset::goldfields(),
+                WeatherPresetType::Kimberley => WeatherPreset::kimberley(),
+                WeatherPresetType::Pilbara => WeatherPreset::pilbara(),
+                WeatherPresetType::Catastrophic => return WeatherSystem::catastrophic(),
+            },
+            3,
+            14.00,
+            fire_sim_core::ClimatePattern::Neutral,
+        )
     }
 
     fn all() -> [Self; 6] {
@@ -485,9 +493,7 @@ impl FromWorld for SimulationState {
         // Set weather conditions from config
         let weather = if config.use_weather_preset {
             // Use dynamic weather preset
-            let mut weather = WeatherSystem::new(25.0, 0.3, 15.0, 0.0, 5.0); // Default values
-            weather.set_preset(config.weather_preset.to_preset());
-            weather
+            config.weather_preset.to_system()
         } else {
             // Use static weather values
             WeatherSystem::new(
@@ -1226,9 +1232,7 @@ fn handle_controls(
         // Set weather conditions from config
         let weather = if config.use_weather_preset {
             // Use dynamic weather preset
-            let mut weather = WeatherSystem::new(25.0, 0.3, 15.0, 0.0, 5.0); // Default values
-            weather.set_preset(config.weather_preset.to_preset());
-            weather
+            config.weather_preset.to_system()
         } else {
             // Use static weather values
             WeatherSystem::new(
