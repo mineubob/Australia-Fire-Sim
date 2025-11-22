@@ -275,7 +275,7 @@ fn cleanup_game(
     for entity in query.iter() {
         despawn_with_children_recursive(&mut commands, entity, &children_query);
     }
-    
+
     // Remove resources
     commands.remove_resource::<AmbientLight>();
     commands.remove_resource::<SimulationState>();
@@ -293,7 +293,7 @@ fn despawn_with_children_recursive(
             despawn_with_children_recursive(commands, child, children_query);
         }
     }
-    
+
     // Then despawn the entity itself
     commands.entity(entity).despawn();
 }
@@ -512,7 +512,6 @@ impl FromWorld for SimulationState {
 
 impl SimulationState {
     fn from_config(config: &DemoConfig) -> Self {
-
         // Create terrain based on config
         let terrain = match config.terrain_type {
             TerrainType::Flat => TerrainData::flat(config.map_width, config.map_height, 5.0, 0.0),
@@ -621,10 +620,10 @@ fn setup_game(
     // Camera2d (order 1) stays active for UI overlay
     // Camera3d (order 0) renders the 3D scene first
     // Different orders prevent rendering conflicts
-    
+
     // Initialize simulation state resource
     let mut sim_state = SimulationState::from_config(&config);
-    
+
     // Add light
     commands.spawn((
         DirectionalLight {
@@ -647,7 +646,7 @@ fn setup_game(
     commands.spawn((
         Camera3d::default(),
         Camera {
-            order: 0,  // Render first (3D scene)
+            order: 0, // Render first (3D scene)
             ..default()
         },
         Transform::from_xyz(150.0, 120.0, 150.0).looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
@@ -699,7 +698,7 @@ fn setup_game(
 
     // Setup UI
     setup_ui(&mut commands);
-    
+
     // Insert simulation state as a resource
     commands.insert_resource(sim_state);
 }
@@ -925,7 +924,6 @@ fn update_ui(
     let frame_time = diagnostics
         .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
         .and_then(|ft| ft.smoothed())
-        .map(|ft| ft * 1000.0) // Convert to ms
         .unwrap_or(0.0);
 
     // Calculate entity count for performance tracking
@@ -949,14 +947,14 @@ fn update_ui(
     // Calculate wind direction arrow based on angle
     // Wind direction is where the wind is coming FROM (meteorological convention)
     let wind_arrow = match weather.wind_direction as i32 {
-        337..=360 | 0..=22 => "↓",   // North wind (coming from north, blowing south)
-        23..=67 => "↙",              // Northeast wind
-        68..=112 => "←",             // East wind (coming from east, blowing west)
-        113..=157 => "↖",            // Southeast wind
-        158..=202 => "↑",            // South wind (coming from south, blowing north)
-        203..=247 => "↗",            // Southwest wind
-        248..=292 => "→",            // West wind (coming from west, blowing east)
-        293..=336 => "↘",            // Northwest wind
+        337..=360 | 0..=22 => "↓", // North wind (coming from north, blowing south)
+        23..=67 => "↙",            // Northeast wind
+        68..=112 => "←",           // East wind (coming from east, blowing west)
+        113..=157 => "↖",          // Southeast wind
+        158..=202 => "↑",          // South wind (coming from south, blowing north)
+        203..=247 => "↗",          // Southwest wind
+        248..=292 => "→",          // West wind (coming from west, blowing east)
+        293..=336 => "↘",          // Northwest wind
         _ => "?",
     };
 
@@ -987,42 +985,57 @@ fn update_ui(
         .collapsible(true)
         .show(ctx, |ui| {
             ui.label(format!("Simulation Time: {:.1}s", stats.simulation_time));
-            ui.label(format!("Status: {}", if sim_state.paused { "PAUSED" } else { "RUNNING" }));
+            ui.label(format!(
+                "Status: {}",
+                if sim_state.paused {
+                    "PAUSED"
+                } else {
+                    "RUNNING"
+                }
+            ));
             ui.label(format!("Speed: {:.1}x", sim_state.speed));
-            
+
             ui.separator();
             ui.heading("SYSTEM PERFORMANCE");
             ui.label(format!("FPS: {:.0}", fps));
             ui.label(format!("Frame Time: {:.2}ms", frame_time));
             ui.label(format!("Entities: {:.0}", entity_count));
             ui.label(format!("Delta Time: {:.3}s", time.delta_secs()));
-            
+
             ui.separator();
             ui.heading("HARDWARE PERFORMANCE");
             ui.label(format!("CPU Usage: {:.1}%", cpu_usage));
             ui.label(format!("Memory Usage: {:.1} MB", mem_usage));
-            
+
             ui.separator();
             ui.heading("FIRE STATUS");
             ui.label(format!("Burning Elements: {}", stats.burning_elements));
             ui.label(format!("Total Elements: {}", stats.total_elements));
-            ui.label(format!("Fuel Consumed: {:.1} kg", stats.total_fuel_consumed));
-            ui.label(format!("Max Temperature: {:.0}°C", 
+            ui.label(format!(
+                "Fuel Consumed: {:.1} kg",
+                stats.total_fuel_consumed
+            ));
+            ui.label(format!(
+                "Max Temperature: {:.0}°C",
                 sim_state
                     .simulation
                     .get_all_elements()
                     .iter()
                     .map(|e| e.temperature())
-                    .fold(0.0f32, f32::max)));
-            
+                    .fold(0.0f32, f32::max)
+            ));
+
             ui.separator();
             ui.heading("WEATHER CONDITIONS");
             ui.label(format!("Temperature: {:.0}°C", weather.temperature));
             ui.label(format!("Humidity: {:.0}%", weather.humidity));
             ui.label(format!("Wind Speed: {:.1} m/s", weather.wind_speed));
-            ui.label(format!("Wind Direction: {:.0}° {}", weather.wind_direction, wind_arrow));
+            ui.label(format!(
+                "Wind Direction: {:.0}° {}",
+                weather.wind_direction, wind_arrow
+            ));
             ui.label(format!("Drought Factor: {:.1}", weather.drought_factor));
-            
+
             ui.separator();
             ui.heading("FIRE DANGER");
             ui.label(format!("FFDI: {:.1}", weather.calculate_ffdi()));
@@ -1037,16 +1050,16 @@ fn update_ui(
                 if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
                     // Find closest fuel element to ray
                     let mut closest_element: Option<(u32, f32)> = None;
-                    
+
                     for (transform, fuel_visual) in fuel_query.iter() {
                         let element_pos = transform.translation();
                         let to_element = element_pos - ray.origin;
                         let projection = to_element.dot(*ray.direction);
-                        
+
                         if projection > 0.0 {
                             let closest_point = ray.origin + ray.direction * projection;
                             let distance = (element_pos - closest_point).length();
-                            
+
                             if distance < 2.0 {
                                 if let Some((_, current_dist)) = closest_element {
                                     if distance < current_dist {
@@ -1058,7 +1071,7 @@ fn update_ui(
                             }
                         }
                     }
-                    
+
                     // Show tooltip if we found an element
                     if let Some((element_id, _)) = closest_element {
                         if let Some(element) = sim_state
@@ -1068,24 +1081,48 @@ fn update_ui(
                             .find(|e| e.id == element_id)
                         {
                             egui::Area::new(egui::Id::new("fuel_tooltip"))
-                                .fixed_pos(ctx.pointer_latest_pos().unwrap_or_default() + egui::vec2(15.0, 15.0))
+                                .fixed_pos(
+                                    ctx.pointer_latest_pos().unwrap_or_default()
+                                        + egui::vec2(15.0, 15.0),
+                                )
                                 .show(ctx, |ui| {
                                     egui::Frame::popup(ui.style()).show(ui, |ui| {
-                                        ui.label(format!("Fuel Element #{} ({})", element.id, element.fuel.name));
-                                        ui.label(format!("Position: ({:.1}, {:.1}, {:.1})", 
-                                            element.position.x, element.position.y, element.position.z));
-                                        ui.label(format!("Temperature: {:.0}°C", element.temperature()));
-                                        ui.label(format!("Fuel Remaining: {:.2} kg", element.fuel_remaining()));
-                                        ui.label(format!("Moisture: {:.1}%", element.moisture_fraction() * 100.0));
-                                        ui.label(format!("Status: {}", 
+                                        ui.label(format!(
+                                            "Fuel Element #{} ({})",
+                                            element.id, element.fuel.name
+                                        ));
+                                        ui.label(format!(
+                                            "Position: ({:.1}, {:.1}, {:.1})",
+                                            element.position.x,
+                                            element.position.y,
+                                            element.position.z
+                                        ));
+                                        ui.label(format!(
+                                            "Temperature: {:.0}°C",
+                                            element.temperature()
+                                        ));
+                                        ui.label(format!(
+                                            "Fuel Remaining: {:.2} kg",
+                                            element.fuel_remaining()
+                                        ));
+                                        ui.label(format!(
+                                            "Moisture: {:.1}%",
+                                            element.moisture_fraction() * 100.0
+                                        ));
+                                        ui.label(format!(
+                                            "Status: {}",
                                             if element.is_ignited() {
                                                 "BURNING"
                                             } else if element.fuel_remaining() < 0.1 {
                                                 "CONSUMED"
                                             } else {
                                                 "Unburned"
-                                            }));
-                                        ui.label(format!("Flame Height: {:.2} m", element.flame_height()));
+                                            }
+                                        ));
+                                        ui.label(format!(
+                                            "Flame Height: {:.2} m",
+                                            element.flame_height()
+                                        ));
                                     });
                                 });
                         }
