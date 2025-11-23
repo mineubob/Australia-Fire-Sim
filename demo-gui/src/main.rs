@@ -177,6 +177,14 @@ impl WeatherPresetType {
     }
 }
 
+// Enum that will be used as a global state for the game
+#[derive(Clone, Copy, Default, Eq, PartialEq, Debug, Hash, States)]
+enum GameState {
+    #[default]
+    Menu,
+    InGame,
+}
+
 /// Main entry point
 fn main() {
     App::new()
@@ -193,254 +201,319 @@ fn main() {
         .add_plugins(EntityCountDiagnosticsPlugin::default())
         .add_plugins(SystemInformationDiagnosticsPlugin)
         .init_resource::<DemoConfig>()
-        .init_resource::<MenuState>()
-        .add_systems(Startup, setup_menu_camera)
-        .add_systems(EguiPrimaryContextPass, render_menu_ui.run_if(in_menu))
+        .init_state::<GameState>()
+        .add_systems(Startup, setup_camera)
+        // Menu state systems
+        .add_systems(OnEnter(GameState::Menu), setup_menu)
+        .add_systems(OnExit(GameState::Menu), cleanup_menu)
+        .add_systems(
+            EguiPrimaryContextPass,
+            render_menu_ui.run_if(in_state(GameState::Menu)),
+        )
+        // Game state systems
+        .add_systems(OnEnter(GameState::InGame), setup_game)
+        .add_systems(OnExit(GameState::InGame), cleanup_game)
         .add_systems(
             Update,
             (
-                init_simulation_system.run_if(should_start_simulation),
-                setup_scene.run_if(should_setup_scene),
-                update_simulation.run_if(simulation_running),
-                update_fuel_visuals.run_if(simulation_running),
-                update_camera_controls.run_if(simulation_running),
-                update_ui.run_if(simulation_running),
-                handle_controls.run_if(simulation_running),
-                update_tooltip.run_if(simulation_running),
-            ),
+                update_simulation,
+                update_fuel_visuals,
+                update_camera_controls,
+                handle_controls,
+            )
+                .run_if(in_state(GameState::InGame)),
+        )
+        .add_systems(
+            EguiPrimaryContextPass,
+            update_ui.run_if(in_state(GameState::InGame)),
         )
         .run();
 }
 
-/// Menu state resource
-#[derive(Resource)]
-struct MenuState {
-    in_menu: bool,
-    simulation_initialized: bool,
-    scene_setup: bool,
+/// Tag component for menu entities
+#[derive(Component)]
+struct OnMenuScreen;
+
+/// Tag component for game entities
+#[derive(Component)]
+struct OnGameScreen;
+
+/// Setup persistent camera for UI rendering (egui needs this)
+fn setup_camera(mut commands: Commands) {
+    // Spawn Camera2d without OnMenuScreen marker so it persists across state transitions
+    // This is required for egui to work properly
+    // Set order to 1 so it renders after Camera3d (order 0), placing UI on top
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 1,
+            ..default()
+        },
+    ));
 }
 
-impl Default for MenuState {
-    fn default() -> Self {
-        Self {
-            in_menu: true,
-            simulation_initialized: false,
-            scene_setup: false,
-        }
+/// Setup menu - Camera2d stays active
+fn setup_menu() {
+    // Camera2d is already spawned in setup_camera at startup and stays active
+    // Nothing to do here, but we keep the function for symmetry
+}
+
+/// Cleanup menu entities when exiting menu state
+fn cleanup_menu(mut commands: Commands, query: Query<Entity, With<OnMenuScreen>>) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn();
     }
 }
 
-// Run conditions
-fn in_menu(menu_state: Res<MenuState>) -> bool {
-    menu_state.in_menu
+/// Cleanup game entities when exiting game state  
+fn cleanup_game(
+    mut commands: Commands,
+    query: Query<Entity, With<OnGameScreen>>,
+    children_query: Query<&Children>,
+) {
+    // Despawn all game entities (including their children recursively)
+    for entity in query.iter() {
+        despawn_with_children_recursive(&mut commands, entity, &children_query);
+    }
+
+    // Remove resources
+    commands.remove_resource::<AmbientLight>();
+    commands.remove_resource::<SimulationState>();
 }
 
-fn should_start_simulation(menu_state: Res<MenuState>) -> bool {
-    !menu_state.in_menu && !menu_state.simulation_initialized
-}
+/// Recursively despawn an entity and all its children
+fn despawn_with_children_recursive(
+    commands: &mut Commands,
+    entity: Entity,
+    children_query: &Query<&Children>,
+) {
+    // First despawn all children recursively
+    if let Ok(children) = children_query.get(entity) {
+        for child in children.iter() {
+            despawn_with_children_recursive(commands, child, children_query);
+        }
+    }
 
-fn should_setup_scene(menu_state: Res<MenuState>) -> bool {
-    !menu_state.in_menu && menu_state.simulation_initialized && !menu_state.scene_setup
-}
-
-fn simulation_running(menu_state: Res<MenuState>) -> bool {
-    !menu_state.in_menu && menu_state.simulation_initialized && menu_state.scene_setup
-}
-
-/// Setup camera for menu UI (required for egui to work)
-fn setup_menu_camera(mut commands: Commands) {
-    commands.spawn(Camera2d);
+    // Then despawn the entity itself
+    commands.entity(entity).despawn();
 }
 
 /// Render egui menu UI
 fn render_menu_ui(
     mut contexts: EguiContexts,
     mut config: ResMut<DemoConfig>,
-    mut menu_state: ResMut<MenuState>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut exit: MessageWriter<bevy::app::AppExit>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
 
     egui::CentralPanel::default().show(ctx, |ui| {
-        ui.vertical_centered(|ui| {
-            ui.add_space(20.0);
-            ui.heading(
-                egui::RichText::new("Australia Fire Simulation")
-                    .size(48.0)
-                    .color(egui::Color32::from_rgb(255, 204, 51)),
-            );
-            ui.add_space(10.0);
-            ui.label(
-                egui::RichText::new("Configure Simulation Parameters")
-                    .size(24.0)
-                    .color(egui::Color32::from_rgb(204, 204, 204)),
-            );
-            ui.add_space(30.0);
-        });
-
+        // Make the entire menu scrollable for small windows
         egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.set_max_width(700.0);
-
-            // Terrain Settings
-            ui.group(|ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(20.0);
                 ui.heading(
-                    egui::RichText::new("TERRAIN SETTINGS")
-                        .size(20.0)
+                    egui::RichText::new("Australia Fire Simulation")
+                        .size(48.0)
                         .color(egui::Color32::from_rgb(255, 204, 51)),
                 );
                 ui.add_space(10.0);
-
-                ui.horizontal(|ui| {
-                    ui.label("Map Width (m):");
-                    ui.add(egui::Slider::new(&mut config.map_width, 50.0..=500.0).text("m"));
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Map Height (m):");
-                    ui.add(egui::Slider::new(&mut config.map_height, 50.0..=500.0).text("m"));
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Terrain Type:");
-                    egui::ComboBox::new("terrain-type", "")
-                        .selected_text(config.terrain_type.name())
-                        .show_ui(ui, |ui| {
-                            for variant in TerrainType::all() {
-                                ui.selectable_value(
-                                    &mut config.terrain_type,
-                                    variant,
-                                    variant.name(),
-                                );
-                            }
-                        });
-                });
+                ui.label(
+                    egui::RichText::new("Configure Simulation Parameters")
+                        .size(24.0)
+                        .color(egui::Color32::from_rgb(204, 204, 204)),
+                );
+                ui.add_space(30.0);
             });
 
-            ui.add_space(10.0);
+            // Center content with max width
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.set_max_width(700.0);
 
-            // Fire Settings
-            ui.group(|ui| {
-                ui.heading(
-                    egui::RichText::new("FIRE SETTINGS")
-                        .size(20.0)
-                        .color(egui::Color32::from_rgb(255, 204, 51)),
-                );
-                ui.add_space(10.0);
+                // Terrain Settings
+                ui.group(|ui| {
+                    ui.heading(
+                        egui::RichText::new("TERRAIN SETTINGS")
+                            .size(20.0)
+                            .color(egui::Color32::from_rgb(255, 204, 51)),
+                    );
+                    ui.add_space(10.0);
 
-                // Guard for spacing > 0 and ensure at least 1
-                let max_x = ((config.map_width / config.spacing).floor() as usize).max(1);
-                let max_y = ((config.map_height / config.spacing).floor() as usize).max(1);
-
-                ui.horizontal(|ui| {
-                    ui.label("Elements X:");
-                    ui.add(egui::Slider::new(&mut config.elements_x, 1..=max_x));
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Elements Y:");
-                    ui.add(egui::Slider::new(&mut config.elements_y, 1..=max_y));
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Fuel Mass (kg):");
-                    ui.add(egui::Slider::new(&mut config.fuel_mass, 1.0..=20.0).text("kg"));
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Fuel Type:");
-                    egui::ComboBox::new("fuel-type", "")
-                        .selected_text(config.fuel_type.name())
-                        .show_ui(ui, |ui| {
-                            for variant in FuelType::all() {
-                                ui.selectable_value(&mut config.fuel_type, variant, variant.name());
-                            }
-                        });
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Spacing (m):");
-                    ui.add(egui::Slider::new(&mut config.spacing, 5.0..=20.0).text("m"));
-                });
-            });
-
-            ui.add_space(10.0);
-
-            // Weather Settings
-            ui.group(|ui| {
-                ui.heading(
-                    egui::RichText::new("WEATHER SETTINGS")
-                        .size(20.0)
-                        .color(egui::Color32::from_rgb(255, 204, 51)),
-                );
-                ui.add_space(10.0);
-
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut config.use_weather_preset, "Use Weather Preset");
-                });
-
-                if config.use_weather_preset {
                     ui.horizontal(|ui| {
-                        ui.label("Weather Preset:");
-                        egui::ComboBox::new("weather-preset", "")
-                            .selected_text(config.weather_preset.name())
+                        ui.label("Map Width (m):");
+                        ui.add(egui::Slider::new(&mut config.map_width, 50.0..=500.0).text("m"));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Map Height (m):");
+                        ui.add(egui::Slider::new(&mut config.map_height, 50.0..=500.0).text("m"));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Terrain Type:");
+                        egui::ComboBox::new("terrain-type", "")
+                            .selected_text(config.terrain_type.name())
                             .show_ui(ui, |ui| {
-                                for variant in WeatherPresetType::all() {
+                                for variant in TerrainType::all() {
                                     ui.selectable_value(
-                                        &mut config.weather_preset,
+                                        &mut config.terrain_type,
                                         variant,
                                         variant.name(),
                                     );
                                 }
                             });
                     });
-                    ui.label(
-                        egui::RichText::new("(Dynamic weather will be simulated)")
-                            .size(12.0)
-                            .color(egui::Color32::GRAY),
+                });
+
+                ui.add_space(10.0);
+
+                // Fire Settings
+                ui.group(|ui| {
+                    ui.heading(
+                        egui::RichText::new("FIRE SETTINGS")
+                            .size(20.0)
+                            .color(egui::Color32::from_rgb(255, 204, 51)),
                     );
-                } else {
+                    ui.add_space(10.0);
+
+                    // Guard for spacing > 0 and ensure at least 1
+                    let max_x = ((config.map_width / config.spacing).floor() as usize).max(1);
+                    let max_y = ((config.map_height / config.spacing).floor() as usize).max(1);
+
                     ui.horizontal(|ui| {
-                        ui.label("Temperature (°C):");
-                        ui.add(egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"));
+                        ui.label("Elements X:");
+                        ui.add(egui::Slider::new(&mut config.elements_x, 1..=max_x));
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Humidity (%):");
-                        ui.add(egui::Slider::new(&mut config.humidity, 1.0..=80.0).text("%"));
+                        ui.label("Elements Y:");
+                        ui.add(egui::Slider::new(&mut config.elements_y, 1..=max_y));
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Wind Speed (km/h):");
-                        ui.add(egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"));
+                        ui.label("Fuel Mass (kg):");
+                        ui.add(egui::Slider::new(&mut config.fuel_mass, 1.0..=20.0).text("kg"));
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Wind Direction (°):");
-                        ui.add(
-                            egui::Slider::new(&mut config.wind_direction, 0.0..=360.0).text("°"),
+                        ui.label("Fuel Type:");
+                        egui::ComboBox::new("fuel-type", "")
+                            .selected_text(config.fuel_type.name())
+                            .show_ui(ui, |ui| {
+                                for variant in FuelType::all() {
+                                    ui.selectable_value(
+                                        &mut config.fuel_type,
+                                        variant,
+                                        variant.name(),
+                                    );
+                                }
+                            });
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Spacing (m):");
+                        ui.add(egui::Slider::new(&mut config.spacing, 5.0..=20.0).text("m"));
+                    });
+                });
+
+                ui.add_space(10.0);
+
+                // Weather Settings
+                ui.group(|ui| {
+                    ui.heading(
+                        egui::RichText::new("WEATHER SETTINGS")
+                            .size(20.0)
+                            .color(egui::Color32::from_rgb(255, 204, 51)),
+                    );
+                    ui.add_space(10.0);
+
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut config.use_weather_preset, "Use Weather Preset");
+                    });
+
+                    if config.use_weather_preset {
+                        ui.horizontal(|ui| {
+                            ui.label("Weather Preset:");
+                            egui::ComboBox::new("weather-preset", "")
+                                .selected_text(config.weather_preset.name())
+                                .show_ui(ui, |ui| {
+                                    for variant in WeatherPresetType::all() {
+                                        ui.selectable_value(
+                                            &mut config.weather_preset,
+                                            variant,
+                                            variant.name(),
+                                        );
+                                    }
+                                });
+                        });
+                        ui.label(
+                            egui::RichText::new("(Dynamic weather will be simulated)")
+                                .size(12.0)
+                                .color(egui::Color32::GRAY),
                         );
-                    });
+                    } else {
+                        ui.horizontal(|ui| {
+                            ui.label("Temperature (°C):");
+                            ui.add(
+                                egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"),
+                            );
+                        });
 
-                    ui.horizontal(|ui| {
-                        ui.label("Drought Factor:");
-                        ui.add(egui::Slider::new(&mut config.drought_factor, 1.0..=20.0));
-                    });
-                }
+                        ui.horizontal(|ui| {
+                            ui.label("Humidity (%):");
+                            ui.add(egui::Slider::new(&mut config.humidity, 1.0..=80.0).text("%"));
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Wind Speed (km/h):");
+                            ui.add(
+                                egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"),
+                            );
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Wind Direction (degrees):");
+                            ui.add(
+                                egui::Slider::new(&mut config.wind_direction, 0.0..=360.0)
+                                    .text("°"),
+                            );
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Drought Factor:");
+                            ui.add(egui::Slider::new(&mut config.drought_factor, 1.0..=20.0));
+                        });
+                    }
+                });
+
+                ui.add_space(30.0);
+
+                // Buttons - now inside the scroll area
+                ui.vertical_centered(|ui| {
+                    if ui
+                        .add_sized(
+                            [300.0, 60.0],
+                            egui::Button::new(egui::RichText::new("START SIMULATION").size(24.0)),
+                        )
+                        .clicked()
+                    {
+                        next_state.set(GameState::InGame);
+                    }
+                    ui.add_space(10.0);
+
+                    if ui
+                        .add_sized(
+                            [300.0, 50.0],
+                            egui::Button::new(egui::RichText::new("QUIT").size(20.0))
+                                .fill(egui::Color32::from_rgb(180, 60, 60)),
+                        )
+                        .clicked()
+                    {
+                        exit.write(bevy::app::AppExit::Success);
+                    }
+                    ui.add_space(20.0);
+                });
             });
-
-            ui.add_space(20.0);
-        });
-
-        ui.vertical_centered(|ui| {
-            if ui
-                .add_sized(
-                    [300.0, 60.0],
-                    egui::Button::new(egui::RichText::new("START SIMULATION").size(24.0)),
-                )
-                .clicked()
-            {
-                menu_state.in_menu = false;
-            }
-            ui.add_space(20.0);
         });
     });
 
@@ -460,7 +533,12 @@ struct SimulationState {
 impl FromWorld for SimulationState {
     fn from_world(world: &mut World) -> Self {
         let config = world.resource::<DemoConfig>().clone();
+        Self::from_config(&config)
+    }
+}
 
+impl SimulationState {
+    fn from_config(config: &DemoConfig) -> Self {
         // Create terrain based on config
         let terrain = match config.terrain_type {
             TerrainType::Flat => TerrainData::flat(config.map_width, config.map_height, 5.0, 0.0),
@@ -542,63 +620,24 @@ struct FuelVisual {
 #[derive(Component)]
 struct MainCamera;
 
-/// UI text marker components
-#[derive(Component)]
-struct StatsText;
-
-#[derive(Component)]
-struct ControlsText;
-
-#[derive(Component)]
-struct TooltipText;
-
-#[derive(Component)]
-struct StatsPanel;
-
 /// Marker for terrain mesh
 #[derive(Component)]
 struct TerrainMesh;
 
-/// Initialize simulation when transitioning from menu
-fn init_simulation_system(
-    mut commands: Commands,
-    mut menu_state: ResMut<MenuState>,
-    camera_query: Query<Entity, (With<Camera2d>, Without<Camera3d>)>,
-) {
-    // Remove menu camera (Camera2d) since we'll add a Camera3d for the simulation
-    for entity in camera_query.iter() {
-        commands.entity(entity).despawn();
-    }
-
-    // Initialize simulation state
-    commands.init_resource::<SimulationState>();
-    menu_state.simulation_initialized = true;
-}
-
-/// Setup the 3D scene after simulation is initialized
-fn setup_scene(
-    commands: Commands,
-    meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<StandardMaterial>>,
-    sim_state: Option<ResMut<SimulationState>>,
-    mut menu_state: ResMut<MenuState>,
-) {
-    // Wait until SimulationState resource exists
-    let Some(sim_state) = sim_state else {
-        return;
-    };
-
-    setup(commands, meshes, materials, sim_state);
-    menu_state.scene_setup = true;
-}
-
-/// Setup the 3D scene
-fn setup(
+/// Setup game when transitioning from menu
+fn setup_game(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut sim_state: ResMut<SimulationState>,
+    config: Res<DemoConfig>,
 ) {
+    // Camera2d (order 1) stays active for UI overlay
+    // Camera3d (order 0) renders the 3D scene first
+    // Different orders prevent rendering conflicts
+
+    // Initialize simulation state resource
+    let mut sim_state = SimulationState::from_config(&config);
+
     // Add light
     commands.spawn((
         DirectionalLight {
@@ -607,6 +646,7 @@ fn setup(
             ..default()
         },
         Transform::from_xyz(50.0, 100.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
+        OnGameScreen,
     ));
 
     // Add ambient light
@@ -616,11 +656,32 @@ fn setup(
         affects_lightmapped_meshes: false,
     });
 
-    // Add camera
+    // Add camera with position based on map size
+    // Calculate camera position to frame the entire map
+    let map_center_x = config.map_width / 2.0;
+    let map_center_z = config.map_height / 2.0;
+    let map_max_dim = config.map_width.max(config.map_height);
+
+    // Camera distance scales with map size (larger maps need more zoom out)
+    // Base distance for 200x200 map is 150, scale proportionally
+    let camera_distance = (map_max_dim / 200.0) * 150.0;
+    let camera_height = (map_max_dim / 200.0) * 120.0;
+
+    // Position camera at 45-degree angle to view the map
+    let camera_offset = camera_distance * 0.707; // cos(45°) ≈ 0.707
+    let camera_x = map_center_x + camera_offset;
+    let camera_z = map_center_z + camera_offset;
+
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(150.0, 120.0, 150.0).looking_at(Vec3::new(100.0, 0.0, 100.0), Vec3::Y),
+        Camera {
+            order: 0, // Render first (3D scene)
+            ..default()
+        },
+        Transform::from_xyz(camera_x, camera_height, camera_z)
+            .looking_at(Vec3::new(map_center_x, 0.0, map_center_z), Vec3::Y),
         MainCamera,
+        OnGameScreen,
     ));
 
     // Create terrain mesh
@@ -658,6 +719,7 @@ fn setup(
                 MeshMaterial3d(material),
                 Transform::from_xyz(pos.x, pos.z, pos.y),
                 FuelVisual { element_id },
+                OnGameScreen,
             ))
             .id();
 
@@ -666,6 +728,9 @@ fn setup(
 
     // Setup UI
     setup_ui(&mut commands);
+
+    // Insert simulation state as a resource
+    commands.insert_resource(sim_state);
 }
 
 fn spawn_terrain(
@@ -778,123 +843,13 @@ fn spawn_terrain(
         MeshMaterial3d(terrain_material),
         Transform::from_xyz(0.0, 0.0, 0.0),
         TerrainMesh,
+        OnGameScreen,
     ));
 }
 
-fn setup_ui(commands: &mut Commands) {
-    // Root UI container - fills entire screen
-    commands
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            flex_direction: FlexDirection::Row,
-            justify_content: JustifyContent::SpaceBetween,
-            ..default()
-        })
-        .with_children(|parent| {
-            // Left side - Title and controls
-            parent.spawn(Node {
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(10.0)),
-                ..default()
-            })
-            .with_children(|left| {
-                // Title
-                left.spawn((
-                    Text::new("Australia Fire Simulation"),
-                    TextFont {
-                        font_size: 28.0,
-                        ..default()
-                    },
-                    TextColor(Color::WHITE),
-                ));
-
-                // Controls text
-                left.spawn((
-                    Text::new("Controls:\n  SPACE - Pause/Resume\n  [ / ] - Speed Down/Up\n  R - Reset\n  I - Ignite Fuel (at cursor)\n  W - Add Water Suppression\n  ESC - Return to Menu\n  Arrow Keys - Camera\n  Hover - Element Details"),
-                    TextFont {
-                        font_size: 14.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.6, 0.6, 0.6)),
-                    ControlsText,
-                ));
-            });
-
-            // Right side - Stats panel with background box
-            parent.spawn((
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(15.0)),
-                    margin: UiRect::all(Val::Px(10.0)),
-                    width: Val::Px(400.0),
-                    max_height: Val::Percent(90.0),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.85)),
-                StatsPanel,
-            ))
-            .with_children(|panel| {
-                // Stats heading
-                panel.spawn((
-                    Text::new("SIMULATION STATISTICS"),
-                    TextFont {
-                        font_size: 20.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(1.0, 0.8, 0.2)),
-                ));
-
-                // Stats text
-                panel.spawn((
-                    Text::new("Initializing..."),
-                    TextFont {
-                        font_size: 16.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.9, 0.9, 0.9)),
-                    StatsText,
-                ));
-            });
-        });
-
-    // Tooltip (hidden by default)
-    commands.spawn((
-        Text::new(""),
-        TextFont {
-            font_size: 14.0,
-            ..default()
-        },
-        TextColor(Color::WHITE),
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(0.0),
-            top: Val::Px(0.0),
-            padding: UiRect::all(Val::Px(8.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.9)),
-        Visibility::Hidden,
-        TooltipText,
-    ));
-
-    // FPS counter (top-right corner)
-    commands.spawn((
-        Text::new("FPS: 60"),
-        TextFont {
-            font_size: 16.0,
-            ..default()
-        },
-        TextColor(Color::srgb(1.0, 1.0, 0.0)),
-        Node {
-            position_type: PositionType::Absolute,
-            right: Val::Px(10.0),
-            top: Val::Px(10.0),
-            padding: UiRect::all(Val::Px(5.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
-    ));
+fn setup_ui(_commands: &mut Commands) {
+    // No longer need to spawn UI entities - egui will handle it all
+    // We'll keep this function for consistency but it's now empty
 }
 
 /// Update the simulation
@@ -976,12 +931,15 @@ fn update_camera_controls(
     Ok(())
 }
 
-/// Update UI text
+/// Render game UI using egui
 fn update_ui(
+    mut contexts: EguiContexts,
     sim_state: Res<SimulationState>,
-    mut query: Query<&mut Text, With<StatsText>>,
     time: Res<Time>,
     diagnostics: Res<DiagnosticsStore>,
+    windows: Query<&Window>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
 ) -> Result {
     let stats = sim_state.simulation.get_stats();
     let weather = &sim_state.simulation.weather;
@@ -996,7 +954,6 @@ fn update_ui(
     let frame_time = diagnostics
         .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
         .and_then(|ft| ft.smoothed())
-        .map(|ft| ft * 1000.0) // Convert to ms
         .unwrap_or(0.0);
 
     // Calculate entity count for performance tracking
@@ -1017,190 +974,196 @@ fn update_ui(
         .and_then(|mem| mem.smoothed())
         .unwrap_or(0.0);
 
-    for mut text in query.iter_mut() {
-        text.0 = format!(
-            "Simulation Time: {:.1}s\n\
-             Status: {}\n\
-             Speed: {:.1}x\n\
-             \n\
-             SYSTEM PERFORMANCE\n\
-             FPS: {:.0}\n\
-             Frame Time: {:.2}ms\n\
-             Entities: {:.0}\n\
-             Delta Time: {:.3}s\n\
-             \n\
-             HARDWARE PERFORMANCE\n\
-             CPU Usage: {:.1}%\n\
-             Memory Usage: {:.1} MB\n\
-             \n\
-             FIRE STATUS\n\
-             Burning Elements: {}\n\
-             Total Elements: {}\n\
-             Fuel Consumed: {:.1} kg\n\
-             Max Temperature: {:.0}°C\n\
-             \n\
-             WEATHER CONDITIONS\n\
-             Temperature: {:.0}°C\n\
-             Humidity: {:.0}%\n\
-             Wind Speed: {:.1} m/s\n\
-             Wind Direction: {:.0}°\n\
-             Drought Factor: {:.1}\n\
-             \n\
-             FIRE DANGER\n\
-             FFDI: {:.1}\n\
-             Rating: {}",
-            stats.simulation_time,
-            if sim_state.paused {
-                "PAUSED"
-            } else {
-                "RUNNING"
-            },
-            sim_state.speed,
-            fps,
-            frame_time,
-            entity_count,
-            time.delta_secs(),
-            cpu_usage,
-            mem_usage,
-            stats.burning_elements,
-            stats.total_elements,
-            stats.total_fuel_consumed,
-            sim_state
-                .simulation
-                .get_all_elements()
-                .iter()
-                .map(|e| e.temperature())
-                .fold(0.0f32, f32::max),
-            weather.temperature,
-            weather.humidity,
-            weather.wind_speed,
-            weather.wind_direction,
-            weather.drought_factor,
-            weather.calculate_ffdi(),
-            weather.fire_danger_rating(),
-        );
-    }
-
-    Ok(())
-}
-
-/// Update tooltip on hover
-fn update_tooltip(
-    windows: Query<&Window>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
-    sim_state: Res<SimulationState>,
-    mut tooltip_query: Query<(&mut Text, &mut Node, &mut Visibility), With<TooltipText>>,
-) -> Result {
-    let window = windows.single()?;
-
-    let Some(cursor_position) = window.cursor_position() else {
-        // Hide tooltip if cursor not in window
-        for (_, _, mut visibility) in tooltip_query.iter_mut() {
-            *visibility = Visibility::Hidden;
-        }
-        return Ok(());
+    // Calculate wind direction arrow based on angle
+    // Wind direction is where the wind is coming FROM (meteorological convention)
+    let wind_arrow = match weather.wind_direction as i32 {
+        337..=360 | 0..=22 => "↓", // North wind (coming from north, blowing south)
+        23..=67 => "↙",            // Northeast wind
+        68..=112 => "←",           // East wind (coming from east, blowing west)
+        113..=157 => "↖",          // Southeast wind
+        158..=202 => "↑",          // South wind (coming from south, blowing north)
+        203..=247 => "↗",          // Southwest wind
+        248..=292 => "→",          // West wind (coming from west, blowing east)
+        293..=336 => "↘",          // Northwest wind
+        _ => "?",
     };
 
-    // Camera might not be ready on first frame after scene setup
-    let Ok((camera, camera_transform)) = camera_query.single() else {
-        return Ok(()); // Silently skip if camera not ready yet
-    };
+    let ctx = contexts.ctx_mut()?;
 
-    // Cast ray from camera through cursor position
-    let ray = camera.viewport_to_world(camera_transform, cursor_position)?;
+    // Title and controls panel (top-left)
+    egui::Window::new("Australia Fire Simulation")
+        .anchor(egui::Align2::LEFT_TOP, [10.0, 10.0])
+        .resizable(false)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            ui.colored_label(egui::Color32::LIGHT_GRAY, "Controls:");
+            ui.label("  SPACE - Pause/Resume");
+            ui.label("  [ / ] - Speed Down/Up");
+            ui.label("  R - Reset");
+            ui.label("  I - Ignite Fuel (at cursor)");
+            ui.label("  W - Add Water Suppression");
+            ui.label("  ESC - Return to Menu");
+            ui.label("  Arrow Keys - Camera");
+            ui.label("  Hover - Element Details");
+        });
 
-    // Find closest fuel element intersecting with ray
-    let mut closest_element: Option<(u32, f32)> = None;
+    // Stats panel (right side)
+    egui::Window::new("SIMULATION STATISTICS")
+        .anchor(egui::Align2::RIGHT_TOP, [-10.0, 10.0])
+        .default_width(400.0)
+        .resizable(false)
+        .collapsible(true)
+        .show(ctx, |ui| {
+            ui.label(format!("Simulation Time: {:.1}s", stats.simulation_time));
+            ui.label(format!(
+                "Status: {}",
+                if sim_state.paused {
+                    "PAUSED"
+                } else {
+                    "RUNNING"
+                }
+            ));
+            ui.label(format!("Speed: {:.1}x", sim_state.speed));
 
-    for (transform, fuel_visual) in fuel_query.iter() {
-        let element_pos = transform.translation();
+            ui.separator();
+            ui.heading("SYSTEM PERFORMANCE");
+            ui.label(format!("FPS: {:.0}", fps));
+            ui.label(format!("Frame Time: {:.2}ms", frame_time));
+            ui.label(format!("Entities: {:.0}", entity_count));
+            ui.label(format!("Delta Time: {:.3}s", time.delta_secs()));
 
-        // Simple sphere collision (2m radius for the cube)
-        let to_element = element_pos - ray.origin;
-        let ray_dir = *ray.direction; // Convert Dir3 to Vec3
-        let projection = to_element.dot(ray_dir);
+            ui.separator();
+            ui.heading("HARDWARE PERFORMANCE");
+            ui.label(format!("CPU Usage: {:.1}%", cpu_usage));
+            ui.label(format!("Memory Usage: {:.1} MB", mem_usage));
 
-        if projection > 0.0 {
-            let closest_point = ray.origin + ray_dir * projection;
-            let distance_to_ray = (element_pos - closest_point).length();
+            ui.separator();
+            ui.heading("FIRE STATUS");
+            ui.label(format!("Burning Elements: {}", stats.burning_elements));
+            ui.label(format!("Total Elements: {}", stats.total_elements));
+            ui.label(format!(
+                "Fuel Consumed: {:.1} kg",
+                stats.total_fuel_consumed
+            ));
+            ui.label(format!(
+                "Max Temperature: {:.0}°C",
+                sim_state
+                    .simulation
+                    .get_all_elements()
+                    .iter()
+                    .map(|e| e.temperature())
+                    .fold(0.0f32, f32::max)
+            ));
 
-            if distance_to_ray < 2.0 {
-                // Cube is 2x2x2
-                let distance = projection;
-                if closest_element.is_none() || distance < closest_element.unwrap().1 {
-                    closest_element = Some((fuel_visual.element_id, distance));
+            ui.separator();
+            ui.heading("WEATHER CONDITIONS");
+            ui.label(format!("Temperature: {:.0}°C", weather.temperature));
+            ui.label(format!("Humidity: {:.0}%", weather.humidity));
+            ui.label(format!("Wind Speed: {:.1} m/s", weather.wind_speed));
+            ui.label(format!(
+                "Wind Direction: {:.0}° {}",
+                weather.wind_direction, wind_arrow
+            ));
+            ui.label(format!("Drought Factor: {:.1}", weather.drought_factor));
+
+            ui.separator();
+            ui.heading("FIRE DANGER");
+            ui.label(format!("FFDI: {:.1}", weather.calculate_ffdi()));
+            ui.label(format!("Rating: {}", weather.fire_danger_rating()));
+        });
+
+    // Tooltip on hover
+    if let Ok(window) = windows.single() {
+        if let Some(cursor_position) = window.cursor_position() {
+            if let Ok((camera, camera_transform)) = camera_query.single() {
+                // Convert cursor position to world ray
+                if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+                    // Find closest fuel element to ray
+                    let mut closest_element: Option<(u32, f32)> = None;
+
+                    for (transform, fuel_visual) in fuel_query.iter() {
+                        let element_pos = transform.translation();
+                        let to_element = element_pos - ray.origin;
+                        let projection = to_element.dot(*ray.direction);
+
+                        if projection > 0.0 {
+                            let closest_point = ray.origin + ray.direction * projection;
+                            let distance = (element_pos - closest_point).length();
+
+                            if distance < 2.0 {
+                                if let Some((_, current_dist)) = closest_element {
+                                    if distance < current_dist {
+                                        closest_element = Some((fuel_visual.element_id, distance));
+                                    }
+                                } else {
+                                    closest_element = Some((fuel_visual.element_id, distance));
+                                }
+                            }
+                        }
+                    }
+
+                    // Show tooltip if we found an element
+                    if let Some((element_id, _)) = closest_element {
+                        if let Some(element) = sim_state
+                            .simulation
+                            .get_all_elements()
+                            .into_iter()
+                            .find(|e| e.id == element_id)
+                        {
+                            egui::Area::new(egui::Id::new("fuel_tooltip"))
+                                .fixed_pos(
+                                    ctx.pointer_latest_pos().unwrap_or_default()
+                                        + egui::vec2(15.0, 15.0),
+                                )
+                                .show(ctx, |ui| {
+                                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                        ui.label(format!(
+                                            "Fuel Element #{} ({})",
+                                            element.id, element.fuel.name
+                                        ));
+                                        ui.label(format!(
+                                            "Position: ({:.1}, {:.1}, {:.1})",
+                                            element.position.x,
+                                            element.position.y,
+                                            element.position.z
+                                        ));
+                                        ui.label(format!(
+                                            "Temperature: {:.0}°C",
+                                            element.temperature()
+                                        ));
+                                        ui.label(format!(
+                                            "Fuel Remaining: {:.2} kg",
+                                            element.fuel_remaining()
+                                        ));
+                                        ui.label(format!(
+                                            "Moisture: {:.1}%",
+                                            element.moisture_fraction() * 100.0
+                                        ));
+                                        ui.label(format!(
+                                            "Status: {}",
+                                            if element.is_ignited() {
+                                                "BURNING"
+                                            } else if element.fuel_remaining() < 0.1 {
+                                                "CONSUMED"
+                                            } else {
+                                                "Unburned"
+                                            }
+                                        ));
+                                        ui.label(format!(
+                                            "Flame Height: {:.2} m",
+                                            element.flame_height()
+                                        ));
+                                    });
+                                });
+                        }
+                    }
                 }
             }
         }
     }
 
-    // Update tooltip
-    for (mut text, mut style, mut visibility) in tooltip_query.iter_mut() {
-        if let Some((element_id, _)) = closest_element {
-            // Find the element in simulation
-            if let Some(element) = sim_state
-                .simulation
-                .get_all_elements()
-                .into_iter()
-                .find(|e| e.id == element_id)
-            {
-                // Show tooltip with element details
-                text.0 = format!(
-                    "Fuel Element #{} ({})\n\
-                     Position: ({:.1}, {:.1}, {:.1})\n\
-                     Temperature: {:.0}°C\n\
-                     Fuel Remaining: {:.2} kg\n\
-                     Moisture: {:.1}%\n\
-                     Status: {}\n\
-                     Flame Height: {:.2} m",
-                    element.id,
-                    element.fuel.name,
-                    element.position.x,
-                    element.position.y,
-                    element.position.z,
-                    element.temperature(),
-                    element.fuel_remaining(),
-                    element.moisture_fraction() * 100.0,
-                    if element.is_ignited() {
-                        "BURNING"
-                    } else if element.fuel_remaining() < 0.1 {
-                        "CONSUMED"
-                    } else {
-                        "Unburned"
-                    },
-                    element.flame_height(),
-                );
-
-                // Position tooltip near cursor
-                style.left = Val::Px(cursor_position.x + 15.0);
-                style.top = Val::Px(cursor_position.y + 15.0);
-                *visibility = Visibility::Visible;
-            } else {
-                *visibility = Visibility::Hidden;
-            }
-        } else {
-            *visibility = Visibility::Hidden;
-        }
-    }
-
     Ok(())
 }
-
-/// Query for all sim related entities in the scene.
-type SceneEntitiesQuery<'world, 'state> = Query<
-    'world,
-    'state,
-    Entity,
-    Or<(
-        With<MainCamera>,
-        With<DirectionalLight>,
-        With<FuelVisual>,
-        With<StatsPanel>,
-        With<ControlsText>,
-        With<TerrainMesh>,
-    )>,
->;
 
 // Control's require lots of args.
 #[allow(clippy::too_many_arguments)]
@@ -1211,9 +1174,7 @@ fn handle_controls(
     config: Res<DemoConfig>,
     windows: Query<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    mut menu_state: ResMut<MenuState>,
-    mut commands: Commands,
-    scene_entities: SceneEntitiesQuery,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
     // Pause/Resume
     if keyboard.just_pressed(KeyCode::Space) {
@@ -1473,20 +1434,7 @@ fn handle_controls(
 
     // Return to main menu
     if keyboard.just_pressed(KeyCode::Escape) {
-        // Despawn all scene entities (camera, lights, UI, fuel visuals, terrain)
-        for entity in scene_entities.iter() {
-            commands.entity(entity).despawn();
-        }
-
-        // Reset menu state to show menu again
-        menu_state.in_menu = true;
-        menu_state.simulation_initialized = false;
-        menu_state.scene_setup = false;
-
-        // Clear fuel entity map
-        sim_state.fuel_entity_map.clear();
-
-        // Spawn Camera2d for menu
-        commands.spawn(Camera2d);
+        // Transition back to menu state - OnExit will handle cleanup automatically
+        next_state.set(GameState::Menu);
     }
 }
