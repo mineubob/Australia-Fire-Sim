@@ -49,7 +49,7 @@ Implementation correctly maps FFDI to Australian fire danger categories:
 - 75-100: Extreme
 - 100+: CATASTROPHIC (Code Red)
 
-**Location in Code:** `crates/core/src/core_types/weather.rs:977-991`
+**Location in Code:** `crates/core/src/core_types/weather.rs:977-993`
 
 ---
 
@@ -159,7 +159,9 @@ The code explicitly uses the full formula `(T_source^4 - T_target^4)` rather tha
 - Engineering heat transfer textbooks
 - Applied in wildfire modeling (Butler & Cohen, 1998)
 
-**Location in Code:** `crates/core/src/physics/element_heat_transfer.rs:30-36`
+**Location in Code:** `crates/core/src/physics/element_heat_transfer.rs:32-68`
+- Stefan-Boltzmann constant defined at line 20
+- Core T^4 calculation at line 48
 
 ---
 
@@ -201,7 +203,9 @@ Stringybark eucalypts (*E. obliqua*, *E. baxteri*, *E. capitellata*) have fibrou
 - "Understanding the nuances of fuels" - USDA Forest Service RMRS
 - Black Saturday Royal Commission reports (2009)
 
-**Location in Code:** `crates/core/src/core_types/fuel.rs:36-43, 127-150`
+**Location in Code:** `crates/core/src/core_types/fuel.rs:133-156`
+- BarkProperties defined at lines 5-86
+- Stringybark specific properties at lines 36-43
 
 ---
 
@@ -270,7 +274,7 @@ The code correctly implements the physical sequence in `crates/core/src/core_typ
 1. Calculate moisture mass (line 101)
 2. Apply heat to evaporation (2260 kJ/kg) (lines 103-105)
 3. Only remaining heat raises temperature (lines 115-127)
-4. Cap at fuel-specific maximum temperature (line 129)
+4. Cap at fuel-specific maximum temperature (line 130: `self.temperature = self.temperature.min(max_temp)`)
 
 This prevents unrealistic thermal runaway and creates realistic ignition delays.
 
