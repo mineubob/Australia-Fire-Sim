@@ -5,7 +5,4 @@ pub mod element_heat_transfer;
 pub mod suppression_physics;
 
 // Re-export only public types (not internal functions)
-pub use suppression_physics::{
-    apply_suppression_direct, AircraftDrop, GroundSuppression, SuppressionAgent,
-    SuppressionDroplet,
-};
+pub use suppression_physics::{apply_suppression_direct, SuppressionAgent};

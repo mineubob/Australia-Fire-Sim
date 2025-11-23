@@ -1,5 +1,5 @@
 use fire_sim_core::{
-    FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData, Vec3,
+    FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
@@ -311,36 +311,6 @@ pub unsafe extern "C" fn fire_sim_get_cell(
     }) {
         Some(true) => FIRE_SIM_SUCCESS,
         _ => FIRE_SIM_INVALID_ID,
-    }
-}
-
-/// Add water suppression droplet
-///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
-#[no_mangle]
-pub extern "C" fn fire_sim_add_water_drop(
-    sim_id: usize,
-    x: f32,
-    y: f32,
-    z: f32,
-    vx: f32,
-    vy: f32,
-    vz: f32,
-    mass: f32,
-) -> i32 {
-    match with_fire_sim_write(&sim_id, |sim| {
-        let droplet = SuppressionDroplet::new(
-            Vec3::new(x, y, z),
-            Vec3::new(vx, vy, vz),
-            mass,
-            SuppressionAgent::Water,
-        );
-        sim.add_suppression_droplet(droplet);
-    }) {
-        Some(_) => FIRE_SIM_SUCCESS,
-        None => FIRE_SIM_INVALID_ID,
     }
 }
 
