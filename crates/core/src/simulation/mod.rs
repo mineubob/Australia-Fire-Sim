@@ -14,7 +14,6 @@ use crate::core_types::spatial::SpatialIndex;
 use crate::core_types::weather::WeatherSystem;
 use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise, update_wind_field};
 use crate::grid::{GridCell, SimulationGrid, TerrainData};
-use crate::physics::SuppressionDroplet;
 use rayon::prelude::*;
 use std::collections::HashSet;
 
@@ -37,9 +36,6 @@ pub struct FireSimulation {
     // Embers
     embers: Vec<Ember>,
     _next_ember_id: u32,
-
-    // Suppression droplets
-    suppression_droplets: Vec<SuppressionDroplet>,
 
     // Configuration
     max_search_radius: f32,
@@ -77,7 +73,6 @@ impl FireSimulation {
             weather: WeatherSystem::default(),
             embers: Vec::new(),
             _next_ember_id: 0,
-            suppression_droplets: Vec::new(),
             max_search_radius: 15.0,
             total_fuel_consumed: 0.0,
             total_area_burned: 0.0,
@@ -142,9 +137,23 @@ impl FireSimulation {
         self.weather = weather;
     }
 
-    /// Add suppression droplet
-    pub fn add_suppression_droplet(&mut self, droplet: SuppressionDroplet) {
-        self.suppression_droplets.push(droplet);
+    /// Apply suppression directly at specified coordinates without physics simulation
+    ///
+    /// This method immediately applies suppression agent to the grid at the given position,
+    /// bypassing the physics-based droplet simulation. Useful for direct application
+    /// such as ground crews or instant effects.
+    ///
+    /// # Parameters
+    /// - `position`: World coordinates (x, y, z) where suppression is applied
+    /// - `mass`: Mass of suppression agent in kg
+    /// - `agent_type`: Type of suppression agent (Water, Retardant, Foam)
+    pub fn apply_suppression_direct(
+        &mut self,
+        position: Vec3,
+        mass: f32,
+        agent_type: crate::physics::SuppressionAgent,
+    ) {
+        crate::physics::apply_suppression_direct(position, mass, agent_type, &mut self.grid);
     }
 
     /// Main simulation update
@@ -438,28 +447,7 @@ impl FireSimulation {
         // 6. Simulate plume rise
         simulate_plume_rise(&mut self.grid, &burning_positions, dt);
 
-        // 7. Update suppression droplets
-        self.suppression_droplets
-            .par_iter_mut()
-            .for_each(|droplet| {
-                let local_wind = self.grid.interpolate_at_position(droplet.position).wind;
-                droplet.update(local_wind, self.grid.ambient_temperature, dt);
-            });
-
-        // Apply suppression to grid
-        for droplet in &self.suppression_droplets {
-            if droplet.active {
-                crate::physics::suppression_physics::apply_suppression_to_grid(
-                    droplet,
-                    &mut self.grid,
-                );
-            }
-        }
-
-        // Remove inactive droplets
-        self.suppression_droplets.retain(|d| d.active);
-
-        // 8. Update embers (legacy system - can be enhanced)
+        // 7. Update embers
         self.embers.par_iter_mut().for_each(|ember| {
             ember.update_physics(wind_vector, self.grid.ambient_temperature, dt);
         });
@@ -501,7 +489,6 @@ impl FireSimulation {
             total_elements: self.elements.iter().filter(|e| e.is_some()).count(),
             active_cells: self.active_cell_count(),
             total_cells: self.grid.cells.len(),
-            suppression_droplets: self.suppression_droplets.len(),
             total_fuel_consumed: self.total_fuel_consumed,
             simulation_time: self.simulation_time,
         }
@@ -520,7 +507,6 @@ pub struct SimulationStats {
     pub total_elements: usize,
     pub active_cells: usize,
     pub total_cells: usize,
-    pub suppression_droplets: usize,
     pub total_fuel_consumed: f32,
     pub simulation_time: f32,
 }

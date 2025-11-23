@@ -1,6 +1,4 @@
-use fire_sim_core::{
-    FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData, Vec3,
-};
+use fire_sim_core::{FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
@@ -314,34 +312,69 @@ pub unsafe extern "C" fn fire_sim_get_cell(
     }
 }
 
-/// Add water suppression droplet
+/// Apply suppression directly at coordinates without physics simulation
+///
+/// This function immediately applies suppression agent at the specified coordinates,
+/// bypassing the physics-based droplet simulation. Useful for direct application
+/// such as ground crews or instant effects.
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `x`, `y`, `z`: World coordinates where suppression is applied
+/// - `mass`: Mass of suppression agent in kg
+/// - `agent_type`: Type of suppression agent (0=Water, 1=ShortTermRetardant, 2=LongTermRetardant, 3=Foam)
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_INVALID_FUEL` (-3) if agent_type is invalid
+#[no_mangle]
+pub extern "C" fn fire_sim_apply_suppression_direct(
+    sim_id: usize,
+    x: f32,
+    y: f32,
+    z: f32,
+    mass: f32,
+    agent_type: u8,
+) -> i32 {
+    let agent = match agent_type {
+        0 => SuppressionAgent::Water,
+        1 => SuppressionAgent::ShortTermRetardant,
+        2 => SuppressionAgent::LongTermRetardant,
+        3 => SuppressionAgent::Foam,
+        _ => return FIRE_SIM_INVALID_FUEL,
+    };
+
+    match with_fire_sim_write(&sim_id, |sim| {
+        sim.apply_suppression_direct(Vec3::new(x, y, z), mass, agent);
+    }) {
+        Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
+}
+
+/// Apply water suppression directly at coordinates without physics simulation
+///
+/// Convenience function for water suppression. Same as `fire_sim_apply_suppression_direct`
+/// with agent_type=0 (Water).
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `x`, `y`, `z`: World coordinates where water is applied
+/// - `mass`: Mass of water in kg
 ///
 /// # Returns
 /// - `FIRE_SIM_SUCCESS` (0) on success
 /// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
 #[no_mangle]
-pub extern "C" fn fire_sim_add_water_drop(
+pub extern "C" fn fire_sim_apply_water_direct(
     sim_id: usize,
     x: f32,
     y: f32,
     z: f32,
-    vx: f32,
-    vy: f32,
-    vz: f32,
     mass: f32,
 ) -> i32 {
-    match with_fire_sim_write(&sim_id, |sim| {
-        let droplet = SuppressionDroplet::new(
-            Vec3::new(x, y, z),
-            Vec3::new(vx, vy, vz),
-            mass,
-            SuppressionAgent::Water,
-        );
-        sim.add_suppression_droplet(droplet);
-    }) {
-        Some(_) => FIRE_SIM_SUCCESS,
-        None => FIRE_SIM_INVALID_ID,
-    }
+    fire_sim_apply_suppression_direct(sim_id, x, y, z, mass, 0)
 }
 
 /// Get ultra simulation statistics
