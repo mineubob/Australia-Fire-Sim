@@ -6,6 +6,9 @@ use bevy::diagnostic::{
     DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin,
     SystemInformationDiagnosticsPlugin,
 };
+use bevy::picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings};
+use bevy::picking::mesh_picking::MeshPickingPlugin;
+use bevy::picking::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use fire_sim_core::{
@@ -197,6 +200,7 @@ fn main() {
             ..default()
         }))
         .add_plugins(EguiPlugin::default())
+        .add_plugins(MeshPickingPlugin)
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(EntityCountDiagnosticsPlugin::default())
         .add_plugins(SystemInformationDiagnosticsPlugin)
@@ -843,6 +847,7 @@ fn spawn_terrain(
         MeshMaterial3d(terrain_material),
         Transform::from_xyz(0.0, 0.0, 0.0),
         TerrainMesh,
+        Pickable::default(), // Make terrain pickable for ray casting
         OnGameScreen,
     ));
 }
@@ -1175,6 +1180,7 @@ fn handle_controls(
     windows: Query<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut ray_cast: MeshRayCast,
 ) {
     // Pause/Resume
     if keyboard.just_pressed(KeyCode::Space) {
@@ -1282,73 +1288,71 @@ fn handle_controls(
                         // Cast ray from camera through cursor position
                         if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
                         {
-                            // Find intersection with ground plane (y = 0 in Bevy, which is horizontal)
-                            // Note: Bevy uses Y-up, so ground plane is at y=0
-                            let ray_dir = *ray.direction;
+                            // Use bevy_picking's MeshRayCast to find terrain intersection
+                            let settings = MeshRayCastSettings::default()
+                                .always_early_exit(); // Stop at first hit
+                            
+                            let hits = ray_cast.cast_ray(ray, &settings);
+                            
+                            if let Some((_entity, hit)) = hits.first() {
+                                // hit.point is in world space (Bevy coordinates: x, y=height, z)
+                                let world_pos = hit.point;
+                                println!(
+                                    "Terrain hit at world position: ({:.2}, {:.2}, {:.2})",
+                                    world_pos.x, world_pos.y, world_pos.z
+                                );
+                                
+                                // Convert Bevy world coords to sim coords
+                                // Bevy: (x, y=height, z) -> Sim: (x, z, y=height)
+                                let ignite_x = world_pos.x;
+                                let ignite_y = world_pos.z;
+                                
+                                println!(
+                                    "Cursor world position (Sim X,Y): ({:.2}, {:.2})",
+                                    ignite_x, ignite_y
+                                );
 
-                            if ray_dir.y.abs() > 0.001 {
-                                let t = -ray.origin.y / ray_dir.y;
+                                // Find the closest fuel element to cursor position and ignite it
+                                let elements = sim_state.simulation.get_all_elements();
+                                let mut closest_id: Option<u32> = None;
+                                let mut closest_dist = f32::MAX;
 
-                                if t > 0.0 {
-                                    // Intersection point is in front of camera
-                                    // Bevy world coords: (x, y, z) where y is vertical
-                                    // Sim coords map to Bevy as: sim(x,y,z) -> bevy(x,z,y)
-                                    let ignite_x = ray.origin.x + t * ray_dir.x;
-                                    let ignite_z = ray.origin.z + t * ray_dir.z;
+                                for element in &elements {
+                                    // element.position is sim coords (x, y)
+                                    let dx = element.position.x - ignite_x;
+                                    let dy = element.position.y - ignite_y;
+                                    let dist = (dx * dx + dy * dy).sqrt();
 
+                                    if dist < closest_dist && dist < 10.0 {
+                                        // Within 10m
+                                        closest_dist = dist;
+                                        closest_id = Some(element.id);
+                                    }
+                                }
+
+                                // Ignite the closest element
+                                if let Some(id) = closest_id {
                                     println!(
-                                        "Cursor world position (Bevy X,Z): ({:.2}, {:.2})",
-                                        ignite_x, ignite_z
+                                        "Igniting element {} at distance {:.2}m from cursor",
+                                        id, closest_dist
                                     );
-
-                                    // Find the closest fuel element to cursor position and ignite it
-                                    let elements = sim_state.simulation.get_all_elements();
-                                    let mut closest_id: Option<u32> = None;
-                                    let mut closest_dist = f32::MAX;
-
-                                    for element in &elements {
-                                        // element.position is sim coords (x, y)
-                                        // which correspond to Bevy coords (x, z)
-                                        let dx = element.position.x - ignite_x;
-                                        let dz = element.position.y - ignite_z;
-                                        let dist = (dx * dx + dz * dz).sqrt();
-
-                                        if dist < closest_dist && dist < 10.0 {
-                                            // Within 10m
-                                            closest_dist = dist;
-                                            closest_id = Some(element.id);
-                                        }
-                                    }
-
-                                    // Ignite the closest element
-                                    if let Some(id) = closest_id {
-                                        println!(
-                                            "Igniting element {} at distance {:.2}m from cursor",
-                                            id, closest_dist
-                                        );
-                                        sim_state.simulation.ignite_element(id, 600.0);
-                                    } else {
-                                        println!(
-                                            "No fuel element found within 10m of cursor position (Bevy X,Z): ({:.2}, {:.2})",
-                                            ignite_x, ignite_z
-                                        );
-                                        println!("Total fuel elements: {}", elements.len());
-                                        if let Some(first) = elements.first() {
-                                            println!(
-                                                "First element sim position (x,y) = Bevy (x,z): ({:.2}, {:.2})",
-                                                first.position.x,
-                                                first.position.y
-                                            );
-                                        }
-                                    }
+                                    sim_state.simulation.ignite_element(id, 600.0);
                                 } else {
                                     println!(
-                                        "DEBUG: Ray intersection behind camera (t = {:.2})",
-                                        t
+                                        "No fuel element found within 10m of cursor position (Sim X,Y): ({:.2}, {:.2})",
+                                        ignite_x, ignite_y
                                     );
+                                    println!("Total fuel elements: {}", elements.len());
+                                    if let Some(first) = elements.first() {
+                                        println!(
+                                            "First element sim position (x,y): ({:.2}, {:.2})",
+                                            first.position.x,
+                                            first.position.y
+                                        );
+                                    }
                                 }
                             } else {
-                                println!("DEBUG: Ray nearly parallel to ground");
+                                println!("DEBUG: No terrain intersection found");
                             }
                         } else {
                             println!("DEBUG: Failed to cast ray from camera");
@@ -1380,50 +1384,46 @@ fn handle_controls(
                         // Cast ray from camera through cursor position
                         if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
                         {
-                            // Find intersection with ground plane (z = 0)
-                            // Ray equation: P = origin + t * direction
-                            // Ground plane: z = 0
-                            // Solve for t: origin.z + t * direction.z = 0
-                            let ray_dir = *ray.direction;
+                            // Use bevy_picking's MeshRayCast to find terrain intersection
+                            let settings = MeshRayCastSettings::default()
+                                .always_early_exit(); // Stop at first hit
+                            
+                            let hits = ray_cast.cast_ray(ray, &settings);
+                            
+                            if let Some((_entity, hit)) = hits.first() {
+                                // hit.point is in world space (Bevy coordinates: x, y=height, z)
+                                let world_pos = hit.point;
+                                
+                                // Convert Bevy world coords to sim coords
+                                // Bevy: (x, y=height, z) -> Sim: (x, z, y=height)
+                                let drop_x = world_pos.x;
+                                let drop_y = world_pos.z;
+                                let terrain_elevation = world_pos.y;
+                                let drop_altitude = terrain_elevation + 60.0; // Start 60m above terrain
 
-                            if ray_dir.z.abs() > 0.001 {
-                                // Ray intersects ground plane
-                                let t = -ray.origin.z / ray_dir.z;
+                                println!(
+                                    "Dropping water at ({:.2}, {:.2}, {:.2}) - 30 droplets",
+                                    drop_x, drop_y, drop_altitude
+                                );
 
-                                if t > 0.0 {
-                                    // Intersection point is in front of camera
-                                    let drop_x = ray.origin.x + t * ray_dir.x;
-                                    let drop_y = ray.origin.y + t * ray_dir.y;
-
-                                    // Get terrain elevation at drop position
-                                    let terrain_elevation = sim_state
-                                        .simulation
-                                        .get_terrain()
-                                        .elevation_at(drop_x, drop_y);
-                                    let drop_altitude = terrain_elevation + 60.0; // Start 60m above terrain
-
-                                    println!(
-                                        "Dropping water at ({:.2}, {:.2}, {:.2}) - 30 droplets",
-                                        drop_x, drop_y, drop_altitude
+                                // Add water droplets in a circular pattern at cursor position
+                                for i in 0..30 {
+                                    let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
+                                    let radius = 25.0;
+                                    let droplet = SuppressionDroplet::new(
+                                        SimVec3::new(
+                                            drop_x + angle.cos() * radius,
+                                            drop_y + angle.sin() * radius,
+                                            drop_altitude,
+                                        ),
+                                        SimVec3::new(0.0, 0.0, -5.0),
+                                        10.0,
+                                        SuppressionAgent::Water,
                                     );
-
-                                    // Add water droplets in a circular pattern at cursor position
-                                    for i in 0..30 {
-                                        let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
-                                        let radius = 25.0;
-                                        let droplet = SuppressionDroplet::new(
-                                            SimVec3::new(
-                                                drop_x + angle.cos() * radius,
-                                                drop_y + angle.sin() * radius,
-                                                drop_altitude,
-                                            ),
-                                            SimVec3::new(0.0, 0.0, -5.0),
-                                            10.0,
-                                            SuppressionAgent::Water,
-                                        );
-                                        sim_state.simulation.add_suppression_droplet(droplet);
-                                    }
+                                    sim_state.simulation.add_suppression_droplet(droplet);
                                 }
+                            } else {
+                                println!("DEBUG: No terrain intersection found for water drop");
                             }
                         }
                     }
