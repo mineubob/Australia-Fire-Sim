@@ -275,6 +275,69 @@ pub(crate) fn apply_suppression_to_grid(droplet: &SuppressionDroplet, grid: &mut
     }
 }
 
+/// Apply suppression directly to grid at specified coordinates without physics simulation
+///
+/// This method immediately applies suppression agent to the grid at the given position,
+/// bypassing the physics-based droplet simulation. Useful for direct application
+/// such as ground crews or instant effects.
+///
+/// # Parameters
+/// - `position`: World coordinates (x, y, z) where suppression is applied
+/// - `mass`: Mass of suppression agent in kg
+/// - `agent_type`: Type of suppression agent (Water, Retardant, Foam)
+/// - `grid`: Mutable reference to the simulation grid
+pub fn apply_suppression_direct(
+    position: Vec3,
+    mass: f32,
+    agent_type: SuppressionAgent,
+    grid: &mut SimulationGrid,
+) {
+    // Get values we need before borrowing mutably
+    let cell_volume = grid.cell_size.powi(3);
+    let ambient_temp = grid.ambient_temperature;
+
+    if let Some(cell) = grid.cell_at_position_mut(position) {
+        // Add suppression agent to cell
+        let concentration_increase = mass / cell_volume;
+        cell.suppression_agent += concentration_increase;
+
+        // Cooling effect based on agent type
+        let cooling_capacity = match agent_type {
+            SuppressionAgent::Water => {
+                // Latent heat of vaporization: 2260 kJ/kg
+                // Sensible heat: ~4.18 kJ/(kg·K) × temp rise
+                // Assume agent is at 20°C
+                let sensible = 4.18 * (100.0 - 20.0);
+                2260.0 + sensible
+            }
+            SuppressionAgent::ShortTermRetardant => 2500.0,
+            SuppressionAgent::LongTermRetardant => 1800.0 + 500.0,
+            SuppressionAgent::Foam => 3000.0,
+        };
+
+        let cooling_kj = mass * cooling_capacity;
+        let air_mass = cell.air_density() * cell_volume;
+        let specific_heat_air = 1.005; // kJ/(kg·K)
+        let temp_drop = cooling_kj / (air_mass * specific_heat_air);
+
+        cell.temperature = (cell.temperature - temp_drop).max(ambient_temp);
+
+        // Increase humidity (water vapor)
+        if matches!(
+            agent_type,
+            SuppressionAgent::Water | SuppressionAgent::Foam
+        ) {
+            let vapor_added = mass * 0.1; // Some evaporates immediately
+            cell.water_vapor += vapor_added / cell_volume;
+
+            // Humidity increases
+            let max_vapor = 0.04; // Max ~40 g/m³
+            let vapor_fraction = (cell.water_vapor / max_vapor).min(1.0);
+            cell.humidity = cell.humidity.max(vapor_fraction);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,5 +463,61 @@ mod tests {
 
         // Foam should have higher cooling capacity
         assert!(foam.cooling_capacity() > water.cooling_capacity());
+    }
+
+    #[test]
+    fn test_direct_suppression_application() {
+        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
+        let mut grid = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain);
+
+        let position = Vec3::new(50.0, 50.0, 10.0);
+        let mass = 10.0; // 10 kg
+
+        let initial_temp = grid.cell_at_position(position).unwrap().temperature;
+
+        // Apply water directly without physics simulation
+        apply_suppression_direct(position, mass, SuppressionAgent::Water, &mut grid);
+
+        // Should cool the cell
+        let final_temp = grid.cell_at_position(position).unwrap().temperature;
+        assert!(final_temp <= initial_temp);
+
+        // Suppression agent should be present
+        let agent = grid.cell_at_position(position).unwrap().suppression_agent;
+        assert!(agent > 0.0);
+
+        // Humidity should increase for water
+        let humidity = grid.cell_at_position(position).unwrap().humidity;
+        assert!(humidity > 0.0);
+    }
+
+    #[test]
+    fn test_direct_suppression_different_agents() {
+        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
+        
+        // Test water
+        let mut grid_water = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain.clone());
+        let position = Vec3::new(50.0, 50.0, 10.0);
+        apply_suppression_direct(position, 5.0, SuppressionAgent::Water, &mut grid_water);
+        let water_agent = grid_water.cell_at_position(position).unwrap().suppression_agent;
+
+        // Test foam
+        let mut grid_foam = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain.clone());
+        apply_suppression_direct(position, 5.0, SuppressionAgent::Foam, &mut grid_foam);
+        let foam_agent = grid_foam.cell_at_position(position).unwrap().suppression_agent;
+
+        // Test retardant
+        let mut grid_retardant = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain);
+        apply_suppression_direct(position, 5.0, SuppressionAgent::LongTermRetardant, &mut grid_retardant);
+        let retardant_agent = grid_retardant.cell_at_position(position).unwrap().suppression_agent;
+
+        // All should have suppression agent applied
+        assert!(water_agent > 0.0);
+        assert!(foam_agent > 0.0);
+        assert!(retardant_agent > 0.0);
+
+        // Should be roughly equal since same mass was applied
+        assert_relative_eq!(water_agent, foam_agent, epsilon = 0.001);
+        assert_relative_eq!(water_agent, retardant_agent, epsilon = 0.001);
     }
 }

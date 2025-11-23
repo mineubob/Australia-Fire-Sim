@@ -6,5 +6,6 @@ pub mod suppression_physics;
 
 // Re-export only public types (not internal functions)
 pub use suppression_physics::{
-    AircraftDrop, GroundSuppression, SuppressionAgent, SuppressionDroplet,
+    apply_suppression_direct, AircraftDrop, GroundSuppression, SuppressionAgent,
+    SuppressionDroplet,
 };

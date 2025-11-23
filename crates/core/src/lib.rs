@@ -27,5 +27,8 @@ pub use core_types::{Ember, SpatialIndex};
 
 // Re-export ultra-realistic types
 pub use grid::{GridCell, SimulationGrid, TerrainData};
-pub use physics::{AircraftDrop, GroundSuppression, SuppressionAgent, SuppressionDroplet};
+pub use physics::{
+    apply_suppression_direct, AircraftDrop, GroundSuppression, SuppressionAgent,
+    SuppressionDroplet,
+};
 pub use simulation::{FireSimulation, SimulationStats};

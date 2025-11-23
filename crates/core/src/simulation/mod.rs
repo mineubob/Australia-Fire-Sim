@@ -147,6 +147,25 @@ impl FireSimulation {
         self.suppression_droplets.push(droplet);
     }
 
+    /// Apply suppression directly at specified coordinates without physics simulation
+    ///
+    /// This method immediately applies suppression agent to the grid at the given position,
+    /// bypassing the physics-based droplet simulation. Useful for direct application
+    /// such as ground crews or instant effects.
+    ///
+    /// # Parameters
+    /// - `position`: World coordinates (x, y, z) where suppression is applied
+    /// - `mass`: Mass of suppression agent in kg
+    /// - `agent_type`: Type of suppression agent (Water, Retardant, Foam)
+    pub fn apply_suppression_direct(
+        &mut self,
+        position: Vec3,
+        mass: f32,
+        agent_type: crate::physics::SuppressionAgent,
+    ) {
+        crate::physics::apply_suppression_direct(position, mass, agent_type, &mut self.grid);
+    }
+
     /// Main simulation update
     pub fn update(&mut self, dt: f32) {
         self.simulation_time += dt;

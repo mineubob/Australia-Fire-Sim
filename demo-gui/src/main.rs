@@ -12,7 +12,7 @@ use bevy::picking::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use fire_sim_core::{
-    FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData,
+    FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData,
     Vec3 as SimVec3, WeatherPreset, WeatherSystem,
 };
 // sysinfo not needed - using bevy diagnostic plugins instead
@@ -1386,28 +1386,26 @@ fn handle_controls(
                                 let drop_x = world_pos.x;
                                 let drop_y = world_pos.z;
                                 let terrain_elevation = world_pos.y;
-                                let drop_altitude = terrain_elevation + 60.0; // Start 60m above terrain
 
                                 println!(
-                                    "Dropping water at ({:.2}, {:.2}, {:.2}) - 30 droplets",
-                                    drop_x, drop_y, drop_altitude
+                                    "Applying water directly at ({:.2}, {:.2}, {:.2}) - 300 kg total",
+                                    drop_x, drop_y, terrain_elevation
                                 );
 
-                                // Add water droplets in a circular pattern at cursor position
+                                // Apply water directly in a circular pattern at cursor position
+                                // Distribute 300 kg total over 30 points (10 kg each)
                                 for i in 0..30 {
                                     let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
                                     let radius = 25.0;
-                                    let droplet = SuppressionDroplet::new(
-                                        SimVec3::new(
-                                            drop_x + angle.cos() * radius,
-                                            drop_y + angle.sin() * radius,
-                                            drop_altitude,
-                                        ),
-                                        SimVec3::new(0.0, 0.0, -5.0),
+                                    let apply_x = drop_x + angle.cos() * radius;
+                                    let apply_y = drop_y + angle.sin() * radius;
+                                    
+                                    // Apply directly at ground level
+                                    sim_state.simulation.apply_suppression_direct(
+                                        SimVec3::new(apply_x, apply_y, terrain_elevation),
                                         10.0,
                                         SuppressionAgent::Water,
                                     );
-                                    sim_state.simulation.add_suppression_droplet(droplet);
                                 }
                             } else {
                                 println!("DEBUG: No terrain intersection found for water drop");
