@@ -401,7 +401,11 @@ fn render_menu_ui(
                             .selected_text(config.fuel_type.name())
                             .show_ui(ui, |ui| {
                                 for variant in FuelType::all() {
-                                    ui.selectable_value(&mut config.fuel_type, variant, variant.name());
+                                    ui.selectable_value(
+                                        &mut config.fuel_type,
+                                        variant,
+                                        variant.name(),
+                                    );
                                 }
                             });
                     });
@@ -450,7 +454,9 @@ fn render_menu_ui(
                     } else {
                         ui.horizontal(|ui| {
                             ui.label("Temperature (°C):");
-                            ui.add(egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"));
+                            ui.add(
+                                egui::Slider::new(&mut config.temperature, 10.0..=50.0).text("°C"),
+                            );
                         });
 
                         ui.horizontal(|ui| {
@@ -460,13 +466,16 @@ fn render_menu_ui(
 
                         ui.horizontal(|ui| {
                             ui.label("Wind Speed (km/h):");
-                            ui.add(egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"));
+                            ui.add(
+                                egui::Slider::new(&mut config.wind_speed, 0.0..=40.0).text("km/h"),
+                            );
                         });
 
                         ui.horizontal(|ui| {
                             ui.label("Wind Direction (degrees):");
                             ui.add(
-                                egui::Slider::new(&mut config.wind_direction, 0.0..=360.0).text("°"),
+                                egui::Slider::new(&mut config.wind_direction, 0.0..=360.0)
+                                    .text("°"),
                             );
                         });
 
@@ -491,7 +500,7 @@ fn render_menu_ui(
                         next_state.set(GameState::InGame);
                     }
                     ui.add_space(10.0);
-                    
+
                     if ui
                         .add_sized(
                             [300.0, 50.0],
@@ -652,17 +661,17 @@ fn setup_game(
     let map_center_x = config.map_width / 2.0;
     let map_center_z = config.map_height / 2.0;
     let map_max_dim = config.map_width.max(config.map_height);
-    
+
     // Camera distance scales with map size (larger maps need more zoom out)
     // Base distance for 200x200 map is 150, scale proportionally
     let camera_distance = (map_max_dim / 200.0) * 150.0;
     let camera_height = (map_max_dim / 200.0) * 120.0;
-    
+
     // Position camera at 45-degree angle to view the map
     let camera_offset = camera_distance * 0.707; // cos(45°) ≈ 0.707
     let camera_x = map_center_x + camera_offset;
     let camera_z = map_center_z + camera_offset;
-    
+
     commands.spawn((
         Camera3d::default(),
         Camera {
