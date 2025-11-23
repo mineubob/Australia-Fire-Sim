@@ -4,7 +4,7 @@
 
 use clap::{Parser, ValueEnum};
 use fire_sim_core::{
-    FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionDroplet, TerrainData, Vec3,
+    FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3,
     WeatherSystem,
 };
 
@@ -247,27 +247,25 @@ fn main() {
 
         // Add suppression at halfway point
         if args.suppression && step == suppression_time {
-            println!("\n>>> DEPLOYING WATER SUPPRESSION <<<\n");
+            println!("\n>>> DEPLOYING WATER SUPPRESSION (DIRECT APPLICATION) <<<\n");
 
-            // Calculate drop altitude from terrain (60m above the center elevation)
+            // Calculate ground elevation at center
             let center_elevation = sim.grid.terrain.elevation_at(center_x, center_y);
-            let drop_altitude = center_elevation + 60.0;
 
-            // Add water droplets in a circular pattern around the center
+            // Apply water directly in a circular pattern around the center
+            // Total 300 kg distributed over 30 points (10 kg each)
             for i in 0..30 {
                 let angle = i as f32 * std::f32::consts::PI * 2.0 / 30.0;
                 let radius = 25.0;
-                let droplet = SuppressionDroplet::new(
+                sim.apply_suppression_direct(
                     Vec3::new(
                         center_x + angle.cos() * radius,
                         center_y + angle.sin() * radius,
-                        drop_altitude,
+                        center_elevation,
                     ),
-                    Vec3::new(0.0, 0.0, -5.0), // Falling downward
-                    10.0,                      // 10 kg each
+                    10.0, // 10 kg per point
                     SuppressionAgent::Water,
                 );
-                sim.add_suppression_droplet(droplet);
             }
         }
     }
