@@ -375,16 +375,16 @@ fn test_ember_spotting_between_trees() {
     
     println!("EXTREME CONDITIONS: Temp=44°C, Humidity=8%, Wind=35km/h, FFDI={:.1}", sim.weather.calculate_ffdi());
     
-    // Create two trees far apart (25m gap - only embers can bridge this)
+    // Create two trees far apart (35m gap - beyond wind-extended search radius, only embers can bridge this)
     let tree1_center = Vec3::new(40.0, 75.0, 0.0);
-    let tree2_center = Vec3::new(65.0, 75.0, 0.0); // 25m south (downwind)
+    let tree2_center = Vec3::new(75.0, 75.0, 0.0); // 35m south (downwind)
     
     let tree1_elements = create_eucalyptus_tree(&mut sim, tree1_center, 15.0);
     let tree2_elements = create_eucalyptus_tree(&mut sim, tree2_center, 15.0);
     
     println!("Tree 1 at ({:.1}, {:.1}): {} elements", tree1_center.x, tree1_center.y, tree1_elements.len());
     println!("Tree 2 at ({:.1}, {:.1}): {} elements", tree2_center.x, tree2_center.y, tree2_elements.len());
-    println!("Gap: 25m (requires ember transport)\n");
+    println!("Gap: 35m (beyond wind-extended search, requires ember transport)\n");
     
     // Ignite first tree
     sim.ignite_element(tree1_elements[0], 800.0);

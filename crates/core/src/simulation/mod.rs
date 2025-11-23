@@ -229,13 +229,28 @@ impl FireSimulation {
         let elements_to_process: Vec<u32> = self.burning_elements.iter().copied().collect();
 
         // Cache spatial queries to avoid repeated lookups (major performance win)
+        // Use wind-directional search radius for realistic fire spread
+        let wind_vector = self.weather.wind_vector();
+        let wind_speed_ms = wind_vector.magnitude();
+        
         let nearby_cache: Vec<(u32, Vec3, Vec<u32>)> = elements_to_process
             .iter()
             .filter_map(|&element_id| {
                 self.get_element(element_id).map(|e| {
+                    // Wind-directional search radius: base 10m, extends downwind
+                    // Downwind: 10m + (wind_speed × 1.5) = up to 25m at 10 m/s
+                    // This allows fire to "reach out" in wind direction while maintaining
+                    // inverse-square heat falloff with distance
+                    let downwind_extension = if wind_speed_ms > 0.1 {
+                        wind_speed_ms * 1.5
+                    } else {
+                        0.0
+                    };
+                    let search_radius = self.max_search_radius + downwind_extension;
+                    
                     let nearby = self
                         .spatial_index
-                        .query_radius(e.position, self.max_search_radius);
+                        .query_radius(e.position, search_radius);
                     (element_id, e.position, nearby)
                 })
             })
