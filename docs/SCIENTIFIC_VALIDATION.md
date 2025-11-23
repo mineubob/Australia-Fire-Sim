@@ -121,7 +121,11 @@ Where:
 - I=2000 kW/m → L≈2.3m (machinery needed) ✅
 - I=4000 kW/m → L≈3.5m (only aerial suppression) ✅
 
-**Location in Code:** `crates/core/src/core_types/element.rs` (Byram intensity calculation)
+**Location in Code:** `crates/core/src/core_types/element.rs:204-243`
+
+- `byram_fireline_intensity()` at line 204
+- `calculate_flame_height()` at line 230
+- `update_flame_height()` at line 242
 
 ---
 
@@ -262,11 +266,11 @@ Fire naturally climbs due to:
 ✅ **Sequential heat application** - evaporation before temperature rise
 
 **Critical Implementation:**
-The code correctly implements the physical sequence:
-1. Calculate moisture mass
-2. Apply heat to evaporation (2260 kJ/kg)
-3. Only remaining heat raises temperature
-4. Cap at fuel-specific maximum temperature
+The code correctly implements the physical sequence in `crates/core/src/core_types/element.rs:94-144`:
+1. Calculate moisture mass (line 101)
+2. Apply heat to evaporation (2260 kJ/kg) (lines 103-105)
+3. Only remaining heat raises temperature (lines 115-127)
+4. Cap at fuel-specific maximum temperature (line 129)
 
 This prevents unrealistic thermal runaway and creates realistic ignition delays.
 
@@ -275,7 +279,7 @@ This prevents unrealistic thermal runaway and creates realistic ignition delays.
 - Fire behavior modeling standards
 - Albini (1976) - "Computer-based models of wildland fire behavior"
 
-**Location in Code:** Repository instructions document this critical requirement
+**Location in Code:** `crates/core/src/core_types/element.rs:94-144` (apply_heat method)
 
 ### 7.2 Specific Heat Capacity
 
