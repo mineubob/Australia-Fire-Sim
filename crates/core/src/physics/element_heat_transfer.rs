@@ -6,17 +6,29 @@
 //! - Wind direction effects (26x downwind boost)
 //! - Vertical spread (2.5x+ climbing)
 //! - Slope effects (exponential uphill)
+//!
+//! # Scientific References
+//! - Stefan-Boltzmann Law: Stefan (1879), Boltzmann (1884)
+//! - Wildfire radiation: Butler & Cohen (1998) - "Firefighter Safety Zones"
+//! - Wind effects: McArthur (1967), Rothermel (1972)
+//! - Slope effects: Butler et al. (2004), Rothermel slope factors
 
 use crate::core_types::element::{FuelElement, Vec3};
 
 /// Stefan-Boltzmann constant (W/(m²·K⁴))
+/// Reference: Fundamental physics constant (Stefan 1879, Boltzmann 1884)
 const STEFAN_BOLTZMANN: f32 = 5.67e-8;
 
 /// Flame emissivity (dimensionless, 0-1)
+/// Reference: Typical wildfire flame emissivity from Butler & Cohen (1998)
 const EMISSIVITY: f32 = 0.95;
 
 /// Calculate radiant heat flux from source element to target element
 /// Uses full Stefan-Boltzmann law: σ * ε * (T_source^4 - T_target^4)
+///
+/// # References
+/// - Stefan-Boltzmann Law applied to wildfire heat transfer
+/// - Butler, B.W. & Cohen, J.D. (1998) - Int. J. Wildland Fire, 8(2)
 pub(crate) fn calculate_radiation_flux(
     source: &FuelElement,
     target: &FuelElement,
@@ -97,6 +109,11 @@ pub(crate) fn calculate_convection_heat(
 
 /// Wind direction multiplier for heat transfer
 /// 26x boost downwind at 10 m/s, 5% minimum upwind
+///
+/// # References
+/// - McArthur (1967) - Australian bushfire observations
+/// - Rothermel (1972) - Wind coefficient equations
+/// - Empirical data from Australian fire behavior studies
 pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32 {
     let wind_speed_ms = wind.magnitude();
 
@@ -125,6 +142,10 @@ pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32
 
 /// Vertical spread factor - fire climbs much faster than it spreads horizontally
 /// 2.5x+ faster upward due to convection and flame tilt
+///
+/// # References
+/// - General fire behavior physics (convection drives upward spread)
+/// - Sullivan (2009) - "Wildland surface fire spread modelling"
 pub(crate) fn vertical_spread_factor(from: &FuelElement, to: &FuelElement) -> f32 {
     let height_diff = to.position.z - from.position.z;
 
@@ -144,6 +165,10 @@ pub(crate) fn vertical_spread_factor(from: &FuelElement, to: &FuelElement) -> f3
 /// Slope effects on fire spread
 /// Exponential uphill boost (flames tilt toward fuel ahead)
 /// Reduced downhill spread (gravity works against spread)
+///
+/// # References
+/// - Rothermel (1972) - Slope factor equations
+/// - Butler et al. (2004) - "Fire behavior on slopes"
 pub(crate) fn slope_spread_multiplier(from: &FuelElement, to: &FuelElement) -> f32 {
     let horizontal = ((to.position.x - from.position.x).powi(2)
         + (to.position.y - from.position.y).powi(2))

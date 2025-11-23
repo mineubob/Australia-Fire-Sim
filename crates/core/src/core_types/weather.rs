@@ -979,9 +979,12 @@ impl WeatherSystem {
         let df = self.drought_factor.max(1.0);
 
         // McArthur Mark 5 FFDI formula (official)
+        // Reference: Noble et al. (1980) - "McArthur's fire-danger meters expressed as equations"
+        // Australian Journal of Ecology, 5(2), 201-203
         // Calibration constant 2.11 provides best match to WA Fire Behaviour Calculator:
         // - T=30°C, H=30%, V=30km/h, D=5 → FFDI=13.0 (reference: 12.7)
         // - T=45°C, H=10%, V=60km/h, D=10 → FFDI=172.3 (reference: 173.5)
+        // https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest
         let exponent = -0.45 + 0.987 * df.ln() - 0.0345 * self.humidity
             + 0.0338 * self.temperature
             + 0.0234 * self.wind_speed;

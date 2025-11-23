@@ -124,6 +124,12 @@ pub struct Fuel {
 
 impl Fuel {
     /// Create Eucalyptus Stringybark - extreme ladder fuel
+    ///
+    /// # Scientific References
+    /// - Pausas et al. (2017) - "Fuelbed ignition potential and bark morphology"
+    /// - Forest Education Foundation - "Eucalypts and Fire"
+    /// - Black Saturday 2009 Royal Commission (25km spotting observations)
+    /// - Oil properties: eucalyptol vaporization and autoignition temperatures
     pub fn eucalyptus_stringybark() -> Self {
         Fuel {
             id: 1,

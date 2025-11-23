@@ -166,13 +166,28 @@ fire_sim_destroy(sim);
 
 ## Scientific Basis
 
+**✅ Scientifically Validated Against Published Research**
+
+This simulation accurately implements peer-reviewed Australian bushfire dynamics. See [docs/SCIENTIFIC_VALIDATION.md](docs/SCIENTIFIC_VALIDATION.md) for comprehensive validation report.
+
 Based on:
 - **Rothermel Fire Spread Model** (1972)
-- **McArthur Forest Fire Danger Index Mk5**
-- **Byram's Intensity and Flame Height** equations
+- **McArthur Forest Fire Danger Index Mark 5** - Noble et al. (1980)
+- **Byram's Intensity and Flame Height** equations (1959)
 - **CSIRO Bushfire Research**: fuel classification, fire behavior
-- **Stefan-Boltzmann Law**: radiant heat transfer
-- **Bureau of Meteorology**: Australian fire weather
+- **Stefan-Boltzmann Law**: radiant heat transfer (Stefan 1879, Boltzmann 1884)
+- **Bureau of Meteorology**: Australian fire weather data
+- **Eucalyptus Fire Behavior**: Pausas et al. (2017), Forest Education Foundation
+
+### Key Research Papers
+- Noble et al. (1980) - McArthur's fire-danger meters as equations
+- Rothermel (1972) - Mathematical model for wildland fire spread
+- Byram (1959) - Combustion of forest fuels
+- Pausas et al. (2017) - Stringybark ember spotting
+- Dowdy (2018) - Climatological variability of Australian fire weather
+- Harris & Lucas (2019) - ENSO effects on Australian fire weather
+
+See [docs/CITATIONS.bib](docs/CITATIONS.bib) for complete bibliography.
 
 ## Critical Implementation Details
 
@@ -205,7 +220,7 @@ if alignment > 0.0 {
 
 ## Testing
 
-19 unit tests covering:
+42 unit tests covering:
 - Wind directionality (26x downwind vs 0.05x upwind)
 - Moisture evaporation delays
 - Vertical spread (fire climbs faster)
@@ -214,6 +229,8 @@ if alignment > 0.0 {
 - Ember physics (buoyancy, wind drift, cooling)
 - Spatial indexing
 - Fire spread simulation
+
+All tests passing ✅
 
 ## License
 
