@@ -543,18 +543,25 @@ impl FromWorld for SimulationState {
 
 impl SimulationState {
     fn from_config(config: &DemoConfig) -> Self {
+        let terrain_hill = config.map_height.min(config.map_width) * 0.25;
+
         // Create terrain based on config
         let terrain = match config.terrain_type {
             TerrainType::Flat => TerrainData::flat(config.map_width, config.map_height, 5.0, 0.0),
-            TerrainType::Hill => {
-                TerrainData::single_hill(config.map_width, config.map_height, 5.0, 0.0, 80.0, 40.0)
-            }
+            TerrainType::Hill => TerrainData::single_hill(
+                config.map_width,
+                config.map_height,
+                5.0,
+                0.0,
+                terrain_hill,
+                terrain_hill,
+            ),
             TerrainType::Valley => TerrainData::valley_between_hills(
                 config.map_width,
                 config.map_height,
                 5.0,
                 0.0,
-                80.0,
+                terrain_hill,
             ),
         };
 
@@ -979,20 +986,6 @@ fn update_ui(
         .and_then(|mem| mem.smoothed())
         .unwrap_or(0.0);
 
-    // Calculate wind direction arrow based on angle
-    // Wind direction is where the wind is coming FROM (meteorological convention)
-    let wind_arrow = match weather.wind_direction as i32 {
-        337..=360 | 0..=22 => "↓", // North wind (coming from north, blowing south)
-        23..=67 => "↙",            // Northeast wind
-        68..=112 => "←",           // East wind (coming from east, blowing west)
-        113..=157 => "↖",          // Southeast wind
-        158..=202 => "↑",          // South wind (coming from south, blowing north)
-        203..=247 => "↗",          // Southwest wind
-        248..=292 => "→",          // West wind (coming from west, blowing east)
-        293..=336 => "↘",          // Northwest wind
-        _ => "?",
-    };
-
     let ctx = contexts.ctx_mut()?;
 
     // Title and controls panel (top-left)
@@ -1065,10 +1058,7 @@ fn update_ui(
             ui.label(format!("Temperature: {:.0}°C", weather.temperature));
             ui.label(format!("Humidity: {:.0}%", weather.humidity));
             ui.label(format!("Wind Speed: {:.1} m/s", weather.wind_speed));
-            ui.label(format!(
-                "Wind Direction: {:.0}° {}",
-                weather.wind_direction, wind_arrow
-            ));
+            ui.label(format!("Wind Direction: {:.0}°", weather.wind_direction,));
             ui.label(format!("Drought Factor: {:.1}", weather.drought_factor));
 
             ui.separator();
@@ -1289,11 +1279,10 @@ fn handle_controls(
                         if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
                         {
                             // Use bevy_picking's MeshRayCast to find terrain intersection
-                            let settings = MeshRayCastSettings::default()
-                                .always_early_exit(); // Stop at first hit
-                            
+                            let settings = MeshRayCastSettings::default().always_early_exit(); // Stop at first hit
+
                             let hits = ray_cast.cast_ray(ray, &settings);
-                            
+
                             if let Some((_entity, hit)) = hits.first() {
                                 // hit.point is in world space (Bevy coordinates: x, y=height, z)
                                 let world_pos = hit.point;
@@ -1301,12 +1290,12 @@ fn handle_controls(
                                     "Terrain hit at world position: ({:.2}, {:.2}, {:.2})",
                                     world_pos.x, world_pos.y, world_pos.z
                                 );
-                                
+
                                 // Convert Bevy world coords to sim coords
                                 // Bevy: (x, y=height, z) -> Sim: (x, z, y=height)
                                 let ignite_x = world_pos.x;
                                 let ignite_y = world_pos.z;
-                                
+
                                 println!(
                                     "Cursor world position (Sim X,Y): ({:.2}, {:.2})",
                                     ignite_x, ignite_y
@@ -1346,8 +1335,7 @@ fn handle_controls(
                                     if let Some(first) = elements.first() {
                                         println!(
                                             "First element sim position (x,y): ({:.2}, {:.2})",
-                                            first.position.x,
-                                            first.position.y
+                                            first.position.x, first.position.y
                                         );
                                     }
                                 }
@@ -1385,15 +1373,14 @@ fn handle_controls(
                         if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position)
                         {
                             // Use bevy_picking's MeshRayCast to find terrain intersection
-                            let settings = MeshRayCastSettings::default()
-                                .always_early_exit(); // Stop at first hit
-                            
+                            let settings = MeshRayCastSettings::default().always_early_exit(); // Stop at first hit
+
                             let hits = ray_cast.cast_ray(ray, &settings);
-                            
+
                             if let Some((_entity, hit)) = hits.first() {
                                 // hit.point is in world space (Bevy coordinates: x, y=height, z)
                                 let world_pos = hit.point;
-                                
+
                                 // Convert Bevy world coords to sim coords
                                 // Bevy: (x, y=height, z) -> Sim: (x, z, y=height)
                                 let drop_x = world_pos.x;
