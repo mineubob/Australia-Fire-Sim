@@ -300,10 +300,10 @@ pub fn spawn_embers(
 
         // Launch embers slightly above source (2m offset for flame zone)
         let ember_position = position + Vec3::new(0.0, 0.0, 2.0);
-        
+
         // Ember temperature: 70-90% of source fire temperature
         let ember_temp = temperature * rng.random_range(0.7..0.9);
-        
+
         // Ember mass: 0.1g to 10g (typical bark fragments)
         let ember_mass = rng.random_range(0.0001..0.01);
 

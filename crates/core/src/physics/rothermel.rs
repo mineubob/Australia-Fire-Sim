@@ -89,10 +89,11 @@ pub fn rothermel_spread_rate(
     // Cruz et al. (2015) Australian Forestry empirical data shows significantly higher spread rates
     // Calibration factor of 50 brings results in line with observed Australian grassfire spread rates
     let australian_calibration = 50.0;
-    
-    let spread_rate = (reaction_intensity * propagating_flux * (1.0 + wind_coefficient + slope_coefficient))
-        / (fuel.bulk_density * effective_heating * heat_preignition)
-        * australian_calibration;
+
+    let spread_rate =
+        (reaction_intensity * propagating_flux * (1.0 + wind_coefficient + slope_coefficient))
+            / (fuel.bulk_density * effective_heating * heat_preignition)
+            * australian_calibration;
 
     spread_rate.max(0.0)
 }
@@ -127,7 +128,8 @@ fn calculate_reaction_intensity(fuel: &Fuel, moisture_fraction: f32) -> f32 {
     let fuel_loading = fuel.bulk_density * fuel.fuel_bed_depth;
 
     // Moisture damping coefficient
-    let moisture_damping = calculate_moisture_damping(moisture_fraction, fuel.moisture_of_extinction);
+    let moisture_damping =
+        calculate_moisture_damping(moisture_fraction, fuel.moisture_of_extinction);
 
     // Mineral damping coefficient (from fuel properties)
     // Varies by fuel type: grass=0.7-0.9, wood=0.41, dead=0.3-0.4
@@ -419,6 +421,9 @@ mod tests {
             damping_half < damping_0,
             "Half-wet fuel should have more damping"
         );
-        assert!(damping_full < 0.1, "Saturated fuel should be heavily damped");
+        assert!(
+            damping_full < 0.1,
+            "Saturated fuel should be heavily damped"
+        );
     }
 }
