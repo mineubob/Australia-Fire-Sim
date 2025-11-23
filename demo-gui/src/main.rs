@@ -992,7 +992,7 @@ fn update_ui(
     egui::Window::new("Australia Fire Simulation")
         .anchor(egui::Align2::LEFT_TOP, [10.0, 10.0])
         .resizable(false)
-        .collapsible(false)
+        .collapsible(true)
         .show(ctx, |ui| {
             ui.colored_label(egui::Color32::LIGHT_GRAY, "Controls:");
             ui.label("  SPACE - Pause/Resume");
@@ -1057,7 +1057,7 @@ fn update_ui(
             ui.heading("WEATHER CONDITIONS");
             ui.label(format!("Temperature: {:.0}°C", weather.temperature));
             ui.label(format!("Humidity: {:.0}%", weather.humidity));
-            ui.label(format!("Wind Speed: {:.1} m/s", weather.wind_speed));
+            ui.label(format!("Wind Speed: {:.1} km/h", weather.wind_speed));
             ui.label(format!("Wind Direction: {:.0}°", weather.wind_direction,));
             ui.label(format!("Drought Factor: {:.1}", weather.drought_factor));
 
