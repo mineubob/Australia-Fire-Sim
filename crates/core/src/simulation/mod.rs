@@ -658,6 +658,11 @@ impl FireSimulation {
     pub fn get_terrain(&self) -> &TerrainData {
         &self.grid.terrain
     }
+
+    /// Get the current number of active embers
+    pub fn ember_count(&self) -> usize {
+        self.embers.len()
+    }
 }
 
 /// Statistics for the simulation

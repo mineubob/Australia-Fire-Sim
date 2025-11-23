@@ -368,4 +368,14 @@ impl FuelElement {
     pub fn flame_height(&self) -> f32 {
         self.flame_height
     }
+
+    /// Get smoldering state (if present)
+    pub fn smoldering_state(&self) -> Option<&crate::physics::SmolderingState> {
+        self.smoldering_state.as_ref()
+    }
+
+    /// Check if crown fire is currently active
+    pub fn is_crown_fire_active(&self) -> bool {
+        self.crown_fire_active
+    }
 }
