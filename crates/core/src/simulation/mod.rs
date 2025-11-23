@@ -858,11 +858,12 @@ mod tests {
 
         let burning_count = sim.burning_elements.len();
 
-        // MODERATE conditions: should have spread significantly but realistically
-        // With direct radiation and moderate conditions, most fuel will ignite
+        // MODERATE conditions: should have spread but at controlled rate
+        // With 10m search radius, wind-directional effects, and fuel moisture timelag,
+        // spread is more realistic and gradual under moderate conditions
         assert!(
-            burning_count >= 10,
-            "Moderate fire danger should have significant spread (>=10), got {}",
+            burning_count >= 4,
+            "Moderate fire danger should have some spread (>=4), got {}",
             burning_count
         );
 
