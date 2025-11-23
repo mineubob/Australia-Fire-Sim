@@ -1,6 +1,4 @@
-use fire_sim_core::{
-    FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3,
-};
+use fire_sim_core::{FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 

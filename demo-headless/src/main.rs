@@ -4,8 +4,7 @@
 
 use clap::{Parser, ValueEnum};
 use fire_sim_core::{
-    FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3,
-    WeatherSystem,
+    FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3, WeatherSystem,
 };
 
 /// Fire size options

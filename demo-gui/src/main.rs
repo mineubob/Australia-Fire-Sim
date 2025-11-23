@@ -12,8 +12,8 @@ use bevy::picking::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use fire_sim_core::{
-    FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData,
-    Vec3 as SimVec3, WeatherPreset, WeatherSystem,
+    FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3 as SimVec3, WeatherPreset,
+    WeatherSystem,
 };
 // sysinfo not needed - using bevy diagnostic plugins instead
 
@@ -1399,7 +1399,7 @@ fn handle_controls(
                                     let radius = 25.0;
                                     let apply_x = drop_x + angle.cos() * radius;
                                     let apply_y = drop_y + angle.sin() * radius;
-                                    
+
                                     // Apply directly at ground level
                                     sim_state.simulation.apply_suppression_direct(
                                         SimVec3::new(apply_x, apply_y, terrain_elevation),

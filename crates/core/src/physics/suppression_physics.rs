@@ -100,10 +100,7 @@ pub fn apply_suppression_direct(
         cell.temperature = (cell.temperature - temp_drop).max(ambient_temp);
 
         // Increase humidity (water vapor)
-        if matches!(
-            agent_type,
-            SuppressionAgent::Water | SuppressionAgent::Foam
-        ) {
+        if matches!(agent_type, SuppressionAgent::Water | SuppressionAgent::Foam) {
             let vapor_added = mass * 0.1; // Some evaporates immediately
             cell.water_vapor += vapor_added / cell_volume;
 
@@ -150,22 +147,36 @@ mod tests {
     #[test]
     fn test_direct_suppression_different_agents() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        
+
         // Test water
         let mut grid_water = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain.clone());
         let position = Vec3::new(50.0, 50.0, 10.0);
         apply_suppression_direct(position, 5.0, SuppressionAgent::Water, &mut grid_water);
-        let water_agent = grid_water.cell_at_position(position).unwrap().suppression_agent;
+        let water_agent = grid_water
+            .cell_at_position(position)
+            .unwrap()
+            .suppression_agent;
 
         // Test foam
         let mut grid_foam = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain.clone());
         apply_suppression_direct(position, 5.0, SuppressionAgent::Foam, &mut grid_foam);
-        let foam_agent = grid_foam.cell_at_position(position).unwrap().suppression_agent;
+        let foam_agent = grid_foam
+            .cell_at_position(position)
+            .unwrap()
+            .suppression_agent;
 
         // Test retardant
         let mut grid_retardant = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain);
-        apply_suppression_direct(position, 5.0, SuppressionAgent::LongTermRetardant, &mut grid_retardant);
-        let retardant_agent = grid_retardant.cell_at_position(position).unwrap().suppression_agent;
+        apply_suppression_direct(
+            position,
+            5.0,
+            SuppressionAgent::LongTermRetardant,
+            &mut grid_retardant,
+        );
+        let retardant_agent = grid_retardant
+            .cell_at_position(position)
+            .unwrap()
+            .suppression_agent;
 
         // All should have suppression agent applied
         assert!(water_agent > 0.0);
@@ -182,14 +193,15 @@ mod tests {
         // Test that different agents have appropriate cooling capacities
         let water_cooling = calculate_cooling_capacity(SuppressionAgent::Water, 20.0);
         let foam_cooling = calculate_cooling_capacity(SuppressionAgent::Foam, 20.0);
-        let retardant_cooling = calculate_cooling_capacity(SuppressionAgent::LongTermRetardant, 20.0);
+        let retardant_cooling =
+            calculate_cooling_capacity(SuppressionAgent::LongTermRetardant, 20.0);
 
         // Water: ~2600 kJ/kg (2260 + 4.18*(100-20))
         assert!(water_cooling > 2500.0 && water_cooling < 2700.0);
-        
+
         // Foam: 3000 kJ/kg (highest)
         assert_relative_eq!(foam_cooling, 3000.0, epsilon = 0.1);
-        
+
         // Long-term retardant: 2300 kJ/kg (1800 + 500)
         assert_relative_eq!(retardant_cooling, 2300.0, epsilon = 0.1);
 
