@@ -73,7 +73,7 @@ impl FireSimulation {
             weather: WeatherSystem::default(),
             embers: Vec::new(),
             _next_ember_id: 0,
-            max_search_radius: 15.0,
+            max_search_radius: 10.0, // Reduced from 15.0m to prevent instant ignition of adjacent trees
             total_fuel_consumed: 0.0,
             total_area_burned: 0.0,
             simulation_time: 0.0,
@@ -566,7 +566,8 @@ impl FireSimulation {
         for &element_id in &self.burning_elements {
             if let Some(element) = self.get_element(element_id) {
                 // Probabilistic ember generation based on fuel ember production
-                let ember_prob = element.fuel.ember_production * dt * 0.1;
+                // Increased multiplier to 0.5 for realistic ember generation rates (was 0.1)
+                let ember_prob = element.fuel.ember_production * dt * 0.5;
                 if ember_prob > 0.0 && rand::random::<f32>() < ember_prob {
                     // Calculate ember lofting height using Albini model
                     let intensity = element.byram_fireline_intensity(wind_vector.norm());
