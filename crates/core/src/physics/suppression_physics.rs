@@ -106,26 +106,7 @@ impl SuppressionDroplet {
 
     /// Get cooling effectiveness (kJ per kg)
     pub fn cooling_capacity(&self) -> f32 {
-        match self.agent_type {
-            SuppressionAgent::Water => {
-                // Latent heat of vaporization: 2260 kJ/kg
-                // Sensible heat: ~4.18 kJ/(kg·K) × temp rise
-                let sensible = 4.18 * (100.0 - self.temperature);
-                2260.0 + sensible
-            }
-            SuppressionAgent::ShortTermRetardant => {
-                // Similar to water but with fire-retarding chemicals
-                2500.0
-            }
-            SuppressionAgent::LongTermRetardant => {
-                // Long-term retardants form coating
-                1800.0 + 500.0 // Cooling + coating benefit
-            }
-            SuppressionAgent::Foam => {
-                // Foam insulates and cools
-                3000.0 // High effectiveness due to coverage
-            }
-        }
+        calculate_cooling_capacity(self.agent_type, self.temperature)
     }
 
     /// Get coverage effectiveness (0-1 scale per kg/m²)
@@ -135,6 +116,49 @@ impl SuppressionDroplet {
             SuppressionAgent::ShortTermRetardant => 0.6, // Better coverage
             SuppressionAgent::LongTermRetardant => 0.9,  // Excellent coverage
             SuppressionAgent::Foam => 0.95,              // Best coverage
+        }
+    }
+}
+
+/// Physical constants for suppression
+const WATER_LATENT_HEAT: f32 = 2260.0; // kJ/kg - latent heat of vaporization
+const WATER_SPECIFIC_HEAT: f32 = 4.18; // kJ/(kg·K)
+const WATER_BOILING_POINT: f32 = 100.0; // °C
+const SHORT_TERM_RETARDANT_COOLING: f32 = 2500.0; // kJ/kg
+const LONG_TERM_RETARDANT_COOLING: f32 = 1800.0; // kJ/kg - base cooling
+const RETARDANT_COATING_BENEFIT: f32 = 500.0; // kJ/kg - additional benefit from coating
+const FOAM_COOLING: f32 = 3000.0; // kJ/kg - high effectiveness due to coverage
+
+/// Calculate cooling capacity for a suppression agent
+///
+/// This function computes the total cooling capacity of a suppression agent
+/// based on its type and temperature. For water, it includes both latent heat
+/// of vaporization and sensible heat capacity.
+///
+/// # Parameters
+/// - `agent_type`: Type of suppression agent
+/// - `temperature`: Current temperature of the agent in °C
+///
+/// # Returns
+/// Cooling capacity in kJ per kg
+fn calculate_cooling_capacity(agent_type: SuppressionAgent, temperature: f32) -> f32 {
+    match agent_type {
+        SuppressionAgent::Water => {
+            // Latent heat of vaporization + sensible heat to reach boiling point
+            let sensible = WATER_SPECIFIC_HEAT * (WATER_BOILING_POINT - temperature);
+            WATER_LATENT_HEAT + sensible
+        }
+        SuppressionAgent::ShortTermRetardant => {
+            // Similar to water but with fire-retarding chemicals
+            SHORT_TERM_RETARDANT_COOLING
+        }
+        SuppressionAgent::LongTermRetardant => {
+            // Long-term retardants form coating that provides additional benefit
+            LONG_TERM_RETARDANT_COOLING + RETARDANT_COATING_BENEFIT
+        }
+        SuppressionAgent::Foam => {
+            // Foam insulates and cools - high effectiveness due to coverage
+            FOAM_COOLING
         }
     }
 }
@@ -302,18 +326,9 @@ pub fn apply_suppression_direct(
         cell.suppression_agent += concentration_increase;
 
         // Cooling effect based on agent type
-        let cooling_capacity = match agent_type {
-            SuppressionAgent::Water => {
-                // Latent heat of vaporization: 2260 kJ/kg
-                // Sensible heat: ~4.18 kJ/(kg·K) × temp rise
-                // Assume agent is at 20°C
-                let sensible = 4.18 * (100.0 - 20.0);
-                2260.0 + sensible
-            }
-            SuppressionAgent::ShortTermRetardant => 2500.0,
-            SuppressionAgent::LongTermRetardant => 1800.0 + 500.0,
-            SuppressionAgent::Foam => 3000.0,
-        };
+        // Assume agent is at standard temperature (20°C) for direct application
+        const STANDARD_AGENT_TEMP: f32 = 20.0;
+        let cooling_capacity = calculate_cooling_capacity(agent_type, STANDARD_AGENT_TEMP);
 
         let cooling_kj = mass * cooling_capacity;
         let air_mass = cell.air_density() * cell_volume;
