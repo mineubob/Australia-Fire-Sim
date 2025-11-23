@@ -113,6 +113,12 @@ pub struct Fuel {
     pub ember_receptivity: f32,     // 0-1 (how easily spot fires ignite)
     pub max_spotting_distance: f32, // meters
 
+    // Rothermel model parameters (fuel-specific)
+    pub mineral_damping: f32,       // 0-1 (mineral/ash content effect, wood=0.41, grass=0.7-0.9)
+    pub particle_density: f32,      // kg/m³ (ρ_p, softwood=450, hardwood=550, grass=300)
+    pub effective_heating: f32,     // 0-1 (fine=0.5-0.6, medium=0.4-0.5, coarse=0.3-0.4)
+    pub packing_ratio: f32,         // 0-1 (β, actual/optimum, compacted=0.8, loose=0.5)
+
     // Australian-specific
     pub volatile_oil_content: f32,       // kg/kg (eucalypts: 0.02-0.05)
     pub oil_vaporization_temp: f32,      // °C (170 for eucalyptus)
@@ -147,6 +153,13 @@ impl Fuel {
             ember_production: 0.9, // EXTREME ember production
             ember_receptivity: 0.6,
             max_spotting_distance: 25000.0, // 25km spotting!
+            
+            // Rothermel parameters (eucalyptus hardwood)
+            mineral_damping: 0.41,      // Moderate mineral content (wood)
+            particle_density: 550.0,    // kg/m³ (eucalyptus hardwood)
+            effective_heating: 0.45,    // Medium-coarse fuel
+            packing_ratio: 0.6,         // Fibrous bark, moderately packed
+            
             volatile_oil_content: 0.04,
             oil_vaporization_temp: 170.0,
             oil_autoignition_temp: 232.0,
@@ -174,6 +187,13 @@ impl Fuel {
             ember_production: 0.5,
             ember_receptivity: 0.5,
             max_spotting_distance: 10000.0, // 10km
+            
+            // Rothermel parameters (eucalyptus hardwood, denser)
+            mineral_damping: 0.41,      // Moderate mineral content
+            particle_density: 600.0,    // kg/m³ (dense eucalyptus)
+            effective_heating: 0.40,    // Coarse fuel
+            packing_ratio: 0.5,         // Smooth bark, loosely packed
+            
             volatile_oil_content: 0.02,
             oil_vaporization_temp: 170.0,
             oil_autoignition_temp: 232.0,
@@ -201,6 +221,13 @@ impl Fuel {
             ember_production: 0.2,       // Minimal embers
             ember_receptivity: 0.8,      // Easy to ignite
             max_spotting_distance: 500.0,
+            
+            // Rothermel parameters (fine herbaceous fuel)
+            mineral_damping: 0.85,      // Low mineral content (grass)
+            particle_density: 300.0,    // kg/m³ (light herbaceous)
+            effective_heating: 0.55,    // Fine fuel heats quickly
+            packing_ratio: 0.8,         // Compacted grass bed
+            
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
             oil_autoignition_temp: 0.0,
@@ -228,6 +255,13 @@ impl Fuel {
             ember_production: 0.4,
             ember_receptivity: 0.6,
             max_spotting_distance: 2000.0,
+            
+            // Rothermel parameters (medium shrub fuel)
+            mineral_damping: 0.55,      // Moderate-low mineral content
+            particle_density: 450.0,    // kg/m³ (woody shrubs)
+            effective_heating: 0.48,    // Medium fuel
+            packing_ratio: 0.65,        // Moderately packed brush
+            
             volatile_oil_content: 0.01,
             oil_vaporization_temp: 180.0,
             oil_autoignition_temp: 250.0,
@@ -255,6 +289,13 @@ impl Fuel {
             ember_production: 0.5,
             ember_receptivity: 0.9, // Highly susceptible
             max_spotting_distance: 1000.0,
+            
+            // Rothermel parameters (medium-coarse dead fuel)
+            mineral_damping: 0.45,      // Higher mineral/ash content (dead material)
+            particle_density: 400.0,    // kg/m³ (decomposed wood)
+            effective_heating: 0.42,    // Medium-coarse fuel
+            packing_ratio: 0.55,        // Loose litter bed
+            
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
             oil_autoignition_temp: 0.0,
@@ -282,6 +323,13 @@ impl Fuel {
             ember_production: 0.1,
             ember_receptivity: 0.2, // Resistant to spot fires
             max_spotting_distance: 200.0,
+            
+            // Rothermel parameters (live herbaceous/foliage)
+            mineral_damping: 0.75,      // Low mineral content (living tissue)
+            particle_density: 350.0,    // kg/m³ (living plant tissue)
+            effective_heating: 0.50,    // Fine to medium fuel
+            packing_ratio: 0.70,        // Moderately dense vegetation
+            
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
             oil_autoignition_temp: 0.0,
@@ -352,6 +400,13 @@ impl Fuel {
             ember_production: 0.0,
             ember_receptivity: 0.0,
             max_spotting_distance: 0.0,
+            
+            // Rothermel parameters (non-burnable)
+            mineral_damping: 1.0,       // N/A for non-burnable
+            particle_density: 1000.0,   // Water density
+            effective_heating: 0.0,     // N/A
+            packing_ratio: 1.0,         // N/A
+            
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
             oil_autoignition_temp: 0.0,
@@ -379,6 +434,13 @@ impl Fuel {
             ember_production: 0.0,
             ember_receptivity: 0.0,
             max_spotting_distance: 0.0,
+            
+            // Rothermel parameters (non-burnable)
+            mineral_damping: 1.0,       // N/A for non-burnable
+            particle_density: 2700.0,   // Rock density
+            effective_heating: 0.0,     // N/A
+            packing_ratio: 1.0,         // N/A
+            
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
             oil_autoignition_temp: 0.0,

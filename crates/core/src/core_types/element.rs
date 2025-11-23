@@ -201,7 +201,24 @@ impl FuelElement {
     }
 
     /// Calculate Byram's fireline intensity in kW/m
-    pub fn byram_fireline_intensity(&self) -> f32 {
+    ///
+    /// Uses Rothermel spread rate model for accurate intensity calculation.
+    ///
+    /// # Formula
+    /// ```text
+    /// I = (H × w × r) / 60 [kW/m]
+    /// ```
+    ///
+    /// Where:
+    /// - **I** = Fireline intensity (kW/m)
+    /// - **H** = Heat content of fuel (kJ/kg)
+    /// - **w** = Fuel consumed per unit area (kg/m²)
+    /// - **r** = Rate of spread (m/min)
+    ///
+    /// # References
+    /// - Byram, G.M. (1959). "Combustion of forest fuels." In Forest Fire: Control and Use.
+    /// - Rothermel, R.C. (1972). "A mathematical model for predicting fire spread in wildland fuels."
+    pub fn byram_fireline_intensity(&self, wind_speed_ms: f32) -> f32 {
         // OPTIMIZATION: Early exits for non-burning conditions
         if !self.ignited {
             return 0.0;
@@ -216,19 +233,41 @@ impl FuelElement {
             return 0.0;
         }
 
-        // I = (H × w × r) / 60 [kW/m]
-        let burn_rate = self.calculate_burn_rate();
-        let heat_release = self.fuel.heat_content * burn_rate * 0.9; // 90% efficiency
+        // Calculate spread rate using Rothermel model
+        let spread_rate_m_per_min = crate::physics::rothermel::rothermel_spread_rate(
+            &self.fuel,
+            self.moisture_fraction,
+            wind_speed_ms,
+            self.slope_angle,
+        );
 
-        // Simplified spread rate estimate
-        let spread_rate_m_per_min = 0.5 * 60.0; // Placeholder
+        // Fuel loading (kg/m²) - mass per unit area
+        let fuel_loading = self.fuel.bulk_density * self.fuel.fuel_bed_depth;
 
-        (heat_release * spread_rate_m_per_min) / 60.0
+        // Heat release with combustion efficiency (90%)
+        let heat_per_area = self.fuel.heat_content * fuel_loading * 0.9;
+
+        // Byram's formula: I = (H × w × r) / 60
+        // Units: (kJ/kg × kg/m² × m/min) / 60 = kW/m
+        (heat_per_area * spread_rate_m_per_min) / 60.0
     }
 
     /// Calculate flame height using Byram's formula
-    pub fn calculate_flame_height(&self) -> f32 {
-        let intensity = self.byram_fireline_intensity();
+    ///
+    /// # Formula
+    /// ```text
+    /// L = 0.0775 × I^0.46 [meters]
+    /// ```
+    ///
+    /// Where:
+    /// - **L** = Flame height (meters)
+    /// - **I** = Fireline intensity (kW/m)
+    ///
+    /// # References
+    /// - Byram, G.M. (1959). "Combustion of forest fuels." In Forest Fire: Control and Use.
+    /// - Equation empirically validated for Australian conditions
+    pub fn calculate_flame_height(&self, wind_speed_ms: f32) -> f32 {
+        let intensity = self.byram_fireline_intensity(wind_speed_ms);
 
         // L = 0.0775 × I^0.46 [meters]
         if intensity > 0.0 {
@@ -239,8 +278,8 @@ impl FuelElement {
     }
 
     /// Update flame height
-    pub fn update_flame_height(&mut self) {
-        self.flame_height = self.calculate_flame_height();
+    pub fn update_flame_height(&mut self, wind_speed_ms: f32) {
+        self.flame_height = self.calculate_flame_height(wind_speed_ms);
     }
 
     /// Burn fuel mass
