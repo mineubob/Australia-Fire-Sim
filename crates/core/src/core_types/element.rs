@@ -52,6 +52,14 @@ pub struct FuelElement {
     pub(crate) elevation: f32,      // Height above ground
     pub(crate) slope_angle: f32,    // Local terrain slope (degrees)
     pub(crate) neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
+
+    // Advanced physics state (Phase 1-3 enhancements)
+    /// Fuel moisture state by timelag class (Nelson 2000)
+    pub(crate) moisture_state: Option<crate::physics::FuelMoistureState>,
+    /// Smoldering combustion phase (Rein 2009)
+    pub(crate) smoldering_state: Option<crate::physics::SmolderingState>,
+    /// Crown fire initiated flag
+    pub(crate) crown_fire_active: bool,
 }
 
 impl FuelElement {
@@ -67,6 +75,17 @@ impl FuelElement {
         let moisture_fraction = fuel.base_moisture;
         let elevation = position.z;
 
+        // Initialize fuel moisture timelag state
+        let moisture_state = Some(crate::physics::FuelMoistureState::new(
+            moisture_fraction,
+            moisture_fraction,
+            moisture_fraction,
+            moisture_fraction,
+        ));
+
+        // Initialize smoldering state
+        let smoldering_state = Some(crate::physics::SmolderingState::new());
+
         FuelElement {
             id,
             position,
@@ -81,6 +100,9 @@ impl FuelElement {
             slope_angle: 0.0,
             neighbors: Vec::new(),
             fuel,
+            moisture_state,
+            smoldering_state,
+            crown_fire_active: false,
         }
     }
 

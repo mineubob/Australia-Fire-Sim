@@ -165,6 +165,55 @@ impl FireSimulation {
         let wind_vector = self.weather.wind_vector();
         let ffdi_multiplier = self.weather.spread_rate_multiplier();
 
+        // 1a. Update fuel moisture using Nelson timelag system (Phase 1)
+        // Assume desorption (drying) as typical wildfire conditions
+        let equilibrium_moisture = crate::physics::calculate_equilibrium_moisture(
+            self.weather.temperature,
+            self.weather.humidity,
+            false, // is_adsorbing - false for typical drying conditions
+        );
+        
+        for element in self.elements.iter_mut().flatten() {
+            if let Some(ref mut moisture_state) = element.moisture_state {
+                let dt_hours = dt / 3600.0; // Convert seconds to hours
+                
+                // Update each timelag class
+                moisture_state.moisture_1h = crate::physics::update_moisture_timelag(
+                    moisture_state.moisture_1h,
+                    equilibrium_moisture,
+                    element.fuel.timelag_1h,
+                    dt_hours,
+                );
+                moisture_state.moisture_10h = crate::physics::update_moisture_timelag(
+                    moisture_state.moisture_10h,
+                    equilibrium_moisture,
+                    element.fuel.timelag_10h,
+                    dt_hours,
+                );
+                moisture_state.moisture_100h = crate::physics::update_moisture_timelag(
+                    moisture_state.moisture_100h,
+                    equilibrium_moisture,
+                    element.fuel.timelag_100h,
+                    dt_hours,
+                );
+                moisture_state.moisture_1000h = crate::physics::update_moisture_timelag(
+                    moisture_state.moisture_1000h,
+                    equilibrium_moisture,
+                    element.fuel.timelag_1000h,
+                    dt_hours,
+                );
+                
+                // Update overall moisture fraction (weighted average)
+                let dist = element.fuel.size_class_distribution;
+                element.moisture_fraction = moisture_state.moisture_1h * dist[0]
+                    + moisture_state.moisture_10h * dist[1]
+                    + moisture_state.moisture_100h * dist[2]
+                    + moisture_state.moisture_1000h * dist[3];
+                    
+                moisture_state.average_moisture = element.moisture_fraction;
+            }
+        }
+
         // 2. Update wind field in grid based on terrain
         update_wind_field(&mut self.grid, wind_vector, dt);
 
@@ -223,7 +272,30 @@ impl FireSimulation {
                 }
             }
 
-            // 4b. Get element info for burn calculations
+            // 4b. Update smoldering combustion state (Phase 3)
+            let smold_update_data = if let Some(element) = self.get_element(element_id) {
+                if let Some(smold_state) = element.smoldering_state {
+                    let grid_data = self.grid.interpolate_at_position(element.position);
+                    Some((smold_state, element.temperature, grid_data.oxygen))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            
+            if let Some((smold_state, temp, oxygen)) = smold_update_data {
+                if let Some(element) = self.get_element_mut(element_id) {
+                    element.smoldering_state = Some(crate::physics::update_smoldering_state(
+                        smold_state,
+                        temp,
+                        oxygen,
+                        dt,
+                    ));
+                }
+            }
+
+            // 4c. Get element info for burn calculations
             let base_burn_rate = {
                 if let Some(element) = self.get_element(element_id) {
                     element.calculate_burn_rate()
@@ -232,7 +304,7 @@ impl FireSimulation {
                 }
             };
 
-            // 4c. Calculate oxygen-limited burn rate
+            // 4d. Calculate oxygen-limited burn rate
             let oxygen_factor = get_oxygen_limited_burn_rate(
                 self.get_element(element_id).unwrap(),
                 base_burn_rate,
@@ -240,9 +312,21 @@ impl FireSimulation {
             );
 
             let actual_burn_rate = base_burn_rate * oxygen_factor;
-            let fuel_consumed = actual_burn_rate * dt;
+            
+            // 4e. Apply smoldering combustion multiplier (Phase 3)
+            let smoldering_multiplier = if let Some(element) = self.get_element(element_id) {
+                if let Some(ref smold_state) = element.smoldering_state {
+                    smold_state.heat_release_multiplier
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+            
+            let fuel_consumed = actual_burn_rate * smoldering_multiplier * dt;
 
-            // 4d. Burn fuel and update element
+            // 4f. Burn fuel and update element
             let mut should_extinguish = false;
             let mut fuel_consumed_actual = 0.0;
             if let Some(element) = self.get_element_mut(element_id) {
@@ -261,7 +345,31 @@ impl FireSimulation {
                 self.burning_elements.remove(&element_id);
             }
 
-            // 4e. Transfer heat and combustion products to grid
+            // 4g. Check for crown fire transition (Phase 1 - Van Wagner model)
+            if let Some(element) = self.get_element(element_id) {
+                if !element.crown_fire_active && matches!(element.part_type, FuelPart::Crown | FuelPart::TrunkUpper | FuelPart::Branch { .. }) {
+                    // Use fuel properties for crown fire calculation
+                    let crown_behavior = crate::physics::calculate_crown_fire_behavior(
+                        element,
+                        element.fuel.crown_bulk_density,
+                        element.fuel.crown_base_height,
+                        element.fuel.foliar_moisture_content,
+                        10.0, // Assume 10 m/min active spread rate (can enhance with actual calculation)
+                        wind_vector.norm(),
+                    );
+                    
+                    // If active or passive crown fire, mark it and potentially ignite crown elements
+                    if crown_behavior.fire_type != crate::physics::CrownFireType::Surface {
+                        if let Some(elem_mut) = self.get_element_mut(element_id) {
+                            elem_mut.crown_fire_active = true;
+                            // Crown fire causes 2-3x higher temperatures
+                            elem_mut.temperature = elem_mut.temperature.max(elem_mut.fuel.max_flame_temperature * 0.9);
+                        }
+                    }
+                }
+            }
+
+            // 4h. Transfer heat and combustion products to grid
             // Collect element data first to avoid borrow conflicts
             let element_data = if let Some(element) = self.get_element(element_id) {
                 if element.ignited {
@@ -361,6 +469,9 @@ impl FireSimulation {
                         elevation: source_pos.z,
                         slope_angle: 0.0,
                         neighbors: Vec::new(),
+                        moisture_state: None,
+                        smoldering_state: None,
+                        crown_fire_active: false,
                     };
 
                     // Calculate heat for all nearby targets
@@ -392,6 +503,9 @@ impl FireSimulation {
                                     elevation: target.position.z,
                                     slope_angle: 0.0,
                                     neighbors: Vec::new(),
+                                    moisture_state: None,
+                                    smoldering_state: None,
+                                    crown_fire_active: false,
                                 };
 
                                 // Calculate heat transfer (pure computation, no side effects)
@@ -446,6 +560,52 @@ impl FireSimulation {
 
         // 6. Simulate plume rise
         simulate_plume_rise(&mut self.grid, &burning_positions, dt);
+
+        // 6a. Generate embers with Albini spotting physics (Phase 2)
+        let mut new_ember_id = self._next_ember_id;
+        for &element_id in &self.burning_elements {
+            if let Some(element) = self.get_element(element_id) {
+                // Probabilistic ember generation based on fuel ember production
+                let ember_prob = element.fuel.ember_production * dt * 0.1;
+                if ember_prob > 0.0 && rand::random::<f32>() < ember_prob {
+                    // Calculate ember lofting height using Albini model
+                    let intensity = element.byram_fireline_intensity(wind_vector.norm());
+                    let lofting_height = crate::physics::calculate_lofting_height(intensity);
+                    
+                    // Calculate maximum spotting distance
+                    let wind_speed = wind_vector.norm();
+                    let ember_mass = 0.0005; // kg (0.5g typical)
+                    let ember_diameter = 0.02; // meters (2cm typical bark fragment)
+                    let max_distance = crate::physics::calculate_maximum_spotting_distance(
+                        intensity,
+                        wind_speed,
+                        ember_mass,
+                        ember_diameter,
+                        0.0, // Assume flat terrain for now (can enhance later)
+                    );
+                    
+                    // Only generate ember if conditions support spotting
+                    if max_distance > 50.0 {
+                        // Generate ember with physics-based initial conditions
+                        let ember = Ember::new(
+                            new_ember_id,
+                            element.position + Vec3::new(0.0, 0.0, 1.0),
+                            Vec3::new(
+                                wind_vector.x * 0.5,
+                                wind_vector.y * 0.5,
+                                lofting_height.min(100.0) * 0.1, // Initial upward velocity
+                            ),
+                            element.temperature,
+                            ember_mass,
+                            element.fuel.id,
+                        );
+                        self.embers.push(ember);
+                        new_ember_id += 1;
+                    }
+                }
+            }
+        }
+        self._next_ember_id = new_ember_id;
 
         // 7. Update embers
         self.embers.par_iter_mut().for_each(|ember| {

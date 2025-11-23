@@ -15,6 +15,7 @@
 //!   International Journal of Wildland Fire, 15(2), 155-168
 
 use crate::core_types::fuel::Fuel;
+use serde::{Deserialize, Serialize};
 
 /// Calculate equilibrium moisture content based on temperature and humidity
 ///
@@ -138,7 +139,7 @@ pub fn calculate_weighted_moisture(
 }
 
 /// Fuel moisture state for all timelag classes
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct FuelMoistureState {
     /// Moisture in 1-hour fuels (fraction 0-1)
     pub moisture_1h: f32,
@@ -153,14 +154,15 @@ pub struct FuelMoistureState {
 }
 
 impl FuelMoistureState {
-    /// Create new moisture state with initial values
-    pub fn new(initial_moisture: f32) -> Self {
+    /// Create new moisture state with initial values for each timelag class
+    pub fn new(moisture_1h: f32, moisture_10h: f32, moisture_100h: f32, moisture_1000h: f32) -> Self {
+        let average = (moisture_1h + moisture_10h + moisture_100h + moisture_1000h) / 4.0;
         FuelMoistureState {
-            moisture_1h: initial_moisture,
-            moisture_10h: initial_moisture,
-            moisture_100h: initial_moisture,
-            moisture_1000h: initial_moisture,
-            average_moisture: initial_moisture,
+            moisture_1h,
+            moisture_10h,
+            moisture_100h,
+            moisture_1000h,
+            average_moisture: average,
         }
     }
     
@@ -303,7 +305,7 @@ mod tests {
     #[test]
     fn test_moisture_state_update() {
         let fuel = Fuel::dry_grass(); // All 1-hour fuels
-        let mut state = FuelMoistureState::new(0.15);
+        let mut state = FuelMoistureState::new(0.15, 0.15, 0.15, 0.15);
         
         // Update with dry, hot conditions
         state.update(&fuel, 35.0, 20.0, 1.0);
@@ -315,7 +317,7 @@ mod tests {
     #[test]
     fn test_diurnal_moisture_cycle() {
         let fuel = Fuel::eucalyptus_stringybark();
-        let mut state = FuelMoistureState::new(0.12);
+        let mut state = FuelMoistureState::new(0.12, 0.12, 0.12, 0.12);
         
         // Simulate day: hot and dry (should lose moisture)
         for _ in 0..12 {
