@@ -581,8 +581,9 @@ impl FireSimulation {
         for &element_id in &self.burning_elements {
             if let Some(element) = self.get_element(element_id) {
                 // Probabilistic ember generation based on fuel ember production
-                // Increased multiplier to 0.5 for realistic ember generation rates (was 0.1)
-                let ember_prob = element.fuel.ember_production * dt * 0.5;
+                // High multiplier for realistic ember generation rates (stringybark produces many embers)
+                // For stringybark (0.9 production): 0.9 × 1.0 × 0.8 = 72% chance per second
+                let ember_prob = element.fuel.ember_production * dt * 0.8;
                 if ember_prob > 0.0 && rand::random::<f32>() < ember_prob {
                     // Calculate ember lofting height using Albini model
                     let intensity = element.byram_fireline_intensity(wind_vector.norm());
@@ -600,26 +601,22 @@ impl FireSimulation {
                         0.0, // Assume flat terrain for now (can enhance later)
                     );
                     
-                    // Only generate ember if conditions support meaningful spotting
-                    // Reduced threshold to 10m to allow ember generation in moderate-extreme conditions
-                    // (original 50m was too restrictive - embers can cause spot fires at shorter distances)
-                    if max_distance > 10.0 {
-                        // Generate ember with physics-based initial conditions
-                        let ember = Ember::new(
-                            new_ember_id,
-                            element.position + Vec3::new(0.0, 0.0, 1.0),
-                            Vec3::new(
-                                wind_vector.x * 0.5,
-                                wind_vector.y * 0.5,
-                                lofting_height.min(100.0) * 0.1, // Initial upward velocity
-                            ),
-                            element.temperature,
-                            ember_mass,
-                            element.fuel.id,
-                        );
-                        self.embers.push(ember);
-                        new_ember_id += 1;
-                    }
+                    // Generate ember with physics-based initial conditions
+                    // Albini model calculates trajectory - all embers generated (even short distance)
+                    let ember = Ember::new(
+                        new_ember_id,
+                        element.position + Vec3::new(0.0, 0.0, 1.0),
+                        Vec3::new(
+                            wind_vector.x * 0.5,
+                            wind_vector.y * 0.5,
+                            lofting_height.min(100.0) * 0.1, // Initial upward velocity
+                        ),
+                        element.temperature,
+                        ember_mass,
+                        element.fuel.id,
+                    );
+                    self.embers.push(ember);
+                    new_ember_id += 1;
                 }
             }
         }
