@@ -600,8 +600,10 @@ impl FireSimulation {
                         0.0, // Assume flat terrain for now (can enhance later)
                     );
                     
-                    // Only generate ember if conditions support spotting
-                    if max_distance > 50.0 {
+                    // Only generate ember if conditions support meaningful spotting
+                    // Reduced threshold to 10m to allow ember generation in moderate-extreme conditions
+                    // (original 50m was too restrictive - embers can cause spot fires at shorter distances)
+                    if max_distance > 10.0 {
                         // Generate ember with physics-based initial conditions
                         let ember = Ember::new(
                             new_ember_id,
