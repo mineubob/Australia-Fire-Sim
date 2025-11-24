@@ -1,6 +1,6 @@
 # Australia Fire Simulation System
 
-A scientifically accurate wildfire simulation system built in Rust, designed for emergency response training based on Australian bushfire research.
+A scientifically accurate wildfire simulation system built in Rust, based on Australian bushfire research.
 
 ## Overview
 
