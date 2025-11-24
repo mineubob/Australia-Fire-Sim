@@ -66,9 +66,10 @@ pub fn calculate_critical_surface_intensity(
     crown_base_height: f32,
 ) -> f32 {
     // Van Wagner (1977) formula - exact implementation
-    let numerator = 0.01 * crown_bulk_density * heat_content * (460.0 + 25.9 * foliar_moisture_content);
+    let numerator =
+        0.01 * crown_bulk_density * heat_content * (460.0 + 25.9 * foliar_moisture_content);
     let critical_intensity = numerator / crown_base_height;
-    
+
     critical_intensity.max(0.0)
 }
 
@@ -89,7 +90,7 @@ pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
     if crown_bulk_density <= 0.0 {
         return 0.0;
     }
-    
+
     // Van Wagner (1977) formula - exact implementation
     3.0 / crown_bulk_density
 }
@@ -108,17 +109,14 @@ pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
 ///
 /// # References
 /// Cruz & Alexander (2010)
-pub fn calculate_crown_fraction_burned(
-    active_spread_rate: f32,
-    critical_spread_rate: f32,
-) -> f32 {
+pub fn calculate_crown_fraction_burned(active_spread_rate: f32, critical_spread_rate: f32) -> f32 {
     if active_spread_rate <= critical_spread_rate {
         return 0.0;
     }
-    
+
     let rate_diff = active_spread_rate - critical_spread_rate;
     let cfb = 1.0 - (-0.23 * rate_diff).exp();
-    
+
     cfb.clamp(0.0, 1.0)
 }
 
@@ -164,13 +162,13 @@ pub fn calculate_crown_fire_behavior(
         foliar_moisture_content,
         crown_base_height,
     );
-    
+
     // Get current surface fire intensity (Byram)
     let surface_intensity = element.byram_fireline_intensity(wind_speed_ms);
-    
+
     // Calculate critical crown spread rate (Van Wagner 1977)
     let critical_crown_spread_rate = calculate_critical_crown_spread_rate(crown_bulk_density);
-    
+
     // Determine fire type
     let fire_type = determine_crown_fire_type(
         surface_intensity,
@@ -178,14 +176,14 @@ pub fn calculate_crown_fire_behavior(
         active_spread_rate,
         critical_crown_spread_rate,
     );
-    
+
     // Calculate crown fraction burned
     let crown_fraction_burned = if fire_type == CrownFireType::Active {
         calculate_crown_fraction_burned(active_spread_rate, critical_crown_spread_rate)
     } else {
         0.0
     };
-    
+
     CrownFireBehavior {
         fire_type,
         critical_surface_intensity,
@@ -210,7 +208,8 @@ pub fn apply_crown_fire_effects(
         CrownFireType::Passive => {
             // Passive crown fire - intermittent torching
             // Multiply burn rate by 1.5-2.0 based on intensity ratio
-            let intensity_ratio = crown_behavior.surface_intensity / crown_behavior.critical_surface_intensity;
+            let intensity_ratio =
+                crown_behavior.surface_intensity / crown_behavior.critical_surface_intensity;
             1.0 + (intensity_ratio - 1.0) * 0.5
         }
         CrownFireType::Active => {
@@ -234,34 +233,42 @@ mod tests {
         let heat = 20000.0; // kJ/kg
         let fmc = 100.0; // %
         let cbh = 5.0; // m
-        
+
         let i_critical = calculate_critical_surface_intensity(cbd, heat, fmc, cbh);
-        
+
         // Expected: 0.01 × 0.15 × 20000 × (460 + 25.9 × 100) / 5.0
         // = 0.01 × 0.15 × 20000 × 3050 / 5.0
         // = 0.0015 × 20000 × 3050 / 5.0
         // = 30 × 3050 / 5.0 = 91500 / 5.0 = 18300 kW/m
-        assert!((i_critical - 18300.0).abs() < 100.0, "I_critical was {}", i_critical);
+        assert!(
+            (i_critical - 18300.0).abs() < 100.0,
+            "I_critical was {}",
+            i_critical
+        );
     }
 
     #[test]
     fn test_critical_crown_spread_rate() {
         // Test Van Wagner (1977) formula
         let cbd = 0.15; // kg/m³
-        
+
         let r_critical = calculate_critical_crown_spread_rate(cbd);
-        
+
         // Expected: 3.0 / 0.15 = 20 m/min
-        assert!((r_critical - 20.0).abs() < 0.1, "R_critical was {}", r_critical);
+        assert!(
+            (r_critical - 20.0).abs() < 0.1,
+            "R_critical was {}",
+            r_critical
+        );
     }
 
     #[test]
     fn test_crown_fraction_burned() {
         let active_rate = 30.0; // m/min
         let critical_rate = 20.0; // m/min
-        
+
         let cfb = calculate_crown_fraction_burned(active_rate, critical_rate);
-        
+
         // Should be between 0 and 1
         assert!(cfb > 0.0 && cfb <= 1.0);
         // CFB = 1 - exp(-0.23 × (30-20)) = 1 - exp(-2.3) ≈ 0.9
@@ -273,11 +280,11 @@ mod tests {
         // Test surface fire (low intensity)
         let fire_type = determine_crown_fire_type(500.0, 1000.0, 10.0, 20.0);
         assert_eq!(fire_type, CrownFireType::Surface);
-        
+
         // Test passive crown fire (high intensity, low spread)
         let fire_type = determine_crown_fire_type(1500.0, 1000.0, 15.0, 20.0);
         assert_eq!(fire_type, CrownFireType::Passive);
-        
+
         // Test active crown fire (high intensity, high spread)
         let fire_type = determine_crown_fire_type(1500.0, 1000.0, 25.0, 20.0);
         assert_eq!(fire_type, CrownFireType::Active);
@@ -288,7 +295,7 @@ mod tests {
         // Stringybark should have lower critical intensity than smooth bark due to:
         // - Lower crown base height (ladder fuels bring fire closer to canopy)
         // - Higher crown bulk density (denser canopy)
-        
+
         // Stringybark
         let stringybark_i = calculate_critical_surface_intensity(
             0.2,     // High CBD
@@ -296,7 +303,7 @@ mod tests {
             90.0,    // Moderate FMC
             3.0,     // Low CBH (ladder fuels)
         );
-        
+
         // Smooth bark for comparison
         let smooth_bark_i = calculate_critical_surface_intensity(
             0.12,    // Lower CBD
@@ -304,12 +311,16 @@ mod tests {
             100.0,   // Higher FMC
             8.0,     // Higher CBH (no ladder fuels)
         );
-        
+
         // Stringybark should be MORE susceptible (higher critical intensity due to low CBH in denominator)
         // But in practice, lower CBH means fire reaches crown sooner
-        assert!(stringybark_i > smooth_bark_i, 
-               "Stringybark I_critical: {}, Smooth bark: {}", stringybark_i, smooth_bark_i);
-        
+        assert!(
+            stringybark_i > smooth_bark_i,
+            "Stringybark I_critical: {}, Smooth bark: {}",
+            stringybark_i,
+            smooth_bark_i
+        );
+
         // Both should be reasonable values (thousands of kW/m)
         assert!(stringybark_i > 10000.0 && stringybark_i < 50000.0);
     }
@@ -326,16 +337,15 @@ mod tests {
         );
         element.temperature = 800.0;
         element.ignited = true;
-        
+
         let behavior = calculate_crown_fire_behavior(
-            &element,
-            0.15,  // crown_bulk_density
+            &element, 0.15,  // crown_bulk_density
             5.0,   // crown_base_height
             100.0, // foliar_moisture_content
             25.0,  // active_spread_rate (m/min)
             5.0,   // wind_speed_ms
         );
-        
+
         // Should classify as some type of crown fire behavior
         assert!(behavior.critical_surface_intensity > 0.0);
         assert!(behavior.critical_crown_spread_rate > 0.0);

@@ -41,7 +41,7 @@ pub fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
     if fireline_intensity <= 0.0 {
         return 0.0;
     }
-    
+
     // Albini (1979) formula - exact implementation
     12.2 * fireline_intensity.powf(0.4)
 }
@@ -65,10 +65,10 @@ pub fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 {
     if height <= 0.0 {
         return 0.0;
     }
-    
+
     const WIND_SHEAR_EXPONENT: f32 = 0.15;
     const REFERENCE_HEIGHT: f32 = 10.0;
-    
+
     // Logarithmic wind profile
     wind_speed_10m * (height / REFERENCE_HEIGHT).powf(WIND_SHEAR_EXPONENT)
 }
@@ -91,17 +91,17 @@ pub fn calculate_terminal_velocity(ember_mass: f32, ember_diameter: f32) -> f32 
     const AIR_DENSITY: f32 = 1.225; // kg/m³ at sea level
     const DRAG_COEFFICIENT: f32 = 0.4; // Sphere approximation
     const GRAVITY: f32 = 9.81; // m/s²
-    
+
     if ember_mass <= 0.0 || ember_diameter <= 0.0 {
         return 0.0;
     }
-    
+
     let cross_section_area = std::f32::consts::PI * (ember_diameter / 2.0).powi(2);
-    
+
     // Terminal velocity from drag-gravity balance
     let numerator = 2.0 * ember_mass * GRAVITY;
     let denominator = AIR_DENSITY * DRAG_COEFFICIENT * cross_section_area;
-    
+
     (numerator / denominator).sqrt()
 }
 
@@ -131,24 +131,24 @@ pub fn calculate_maximum_spotting_distance(
 ) -> f32 {
     // Calculate lofting height
     let lofting_height = calculate_lofting_height(fireline_intensity);
-    
+
     if lofting_height <= 0.0 {
         return 0.0;
     }
-    
+
     // Wind speed at lofting height
     let wind_at_height = wind_speed_at_height(wind_speed_10m, lofting_height);
-    
+
     // Terminal velocity of ember
     let terminal_velocity = calculate_terminal_velocity(ember_mass, ember_diameter);
-    
+
     if terminal_velocity <= 0.0 {
         return 0.0;
     }
-    
+
     // Base spotting distance (Albini simplified formula)
     let base_distance = lofting_height * (wind_at_height / terminal_velocity);
-    
+
     // Terrain factor (uphill increases distance, downhill decreases)
     let terrain_factor = if terrain_slope > 0.0 {
         // Uphill: increases spotting distance
@@ -159,10 +159,11 @@ pub fn calculate_maximum_spotting_distance(
     } else {
         1.0
     };
-    
+
     base_distance * terrain_factor
 }
 
+#[allow(clippy::too_many_arguments)] // Required for caculation
 /// Detailed ember trajectory calculation with integration
 ///
 /// Integrates ember motion equations considering:
@@ -201,33 +202,33 @@ pub fn calculate_ember_trajectory(
     const AIR_DENSITY: f32 = 1.225; // kg/m³
     const DRAG_COEFFICIENT: f32 = 0.4;
     const GRAVITY: f32 = 9.81; // m/s²
-    
+
     let mut position = initial_position;
     let mut velocity = initial_velocity;
     let mut time = 0.0;
-    
+
     let cross_section_area = std::f32::consts::PI * (ember_diameter / 2.0).powi(2);
     let ember_volume = (4.0 / 3.0) * std::f32::consts::PI * (ember_diameter / 2.0).powi(3);
-    
+
     // Integrate trajectory until ember hits ground or max time
     while position.z > 0.0 && time < max_time {
         // Wind at current height
         let wind_at_height = wind_speed_at_height(wind_speed_10m, position.z);
         let wind_velocity = wind_direction * wind_at_height;
-        
+
         // Relative velocity (air relative to ember)
         let relative_velocity = wind_velocity - velocity;
         let relative_speed = relative_velocity.magnitude();
-        
+
         // Drag force
         let drag_force = if relative_speed > 0.0 {
-            let drag_magnitude = 0.5 * AIR_DENSITY * DRAG_COEFFICIENT 
-                               * cross_section_area * relative_speed.powi(2);
+            let drag_magnitude =
+                0.5 * AIR_DENSITY * DRAG_COEFFICIENT * cross_section_area * relative_speed.powi(2);
             relative_velocity.normalize() * drag_magnitude
         } else {
             Vec3::zeros()
         };
-        
+
         // Buoyancy (if ember is hot)
         let buoyancy_force = if ember_temperature > 300.0 {
             let temp_ratio = (ember_temperature + 273.15) / 293.15; // Kelvin ratio
@@ -235,26 +236,26 @@ pub fn calculate_ember_trajectory(
         } else {
             0.0
         };
-        
+
         // Gravity
         let gravity_force = -GRAVITY * ember_mass;
-        
+
         // Total acceleration
         let accel_x = drag_force.x / ember_mass;
         let accel_y = drag_force.y / ember_mass;
         let accel_z = (drag_force.z + buoyancy_force) / ember_mass + gravity_force / ember_mass;
-        
+
         let acceleration = Vec3::new(accel_x, accel_y, accel_z);
-        
+
         // Update velocity and position (Euler integration)
         velocity += acceleration * dt;
         position += velocity * dt;
         time += dt;
     }
-    
+
     // Clamp to ground level
     position.z = position.z.max(0.0);
-    
+
     position
 }
 
@@ -267,7 +268,7 @@ mod tests {
         // Test with typical fire intensity
         let intensity = 5000.0; // kW/m (moderate to high intensity fire)
         let height = calculate_lofting_height(intensity);
-        
+
         // H = 12.2 × 5000^0.4 = 12.2 × 30.17 ≈ 368m
         assert!((height - 368.0).abs() < 10.0, "Height was {}", height);
     }
@@ -277,7 +278,7 @@ mod tests {
         // Test with extreme fire intensity (Black Saturday conditions)
         let intensity = 50000.0; // kW/m (extreme intensity)
         let height = calculate_lofting_height(intensity);
-        
+
         // H = 12.2 × 50000^0.4 ≈ 925m
         assert!(height > 900.0 && height < 950.0, "Height was {}", height);
     }
@@ -285,15 +286,15 @@ mod tests {
     #[test]
     fn test_wind_profile() {
         let wind_10m = 10.0; // m/s at 10m
-        
+
         // Wind at ground should be less
         let wind_5m = wind_speed_at_height(wind_10m, 5.0);
         assert!(wind_5m < wind_10m);
-        
+
         // Wind at height should be more
         let wind_50m = wind_speed_at_height(wind_10m, 50.0);
         assert!(wind_50m > wind_10m);
-        
+
         // Wind at 10m should equal reference
         let wind_10m_calc = wind_speed_at_height(wind_10m, 10.0);
         assert!((wind_10m_calc - wind_10m).abs() < 0.01);
@@ -304,11 +305,15 @@ mod tests {
         // Typical bark fragment: 1g, 2cm diameter
         let mass = 0.001; // kg
         let diameter = 0.02; // m
-        
+
         let term_vel = calculate_terminal_velocity(mass, diameter);
-        
+
         // Should be in reasonable range (few m/s to low tens)
-        assert!(term_vel > 5.0 && term_vel < 15.0, "Terminal velocity was {}", term_vel);
+        assert!(
+            term_vel > 5.0 && term_vel < 15.0,
+            "Terminal velocity was {}",
+            term_vel
+        );
     }
 
     #[test]
@@ -319,14 +324,15 @@ mod tests {
         let mass = 0.001; // 1g
         let diameter = 0.02; // 2cm
         let slope = 0.0; // flat terrain
-        
-        let distance = calculate_maximum_spotting_distance(
-            intensity, wind, mass, diameter, slope
-        );
-        
+
+        let distance = calculate_maximum_spotting_distance(intensity, wind, mass, diameter, slope);
+
         // Should get several hundred meters to few km
-        assert!(distance > 500.0 && distance < 5000.0, 
-               "Distance was {} m", distance);
+        assert!(
+            distance > 500.0 && distance < 5000.0,
+            "Distance was {} m",
+            distance
+        );
     }
 
     #[test]
@@ -338,15 +344,16 @@ mod tests {
         let mass = 0.002; // 2g (light stringybark)
         let diameter = 0.08; // 8cm (large, flat bark strip)
         let slope = 5.0; // slight uphill
-        
-        let distance = calculate_maximum_spotting_distance(
-            intensity, wind, mass, diameter, slope
-        );
-        
+
+        let distance = calculate_maximum_spotting_distance(intensity, wind, mass, diameter, slope);
+
         // Should be capable of multi-km under these extreme conditions
         // Note: 25km spotting requires the lightest, largest embers in strongest winds
-        assert!(distance > 5000.0, 
-               "Black Saturday spotting distance was {} m", distance);
+        assert!(
+            distance > 5000.0,
+            "Black Saturday spotting distance was {} m",
+            distance
+        );
     }
 
     #[test]
@@ -355,17 +362,20 @@ mod tests {
         let wind = 15.0;
         let mass = 0.001;
         let diameter = 0.02;
-        
+
         // Flat terrain baseline
         let flat = calculate_maximum_spotting_distance(intensity, wind, mass, diameter, 0.0);
-        
+
         // Uphill increases distance
         let uphill = calculate_maximum_spotting_distance(intensity, wind, mass, diameter, 10.0);
         assert!(uphill > flat, "Uphill should increase spotting distance");
-        
+
         // Downhill decreases distance
         let downhill = calculate_maximum_spotting_distance(intensity, wind, mass, diameter, -10.0);
-        assert!(downhill < flat, "Downhill should decrease spotting distance");
+        assert!(
+            downhill < flat,
+            "Downhill should decrease spotting distance"
+        );
     }
 
     #[test]
@@ -373,27 +383,31 @@ mod tests {
         // Start at lofting height
         let initial_pos = Vec3::new(0.0, 0.0, 200.0); // 200m high
         let initial_vel = Vec3::new(5.0, 0.0, 5.0); // Initial upward/forward velocity
-        
+
         let final_pos = calculate_ember_trajectory(
             initial_pos,
             initial_vel,
-            0.001,  // 1g
-            0.02,   // 2cm
-            800.0,  // Hot ember
-            15.0,   // 15 m/s wind
+            0.001,                    // 1g
+            0.02,                     // 2cm
+            800.0,                    // Hot ember
+            15.0,                     // 15 m/s wind
             Vec3::new(1.0, 0.0, 0.0), // Wind direction (east)
-            0.1,    // 0.1s timestep
-            120.0,  // 2 minutes max
+            0.1,                      // 0.1s timestep
+            120.0,                    // 2 minutes max
         );
-        
+
         // Should land on ground
         assert!((final_pos.z - 0.0).abs() < 0.1, "Should land on ground");
-        
+
         // Should travel downwind
         assert!(final_pos.x > 0.0, "Should travel downwind");
-        
+
         // Should have traveled significant distance
         let horizontal_distance = (final_pos.x.powi(2) + final_pos.y.powi(2)).sqrt();
-        assert!(horizontal_distance > 100.0, "Should travel > 100m, was {}", horizontal_distance);
+        assert!(
+            horizontal_distance > 100.0,
+            "Should travel > 100m, was {}",
+            horizontal_distance
+        );
     }
 }

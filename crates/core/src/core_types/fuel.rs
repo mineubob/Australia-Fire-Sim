@@ -128,15 +128,15 @@ pub struct Fuel {
     pub crown_fire_threshold: f32,       // kW/m intensity needed
 
     // Van Wagner Crown Fire Model (1977, 1993)
-    pub crown_bulk_density: f32,  // kg/m³ (CBD, typical 0.05-0.3)
-    pub crown_base_height: f32,   // m (CBH, height to live crown base, typical 2-15)
+    pub crown_bulk_density: f32,      // kg/m³ (CBD, typical 0.05-0.3)
+    pub crown_base_height: f32,       // m (CBH, height to live crown base, typical 2-15)
     pub foliar_moisture_content: f32, // % (FMC, typical 80-120 for live foliage)
 
     // Nelson Fuel Moisture Timelag System (2000)
-    pub timelag_1h: f32,     // hours (fine fuels <6mm, grass/leaves: 1h)
-    pub timelag_10h: f32,    // hours (medium fuels 6-25mm, twigs: 10h)
-    pub timelag_100h: f32,   // hours (coarse fuels 25-75mm, branches: 100h)
-    pub timelag_1000h: f32,  // hours (very coarse fuels >75mm, logs: 1000h)
+    pub timelag_1h: f32,    // hours (fine fuels <6mm, grass/leaves: 1h)
+    pub timelag_10h: f32,   // hours (medium fuels 6-25mm, twigs: 10h)
+    pub timelag_100h: f32,  // hours (coarse fuels 25-75mm, branches: 100h)
+    pub timelag_1000h: f32, // hours (very coarse fuels >75mm, logs: 1000h)
     pub size_class_distribution: [f32; 4], // Fraction in each timelag class [1h, 10h, 100h, 1000h]
 }
 
@@ -180,14 +180,14 @@ impl Fuel {
             crown_fire_threshold: 300.0,  // Low threshold (30% of normal)
 
             // Van Wagner Crown Fire Model parameters (stringybark eucalypt)
-            crown_bulk_density: 0.2,       // kg/m³ (high for eucalypts with dense canopy)
-            crown_base_height: 3.0,        // m (low due to ladder fuels)
+            crown_bulk_density: 0.2, // kg/m³ (high for eucalypts with dense canopy)
+            crown_base_height: 3.0,  // m (low due to ladder fuels)
             foliar_moisture_content: 90.0, // % (typical for eucalyptus foliage)
 
             // Nelson Timelag parameters (mixed size classes)
-            timelag_1h: 1.0,     // Fine bark strips and leaves
-            timelag_10h: 10.0,   // Small twigs
-            timelag_100h: 100.0, // Medium branches
+            timelag_1h: 1.0,       // Fine bark strips and leaves
+            timelag_10h: 10.0,     // Small twigs
+            timelag_100h: 100.0,   // Medium branches
             timelag_1000h: 1000.0, // Large branches and trunk
             size_class_distribution: [0.15, 0.25, 0.35, 0.25], // Mixed with emphasis on 100h
         }
@@ -226,8 +226,8 @@ impl Fuel {
             crown_fire_threshold: 1000.0, // Normal threshold
 
             // Van Wagner Crown Fire Model parameters (smooth bark eucalypt)
-            crown_bulk_density: 0.12,      // kg/m³ (moderate for eucalypts)
-            crown_base_height: 8.0,        // m (higher, less ladder fuel)
+            crown_bulk_density: 0.12,       // kg/m³ (moderate for eucalypts)
+            crown_base_height: 8.0,         // m (higher, less ladder fuel)
             foliar_moisture_content: 100.0, // % (typical for eucalyptus)
 
             // Nelson Timelag parameters (coarser fuels)
@@ -272,8 +272,8 @@ impl Fuel {
             crown_fire_threshold: 2000.0,
 
             // Van Wagner Crown Fire Model parameters (grass - no crown fire)
-            crown_bulk_density: 0.0,    // N/A for grass
-            crown_base_height: 0.0,     // N/A for grass
+            crown_bulk_density: 0.0,      // N/A for grass
+            crown_base_height: 0.0,       // N/A for grass
             foliar_moisture_content: 0.0, // N/A for grass (base_moisture used instead)
 
             // Nelson Timelag parameters (very fine fuels only)

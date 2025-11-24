@@ -172,11 +172,11 @@ impl FireSimulation {
             self.weather.humidity,
             false, // is_adsorbing - false for typical drying conditions
         );
-        
+
         for element in self.elements.iter_mut().flatten() {
             if let Some(ref mut moisture_state) = element.moisture_state {
                 let dt_hours = dt / 3600.0; // Convert seconds to hours
-                
+
                 // Update each timelag class
                 moisture_state.moisture_1h = crate::physics::update_moisture_timelag(
                     moisture_state.moisture_1h,
@@ -202,14 +202,14 @@ impl FireSimulation {
                     element.fuel.timelag_1000h,
                     dt_hours,
                 );
-                
+
                 // Update overall moisture fraction (weighted average)
                 let dist = element.fuel.size_class_distribution;
                 element.moisture_fraction = moisture_state.moisture_1h * dist[0]
                     + moisture_state.moisture_10h * dist[1]
                     + moisture_state.moisture_100h * dist[2]
                     + moisture_state.moisture_1000h * dist[3];
-                    
+
                 moisture_state.average_moisture = element.moisture_fraction;
             }
         }
@@ -232,7 +232,7 @@ impl FireSimulation {
         // Use wind-directional search radius for realistic fire spread
         let wind_vector = self.weather.wind_vector();
         let wind_speed_ms = wind_vector.magnitude();
-        
+
         let nearby_cache: Vec<(u32, Vec3, Vec<u32>)> = elements_to_process
             .iter()
             .filter_map(|&element_id| {
@@ -247,10 +247,8 @@ impl FireSimulation {
                         0.0
                     };
                     let search_radius = self.max_search_radius + downwind_extension;
-                    
-                    let nearby = self
-                        .spatial_index
-                        .query_radius(e.position, search_radius);
+
+                    let nearby = self.spatial_index.query_radius(e.position, search_radius);
                     (element_id, e.position, nearby)
                 })
             })
@@ -298,7 +296,7 @@ impl FireSimulation {
             } else {
                 None
             };
-            
+
             if let Some((smold_state, temp, oxygen)) = smold_update_data {
                 if let Some(element) = self.get_element_mut(element_id) {
                     element.smoldering_state = Some(crate::physics::update_smoldering_state(
@@ -327,7 +325,7 @@ impl FireSimulation {
             );
 
             let actual_burn_rate = base_burn_rate * oxygen_factor;
-            
+
             // 4e. Apply smoldering combustion multiplier (Phase 3)
             let smoldering_multiplier = if let Some(element) = self.get_element(element_id) {
                 if let Some(ref smold_state) = element.smoldering_state {
@@ -338,7 +336,7 @@ impl FireSimulation {
             } else {
                 1.0
             };
-            
+
             let fuel_consumed = actual_burn_rate * smoldering_multiplier * dt;
 
             // 4f. Burn fuel and update element
@@ -362,7 +360,12 @@ impl FireSimulation {
 
             // 4g. Check for crown fire transition (Phase 1 - Van Wagner model)
             if let Some(element) = self.get_element(element_id) {
-                if !element.crown_fire_active && matches!(element.part_type, FuelPart::Crown | FuelPart::TrunkUpper | FuelPart::Branch { .. }) {
+                if !element.crown_fire_active
+                    && matches!(
+                        element.part_type,
+                        FuelPart::Crown | FuelPart::TrunkUpper | FuelPart::Branch { .. }
+                    )
+                {
                     // Use fuel properties for crown fire calculation
                     let crown_behavior = crate::physics::calculate_crown_fire_behavior(
                         element,
@@ -372,13 +375,15 @@ impl FireSimulation {
                         10.0, // Assume 10 m/min active spread rate (can enhance with actual calculation)
                         wind_vector.norm(),
                     );
-                    
+
                     // If active or passive crown fire, mark it and potentially ignite crown elements
                     if crown_behavior.fire_type != crate::physics::CrownFireType::Surface {
                         if let Some(elem_mut) = self.get_element_mut(element_id) {
                             elem_mut.crown_fire_active = true;
                             // Crown fire causes 2-3x higher temperatures
-                            elem_mut.temperature = elem_mut.temperature.max(elem_mut.fuel.max_flame_temperature * 0.9);
+                            elem_mut.temperature = elem_mut
+                                .temperature
+                                .max(elem_mut.fuel.max_flame_temperature * 0.9);
                         }
                     }
                 }
@@ -588,21 +593,10 @@ impl FireSimulation {
                     // Calculate ember lofting height using Albini model
                     let intensity = element.byram_fireline_intensity(wind_vector.norm());
                     let lofting_height = crate::physics::calculate_lofting_height(intensity);
-                    
-                    // Calculate maximum spotting distance
-                    let wind_speed = wind_vector.norm();
-                    let ember_mass = 0.0005; // kg (0.5g typical)
-                    let ember_diameter = 0.02; // meters (2cm typical bark fragment)
-                    let max_distance = crate::physics::calculate_maximum_spotting_distance(
-                        intensity,
-                        wind_speed,
-                        ember_mass,
-                        ember_diameter,
-                        0.0, // Assume flat terrain for now (can enhance later)
-                    );
-                    
+
                     // Generate ember with physics-based initial conditions
                     // Albini model calculates trajectory - all embers generated (even short distance)
+                    let ember_mass = 0.0005; // kg (0.5g typical)
                     let ember = Ember::new(
                         new_ember_id,
                         element.position + Vec3::new(0.0, 0.0, 1.0),
