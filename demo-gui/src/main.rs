@@ -873,8 +873,9 @@ fn update_simulation(time: Res<Time>, mut sim_state: ResMut<SimulationState>) {
     // Accumulate time with speed multiplier
     sim_state.time_accumulator += time.delta_secs() * sim_state.speed;
 
-    // Update simulation at 10 FPS (0.1 second timesteps)
-    let timestep = 0.1;
+    // Update simulation at 1 FPS (1.0 second timesteps) for proper heat transfer physics
+    // Smaller timesteps cause heat transfer to be too weak for realistic fire spread
+    let timestep = 1.0;
     while sim_state.time_accumulator >= timestep {
         sim_state.simulation.update(timestep);
         sim_state.time_accumulator -= timestep;
