@@ -339,12 +339,23 @@ impl FireSimulation {
 
             let fuel_consumed = actual_burn_rate * smoldering_multiplier * dt;
 
-            // 4f. Burn fuel and update element
+            // 4f. Burn fuel and update element, INCLUDING temperature increase from combustion
             let mut should_extinguish = false;
             let mut fuel_consumed_actual = 0.0;
             if let Some(element) = self.get_element_mut(element_id) {
                 element.fuel_remaining -= fuel_consumed;
                 fuel_consumed_actual = fuel_consumed;
+                
+                // CRITICAL: Burning elements continue to heat up from their own combustion
+                // Heat released = fuel consumed × heat content (kJ/kg)
+                if fuel_consumed > 0.0 && element.fuel_remaining > 0.1 {
+                    let combustion_heat = fuel_consumed * element.fuel.heat_content;
+                    // Only fraction of heat goes to element (rest radiates away)
+                    let self_heating = combustion_heat * 0.3; // 30% self-heating
+                    let temp_rise = self_heating / (element.fuel_remaining * element.fuel.specific_heat);
+                    element.temperature = (element.temperature + temp_rise)
+                        .min(element.fuel.max_flame_temperature);
+                }
 
                 if element.fuel_remaining < 0.01 {
                     element.ignited = false;
@@ -503,8 +514,10 @@ impl FireSimulation {
                             }
 
                             // Get target element data (read-only)
+                            // Heat transfer to BOTH ignited and non-ignited elements
+                            // Ignited elements need continuous heating to maintain/increase temperature
                             self.get_element(target_id).and_then(|target| {
-                                if target.ignited || target.fuel_remaining < 0.01 {
+                                if target.fuel_remaining < 0.01 {
                                     return None;
                                 }
 

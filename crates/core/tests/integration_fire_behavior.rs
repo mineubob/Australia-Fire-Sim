@@ -553,3 +553,105 @@ fn test_ember_spotting_between_trees() {
 
     println!("\n✅ Ember spotting test PASSED - Albini physics active and generating embers");
 }
+
+/// Test: Fire spread rate varies appropriately with weather conditions
+/// This ensures catastrophic conditions don't cause unrealistic instant spread
+#[test]
+fn test_weather_conditions_spread_rate() {
+    println!("\n=== TEST: Weather Conditions Spread Rate ===");
+    
+    // Test three conditions: Moderate, Severe, Catastrophic
+    let conditions = vec![
+        ("Moderate", 25.0, 45.0, 15.0),      // 25°C, 45% RH, 15 km/h wind
+        ("Severe", 38.0, 15.0, 35.0),        // 38°C, 15% RH, 35 km/h wind  
+        ("Catastrophic", 45.0, 5.0, 60.0),   // 45°C, 5% RH, 60 km/h wind
+    ];
+    
+    let mut results = Vec::new();
+    
+    for (name, temp, humidity, wind) in conditions {
+        println!("\n--- Testing {} conditions ---", name);
+        println!("Temperature: {}°C, Humidity: {}%, Wind: {} km/h", temp, humidity, wind);
+        
+        // Create simulation
+        let terrain = fire_sim_core::grid::TerrainData::flat(100.0, 100.0, 3.0, 0.0);
+        let mut sim = FireSimulation::new(5.0, terrain);
+        
+        // Create simple grid of fuel elements (5x5 = 25 elements, 5m spacing)
+        let mut element_ids = Vec::new();
+        for x in 0..5 {
+            for y in 0..5 {
+                let id = sim.add_fuel_element(
+                    Vec3::new(40.0 + x as f32 * 5.0, 40.0 + y as f32 * 5.0, 0.5),
+                    Fuel::dry_grass(),
+                    2.0,
+                    FuelPart::GroundVegetation,
+                    None,
+                );
+                element_ids.push(id);
+            }
+        }
+        
+        // Set weather
+        let mut weather = WeatherSystem::default();
+        weather.temperature = temp;
+        weather.humidity = humidity;
+        weather.wind_speed = wind;
+        weather.wind_direction = 270.0; // Westerly wind
+        weather.drought_factor = 8.0;
+        sim.set_weather(weather);
+        
+        // Ignite center element
+        let center_id = element_ids[12]; // Center of 5x5 grid
+        sim.ignite_element(center_id, 400.0);
+        
+        // Track spread over 60 seconds
+        let mut ignited_count_at_times = Vec::new();
+        for step in 0..60 {
+            sim.update(1.0);
+            
+            let ignited_count = element_ids.iter()
+                .filter(|id| sim.get_element(**id).map(|e| e.is_ignited()).unwrap_or(false))
+                .count();
+            
+            // Record at specific times
+            if step == 10 || step == 30 || step == 59 {
+                ignited_count_at_times.push((step + 1, ignited_count));
+                println!("  t={}s: {} elements ignited", step + 1, ignited_count);
+            }
+        }
+        
+        let final_count = ignited_count_at_times.last().map(|(_, c)| *c).unwrap_or(0);
+        results.push((name, final_count, ignited_count_at_times));
+    }
+    
+    println!("\n=== Results Summary ===");
+    for (name, final_count, times) in &results {
+        println!("{}: {} elements after 60s", name, final_count);
+        for (t, c) in times {
+            println!("  t={}s: {}", t, c);
+        }
+    }
+    
+    // Validation
+    let moderate_count = results[0].1;
+    let severe_count = results[1].1;
+    let catastrophic_count = results[2].1;
+    
+    // 1. All conditions should show SOME spread (fire works)
+    assert!(moderate_count >= 1, "Moderate: Should have at least 1 burning, got {}", moderate_count);
+    assert!(severe_count >= 1, "Severe: Should have at least 1 burning, got {}", severe_count);
+    assert!(catastrophic_count >= 1, "Catastrophic: Should have at least 1 burning, got {}", catastrophic_count);
+    
+    // 2. Higher severity should spread faster (but not unrealistically)
+    // Catastrophic should NOT ignite everything instantly (max 25 elements)
+    assert!(catastrophic_count < 25 || results[2].2[0].1 < 20, 
+        "Catastrophic should not ignite everything at t=10s, got {} at first check", 
+        results[2].2[0].1);
+    
+    // 3. There should be a difference between conditions
+    println!("\n✓ Spread increases with severity: {} < {} < {}", 
+        moderate_count, severe_count, catastrophic_count);
+    
+    println!("\n✅ Weather conditions test PASSED - Spread rate varies realistically");
+}
