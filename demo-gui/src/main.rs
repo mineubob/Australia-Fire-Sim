@@ -543,7 +543,7 @@ impl FromWorld for SimulationState {
 
 impl SimulationState {
     fn from_config(config: &DemoConfig) -> Self {
-        let terrain_hill = config.map_height.min(config.map_width) * 0.25;
+        let terrain_hill = config.map_height.min(config.map_width) * 0.15;
 
         // Create terrain based on config
         let terrain = match config.terrain_type {
@@ -1173,6 +1173,11 @@ fn handle_controls(
     mut next_state: ResMut<NextState<GameState>>,
     mut ray_cast: MeshRayCast,
 ) {
+    // Reset simulation - recreate from config
+    if keyboard.just_pressed(KeyCode::KeyR) {
+        *sim_state = SimulationState::from_config(&config);
+    }
+
     // Pause/Resume
     if keyboard.just_pressed(KeyCode::Space) {
         sim_state.paused = !sim_state.paused;
@@ -1184,76 +1189,6 @@ fn handle_controls(
     }
     if keyboard.just_pressed(KeyCode::BracketRight) {
         sim_state.speed = (sim_state.speed * 2.0).min(10.0);
-    }
-
-    // Reset simulation - recreate from config
-    if keyboard.just_pressed(KeyCode::KeyR) {
-        // Create terrain based on config
-        let terrain = match config.terrain_type {
-            TerrainType::Flat => TerrainData::flat(config.map_width, config.map_height, 5.0, 0.0),
-            TerrainType::Hill => {
-                TerrainData::single_hill(config.map_width, config.map_height, 5.0, 0.0, 80.0, 40.0)
-            }
-            TerrainType::Valley => TerrainData::valley_between_hills(
-                config.map_width,
-                config.map_height,
-                5.0,
-                0.0,
-                80.0,
-            ),
-        };
-
-        // Create simulation
-        let mut sim = FireSimulation::new(5.0, terrain);
-
-        // Set weather conditions from config
-        let weather = if config.use_weather_preset {
-            // Use dynamic weather preset
-            config.weather_preset.to_system()
-        } else {
-            // Use static weather values
-            WeatherSystem::new(
-                config.temperature,
-                config.humidity,
-                config.wind_speed,
-                config.wind_direction,
-                config.drought_factor,
-            )
-        };
-        sim.set_weather(weather);
-
-        // Add fuel elements in a grid
-        let center_x = config.map_width / 2.0;
-        let center_y = config.map_height / 2.0;
-        let start_x =
-            center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
-        let start_y =
-            center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
-
-        for i in 0..config.elements_x {
-            for j in 0..config.elements_y {
-                let x = start_x + i as f32 * config.spacing;
-                let y = start_y + j as f32 * config.spacing;
-                let elevation = sim.get_terrain().elevation_at(x, y);
-
-                let fuel = config.fuel_type.to_fuel();
-                sim.add_fuel_element(
-                    SimVec3::new(x, y, elevation + 0.5),
-                    fuel,
-                    config.fuel_mass,
-                    FuelPart::GroundVegetation,
-                    None,
-                );
-            }
-        }
-
-        // No auto-ignition - user will manually ignite fuel elements with 'I' key
-
-        sim_state.simulation = sim;
-        sim_state.paused = false;
-        sim_state.speed = 1.0;
-        sim_state.time_accumulator = 0.0;
-        // Note: Fuel entity map is not cleared - entities will be updated in update_fuel_visuals
     }
 
     // Manual ignition at cursor position
