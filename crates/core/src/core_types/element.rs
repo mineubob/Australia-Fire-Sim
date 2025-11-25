@@ -33,9 +33,9 @@ pub enum FuelPart {
 /// Individual fuel element in 3D space
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FuelElement {
-    pub id: u32,
-    pub position: Vec3, // World position in meters
-    pub fuel: Fuel,     // Comprehensive fuel type with all properties
+    pub(crate) id: u32,
+    pub(crate) position: Vec3, // World position in meters
+    pub(crate) fuel: Fuel,     // Comprehensive fuel type with all properties
 
     // Thermal state (accessible within crate only)
     pub(crate) temperature: f32,       // Current temperature (°C)
@@ -45,8 +45,8 @@ pub struct FuelElement {
     pub(crate) flame_height: f32, // meters (Byram's formula)
 
     // Structural relationships
-    pub parent_id: Option<u32>, // Parent structure/tree ID
-    pub part_type: FuelPart,    // What kind of fuel part
+    pub(crate) parent_id: Option<u32>, // Parent structure/tree ID
+    pub(crate) part_type: FuelPart,    // What kind of fuel part
 
     // Spatial context
     pub(crate) elevation: f32,      // Height above ground
@@ -64,7 +64,7 @@ pub struct FuelElement {
 
 impl FuelElement {
     /// Create a new fuel element
-    pub fn new(
+    pub(crate) fn new(
         id: u32,
         position: Vec3,
         fuel: Fuel,
@@ -106,15 +106,60 @@ impl FuelElement {
         }
     }
 
+    /// This fuel element's id.
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    /// Get world position
+    pub fn position(&self) -> &Vec3 {
+        &self.position
+    }
+
+    /// Get fuel type
+    pub fn fuel(&self) -> &Fuel {
+        &self.fuel
+    }
+
+    /// Get fuel part type
+    pub fn part_type(&self) -> FuelPart {
+        self.part_type
+    }
+
+    /// Get parent element ID (if any)
+    pub fn parent_id(&self) -> Option<u32> {
+        self.parent_id
+    }
+
+    /// Get elevation (height above ground)
+    pub fn elevation(&self) -> f32 {
+        self.elevation
+    }
+
+    /// Get local terrain slope angle in degrees
+    pub fn slope_angle(&self) -> f32 {
+        self.slope_angle
+    }
+
+    /// Get neighboring element IDs
+    pub fn neighbors(&self) -> &[u32] {
+        &self.neighbors
+    }
+
+    /// Get fuel moisture state (if present)
+    pub fn moisture_state(&self) -> Option<&crate::physics::FuelMoistureState> {
+        self.moisture_state.as_ref()
+    }
+
     /// Set temperature (for testing)
     #[cfg(test)]
-    pub fn with_temperature(mut self, temperature: f32) -> Self {
+    pub(crate) fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
     }
 
     /// Apply heat to this fuel element (CRITICAL: moisture evaporation first)
-    pub fn apply_heat(&mut self, heat_kj: f32, dt: f32, ambient_temperature: f32) {
+    pub(crate) fn apply_heat(&mut self, heat_kj: f32, dt: f32, ambient_temperature: f32) {
         if heat_kj <= 0.0 || self.fuel_remaining <= 0.0 {
             return;
         }
@@ -187,13 +232,13 @@ impl FuelElement {
     }
 
     /// Manually ignite this element
-    pub fn ignite(&mut self, initial_temp: f32) {
+    pub(crate) fn ignite(&mut self, initial_temp: f32) {
         self.ignited = true;
         self.temperature = initial_temp.max(self.fuel.ignition_temperature);
     }
 
     /// Calculate burn rate in kg/s
-    pub fn calculate_burn_rate(&self) -> f32 {
+    pub(crate) fn calculate_burn_rate(&self) -> f32 {
         // OPTIMIZATION: Early exits for non-burning conditions
         if !self.ignited {
             return 0.0;
@@ -240,7 +285,7 @@ impl FuelElement {
     /// # References
     /// - Byram, G.M. (1959). "Combustion of forest fuels." In Forest Fire: Control and Use.
     /// - Rothermel, R.C. (1972). "A mathematical model for predicting fire spread in wildland fuels."
-    pub fn byram_fireline_intensity(&self, wind_speed_ms: f32) -> f32 {
+    pub(crate) fn byram_fireline_intensity(&self, wind_speed_ms: f32) -> f32 {
         // OPTIMIZATION: Early exits for non-burning conditions
         if !self.ignited {
             return 0.0;
@@ -288,7 +333,7 @@ impl FuelElement {
     /// # References
     /// - Byram, G.M. (1959). "Combustion of forest fuels." In Forest Fire: Control and Use.
     /// - Equation empirically validated for Australian conditions
-    pub fn calculate_flame_height(&self, wind_speed_ms: f32) -> f32 {
+    pub(crate) fn calculate_flame_height(&self, wind_speed_ms: f32) -> f32 {
         let intensity = self.byram_fireline_intensity(wind_speed_ms);
 
         // L = 0.0775 × I^0.46 [meters]
@@ -300,12 +345,12 @@ impl FuelElement {
     }
 
     /// Update flame height
-    pub fn update_flame_height(&mut self, wind_speed_ms: f32) {
+    pub(crate) fn update_flame_height(&mut self, wind_speed_ms: f32) {
         self.flame_height = self.calculate_flame_height(wind_speed_ms);
     }
 
     /// Burn fuel mass
-    pub fn burn_fuel(&mut self, dt: f32) {
+    pub(crate) fn burn_fuel(&mut self, dt: f32) {
         if !self.ignited {
             return;
         }
@@ -322,14 +367,14 @@ impl FuelElement {
     }
 
     /// Check if this element can ignite (not already burning, has fuel, etc.)
-    pub fn can_ignite(&self) -> bool {
+    pub(crate) fn can_ignite(&self) -> bool {
         !self.ignited
             && self.fuel_remaining > 0.01
             && self.moisture_fraction < self.fuel.moisture_of_extinction
     }
 
     /// Get heat radiation output in kW
-    pub fn get_radiation_power(&self) -> f32 {
+    pub(crate) fn get_radiation_power(&self) -> f32 {
         if !self.ignited {
             return 0.0;
         }
@@ -378,4 +423,43 @@ impl FuelElement {
     pub fn is_crown_fire_active(&self) -> bool {
         self.crown_fire_active
     }
+
+    /// Get comprehensive statistics about this fuel element
+    pub fn get_stats(&self) -> FuelElementStats {
+        FuelElementStats {
+            id: self.id,
+            position: self.position,
+            temperature: self.temperature,
+            moisture_fraction: self.moisture_fraction,
+            fuel_remaining: self.fuel_remaining,
+            ignited: self.ignited,
+            flame_height: self.flame_height,
+            part_type: self.part_type,
+            elevation: self.elevation,
+            slope_angle: self.slope_angle,
+            crown_fire_active: self.crown_fire_active,
+            fuel_type_name: self.fuel.name.clone(),
+            ignition_temperature: self.fuel.ignition_temperature,
+            heat_content: self.fuel.heat_content,
+        }
+    }
+}
+
+/// Statistics snapshot of a fuel element
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuelElementStats {
+    pub id: u32,
+    pub position: Vector3<f32>,
+    pub temperature: f32,
+    pub moisture_fraction: f32,
+    pub fuel_remaining: f32,
+    pub ignited: bool,
+    pub flame_height: f32,
+    pub part_type: FuelPart,
+    pub elevation: f32,
+    pub slope_angle: f32,
+    pub crown_fire_active: bool,
+    pub fuel_type_name: String,
+    pub ignition_temperature: f32,
+    pub heat_content: f32,
 }

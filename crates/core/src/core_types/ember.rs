@@ -79,8 +79,8 @@ use serde::{Deserialize, Serialize};
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ember {
-    pub id: u32,
-    pub position: Vec3,
+    pub(crate) id: u32,
+    pub(crate) position: Vec3,
     pub(crate) velocity: Vec3,
     pub(crate) temperature: f32,
     pub(crate) mass: f32, // kg (0.0001 to 0.01)
@@ -89,7 +89,7 @@ pub struct Ember {
 
 impl Ember {
     /// Create a new ember
-    pub fn new(
+    pub(crate) fn new(
         id: u32,
         position: Vec3,
         velocity: Vec3,
@@ -153,7 +153,7 @@ impl Ember {
     ///
     /// - Koo et al. (2010) - Firebrand physics and trajectory modeling
     /// - Manzello et al. (2020) - Experimental ember transport studies
-    pub fn update_physics(&mut self, wind: Vec3, ambient_temp: f32, dt: f32) {
+    pub(crate) fn update_physics(&mut self, wind: Vec3, ambient_temp: f32, dt: f32) {
         const AIR_DENSITY: f32 = 1.225; // kg/m³ at sea level, 20°C
 
         let ember_volume = self.mass / 400.0; // ~400 kg/m³ for char
@@ -283,7 +283,7 @@ impl Ember {
 ///
 /// println!("Generated {} embers", embers.len());
 /// ```
-pub fn spawn_embers(
+pub(crate) fn spawn_embers(
     position: Vec3,
     temperature: f32,
     fuel_remaining: f32,
@@ -360,7 +360,7 @@ pub fn spawn_embers(
 /// let prob = ember_ignition_probability(&ember, dry_grass_receptivity);
 /// // High probability for hot ember on receptive fuel
 /// ```
-pub fn ember_ignition_probability(ember: &Ember, fuel_receptivity: f32) -> f32 {
+pub(crate) fn ember_ignition_probability(ember: &Ember, fuel_receptivity: f32) -> f32 {
     let temp_factor = (ember.temperature / 300.0).min(1.0);
     let mass_factor = (ember.mass / 0.001).min(1.0);
 

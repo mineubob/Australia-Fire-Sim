@@ -596,12 +596,7 @@ fn test_weather_conditions_spread_rate() {
         }
 
         // Set weather
-        let mut weather = WeatherSystem::default();
-        weather.temperature = temp;
-        weather.humidity = humidity;
-        weather.wind_speed = wind;
-        weather.wind_direction = 270.0; // Westerly wind
-        weather.drought_factor = 8.0;
+        let weather = WeatherSystem::new(temp, humidity, wind, 270.0, 8.0);
         sim.set_weather(weather);
 
         // Ignite center element

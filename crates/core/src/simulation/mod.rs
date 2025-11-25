@@ -20,17 +20,17 @@ use std::collections::{HashMap, HashSet};
 /// Ultra-realistic fire simulation with full atmospheric modeling
 pub struct FireSimulation {
     // Atmospheric grid
-    pub grid: SimulationGrid,
+    pub(crate) grid: SimulationGrid,
 
     // Fuel elements
     elements: Vec<Option<FuelElement>>,
     /// Set of burning element IDs
-    pub burning_elements: HashSet<u32>,
+    pub(crate) burning_elements: HashSet<u32>,
     next_element_id: u32,
 
     // Spatial indexing for elements
     /// Spatial index for efficient neighbor queries
-    pub spatial_index: SpatialIndex,
+    pub(crate) spatial_index: SpatialIndex,
 
     // Weather system
     pub weather: WeatherSystem,
@@ -43,10 +43,8 @@ pub struct FireSimulation {
     max_search_radius: f32,
 
     // Statistics
-    pub total_fuel_consumed: f32,
-    pub total_area_burned: f32,
-    pub simulation_time: f32,
-    pub max_fire_intensity: f32,
+    pub(crate) total_fuel_consumed: f32,
+    pub(crate) simulation_time: f32,
 }
 
 impl FireSimulation {
@@ -77,10 +75,18 @@ impl FireSimulation {
             _next_ember_id: 0,
             max_search_radius: 10.0, // Reduced from 15.0m to prevent instant ignition of adjacent trees
             total_fuel_consumed: 0.0,
-            total_area_burned: 0.0,
             simulation_time: 0.0,
-            max_fire_intensity: 0.0,
         }
+    }
+
+    /// Get the grid's terrain.
+    pub fn terrain(&self) -> &TerrainData {
+        &self.grid.terrain
+    }
+
+    /// Get the current number of active embers
+    pub fn ember_count(&self) -> usize {
+        self.embers.len()
     }
 
     /// Add a fuel element to the simulation
@@ -116,6 +122,23 @@ impl FireSimulation {
             element.temperature = initial_temp.max(element.fuel.ignition_temperature);
             self.burning_elements.insert(element_id);
         }
+    }
+
+    /// Get all fuel elements within a certain radius around a position
+    ///
+    /// # Arguments
+    /// * `position` - Center position in world space
+    /// * `radius` - Search radius in meters
+    ///
+    /// # Returns
+    /// Vector of references to fuel elements within the specified radius
+    pub fn get_elements_in_radius(&self, position: Vec3, radius: f32) -> Vec<&FuelElement> {
+        let nearby_ids = self.spatial_index.query_radius(position, radius);
+
+        nearby_ids
+            .into_iter()
+            .filter_map(|id| self.get_element(id))
+            .collect()
     }
 
     /// Get a fuel element by ID
@@ -166,7 +189,7 @@ impl FireSimulation {
         self.weather.update(dt);
         let wind_vector = self.weather.wind_vector();
         let ffdi_multiplier = self.weather.spread_rate_multiplier();
-        
+
         // Heat transfer boost factor for smaller timesteps
         // With dt=0.1s, 10 updates per second still need effective heat transfer
         // This compensates for numerical precision losses at smaller timesteps
@@ -698,16 +721,6 @@ impl FireSimulation {
             total_fuel_consumed: self.total_fuel_consumed,
             simulation_time: self.simulation_time,
         }
-    }
-
-    /// Get terrain data
-    pub fn get_terrain(&self) -> &TerrainData {
-        &self.grid.terrain
-    }
-
-    /// Get the current number of active embers
-    pub fn ember_count(&self) -> usize {
-        self.embers.len()
     }
 }
 

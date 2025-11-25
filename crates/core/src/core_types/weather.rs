@@ -755,16 +755,16 @@ impl WeatherPreset {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeatherSystem {
     /// Current air temperature (°C)
-    pub temperature: f32,
+    pub(crate) temperature: f32,
 
     /// Current relative humidity (0-100%)
-    pub humidity: f32,
+    pub(crate) humidity: f32,
 
     /// Current wind speed (km/h)
-    pub wind_speed: f32,
+    pub(crate) wind_speed: f32,
 
     /// Wind direction in degrees (0=North, 90=East, 180=South, 270=West)
-    pub wind_direction: f32,
+    pub(crate) wind_direction: f32,
 
     /// Drought factor (0-10)
     ///
@@ -774,7 +774,7 @@ pub struct WeatherSystem {
     /// - 4-6: Significant drying, fire spread increases
     /// - 6-8: Severe drought, rapid fire spread
     /// - 8-10: Extreme drought, explosive fire behavior
-    pub drought_factor: f32,
+    pub(crate) drought_factor: f32,
 
     /// Time of day in hours (0-24)
     ///
@@ -807,7 +807,7 @@ pub struct WeatherSystem {
     pub(crate) preset: Option<WeatherPreset>,
 
     /// Active climate pattern (El Niño, La Niña, or Neutral)
-    pub climate_pattern: ClimatePattern,
+    pub(crate) climate_pattern: ClimatePattern,
 
     /// Whether a heatwave is occurring
     pub(crate) is_heatwave: bool,
@@ -1285,6 +1285,53 @@ impl WeatherSystem {
 
         (base_moisture * humidity_factor * temp_factor).clamp(0.0, 1.0)
     }
+
+    /// Get comprehensive statistics about current weather conditions
+    pub fn get_stats(&self) -> WeatherStats {
+        WeatherStats {
+            temperature: self.temperature,
+            humidity: self.humidity,
+            wind_speed: self.wind_speed,
+            wind_direction: self.wind_direction,
+            wind_speed_ms: self.wind_speed_ms(),
+            drought_factor: self.drought_factor,
+            time_of_day: self.time_of_day,
+            day_of_year: self.day_of_year,
+            ffdi: self.calculate_ffdi(),
+            fire_danger_rating: self.fire_danger_rating().to_string(),
+            spread_rate_multiplier: self.spread_rate_multiplier(),
+            solar_radiation: self.solar_radiation(),
+            fuel_curing: self.fuel_curing(),
+            climate_pattern: self.climate_pattern,
+            is_heatwave: self.is_heatwave,
+            heatwave_days_remaining: self.heatwave_days_remaining,
+            preset_name: self.preset_name(),
+            weather_front_progress: self.weather_front_progress,
+        }
+    }
+}
+
+/// Statistics snapshot of weather system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeatherStats {
+    pub temperature: f32,
+    pub humidity: f32,
+    pub wind_speed: f32,
+    pub wind_direction: f32,
+    pub wind_speed_ms: f32,
+    pub drought_factor: f32,
+    pub time_of_day: f32,
+    pub day_of_year: u16,
+    pub ffdi: f32,
+    pub fire_danger_rating: String,
+    pub spread_rate_multiplier: f32,
+    pub solar_radiation: f32,
+    pub fuel_curing: f32,
+    pub climate_pattern: ClimatePattern,
+    pub is_heatwave: bool,
+    pub heatwave_days_remaining: u8,
+    pub preset_name: Option<String>,
+    pub weather_front_progress: f32,
 }
 
 #[cfg(test)]

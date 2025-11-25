@@ -52,7 +52,7 @@ pub struct SmolderingState {
 
 impl SmolderingState {
     /// Create new unignited state
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         SmolderingState {
             phase: CombustionPhase::Unignited,
             heat_release_multiplier: 0.0,
@@ -62,7 +62,7 @@ impl SmolderingState {
     }
 
     /// Create flaming state
-    pub fn flaming() -> Self {
+    pub(crate) fn flaming() -> Self {
         SmolderingState {
             phase: CombustionPhase::Flaming,
             heat_release_multiplier: 1.0,

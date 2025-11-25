@@ -166,26 +166,26 @@ impl GridCell {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimulationGrid {
     /// Grid dimensions in world space (m)
-    pub width: f32,
-    pub height: f32,
-    pub depth: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) depth: f32,
 
     /// Grid resolution (cells)
-    pub nx: usize,
-    pub ny: usize,
-    pub nz: usize,
+    pub(crate) nx: usize,
+    pub(crate) ny: usize,
+    pub(crate) nz: usize,
 
     /// Cell size (m)
-    pub cell_size: f32,
+    pub(crate) cell_size: f32,
 
     /// Grid cells in row-major order: [z * (ny * nx) + y * nx + x]
-    pub cells: Vec<GridCell>,
+    pub(crate) cells: Vec<GridCell>,
 
     /// Terrain data for elevation
-    pub terrain: TerrainData,
+    pub(crate) terrain: TerrainData,
 
     /// Precomputed terrain properties cache (slope/aspect)
-    pub terrain_cache: TerrainCache,
+    pub(crate) terrain_cache: TerrainCache,
 
     /// Last base wind used for updates (to skip redundant updates)
     pub(crate) last_base_wind: Vec3,
@@ -194,9 +194,9 @@ pub struct SimulationGrid {
     active_cell_indices: Vec<usize>,
 
     /// Ambient conditions
-    pub ambient_temperature: f32,
-    pub ambient_wind: Vec3,
-    pub ambient_humidity: f32,
+    pub(crate) ambient_temperature: f32,
+    pub(crate) ambient_wind: Vec3,
+    pub(crate) ambient_humidity: f32,
 }
 
 impl SimulationGrid {
@@ -447,7 +447,7 @@ impl SimulationGrid {
     }
 
     /// Update atmospheric diffusion (parallel, active cells only)
-    pub fn update_diffusion(&mut self, dt: f32) {
+    pub(crate) fn update_diffusion(&mut self, dt: f32) {
         // Enhanced diffusion coefficient to account for fire-driven convection
         // Still air: 0.00002 m²/s, but fires create strong convective mixing
         // Effective diffusivity can be 100-1000x higher near fires
@@ -566,7 +566,7 @@ impl SimulationGrid {
     }
 
     /// Update buoyancy-driven convection (hot air rises)
-    pub fn update_buoyancy(&mut self, dt: f32) {
+    pub(crate) fn update_buoyancy(&mut self, dt: f32) {
         // Vertical advection of heat due to buoyancy
         for iz in 1..self.nz {
             for iy in 0..self.ny {
@@ -599,7 +599,7 @@ impl SimulationGrid {
     }
 
     /// Mark cells near burning elements as active
-    pub fn mark_active_cells(&mut self, active_positions: &[Vec3], activation_radius: f32) {
+    pub(crate) fn mark_active_cells(&mut self, active_positions: &[Vec3], activation_radius: f32) {
         // Reset only previously active cells to inactive (MAJOR PERFORMANCE WIN)
         // Instead of iterating 36 million cells, only iterate ~1456 active cells
         for &idx in &self.active_cell_indices {
