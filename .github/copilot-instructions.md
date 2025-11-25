@@ -937,7 +937,7 @@ fn test_ffdi_calibration() {
 
 - **Why**: Full outputs are essential for correctness (error traces, test failures, and subtle warnings are often truncated) and for safe automated changes, especially in a high-fidelity simulation project where small differences matter.
 
-- **Examples / Tips**: When running commands, prefer options that produce full logs; for example, `git --no-pager log` or `cargo test -- --nocapture`, and always prefer to inspect the full raw logs rather than a shortened summary.
+- **Examples / Tips**: When running commands, prefer options that produce full logs; for example, `git --no-pager log` or `cargo test -- --show-output`, and always prefer to inspect the full raw logs rather than a shortened summary.
 
 - **Validate Rust code**: Before submitting any code changes, AI agents MUST validate Rust code using the following commands to ensure correctness and formatting:
     - Run `cargo clippy --all-targets --all-features -- -D warnings` to treat all clippy warnings as errors and catch potential issues.
