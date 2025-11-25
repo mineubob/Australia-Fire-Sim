@@ -169,11 +169,24 @@ impl Ember {
         // 2. Wind drag (THE CRITICAL EFFECT for 25km spotting)
         let relative_velocity = wind - self.velocity;
         let drag_coeff = 0.4; // sphere approximation
-        let cross_section = 0.01; // m² (typical bark fragment)
+        // Cross-section scales with mass: sqrt(mass/density) for characteristic length
+        // For a 1g ember at 400 kg/m³: volume = 2.5e-6 m³, characteristic length ~1.4cm
+        // Cross section ~0.0002 m² (2 cm²)
+        // Scale cross section with mass for realistic physics
+        let base_cross_section = 0.0002; // m² for 1g ember
+        let cross_section = base_cross_section * (self.mass / 0.001).powf(0.67); // Surface area scales as mass^(2/3)
         let drag_force =
             0.5 * AIR_DENSITY * drag_coeff * relative_velocity.magnitude_squared() * cross_section;
+        // Cap acceleration to prevent numerical instability
+        let max_accel = 50.0; // m/s² maximum acceleration from drag
         let drag_accel = if relative_velocity.magnitude() > 0.01 {
-            (relative_velocity.normalize() * drag_force) / self.mass
+            let accel = (relative_velocity.normalize() * drag_force) / self.mass;
+            let accel_mag = accel.magnitude();
+            if accel_mag > max_accel {
+                accel * (max_accel / accel_mag)
+            } else {
+                accel
+            }
         } else {
             Vec3::zeros()
         };
