@@ -120,6 +120,10 @@ impl FireSimulation {
         if let Some(Some(element)) = self.elements.get_mut(element_id as usize) {
             element.ignited = true;
             element.temperature = initial_temp.max(element.fuel.ignition_temperature);
+            // Initialize smoldering state for tracking combustion phases (Phase 3)
+            if element.smoldering_state.is_none() {
+                element.smoldering_state = Some(crate::physics::SmolderingState::default());
+            }
             self.burning_elements.insert(element_id);
         }
     }
@@ -632,8 +636,13 @@ impl FireSimulation {
                 target.apply_heat(total_heat, dt, ambient_temp);
 
                 // Check for ignition
-                if target.temperature > target.fuel.ignition_temperature {
+                if target.temperature > target.fuel.ignition_temperature && !target.ignited {
                     target.ignited = true;
+                    // Initialize smoldering state for tracking combustion phases (Phase 3)
+                    if target.smoldering_state.is_none() {
+                        target.smoldering_state =
+                            Some(crate::physics::SmolderingState::default());
+                    }
                     self.burning_elements.insert(target_id);
                 }
             }
