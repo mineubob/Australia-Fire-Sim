@@ -33,7 +33,7 @@ pub struct FireSimulation {
     pub(crate) spatial_index: SpatialIndex,
 
     // Weather system
-    pub weather: WeatherSystem,
+    weather: WeatherSystem,
 
     // Embers
     embers: Vec<Ember>,
@@ -160,6 +160,11 @@ impl FireSimulation {
 
         // Now move weather
         self.weather = weather;
+    }
+
+    /// Get reference to weather system (read-only)
+    pub fn get_weather(&self) -> &WeatherSystem {
+        &self.weather
     }
 
     /// Apply suppression directly at specified coordinates without physics simulation

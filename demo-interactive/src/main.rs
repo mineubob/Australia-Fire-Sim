@@ -42,11 +42,7 @@ fn main() {
         "Created simulation with {} elements",
         sim.get_all_elements().len()
     );
-
-    // Start with one ignited element
-    if let Some(id) = sim.get_all_elements().first().map(|e| e.id()) {
-        ignite_element(&mut sim, id);
-    }
+    println!("No elements are ignited. Use 'ignite <id>' to start a fire.");
 
     // Setup readline
     let mut rl = match DefaultEditor::new() {
@@ -108,6 +104,7 @@ fn main() {
                         }
                     }
                     "help" | "?" => show_help(),
+                    "heatmap" | "hm" => show_heatmap(&sim),
                     "quit" | "q" | "exit" => {
                         println!("Goodbye!");
                         break;
@@ -277,7 +274,7 @@ fn show_status(sim: &FireSimulation) {
 }
 
 fn show_weather(sim: &FireSimulation) {
-    let w = &sim.weather.get_stats();
+    let w = sim.get_weather().get_stats();
     println!("\n═══════════════ WEATHER CONDITIONS ═══════════════");
     println!("Temperature:     {:.1}°C", w.temperature);
     println!("Humidity:        {:.1}%", w.humidity);
@@ -459,6 +456,96 @@ fn set_preset(sim: &mut FireSimulation, name: &str) {
     show_weather(sim);
 }
 
+/// Display an ASCII heatmap of temperature distribution
+fn show_heatmap(sim: &FireSimulation) {
+    println!("\n═══════════════ TEMPERATURE HEATMAP ═══════════════");
+    
+    // Create a 30x30 grid covering the simulation area (150x150m)
+    let grid_size = 30;
+    let cell_size = 5.0; // 5m per cell
+    
+    let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
+    let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
+    
+    // Accumulate temperatures
+    for e in sim.get_all_elements() {
+        let stats = e.get_stats();
+        let x = (stats.position.x / cell_size).floor() as i32;
+        let y = (stats.position.y / cell_size).floor() as i32;
+        
+        if x >= 0 && x < grid_size as i32 && y >= 0 && y < grid_size as i32 {
+            let ix = x as usize;
+            let iy = y as usize;
+            grid[iy][ix] += stats.temperature;
+            counts[iy][ix] += 1;
+        }
+    }
+    
+    // Average temperatures
+    for y in 0..grid_size {
+        for x in 0..grid_size {
+            if counts[y][x] > 0 {
+                grid[y][x] /= counts[y][x] as f32;
+            }
+        }
+    }
+    
+    // Find temperature range
+    let mut min_temp = f32::MAX;
+    let mut max_temp = f32::MIN;
+    for row in &grid {
+        for &temp in row {
+            if temp > 0.0 {
+                min_temp = min_temp.min(temp);
+                max_temp = max_temp.max(temp);
+            }
+        }
+    }
+    
+    // Legend
+    println!("Legend: · = empty  ░ = cold  ▒ = warm  ▓ = hot  █ = burning");
+    println!("Temperature range: {:.0}°C - {:.0}°C\n", min_temp, max_temp);
+    
+    // Print heatmap (top-down view, Y increases downward)
+    for y in (0..grid_size).rev() {
+        print!("{:3} │ ", y * 5);
+        for x in 0..grid_size {
+            if counts[y][x] == 0 {
+                print!("· ");
+            } else {
+                let temp = grid[y][x];
+                let c = if temp > 400.0 {
+                    '█' // Burning
+                } else if temp > 200.0 {
+                    '▓' // Hot
+                } else if temp > 100.0 {
+                    '▒' // Warm
+                } else if temp > 50.0 {
+                    '░' // Cold/warming
+                } else {
+                    '·' // Ambient
+                };
+                print!("{} ", c);
+            }
+        }
+        println!();
+    }
+    
+    // X-axis labels
+    print!("    └");
+    for _ in 0..grid_size {
+        print!("──");
+    }
+    println!();
+    print!("      ");
+    for x in (0..grid_size).step_by(5) {
+        print!("{:<10}", x * 5);
+    }
+    println!("\n");
+    
+    println!("══════════════════════════════════════════════════\n");
+}
+
 fn show_help() {
     println!("\n═══════════════ AVAILABLE COMMANDS ═══════════════");
     println!("  step [n], s [n]   - Advance n timesteps (default 1)");
@@ -469,7 +556,7 @@ fn show_help() {
     println!("  embers, em        - List active embers");
     println!("  nearby <id>, n    - Show elements near <id>");
     println!("  ignite <id>, i    - Manually ignite element");
-    println!("  heat <id> [amt]   - Add heat to element");
+    println!("  heatmap, hm       - Show temperature heatmap");
     println!("  preset <name>, p  - Change weather preset");
     println!("                      (perth, catastrophic, goldfields, wheatbelt, hot)");
     println!("  help, ?           - Show this help");
