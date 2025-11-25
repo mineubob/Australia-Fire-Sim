@@ -616,8 +616,11 @@ impl WeatherPreset {
             0.0
         };
 
-        // Diurnal cycle: coldest at 6am, hottest at 2pm
-        let hour_factor = ((time_of_day - 6.0) * std::f32::consts::PI / 8.0)
+        // Diurnal cycle: coldest at 6am, hottest at 2pm (8 hour half-period)
+        // Using π/16 factor so sin reaches 1.0 at 14:00 (2pm)
+        // At 6am: sin(0 * π/16) = 0 (min temp)
+        // At 2pm: sin(8 * π/16) = sin(π/2) = 1.0 (max temp)
+        let hour_factor = ((time_of_day - 6.0) * std::f32::consts::PI / 16.0)
             .sin()
             .max(0.0);
 

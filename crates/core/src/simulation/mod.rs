@@ -24,11 +24,13 @@ pub struct FireSimulation {
 
     // Fuel elements
     elements: Vec<Option<FuelElement>>,
-    burning_elements: HashSet<u32>,
+    /// Set of burning element IDs
+    pub burning_elements: HashSet<u32>,
     next_element_id: u32,
 
     // Spatial indexing for elements
-    spatial_index: SpatialIndex,
+    /// Spatial index for efficient neighbor queries
+    pub spatial_index: SpatialIndex,
 
     // Weather system
     pub weather: WeatherSystem,
@@ -122,7 +124,7 @@ impl FireSimulation {
     }
 
     /// Get a mutable fuel element by ID
-    fn get_element_mut(&mut self, id: u32) -> Option<&mut FuelElement> {
+    pub fn get_element_mut(&mut self, id: u32) -> Option<&mut FuelElement> {
         self.elements.get_mut(id as usize)?.as_mut()
     }
 
@@ -566,11 +568,7 @@ impl FireSimulation {
                                 );
 
                                 // Apply FFDI multiplier for realistic Australian fire behavior
-                                // Also apply a boost factor to ensure heat transfer works at small timesteps
-                                // The heat transfer is already proportional to dt, but small dt values
-                                // can cause heat to be lost to numerical precision in temperature calculations
-                                let heat_boost = 3.0; // Compensates for small timestep numerical effects
-                                let heat = base_heat * ffdi_multiplier * heat_boost;
+                                let heat = base_heat * ffdi_multiplier;
 
                                 if heat > 0.0 {
                                     Some((target_id, heat))
