@@ -7,7 +7,7 @@ This is a highly realistic emergency response simulation system with extremely d
 ═══════════════════════════════════════════════════════════════════════
 
 ### 1. EXTREME REALISM IS PARAMOUNT
-- This is NOT a game - it's a scientifically accurate wildfire simulation for emergency response training
+- This is NOT a game - it's a scientifically accurate wildfire simulation
 - Every system uses real-world fire science and physics formulas
 - All mechanics are based on actual bushfire behavior and firefighting operations
 - Physics consequences are realistic (extreme heat, rapid spread, ember spotting up to 25km)
