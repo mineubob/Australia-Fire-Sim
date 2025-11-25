@@ -738,10 +738,9 @@ impl FireSimulation {
                 if !was_ignited && target.ignited {
                     // Initialize smoldering state for tracking combustion phases (Phase 3)
                     if target.smoldering_state.is_none() {
-                        target.smoldering_state =
-                            Some(crate::physics::SmolderingState::default());
+                        target.smoldering_state = Some(crate::physics::SmolderingState::default());
                     }
-                    
+
                     self.burning_elements.insert(target_id);
                 }
             }
