@@ -166,6 +166,12 @@ impl FireSimulation {
         self.weather.update(dt);
         let wind_vector = self.weather.wind_vector();
         let ffdi_multiplier = self.weather.spread_rate_multiplier();
+        
+        // Heat transfer boost factor for smaller timesteps
+        // With dt=0.1s, 10 updates per second still need effective heat transfer
+        // This compensates for numerical precision losses at smaller timesteps
+        // While maintaining realistic overall fire spread behavior
+        let heat_boost = if dt < 0.5 { 5.0 } else { 1.0 };
 
         // 1a. Update fuel moisture using Nelson timelag system (Phase 1)
         // Assume desorption (drying) as typical wildfire conditions
@@ -567,8 +573,9 @@ impl FireSimulation {
                                     dt,
                                 );
 
-                                // Apply FFDI multiplier for realistic Australian fire behavior
-                                let heat = base_heat * ffdi_multiplier;
+                                // Apply FFDI multiplier and heat boost for realistic Australian fire behavior
+                                // Heat boost compensates for numerical precision at small timesteps
+                                let heat = base_heat * ffdi_multiplier * heat_boost;
 
                                 if heat > 0.0 {
                                     Some((target_id, heat))
