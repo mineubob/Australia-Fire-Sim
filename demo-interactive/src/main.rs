@@ -459,20 +459,20 @@ fn set_preset(sim: &mut FireSimulation, name: &str) {
 /// Display an ASCII heatmap of temperature distribution
 fn show_heatmap(sim: &FireSimulation) {
     println!("\n═══════════════ TEMPERATURE HEATMAP ═══════════════");
-    
+
     // Create a 30x30 grid covering the simulation area (150x150m)
     let grid_size = 30;
     let cell_size = 5.0; // 5m per cell
-    
+
     let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
     let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
-    
+
     // Accumulate temperatures
     for e in sim.get_all_elements() {
         let stats = e.get_stats();
         let x = (stats.position.x / cell_size).floor() as i32;
         let y = (stats.position.y / cell_size).floor() as i32;
-        
+
         if x >= 0 && x < grid_size as i32 && y >= 0 && y < grid_size as i32 {
             let ix = x as usize;
             let iy = y as usize;
@@ -480,7 +480,7 @@ fn show_heatmap(sim: &FireSimulation) {
             counts[iy][ix] += 1;
         }
     }
-    
+
     // Average temperatures
     for y in 0..grid_size {
         for x in 0..grid_size {
@@ -489,7 +489,7 @@ fn show_heatmap(sim: &FireSimulation) {
             }
         }
     }
-    
+
     // Find temperature range
     let mut min_temp = f32::MAX;
     let mut max_temp = f32::MIN;
@@ -501,11 +501,11 @@ fn show_heatmap(sim: &FireSimulation) {
             }
         }
     }
-    
+
     // Legend
     println!("Legend: · = empty  ░ = cold  ▒ = warm  ▓ = hot  █ = burning");
     println!("Temperature range: {:.0}°C - {:.0}°C\n", min_temp, max_temp);
-    
+
     // Print heatmap (top-down view, Y increases downward)
     for y in (0..grid_size).rev() {
         print!("{:3} │ ", y * 5);
@@ -530,7 +530,7 @@ fn show_heatmap(sim: &FireSimulation) {
         }
         println!();
     }
-    
+
     // X-axis labels
     print!("    └");
     for _ in 0..grid_size {
@@ -542,7 +542,7 @@ fn show_heatmap(sim: &FireSimulation) {
         print!("{:<10}", x * 5);
     }
     println!("\n");
-    
+
     println!("══════════════════════════════════════════════════\n");
 }
 
