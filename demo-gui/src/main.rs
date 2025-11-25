@@ -956,7 +956,7 @@ fn update_ui(
     fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
 ) -> Result {
     let stats = sim_state.simulation.get_stats();
-    let weather = &sim_state.simulation.weather.get_stats();
+    let weather = sim_state.simulation.get_weather().get_stats();
 
     // Get FPS from diagnostics
     let fps = diagnostics

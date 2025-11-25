@@ -117,7 +117,7 @@ fn test_single_tree_complete_burnout() {
 
     println!(
         "Weather: Temp=42°C, Humidity=12%, Wind=25km/h, FFDI={:.1}",
-        sim.weather.calculate_ffdi()
+        sim.get_weather().calculate_ffdi()
     );
 
     // Create single eucalyptus tree at center
@@ -264,7 +264,7 @@ fn test_multiple_trees_fire_spread() {
 
     println!(
         "Weather: Temp=38°C, Humidity=15%, Wind=20km/h East, FFDI={:.1}",
-        sim.weather.calculate_ffdi()
+        sim.get_weather().calculate_ffdi()
     );
 
     // Create a line of 5 trees from east to west (fire spreads westward)
@@ -432,7 +432,7 @@ fn test_ember_spotting_between_trees() {
 
     println!(
         "EXTREME CONDITIONS: Temp=44°C, Humidity=8%, Wind=35km/h, FFDI={:.1}",
-        sim.weather.calculate_ffdi()
+        sim.get_weather().calculate_ffdi()
     );
 
     // Create two trees far apart (50m gap downwind - beyond wind-extended search radius, only embers can bridge this)
