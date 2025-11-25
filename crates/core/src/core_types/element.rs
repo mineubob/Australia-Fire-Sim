@@ -231,12 +231,6 @@ impl FuelElement {
         }
     }
 
-    /// Manually ignite this element
-    pub(crate) fn ignite(&mut self, initial_temp: f32) {
-        self.ignited = true;
-        self.temperature = initial_temp.max(self.fuel.ignition_temperature);
-    }
-
     /// Calculate burn rate in kg/s
     pub(crate) fn calculate_burn_rate(&self) -> f32 {
         // OPTIMIZATION: Early exits for non-burning conditions
@@ -317,74 +311,6 @@ impl FuelElement {
         // Byram's formula: I = (H × w × r) / 60
         // Units: (kJ/kg × kg/m² × m/min) / 60 = kW/m
         (heat_per_area * spread_rate_m_per_min) / 60.0
-    }
-
-    /// Calculate flame height using Byram's formula
-    ///
-    /// # Formula
-    /// ```text
-    /// L = 0.0775 × I^0.46 [meters]
-    /// ```
-    ///
-    /// Where:
-    /// - **L** = Flame height (meters)
-    /// - **I** = Fireline intensity (kW/m)
-    ///
-    /// # References
-    /// - Byram, G.M. (1959). "Combustion of forest fuels." In Forest Fire: Control and Use.
-    /// - Equation empirically validated for Australian conditions
-    pub(crate) fn calculate_flame_height(&self, wind_speed_ms: f32) -> f32 {
-        let intensity = self.byram_fireline_intensity(wind_speed_ms);
-
-        // L = 0.0775 × I^0.46 [meters]
-        if intensity > 0.0 {
-            0.0775 * intensity.powf(0.46)
-        } else {
-            0.0
-        }
-    }
-
-    /// Update flame height
-    pub(crate) fn update_flame_height(&mut self, wind_speed_ms: f32) {
-        self.flame_height = self.calculate_flame_height(wind_speed_ms);
-    }
-
-    /// Burn fuel mass
-    pub(crate) fn burn_fuel(&mut self, dt: f32) {
-        if !self.ignited {
-            return;
-        }
-
-        let burn_rate = self.calculate_burn_rate();
-        self.fuel_remaining = (self.fuel_remaining - burn_rate * dt).max(0.0);
-
-        // Extinguish if fuel depleted
-        if self.fuel_remaining < 0.01 {
-            self.ignited = false;
-            self.temperature = 20.0; // Cool down to ambient
-            self.flame_height = 0.0;
-        }
-    }
-
-    /// Check if this element can ignite (not already burning, has fuel, etc.)
-    pub(crate) fn can_ignite(&self) -> bool {
-        !self.ignited
-            && self.fuel_remaining > 0.01
-            && self.moisture_fraction < self.fuel.moisture_of_extinction
-    }
-
-    /// Get heat radiation output in kW
-    pub(crate) fn get_radiation_power(&self) -> f32 {
-        if !self.ignited {
-            return 0.0;
-        }
-
-        // Simplified radiation based on temperature and surface area
-        let temp_k = self.temperature + 273.15;
-        let surface_area = self.fuel.surface_area_to_volume * self.fuel_remaining.sqrt();
-
-        // Stefan-Boltzmann simplified
-        5.67e-8 * (temp_k / 1000.0).powi(4) * surface_area * 10000.0
     }
 
     // Public accessor methods for visualization/external use

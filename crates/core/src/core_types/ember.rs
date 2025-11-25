@@ -34,7 +34,6 @@
 //! kilometers ahead of the main fire front.
 
 use crate::core_types::element::Vec3;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 /// Ember particle with physics simulation
@@ -243,130 +242,6 @@ impl Ember {
     }
 }
 
-/// Generate embers from a burning fuel element
-///
-/// Called when fuel is actively burning and producing embers.
-/// Number of embers scales with:
-/// - Fuel mass remaining
-/// - Ember production coefficient (fuel-specific)
-/// - Fuel type (stringybark produces 9× more embers than smooth bark)
-///
-/// # Arguments
-///
-/// * `position` - Source position (fire location)
-/// * `temperature` - Source fire temperature (°C)
-/// * `fuel_remaining` - Mass of fuel left to burn (kg)
-/// * `ember_production` - Ember production coefficient (0-1, fuel-specific)
-/// * `fuel_type_id` - Source fuel type identifier
-/// * `next_id` - Mutable counter for unique ember IDs
-///
-/// # Returns
-///
-/// Vector of newly generated embers with random initial velocities.
-/// Capped at 50 embers per call to maintain performance.
-///
-/// # Example
-///
-/// ```
-/// use fire_sim_core::ember::spawn_embers;
-/// use nalgebra::Vector3;
-///
-/// let mut id_counter = 0;
-/// let embers = spawn_embers(
-///     Vector3::new(100.0, 200.0, 5.0),  // Fire position
-///     900.0,                             // 900°C fire
-///     10.0,                              // 10kg fuel remaining
-///     0.9,                               // High ember production (stringybark)
-///     1,                                 // Eucalyptus stringybark
-///     &mut id_counter,
-/// );
-///
-/// println!("Generated {} embers", embers.len());
-/// ```
-pub(crate) fn spawn_embers(
-    position: Vec3,
-    temperature: f32,
-    fuel_remaining: f32,
-    ember_production: f32,
-    fuel_type_id: u8,
-    next_id: &mut u32,
-) -> Vec<Ember> {
-    let count = (ember_production * fuel_remaining * 100.0) as u32;
-    let count = count.min(50); // Limit per spawn to avoid performance issues
-
-    let mut embers = Vec::new();
-    let mut rng = rand::rng();
-
-    for _ in 0..count {
-        let id = *next_id;
-        *next_id += 1;
-
-        // Random initial velocity with strong updraft
-        // Horizontal spread: ±5 m/s (turbulent convection)
-        // Vertical: 8-20 m/s (strong thermal updraft from fire)
-        let horizontal_spread = 5.0;
-        let velocity = Vec3::new(
-            rng.random_range(-horizontal_spread..horizontal_spread),
-            rng.random_range(-horizontal_spread..horizontal_spread),
-            rng.random_range(8.0..20.0), // Strong updraft
-        );
-
-        // Launch embers slightly above source (2m offset for flame zone)
-        let ember_position = position + Vec3::new(0.0, 0.0, 2.0);
-
-        // Ember temperature: 70-90% of source fire temperature
-        let ember_temp = temperature * rng.random_range(0.7..0.9);
-
-        // Ember mass: 0.1g to 10g (typical bark fragments)
-        let ember_mass = rng.random_range(0.0001..0.01);
-
-        embers.push(Ember::new(
-            id,
-            ember_position,
-            velocity,
-            ember_temp,
-            ember_mass,
-            fuel_type_id,
-        ));
-    }
-
-    embers
-}
-
-/// Calculate ignition probability from ember landing on fuel
-///
-/// Probability depends on:
-/// - Ember temperature (hotter = more likely)
-/// - Ember mass (larger = more heat energy)
-/// - Fuel receptivity (dry grass = high, green vegetation = low)
-///
-/// # Arguments
-///
-/// * `ember` - The landing ember
-/// * `fuel_receptivity` - Fuel's ember receptivity coefficient (0-1)
-///
-/// # Returns
-///
-/// Ignition probability (0-1)
-///
-/// # Example
-///
-/// ```
-/// use fire_sim_core::ember::{Ember, ember_ignition_probability};
-/// use nalgebra::Vector3;
-///
-/// let ember = Ember::new(1, Vector3::zeros(), Vector3::zeros(), 400.0, 0.005, 1);
-/// let dry_grass_receptivity = 0.8;
-/// let prob = ember_ignition_probability(&ember, dry_grass_receptivity);
-/// // High probability for hot ember on receptive fuel
-/// ```
-pub(crate) fn ember_ignition_probability(ember: &Ember, fuel_receptivity: f32) -> f32 {
-    let temp_factor = (ember.temperature / 300.0).min(1.0);
-    let mass_factor = (ember.mass / 0.001).min(1.0);
-
-    fuel_receptivity * temp_factor * mass_factor
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,20 +292,5 @@ mod tests {
         // Should have moved upward or stayed roughly the same (buoyancy counteracts gravity)
         // With small embers, gravity may win but velocity should show upward component initially
         assert!(ember.velocity.z > -5.0); // Not falling fast
-    }
-
-    #[test]
-    fn test_spawn_embers() {
-        let mut next_id = 0;
-        let embers = spawn_embers(Vec3::new(0.0, 0.0, 0.0), 1000.0, 5.0, 0.5, 1, &mut next_id);
-
-        // Should generate some embers
-        assert!(!embers.is_empty());
-
-        // All embers should have upward velocity
-        for ember in &embers {
-            assert!(ember.velocity.z > 0.0);
-            assert!(ember.temperature > 0.0);
-        }
     }
 }

@@ -261,7 +261,7 @@ pub unsafe extern "C" fn fire_sim_get_elevation(
         return FIRE_SIM_NULL_POINTER;
     }
 
-    match with_fire_sim_read(&sim_id, |sim| sim.grid.terrain.elevation_at(x, y)) {
+    match with_fire_sim_read(&sim_id, |sim| sim.terrain().elevation_at(x, y)) {
         Some(elev) => {
             *out_elevation = elev;
             FIRE_SIM_SUCCESS

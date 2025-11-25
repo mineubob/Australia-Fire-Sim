@@ -60,16 +60,6 @@ impl SmolderingState {
             phase_duration: 0.0,
         }
     }
-
-    /// Create flaming state
-    pub(crate) fn flaming() -> Self {
-        SmolderingState {
-            phase: CombustionPhase::Flaming,
-            heat_release_multiplier: 1.0,
-            burn_rate_multiplier: 1.0,
-            phase_duration: 0.0,
-        }
-    }
 }
 
 impl Default for SmolderingState {
@@ -277,13 +267,6 @@ mod tests {
     }
 
     #[test]
-    fn test_flaming_state() {
-        let state = SmolderingState::flaming();
-        assert_eq!(state.phase, CombustionPhase::Flaming);
-        assert_eq!(state.heat_release_multiplier, 1.0);
-    }
-
-    #[test]
     fn test_transition_criteria() {
         // Should transition: low temp, normal oxygen, long duration
         assert!(should_transition_to_smoldering(400.0, 0.21, 60.0));
@@ -333,22 +316,6 @@ mod tests {
 
         assert_eq!(state.phase, CombustionPhase::Flaming);
         assert_eq!(state.heat_release_multiplier, 1.0);
-    }
-
-    #[test]
-    fn test_state_update_flaming_to_smoldering() {
-        let mut state = SmolderingState::flaming();
-
-        // Simulate long flaming period with oxygen depletion
-        for _ in 0..40 {
-            state = update_smoldering_state(state, 450.0, 0.10, 1.0);
-        }
-
-        // Should have transitioned to smoldering
-        assert!(
-            state.phase == CombustionPhase::Transition
-                || state.phase == CombustionPhase::Smoldering
-        );
     }
 
     #[test]
