@@ -240,6 +240,16 @@ impl Ember {
     pub fn velocity(&self) -> Vec3 {
         self.velocity
     }
+
+    /// Get current position (m)
+    pub fn position(&self) -> Vec3 {
+        self.position
+    }
+
+    /// Get source fuel type ID
+    pub fn source_fuel_type(&self) -> u8 {
+        self.source_fuel_type
+    }
 }
 
 #[cfg(test)]

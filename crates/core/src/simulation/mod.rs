@@ -115,12 +115,78 @@ impl FireSimulation {
         id
     }
 
-    /// Ignite a fuel element
+    /// Ignite a fuel element directly (MANUAL IGNITION PATHWAY)
+    ///
+    /// This method is for **manual fire starts** and **bypasses moisture evaporation physics**.
+    /// It directly sets the element to burning state at the specified temperature.
+    ///
+    /// # Use Cases
+    ///
+    /// - Lightning strikes (instant high-energy ignition)
+    /// - Human-caused fires (arson, accidents)
+    /// - Controlled burns (prescribed fire operations)
+    /// - Testing and validation
+    /// - Game engine / FFI layer fire starts
+    ///
+    /// # Natural Fire Spread
+    ///
+    /// For realistic fire spread behavior, DO NOT use this method. Natural spread occurs through:
+    /// - **Heat-based auto-ignition**: Elements receive heat via `apply_heat()` which respects
+    ///   moisture evaporation (2260 kJ/kg latent heat) and probabilistic ignition via
+    ///   `check_ignition_probability()`. See FuelElement::apply_heat() in core_types/element.rs.
+    /// - **Ember spot fires**: Hot embers land on receptive fuel and attempt ignition based on
+    ///   ember temperature, fuel moisture, and fuel ember_receptivity property.
+    ///
+    /// # Physics Justification
+    ///
+    /// Lightning strikes deliver instantaneous high energy (typically 1-5 GJ) that can:
+    /// - Flash-vaporize fuel moisture instantly
+    /// - Raise fuel temperature above ignition point in milliseconds
+    /// - Ignite even moderately moist fuels (up to 20% moisture)
+    ///
+    /// This bypassing of moisture physics is realistic for such high-energy ignition sources.
+    /// For lower-energy ignition sources (embers, radiant heat), use heat-based pathways instead.
+    ///
+    /// # Parameters
+    ///
+    /// - `element_id`: ID of fuel element to ignite
+    /// - `initial_temp`: Initial burning temperature (°C). Will be clamped to at least
+    ///   the fuel's ignition temperature.
     pub fn ignite_element(&mut self, element_id: u32, initial_temp: f32) {
         if let Some(Some(element)) = self.elements.get_mut(element_id as usize) {
             element.ignited = true;
             element.temperature = initial_temp.max(element.fuel.ignition_temperature);
             self.burning_elements.insert(element_id);
+        }
+    }
+
+    /// Apply heat to a fuel element (respects moisture evaporation physics)
+    ///
+    /// This method applies heat energy to a fuel element following realistic physics:
+    /// - Heat goes to moisture evaporation FIRST (2260 kJ/kg latent heat)
+    /// - Remaining heat raises temperature
+    /// - Probabilistic ignition via check_ignition_probability()
+    ///
+    /// # Use Cases
+    /// - Backburns/controlled burns (gradual heating)
+    /// - Radiant heat from external sources
+    /// - Pre-heating from approaching fire
+    /// - Testing heat-based ignition mechanics
+    ///
+    /// # Parameters
+    /// - `element_id`: ID of fuel element to heat
+    /// - `heat_kj`: Heat energy in kilojoules
+    /// - `dt`: Time step in seconds
+    pub fn apply_heat_to_element(&mut self, element_id: u32, heat_kj: f32, dt: f32) {
+        let ambient_temp = self.grid.ambient_temperature;
+        if let Some(element) = self.get_element_mut(element_id) {
+            let was_ignited = element.ignited;
+            element.apply_heat(heat_kj, dt, ambient_temp);
+
+            // Add newly ignited elements to burning set
+            if !was_ignited && element.ignited {
+                self.burning_elements.insert(element_id);
+            }
         }
     }
 
@@ -187,6 +253,34 @@ impl FireSimulation {
     }
 
     /// Main simulation update
+    ///
+    /// # Fire Ignition Mechanisms
+    ///
+    /// This simulation implements THREE distinct ignition pathways, each with scientific basis:
+    ///
+    /// ## 1. Manual Ignition (`ignite_element`)
+    /// - **Purpose**: Initial fire starts (lightning, human-caused, testing)
+    /// - **Physics**: Bypasses moisture evaporation (instant high-energy delivery)
+    /// - **When**: Called explicitly for lightning strikes, arson, controlled burns
+    /// - **Justification**: Lightning delivers 1-5 GJ instantly, flash-vaporizing moisture
+    ///
+    /// ## 2. Heat-Based Auto-Ignition (`apply_heat` → `check_ignition_probability`)
+    /// - **Purpose**: Natural fire spread element-to-element
+    /// - **Physics**: Respects moisture evaporation (2260 kJ/kg), probabilistic ignition
+    /// - **When**: Automatically during heat transfer from burning neighbors
+    /// - **Justification**: Rothermel (1972) heat of pre-ignition, Nelson (2000) moisture dynamics
+    ///
+    /// ## 3. Ember Spot Fire Ignition (`Ember::attempt_ignition`)
+    /// - **Purpose**: Long-range fire spread via ember spotting (up to 25km)
+    /// - **Physics**: Probability based on ember temp, fuel moisture, ember_receptivity
+    /// - **When**: Hot embers (>250°C) land on receptive fuel
+    /// - **Justification**: Koo et al. (2010), Black Saturday 2009 empirical data
+    ///   - Stringybark: 60% receptivity (highly susceptible)
+    ///   - Dead litter: 90% receptivity (extremely susceptible)
+    ///   - Green vegetation: 20% receptivity (resistant)
+    ///
+    /// These three mechanisms work together to create realistic Australian bushfire behavior,
+    /// where ember spotting is often the dominant spread mechanism during extreme fire weather.
     pub fn update(&mut self, dt: f32) {
         self.simulation_time += dt;
 
@@ -627,13 +721,17 @@ impl FireSimulation {
         }
 
         // Apply accumulated heat to each target
+        // NOTE: apply_heat() handles ignition internally via check_ignition_probability()
+        // which respects moisture evaporation and probabilistic ignition based on temperature
+        // and moisture content. We only need to check if newly ignited to add to burning set.
         for (target_id, total_heat) in heat_map {
             if let Some(target) = self.get_element_mut(target_id) {
+                let was_ignited = target.ignited;
                 target.apply_heat(total_heat, dt, ambient_temp);
 
-                // Check for ignition
-                if target.temperature > target.fuel.ignition_temperature {
-                    target.ignited = true;
+                // Add newly ignited elements to burning set
+                // (apply_heat already set ignited=true via check_ignition_probability)
+                if !was_ignited && target.ignited {
                     self.burning_elements.insert(target_id);
                 }
             }
@@ -686,6 +784,109 @@ impl FireSimulation {
             ember.update_physics(wind_vector, self.grid.ambient_temperature, dt);
         });
 
+        // 7a. Attempt ember spot fire ignition (Phase 2 - Albini spotting with Koo et al. ignition)
+        // Collect ember data first to avoid borrow checker issues
+        // Only hot, landed embers can ignite fuel
+        let ember_ignition_attempts: Vec<(usize, Vec3, f32, u8)> = self
+            .embers
+            .par_iter()
+            .enumerate()
+            .filter_map(|(idx, ember)| {
+                if ember.can_ignite() {
+                    Some((
+                        idx,
+                        ember.position(),
+                        ember.temperature(),
+                        ember.source_fuel_type(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let mut ignited_ember_indices = Vec::new();
+        for (idx, position, temperature, _source_fuel) in ember_ignition_attempts {
+            // Find nearby fuel elements within 2m radius
+            let nearby_fuel_ids: Vec<u32> = self.spatial_index.query_radius(position, 2.0);
+
+            // Try to ignite nearby receptive fuel
+            let mut ignition_occurred = false;
+            for fuel_id in nearby_fuel_ids {
+                if let Some(fuel_element) = self.get_element(fuel_id) {
+                    // Skip already ignited elements
+                    if fuel_element.ignited || fuel_element.fuel_remaining < 0.1 {
+                        continue;
+                    }
+
+                    // Calculate distance to fuel element
+                    let distance = (fuel_element.position - position).magnitude();
+
+                    // 1. Ember temperature factor (Koo et al. 2010)
+                    let temp_factor = if temperature >= 600.0 {
+                        0.9 // Very hot ember
+                    } else if temperature >= 400.0 {
+                        0.6 // Hot ember
+                    } else if temperature >= 300.0 {
+                        0.3 // Warm ember
+                    } else if temperature >= 250.0 {
+                        0.1 // Cool ember (near threshold)
+                    } else {
+                        0.0 // Too cold
+                    };
+
+                    // 2. Fuel receptivity (fuel-specific property)
+                    let receptivity = fuel_element.fuel.ember_receptivity;
+
+                    // 3. Moisture factor (wet fuel resists ignition)
+                    let moisture_factor = if fuel_element.moisture_fraction < 0.1 {
+                        1.0 // Dry
+                    } else if fuel_element.moisture_fraction < 0.2 {
+                        0.6 // Slightly moist
+                    } else if fuel_element.moisture_fraction < 0.3 {
+                        0.3 // Moist
+                    } else {
+                        0.0 // Too wet (approaching moisture of extinction)
+                    };
+
+                    // 4. Distance factor (closer = better heat transfer)
+                    let distance_factor = if distance < 0.5 {
+                        1.0 // Very close
+                    } else if distance < 1.0 {
+                        0.7 // Close
+                    } else if distance < 2.0 {
+                        0.4 // Near
+                    } else {
+                        0.0 // Too far
+                    };
+
+                    // Combined ignition probability (Koo et al. 2010 probabilistic model)
+                    let ignition_prob =
+                        temp_factor * receptivity * moisture_factor * distance_factor;
+
+                    // Probabilistic ignition
+                    if ignition_prob > 0.0 && rand::random::<f32>() < ignition_prob {
+                        // Ignite fuel element at ember temperature
+                        let ignition_temp =
+                            temperature.min(fuel_element.fuel.ignition_temperature + 100.0);
+                        self.ignite_element(fuel_id, ignition_temp);
+                        ignition_occurred = true;
+                        break; // Ember successfully ignited fuel, stop trying
+                    }
+                }
+            }
+
+            if ignition_occurred {
+                ignited_ember_indices.push(idx);
+            }
+        }
+
+        // Remove embers that successfully ignited fuel (they've landed and transferred heat)
+        for &idx in ignited_ember_indices.iter().rev() {
+            self.embers.swap_remove(idx);
+        }
+
+        // Remove inactive embers (cooled below 200°C or fallen below ground)
         self.embers
             .retain(|e| e.temperature > 200.0 && e.position.z > 0.0);
     }
