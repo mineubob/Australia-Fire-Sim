@@ -1007,9 +1007,13 @@ impl WeatherSystem {
     }
 
     /// Get spread rate multiplier based on FFDI
+    /// 
+    /// Capped at 5.0 to prevent unrealistic instant spread even in catastrophic conditions.
+    /// Real fire spread still takes time even in extreme FFDI 100+ conditions.
     pub fn spread_rate_multiplier(&self) -> f32 {
-        // FFDI directly scales spread rate
-        (self.calculate_ffdi() / 10.0).max(1.0)
+        // FFDI scales spread rate, but cap at 5x to prevent numerical instability
+        // This ensures spread is faster in extreme conditions while remaining realistic
+        (self.calculate_ffdi() / 20.0).clamp(1.0, 5.0)
     }
 
     /// Get wind vector in m/s
