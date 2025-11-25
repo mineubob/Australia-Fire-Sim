@@ -173,6 +173,21 @@ impl FireSimulation {
             false, // is_adsorbing - false for typical drying conditions
         );
 
+        // 1aa. Apply ambient temperature regulation for all elements
+        // Non-burning elements should cool/heat toward ambient temperature
+        let ambient_temp = self.grid.ambient_temperature;
+        self.elements.par_iter_mut().flatten().for_each(|element| {
+            if !element.ignited {
+                // Newton's law of cooling: dT/dt = -k(T - T_ambient)
+                // Typical convective cooling coefficient for outdoor conditions
+                let cooling_rate = 0.1; // per second (faster for better responsiveness)
+                let temp_diff = element.temperature - ambient_temp;
+                let temp_change = temp_diff * cooling_rate * dt;
+                element.temperature -= temp_change;
+                element.temperature = element.temperature.max(ambient_temp);
+            }
+        });
+
         self.elements.par_iter_mut().flatten().for_each(|element| {
             if let Some(ref mut moisture_state) = element.moisture_state {
                 let dt_hours = dt / 3600.0; // Convert seconds to hours
