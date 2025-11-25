@@ -596,7 +596,7 @@ impl SimulationState {
             for j in 0..config.elements_y {
                 let x = start_x + i as f32 * config.spacing;
                 let y = start_y + j as f32 * config.spacing;
-                let elevation = sim.get_terrain().elevation_at(x, y);
+                let elevation = sim.terrain().elevation_at(x, y);
 
                 let fuel = config.fuel_type.to_fuel();
                 sim.add_fuel_element(
@@ -696,7 +696,7 @@ fn setup_game(
     ));
 
     // Create terrain mesh
-    let terrain = &sim_state.simulation.grid.terrain;
+    let terrain = &sim_state.simulation.terrain();
     spawn_terrain(&mut commands, &mut meshes, &mut materials, terrain);
 
     // Spawn fuel element visuals
@@ -707,7 +707,8 @@ fn setup_game(
         .simulation
         .get_all_elements()
         .into_iter()
-        .map(|e| (e.id, e.position, e.is_ignited()))
+        .map(|e| e.get_stats())
+        .map(|e| (e.id, e.position, e.ignited))
         .collect();
 
     for (element_id, pos, is_ignited) in elements {
@@ -752,8 +753,8 @@ fn spawn_terrain(
 ) {
     // Create a 3D terrain mesh with actual elevation data
     let resolution = 5.0; // Sample every 5 meters
-    let nx = (terrain.width / resolution) as usize + 1;
-    let ny = (terrain.height / resolution) as usize + 1;
+    let nx = (terrain.width() / resolution) as usize + 1;
+    let ny = (terrain.height() / resolution) as usize + 1;
 
     let mut positions = Vec::new();
     let mut normals = Vec::new();
@@ -769,7 +770,7 @@ fn spawn_terrain(
 
             positions.push([x, z, y]); // Bevy uses Y-up, so we map: x→x, elevation→y, y→z
             normals.push([0.0, 1.0, 0.0]); // Will recalculate proper normals below
-            uvs.push([x / terrain.width, y / terrain.height]);
+            uvs.push([x / terrain.width(), y / terrain.height()]);
         }
     }
 
@@ -893,7 +894,7 @@ fn update_fuel_visuals(
             .simulation
             .get_all_elements()
             .into_iter()
-            .find(|e| e.id == fuel_visual.element_id)
+            .find(|e| e.id() == fuel_visual.element_id)
         {
             if let Some(material) = materials.get_mut(&material_handle.0) {
                 if element.is_ignited() {
@@ -955,7 +956,7 @@ fn update_ui(
     fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
 ) -> Result {
     let stats = sim_state.simulation.get_stats();
-    let weather = &sim_state.simulation.weather;
+    let weather = &sim_state.simulation.weather.get_stats();
 
     // Get FPS from diagnostics
     let fps = diagnostics
@@ -1064,8 +1065,8 @@ fn update_ui(
 
             ui.separator();
             ui.heading("FIRE DANGER");
-            ui.label(format!("FFDI: {:.1}", weather.calculate_ffdi()));
-            ui.label(format!("Rating: {}", weather.fire_danger_rating()));
+            ui.label(format!("FFDI: {:.1}", weather.ffdi));
+            ui.label(format!("Rating: {}", weather.fire_danger_rating));
         });
 
     // Tooltip on hover
@@ -1104,7 +1105,7 @@ fn update_ui(
                             .simulation
                             .get_all_elements()
                             .into_iter()
-                            .find(|e| e.id == element_id)
+                            .find_map(|e| (e.id() == element_id).then_some(e.get_stats()))
                         {
                             egui::Area::new(egui::Id::new("fuel_tooltip"))
                                 .fixed_pos(
@@ -1115,7 +1116,7 @@ fn update_ui(
                                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                                         ui.label(format!(
                                             "Fuel Element #{} ({})",
-                                            element.id, element.fuel.name
+                                            element.id, element.fuel_type_name
                                         ));
                                         ui.label(format!(
                                             "Position: ({:.1}, {:.1}, {:.1})",
@@ -1125,21 +1126,21 @@ fn update_ui(
                                         ));
                                         ui.label(format!(
                                             "Temperature: {:.0}°C",
-                                            element.temperature()
+                                            element.temperature
                                         ));
                                         ui.label(format!(
                                             "Fuel Remaining: {:.2} kg",
-                                            element.fuel_remaining()
+                                            element.fuel_remaining
                                         ));
                                         ui.label(format!(
                                             "Moisture: {:.1}%",
-                                            element.moisture_fraction() * 100.0
+                                            element.moisture_fraction * 100.0
                                         ));
                                         ui.label(format!(
                                             "Status: {}",
-                                            if element.is_ignited() {
+                                            if element.ignited {
                                                 "BURNING"
-                                            } else if element.fuel_remaining() < 0.1 {
+                                            } else if element.fuel_remaining < 0.1 {
                                                 "CONSUMED"
                                             } else {
                                                 "Unburned"
@@ -1147,7 +1148,7 @@ fn update_ui(
                                         ));
                                         ui.label(format!(
                                             "Flame Height: {:.2} m",
-                                            element.flame_height()
+                                            element.flame_height
                                         ));
                                     });
                                 });
@@ -1238,11 +1239,16 @@ fn handle_controls(
                                 );
 
                                 // Find the closest fuel element to cursor position and ignite it
-                                let elements = sim_state.simulation.get_all_elements();
+                                let elements = sim_state
+                                    .simulation
+                                    .get_all_elements()
+                                    .into_iter()
+                                    .map(|e| e.get_stats())
+                                    .collect::<Vec<_>>();
                                 let mut closest_id: Option<u32> = None;
                                 let mut closest_dist = f32::MAX;
 
-                                for element in &elements {
+                                for element in elements.iter() {
                                     // element.position is sim coords (x, y)
                                     let dx = element.position.x - ignite_x;
                                     let dy = element.position.y - ignite_y;

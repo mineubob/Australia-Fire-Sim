@@ -110,15 +110,7 @@ fn main() {
 
     // Create ultra-realistic simulation
     let mut sim = FireSimulation::new(5.0, terrain);
-    println!("✓ Created FireSimulationUltra");
-    println!(
-        "  - Grid: {} x {} x {} cells ({} total)",
-        sim.grid.nx,
-        sim.grid.ny,
-        sim.grid.nz,
-        sim.grid.cells.len()
-    );
-    println!("  - Cell size: {} m\n", sim.grid.cell_size);
+    println!("✓ Created FireSimulation");
 
     // Set weather conditions
     let weather = WeatherSystem::new(
@@ -171,7 +163,7 @@ fn main() {
         for j in 0..elements_y {
             let x = start_x + i as f32 * spacing;
             let y = start_y + j as f32 * spacing;
-            let elevation = sim.grid.terrain.elevation_at(x, y);
+            let elevation = sim.terrain().elevation_at(x, y);
 
             let fuel = Fuel::dry_grass();
             let id = sim.add_fuel_element(
@@ -223,8 +215,7 @@ fn main() {
 
             // Find max temperature in grid
             let max_temp = sim
-                .grid
-                .cells
+                .get_all_elements()
                 .iter()
                 .map(|c| c.temperature())
                 .fold(0.0f32, f32::max);
@@ -249,7 +240,7 @@ fn main() {
             println!("\n>>> DEPLOYING WATER SUPPRESSION (DIRECT APPLICATION) <<<\n");
 
             // Calculate ground elevation at center
-            let center_elevation = sim.grid.terrain.elevation_at(center_x, center_y);
+            let center_elevation = sim.terrain().elevation_at(center_x, center_y);
 
             // Apply water directly in a circular pattern around the center
             // Total 300 kg distributed over 30 points (10 kg each)
@@ -309,7 +300,7 @@ fn main() {
     // Analyze atmospheric effects
     println!("\nAtmospheric Analysis:");
     // Query cell at 20m above center elevation
-    let center_elevation = sim.grid.terrain.elevation_at(center_x, center_y);
+    let center_elevation = sim.terrain().elevation_at(center_x, center_y);
     let analysis_height = center_elevation + 20.0;
     let center_pos = Vec3::new(center_x, center_y, analysis_height);
     if let Some(cell) = sim.get_cell_at_position(center_pos) {
