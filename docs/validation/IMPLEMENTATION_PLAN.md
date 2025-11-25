@@ -5,6 +5,126 @@
 **Scope**: Fire physics simulation enhancements (game engine responsibilities excluded)
 
 ═══════════════════════════════════════════════════════════════════════
+## VISIBILITY & ENCAPSULATION GUIDELINES
+═══════════════════════════════════════════════════════════════════════
+
+**CRITICAL DESIGN PRINCIPLE**: Minimize public API surface to prevent unintended coupling and maintain flexibility for future refactoring.
+
+### Visibility Hierarchy (Most Restrictive to Least)
+
+1. **Private (default)**: Use for all implementation details, helper functions, and internal state
+   - Physics calculation helpers
+   - Internal data transformations
+   - Cache management
+   - Temporary state
+
+2. **`pub(crate)`**: Use for types/functions shared between modules within `fire_sim_core` crate
+   - Physics model implementations (Rothermel, Albini, etc.)
+   - Internal weather calculations
+   - Spatial indexing operations
+   - Terrain query methods
+   - Suppression physics calculations
+   - **Most new code should use this visibility**
+
+3. **`pub`**: ONLY use for:
+   - **FFI C-compatible structs** (in `crates/ffi/src/lib.rs`)
+   - **FFI extern "C" functions** (in `crates/ffi/src/lib.rs`)
+   - **Statistics/query result structs** (e.g., `SimulationStats`, `FuelElementStats`)
+   - **Core types re-exported from lib.rs** (e.g., `FireSimulation`, `Fuel`, `Vec3`)
+
+### What Should NEVER Be Public
+
+❌ **Physics calculation functions** - These are implementation details
+  - `rothermel_spread_rate()` → `pub(crate)`
+  - `calculate_crown_fire_behavior()` → `pub(crate)`
+  - `calculate_lofting_height()` → `pub(crate)`
+  - `update_smoldering_state()` → `pub(crate)`
+
+❌ **Internal state structs** - Only accessed through encapsulated methods
+  - `SuppressionCoverage` → `pub(crate)`
+  - `AtmosphericProfile` → `pub(crate)`
+  - `PyrocumulusCloud` → `pub(crate)`
+  - `TerrainModel` → `pub(crate)`
+  - `ActionQueue` → `pub(crate)`
+
+❌ **Helper/utility functions** - Always internal
+  - `morton_encode()` → private
+  - `bilinear_interpolate()` → private
+  - `calculate_evaporation_rate()` → private
+
+❌ **Enum variants implementation details**
+  - `SuppressionAgentType` → `pub(crate)` (only exposed as u8 via FFI)
+  - `PlayerActionType` → `pub(crate)` (only exposed as u8 via FFI)
+
+### What MUST Be Public
+
+✅ **FFI Functions** - Game engine interface (in `crates/ffi/`)
+  - `fire_sim_create()` → `pub extern "C"`
+  - `fire_sim_update()` → `pub extern "C"`
+  - `fire_sim_apply_suppression()` → `pub extern "C"`
+  - `fire_sim_get_stats()` → `pub extern "C"`
+
+✅ **FFI Data Structs** - C interop requires public fields
+  - `GridCellVisual` → `pub` struct with `pub` fields
+  - `EmberData` → `pub` struct with `pub` fields
+  - `PyrocumulusCloudData` → `pub` struct with `pub` fields
+  - `CPlayerAction` → `pub` struct with `pub` fields
+
+✅ **Statistics Structs** - Read-only query results
+  - `SimulationStats` → `pub` struct with `pub` fields (returned by `get_stats()`)
+  - `FuelElementStats` → `pub` struct with `pub` fields (returned by `element.get_stats()`)
+
+✅ **Core Re-exports** - Main API surface (in `crates/core/src/lib.rs`)
+  - `FireSimulation` → `pub` (but most methods are `pub(crate)`)
+  - `Fuel`, `FuelPart` → `pub` (needed by FFI and tests)
+  - `Vec3` → `pub` (fundamental type)
+  - `WeatherSystem`, `WeatherPreset` → `pub` (configuration types)
+
+### Refactoring Existing Code
+
+When implementing new phases, **also audit and fix visibility in existing code**:
+
+1. **Find overly-public functions**:
+   ```bash
+   rg "pub fn " crates/core/src/physics/
+   rg "pub fn " crates/core/src/grid/
+   ```
+
+2. **Change to `pub(crate)` if**:
+   - Only used within `fire_sim_core` crate
+   - Not needed by FFI layer
+   - Not a core API method on public struct
+
+3. **Examples from existing code**:
+   ```rust
+   // BEFORE: Too permissive
+   pub fn calculate_lofting_height(intensity: f32) -> f32 { ... }
+   
+   // AFTER: Properly restricted
+   pub(crate) fn calculate_lofting_height(intensity: f32) -> f32 { ... }
+   ```
+
+### Testing Considerations
+
+- **Unit tests** can access `pub(crate)` items (same crate)
+- **Integration tests** (`tests/`) can only access `pub` items
+- This is GOOD - integration tests should use public API only
+- Physics validation tests should be in `crates/core/src/` (unit tests), not `tests/` (integration tests)
+
+### Verification Checklist
+
+Before marking a phase complete:
+
+- [ ] No `pub` on physics calculation functions (use `pub(crate)`)
+- [ ] No `pub` on internal state structs (use `pub(crate)`)
+- [ ] No `pub` fields on internal structs (use accessor methods)
+- [ ] All FFI functions are `pub extern "C"`
+- [ ] All FFI structs are `#[repr(C)]` with `pub` fields
+- [ ] Statistics structs are `pub` with `pub` fields
+- [ ] Run `cargo clippy` - it may warn about unnecessary `pub`
+- [ ] Check that demo apps compile (they use public API only)
+
+═══════════════════════════════════════════════════════════════════════
 ## OVERVIEW
 ═══════════════════════════════════════════════════════════════════════
 
@@ -35,10 +155,12 @@ This plan details the implementation of advanced fire simulation features for th
 
 **Location**: `crates/core/src/suppression/agent.rs` (new file)
 
+**Visibility Guidelines**: All types private or `pub(crate)` - only exposed through FFI functions
+
 ```rust
 /// Types of suppression agents with different physical properties
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SuppressionAgentType {
+pub(crate) enum SuppressionAgentType {
     Water,              // Pure water
     FoamClassA,         // Class A foam (wildland)
     FoamClassB,         // Class B foam (fuel fires)
@@ -48,28 +170,29 @@ pub enum SuppressionAgentType {
 }
 
 /// Physical properties of suppression agents
-pub struct SuppressionAgent {
-    pub agent_type: SuppressionAgentType,
+/// INTERNAL USE ONLY - not exposed to FFI/game engine
+pub(crate) struct SuppressionAgent {
+    agent_type: SuppressionAgentType,
     
     // Thermal properties
-    pub specific_heat: f32,              // kJ/(kg·K)
-    pub latent_heat_vaporization: f32,   // kJ/kg
-    pub boiling_point: f32,              // °C
+    specific_heat: f32,              // kJ/(kg·K)
+    latent_heat_vaporization: f32,   // kJ/kg
+    boiling_point: f32,              // °C
     
     // Coverage properties
-    pub application_rate: f32,           // kg/m²
-    pub coverage_efficiency: f32,        // 0-1 (foam > water)
-    pub penetration_depth: f32,          // meters into fuel bed
+    application_rate: f32,           // kg/m²
+    coverage_efficiency: f32,        // 0-1 (foam > water)
+    penetration_depth: f32,          // meters into fuel bed
     
     // Chemical properties
-    pub combustion_inhibition: f32,      // 0-1 (retardant effect)
-    pub oxygen_displacement: f32,        // 0-1 (foam blanketing)
-    pub fuel_coating_duration: f32,      // seconds (long-term retardant)
+    combustion_inhibition: f32,      // 0-1 (retardant effect)
+    oxygen_displacement: f32,        // 0-1 (foam blanketing)
+    fuel_coating_duration: f32,      // seconds (long-term retardant)
     
     // Evaporation/degradation
-    pub evaporation_rate_modifier: f32,  // relative to water
-    pub uv_degradation_rate: f32,        // per hour (foam/retardant)
-    pub rain_washoff_rate: f32,          // per mm rainfall
+    evaporation_rate_modifier: f32,  // relative to water
+    uv_degradation_rate: f32,        // per hour (foam/retardant)
+    rain_washoff_rate: f32,          // per mm rainfall
 }
 ```
 
@@ -82,20 +205,23 @@ pub struct SuppressionAgent {
 
 **Location**: `crates/core/src/suppression/coverage.rs` (new file)
 
+**Visibility Guidelines**: All internal - accessed only through FuelElement state
+
 ```rust
 /// Represents suppression agent coverage on a fuel element
-pub struct SuppressionCoverage {
-    pub agent: SuppressionAgent,
-    pub mass_per_area: f32,              // kg/m²
-    pub application_time: f32,           // simulation time
-    pub coverage_fraction: f32,          // 0-1 (% of fuel surface covered)
-    pub penetration_achieved: f32,       // meters into fuel bed
-    pub active: bool,                    // Still effective?
+/// INTERNAL USE ONLY - accessed via FuelElement methods
+pub(crate) struct SuppressionCoverage {
+    agent: SuppressionAgent,
+    mass_per_area: f32,              // kg/m²
+    application_time: f32,           // simulation time
+    coverage_fraction: f32,          // 0-1 (% of fuel surface covered)
+    penetration_achieved: f32,       // meters into fuel bed
+    active: bool,                    // Still effective?
 }
 
 impl SuppressionCoverage {
     /// Apply suppression physics to fuel element heating
-    pub fn modify_heat_transfer(
+    pub(crate) fn modify_heat_transfer(
         &self,
         incoming_heat_kj: f32,
         fuel_element: &FuelElement,
@@ -119,7 +245,7 @@ impl SuppressionCoverage {
     }
     
     /// Update coverage state (evaporation, degradation)
-    pub fn update(&mut self, weather: &WeatherState, dt: f32) {
+    pub(crate) fn update(&mut self, weather: &WeatherState, dt: f32) {
         // Evaporate based on temperature and humidity
         let evaporation_rate = self.calculate_evaporation_rate(weather);
         self.mass_per_area -= evaporation_rate * dt;
@@ -154,17 +280,21 @@ impl SuppressionCoverage {
 
 **Location**: `crates/core/src/core_types/element.rs` (modify existing)
 
+**Visibility Note**: FuelElement already has proper visibility - public for reading state, internal mutation
+
 ```rust
 pub struct FuelElement {
     // ... existing fields ...
     
     /// Active suppression coverage (if any)
-    pub suppression: Option<SuppressionCoverage>,
+    /// INTERNAL - read via get_suppression_coverage() method
+    suppression: Option<SuppressionCoverage>,
 }
 
 impl FuelElement {
     /// Apply heat with suppression effects considered
-    pub fn apply_heat_with_suppression(
+    /// INTERNAL - called by simulation update loop only
+    pub(crate) fn apply_heat_with_suppression(
         &mut self, 
         heat_kj: f32, 
         weather: &WeatherState,
@@ -195,6 +325,8 @@ impl FuelElement {
 ### 1.4 - FFI Suppression Application Interface
 
 **Location**: `crates/ffi/src/lib.rs` (add functions)
+
+**Visibility Note**: All FFI functions are `pub extern "C"` - they are the ONLY public interface to game engine
 
 ```rust
 /// Apply suppression agent at specified world position
@@ -320,11 +452,102 @@ Required tests:
 - USFS MTDC: Long-Term Fire Retardant Effectiveness Studies
 - Penman-Monteith equation (FAO Irrigation and Drainage Paper 56)
 
-### 1.6 - Ember State Query Interface
+### 1.6 - Ember Physics & Automatic Spot Fire Ignition
+
+**Location**: `crates/core/src/core_types/ember.rs` (modify existing)
+
+**Visibility Note**: Ember physics are internal - only state data exposed for rendering
+
+```rust
+impl Ember {
+    /// Check if ember can ignite fuel at landing position
+    /// Called automatically during ember physics update
+    /// INTERNAL - simulation handles ignition automatically
+    pub(crate) fn attempt_ignition(&self, simulation: &mut FireSimulation) -> bool {
+        // Only attempt if landed
+        if self.position.z > 1.0 || self.temperature < 250.0 {
+            return false;
+        }
+        
+        // Find fuel element at landing position
+        let nearby_fuel = simulation.spatial_index.query_radius(self.position, 2.0);
+        let target_fuel = nearby_fuel
+            .iter()
+            .filter_map(|&id| simulation.get_fuel_element(id))
+            .min_by_key(|f| (f.position - self.position).length() as u32);
+        
+        if let Some(fuel) = target_fuel {
+            // Check suppression coverage (blocks ignition)
+            if let Some(ref suppression) = fuel.suppression {
+                if suppression.coverage_fraction > 0.5 {
+                    return false; // Too much suppression
+                }
+            }
+            
+            // Calculate ignition probability (PHYSICS)
+            let temp_factor = (self.temperature - 250.0) / 150.0; // 250-400°C range
+            let moisture_factor = 1.0 - fuel.moisture_fraction;
+            let receptivity = fuel.fuel.ember_receptivity;
+            
+            let suppression_penalty = if let Some(ref s) = fuel.suppression {
+                1.0 - (s.coverage_fraction * 0.7)
+            } else {
+                1.0
+            };
+            
+            let ignition_prob = temp_factor * moisture_factor * receptivity * suppression_penalty;
+            
+            // Probabilistic ignition
+            if rand::random::<f32>() < ignition_prob {
+                simulation.ignite_element(fuel.id);
+                return true;
+            }
+        }
+        
+        false
+    }
+}
+```
+
+**Location**: `crates/core/src/simulation/mod.rs` (modify ember update)
+
+**Visibility Note**: Internal simulation logic - not exposed to FFI
+
+```rust
+impl FireSimulation {
+    pub(crate) fn update_embers(&mut self, dt: f32) {
+        let wind = self.weather.wind_vector();
+        let ambient_temp = self.weather.temperature;
+        
+        // Update all ember physics in parallel
+        self.embers.par_iter_mut().for_each(|ember| {
+            ember.update_physics(wind, ambient_temp, dt);
+        });
+        
+        // Check for ignitions (must be sequential for safety)
+        let mut ignited_ember_ids = Vec::new();
+        for ember in &self.embers {
+            if ember.attempt_ignition(self) {
+                ignited_ember_ids.push(ember.id);
+            }
+        }
+        
+        // Remove embers that ignited or cooled
+        self.embers.retain(|e| {
+            !ignited_ember_ids.contains(&e.id) && 
+            e.temperature > 200.0 && 
+            e.position.z > 0.0
+        });
+    }
+}
+```
 
 **Location**: `crates/ffi/src/lib.rs` (add functions)
 
+**Visibility Note**: FFI data structures are public, all functions are `pub extern "C"`
+
 ```rust
+/// C-compatible ember data for rendering
 #[repr(C)]
 pub struct EmberData {
     pub id: u32,
@@ -341,10 +564,12 @@ pub struct EmberData {
 
 /// Get all active embers for rendering/Niagara
 /// 
-/// Game engine uses this to:
+/// Game engine uses this ONLY for visualization:
 /// - Render ember particles with correct position/velocity
-/// - Apply Niagara particle system physics
 /// - Display ember trails and glow effects
+/// - Play ember sound effects
+/// 
+/// Ignition is handled automatically by simulation based on physics.
 /// 
 /// # Safety
 /// out_count must be valid non-null pointer. Return pointer is valid only
@@ -357,52 +582,42 @@ pub extern "C" fn fire_sim_get_embers(
     // Returns snapshot of all active embers
 }
 
-/// Get embers that can ignite (landed and hot enough)
-/// 
-/// Game engine uses this to:
-/// - Check if spot fire should be created at ember location
-/// - Query suppression coverage to prevent ignition
-/// - Verify fuel availability at landing position
-/// - Trigger spot fire visual/audio effects
-/// 
-/// # Returns
-/// Pointer to array of ignitable ember data
-#[no_mangle]
-pub extern "C" fn fire_sim_get_ignitable_embers(
-    sim_id: usize,
-    out_count: *mut u32
-) -> *const EmberData {
-    // Returns ONLY embers that have landed and can ignite
+/// C-compatible spot fire event data
+#[repr(C)]
+pub struct SpotFireEvent {
+    pub ember_id: u32,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub fuel_element_id: u32,
+    pub timestamp: f32,
 }
 
-/// Create spot fire from ember (game engine decides if ignition succeeds)
+/// Get spot fires that were created this frame (for visual/audio effects)
 /// 
-/// Game engine calls this after:
-/// - Checking fuel availability at ember location
-/// - Querying suppression coverage (may block ignition)
-/// - Verifying map bounds and terrain suitability
-/// 
-/// # Parameters
-/// - ember_id: ID of ember that caused ignition
-/// - fuel_element_id: Target fuel element to ignite (0 = auto-detect)
+/// Game engine uses this to:
+/// - Spawn spot fire explosion particle effects
+/// - Play ignition sound effects
+/// - Show UI notifications ("Spot fire detected!")
 /// 
 /// # Returns
-/// true if spot fire was created successfully
+/// Pointer to array of spot fire events from last update
 #[no_mangle]
-pub extern "C" fn fire_sim_create_spot_fire(
+pub extern "C" fn fire_sim_get_spot_fire_events(
     sim_id: usize,
-    ember_id: u32,
-    fuel_element_id: u32
-) -> bool {
-    // Ignite target fuel element, remove ember from active list
+    out_count: *mut u32,
+) -> *const SpotFireEvent {
+    // Returns events for game engine to visualize
 }
 ```
 
 **Key Design Points**:
-- Simulation handles ember physics (wind drag, buoyancy, cooling)
-- Game engine handles ember rendering (Niagara particles)
-- Game engine decides ignition success (fuel availability, suppression checks)
-- Simulation provides state data, game engine provides ignition logic
+- **Simulation handles ALL ember behavior** (physics + ignition)
+- Ignition is a **physics consequence** (temperature, moisture, receptivity)
+- Suppression coverage **blocks ignition** (physics interaction)
+- Game engine **only renders** embers (Niagara particles, trails, glow)
+- Game engine **responds to events** (spot fire VFX, audio, UI notifications)
+- **No game logic in ignition decision** - purely physical conditions
 
 ═══════════════════════════════════════════════════════════════════════
 ## PHASE 2: ADVANCED WEATHER PHENOMENA
@@ -414,9 +629,12 @@ pub extern "C" fn fire_sim_create_spot_fire(
 
 **Location**: `crates/core/src/weather/atmosphere.rs` (new file)
 
+**Visibility Guidelines**: Internal atmospheric calculations - not exposed to game engine
+
 ```rust
 /// Atmospheric stability state
-pub struct AtmosphericProfile {
+/// INTERNAL - only used for weather calculations
+pub(crate) struct AtmosphericProfile {
     // Vertical temperature profile (up to 5000m)
     pub temperature_layers: Vec<(f32, f32)>,  // (altitude_m, temp_C)
     
@@ -437,7 +655,7 @@ pub struct AtmosphericProfile {
 impl AtmosphericProfile {
     /// Calculate Haines Index (fire weather severity)
     /// Source: Haines, D.A. (1988) - USFS Research Paper
-    pub fn calculate_haines_index(&self) -> u8 {
+    pub(crate) fn calculate_haines_index(&self) -> u8 {
         // Low elevation variant (< 1000m MSL)
         let t_950 = self.temp_at_pressure(950.0); // hPa
         let t_850 = self.temp_at_pressure(850.0);
@@ -450,7 +668,7 @@ impl AtmosphericProfile {
     }
     
     /// Check if conditions support pyrocumulus development
-    pub fn pyrocumulus_potential(&self, fire_intensity_kwm: f32) -> bool {
+    pub(crate) fn pyrocumulus_potential(&self, fire_intensity_kwm: f32) -> bool {
         // Requires: unstable atmosphere + sufficient fire intensity
         let min_intensity = 10000.0; // kW/m (high-intensity fire)
         let unstable = self.lifted_index < -2.0;
@@ -471,9 +689,12 @@ impl AtmosphericProfile {
 
 **Location**: `crates/core/src/weather/pyrocumulus.rs` (new file)
 
+**Visibility Guidelines**: Internal cloud physics - only state data exposed for rendering via FFI
+
 ```rust
 /// Fire-generated cloud system
-pub struct PyrocumulusCloud {
+/// INTERNAL - read via FFI query functions only
+pub(crate) struct PyrocumulusCloud {
     pub position: Vec3,                 // Cloud base position
     pub base_altitude: f32,             // meters AGL
     pub top_altitude: f32,              // meters AGL
@@ -495,7 +716,7 @@ pub struct PyrocumulusCloud {
 
 impl PyrocumulusCloud {
     /// Create from high-intensity fire
-    pub fn try_form(
+    pub(crate) fn try_form(
         fire_position: Vec3,
         fire_intensity: f32,              // kW/m
         atmosphere: &AtmosphericProfile,
@@ -531,7 +752,7 @@ impl PyrocumulusCloud {
     }
     
     /// Update cloud dynamics and fire feedback
-    pub fn update(&mut self, dt: f32, atmosphere: &AtmosphericProfile) {
+    pub(crate) fn update(&mut self, dt: f32, atmosphere: &AtmosphericProfile) {
         // 1. Updraft evolution
         self.updraft_velocity -= 0.5 * dt; // Entrainment weakening
         
@@ -603,9 +824,12 @@ impl PyrocumulusCloud {
 
 **Location**: `crates/core/src/weather/fire_tornado.rs` (new file)
 
+**Visibility Guidelines**: Internal vortex physics - only state data exposed for rendering
+
 ```rust
 /// Fire-induced vortex (fire tornado/fire whirl)
-pub struct FireTornado {
+/// INTERNAL - read via FFI query functions only
+pub(crate) struct FireTornado {
     pub position: Vec3,
     pub core_radius: f32,               // meters (1-10m typical)
     pub outer_radius: f32,              // meters (10-50m)
@@ -623,7 +847,7 @@ pub struct FireTornado {
 
 impl FireTornado {
     /// Attempt formation from pyrocumulus + wind shear
-    pub fn try_form(
+    pub(crate) fn try_form(
         cloud: &PyrocumulusCloud,
         atmosphere: &AtmosphericProfile,
         fire_intensity: f32
@@ -655,7 +879,7 @@ impl FireTornado {
     }
     
     /// Calculate wind field at position (for fire spread modification)
-    pub fn wind_at_position(&self, pos: Vec3) -> Vec3 {
+    pub(crate) fn wind_at_position(&self, pos: Vec3) -> Vec3 {
         let r = ((pos.x - self.position.x).powi(2) 
                + (pos.y - self.position.y).powi(2)).sqrt();
         
@@ -695,22 +919,27 @@ impl FireTornado {
 
 **Location**: `crates/core/src/weather/mod.rs` (modify existing)
 
+**Visibility Note**: WeatherState methods are mostly internal - accessed via simulation
+
 ```rust
 pub struct WeatherState {
     // ... existing fields ...
     
     /// Atmospheric profile for instability calculations
-    pub atmosphere: AtmosphericProfile,
+    /// INTERNAL - not directly exposed to FFI
+    atmosphere: AtmosphericProfile,
     
     /// Active pyrocumulus clouds
-    pub pyrocumulus_clouds: Vec<PyrocumulusCloud>,
+    /// INTERNAL - read via FFI query functions
+    pyrocumulus_clouds: Vec<PyrocumulusCloud>,
     
     /// Active fire tornadoes
-    pub fire_tornadoes: Vec<FireTornado>,
+    /// INTERNAL - read via FFI query functions
+    fire_tornadoes: Vec<FireTornado>,
 }
 
 impl WeatherState {
-    pub fn update_advanced_phenomena(&mut self, fire_simulation: &FireSimulation, dt: f32) {
+    pub(crate) fn update_advanced_phenomena(&mut self, fire_simulation: &FireSimulation, dt: f32) {
         // 1. Update atmospheric profile (diurnal heating)
         self.atmosphere.update_profile(self.temperature, self.humidity, self.time_of_day);
         
@@ -751,7 +980,7 @@ impl WeatherState {
     }
     
     /// Get effective wind at position (including tornado effects)
-    pub fn wind_at_position(&self, pos: Vec3) -> Vec3 {
+    pub(crate) fn wind_at_position(&self, pos: Vec3) -> Vec3 {
         let mut wind = self.wind_vector();
         
         // Add fire tornado winds
@@ -776,7 +1005,10 @@ impl WeatherState {
 
 **Location**: `crates/ffi/src/lib.rs` (add functions)
 
+**Visibility Note**: FFI data structs are public, all functions are `pub extern "C"`
+
 ```rust
+/// C-compatible pyrocumulus cloud data for rendering
 #[repr(C)]
 pub struct PyrocumulusCloudData {
     pub position: [f32; 3],
@@ -788,6 +1020,7 @@ pub struct PyrocumulusCloudData {
     pub has_lightning: u8,
 }
 
+/// C-compatible fire tornado data for rendering
 #[repr(C)]
 pub struct FireTornadoData {
     pub position: [f32; 3],
@@ -849,9 +1082,12 @@ Required tests:
 
 **Location**: `crates/core/src/terrain/mod.rs` (new file)
 
+**Visibility Guidelines**: Terrain data is internal - only elevation queries exposed via FFI
+
 ```rust
 /// Digital Elevation Model (DEM) representation
-pub struct TerrainModel {
+/// INTERNAL - accessed via TerrainModel methods only
+pub(crate) struct TerrainModel {
     // Elevation data
     pub width: usize,                   // Grid cells X
     pub height: usize,                  // Grid cells Y
@@ -872,7 +1108,7 @@ pub struct TerrainModel {
 
 impl TerrainModel {
     /// Create from elevation grid
-    pub fn new(
+    pub(crate) fn new(
         width: usize, 
         height: usize, 
         cell_size: f32,
@@ -928,7 +1164,7 @@ impl TerrainModel {
     }
     
     /// Query elevation at world position (bilinear interpolation)
-    pub fn elevation_at(&self, world_x: f32, world_y: f32) -> f32 {
+    pub(crate) fn elevation_at(&self, world_x: f32, world_y: f32) -> f32 {
         let grid_x = (world_x - self.origin_x) / self.cell_size;
         let grid_y = (world_y - self.origin_y) / self.cell_size;
         
@@ -952,7 +1188,7 @@ impl TerrainModel {
     }
     
     /// Query slope at world position
-    pub fn slope_at(&self, world_x: f32, world_y: f32) -> f32 {
+    pub(crate) fn slope_at(&self, world_x: f32, world_y: f32) -> f32 {
         let grid_x = ((world_x - self.origin_x) / self.cell_size) as usize;
         let grid_y = ((world_y - self.origin_y) / self.cell_size) as usize;
         
@@ -964,7 +1200,7 @@ impl TerrainModel {
     }
     
     /// Query aspect at world position
-    pub fn aspect_at(&self, world_x: f32, world_y: f32) -> f32 {
+    pub(crate) fn aspect_at(&self, world_x: f32, world_y: f32) -> f32 {
         let grid_x = ((world_x - self.origin_x) / self.cell_size) as usize;
         let grid_y = ((world_y - self.origin_y) / self.cell_size) as usize;
         
@@ -991,9 +1227,12 @@ impl TerrainModel {
 
 **Location**: `crates/core/src/physics/slope.rs` (modify existing)
 
+**Visibility Guidelines**: Internal physics calculations - used by simulation only
+
 ```rust
 /// Calculate slope effect on fire spread using terrain model
-pub fn slope_spread_multiplier_terrain(
+/// INTERNAL - called during fire spread calculations
+pub(crate) fn slope_spread_multiplier_terrain(
     from: &FuelElement,
     to: &FuelElement,
     terrain: &TerrainModel
@@ -1029,9 +1268,12 @@ pub fn slope_spread_multiplier_terrain(
 
 **Location**: `crates/core/src/physics/aspect_wind.rs` (new file)
 
+**Visibility Guidelines**: Internal physics calculations
+
 ```rust
 /// Calculate combined aspect-wind effect on fire spread
-pub fn aspect_wind_multiplier(
+/// INTERNAL - used in fire spread calculations
+pub(crate) fn aspect_wind_multiplier(
     terrain: &TerrainModel,
     position: Vec3,
     wind_vector: Vec3
@@ -1059,17 +1301,21 @@ pub fn aspect_wind_multiplier(
 
 **Location**: `crates/core/src/simulation/mod.rs` (modify existing)
 
+**Visibility Note**: Internal simulation methods - not exposed to FFI
+
 ```rust
 pub struct FireSimulation {
     // ... existing fields ...
     
     /// Terrain model (optional - flat if None)
-    pub terrain: Option<TerrainModel>,
+    /// INTERNAL - queried via FFI functions only
+    terrain: Option<TerrainModel>,
 }
 
 impl FireSimulation {
     /// Update fuel element positions with terrain elevation
-    pub fn update_element_elevations(&mut self) {
+    /// INTERNAL - called during update loop
+    pub(crate) fn update_element_elevations(&mut self) {
         if let Some(ref terrain) = self.terrain {
             for element in &mut self.fuel_elements {
                 let elevation = terrain.elevation_at(element.position.x, element.position.y);
@@ -1173,9 +1419,12 @@ Required tests:
 
 **Location**: `crates/core/src/weather/providers.rs` (new file)
 
+**Visibility Guidelines**: Weather provider traits and implementations are internal
+
 ```rust
 /// Weather data source interface
-pub trait WeatherDataProvider {
+/// INTERNAL - not exposed to FFI (game engine fetches data externally)
+pub(crate) trait WeatherDataProvider {
     /// Fetch current weather at location
     fn fetch_current(&self, lat: f32, lon: f32) -> Result<WeatherSnapshot, Error>;
     
@@ -1184,8 +1433,9 @@ pub trait WeatherDataProvider {
 }
 
 /// Point-in-time weather observation
+/// INTERNAL - used for live data initialization only
 #[derive(Debug, Clone)]
-pub struct WeatherSnapshot {
+pub(crate) struct WeatherSnapshot {
     pub timestamp: u64,                 // Unix time
     pub location: (f32, f32),           // (lat, lon)
     
@@ -1206,7 +1456,8 @@ pub struct WeatherSnapshot {
 }
 
 /// Bureau of Meteorology (Australia) provider
-pub struct BOMWeatherProvider {
+/// INTERNAL - not exposed (game engine handles HTTP/API)
+pub(crate) struct BOMWeatherProvider {
     api_key: String,
     base_url: String,
 }
@@ -1238,7 +1489,8 @@ impl WeatherDataProvider for BOMWeatherProvider {
 ```rust
 impl WeatherState {
     /// Initialize from real-time weather observation
-    pub fn from_live_data(snapshot: WeatherSnapshot, day_of_year: u32) -> Self {
+    /// INTERNAL - called from FFI set_weather_from_live function
+    pub(crate) fn from_live_data(snapshot: WeatherSnapshot, day_of_year: u32) -> Self {
         let mut weather = WeatherState::new();
         
         // Surface conditions
@@ -1323,18 +1575,22 @@ Required tests:
 
 **Location**: `crates/core/src/simulation/action_queue.rs` (new file)
 
+**Visibility Guidelines**: Action queue is internal - only accessed via FFI submit/get functions
+
 ```rust
 /// Player action types for replication
+/// INTERNAL - used for multiplayer synchronization only
 #[derive(Debug, Clone, Copy)]
-pub enum PlayerActionType {
+pub(crate) enum PlayerActionType {
     ApplySuppression,
     IgniteSpot,
     ModifyWeather,  // For scenario control
 }
 
 /// Replicatable player action
+/// INTERNAL - converted to/from CPlayerAction at FFI boundary
 #[derive(Debug, Clone)]
-pub struct PlayerAction {
+pub(crate) struct PlayerAction {
     pub action_type: PlayerActionType,
     pub player_id: u32,
     pub timestamp: f32,              // Simulation time
@@ -1344,18 +1600,19 @@ pub struct PlayerAction {
 }
 
 /// Action queue for deterministic replay
-pub struct ActionQueue {
+/// INTERNAL - accessed via simulation methods only
+pub(crate) struct ActionQueue {
     pending: Vec<PlayerAction>,
     executed: Vec<PlayerAction>,     // History for late joiners
     max_history: usize,              // Limit history size
 }
 
 impl ActionQueue {
-    pub fn submit_action(&mut self, action: PlayerAction) {
+    pub(crate) fn submit_action(&mut self, action: PlayerAction) {
         self.pending.push(action);
     }
     
-    pub fn process_pending(&mut self, sim: &mut FireSimulation) {
+    pub(crate) fn process_pending(&mut self, sim: &mut FireSimulation) {
         for action in self.pending.drain(..) {
             match action.action_type {
                 PlayerActionType::ApplySuppression => {
@@ -1378,7 +1635,7 @@ impl ActionQueue {
         }
     }
     
-    pub fn get_history(&self) -> &[PlayerAction] {
+    pub(crate) fn get_history(&self) -> &[PlayerAction] {
         &self.executed
     }
 }
@@ -1388,7 +1645,10 @@ impl ActionQueue {
 
 **Location**: `crates/ffi/src/lib.rs` (add functions)
 
+**Visibility Note**: FFI structs and functions are public for C interop
+
 ```rust
+/// C-compatible player action for FFI
 #[repr(C)]
 pub struct CPlayerAction {
     pub action_type: u8,
@@ -1458,7 +1718,10 @@ pub extern "C" fn fire_sim_get_action_history(
 
 **Location**: `crates/ffi/src/lib.rs` (add functions)
 
+**Visibility Note**: FFI structs are public for C interop
+
 ```rust
+/// C-compatible simulation snapshot for state synchronization
 #[repr(C)]
 pub struct SimulationSnapshot {
     pub frame_number: u32,
@@ -1505,12 +1768,486 @@ pub extern "C" fn fire_sim_get_snapshot(
 - Frame-perfect action execution
 
 ═══════════════════════════════════════════════════════════════════════
-## PHASE 6: OPTIMIZATION & PERFORMANCE ENHANCEMENTS
+## PHASE 6: REFACTOR EXISTING CODE FOR PROPER VISIBILITY
+═══════════════════════════════════════════════════════════════════════
+
+**Goal**: Apply visibility guidelines to all existing code (Phases 1-3 implementations) to ensure proper encapsulation and minimize public API surface.
+
+**Note**: This phase refactors existing working code to follow the visibility principles established in this document. All tests must continue passing after refactoring.
+
+### 6.1 - Audit Current Visibility
+
+**Task**: Identify all overly-public items in existing codebase
+
+```bash
+# Find all public functions in physics modules
+rg "pub fn " crates/core/src/physics/ --no-heading
+
+# Find all public structs in core_types
+rg "pub struct " crates/core/src/core_types/ --no-heading
+
+# Find all public enums
+rg "pub enum " crates/core/src/ --no-heading
+
+# Find all public fields
+rg "pub [a-z_]+:" crates/core/src/ --no-heading
+```
+
+**Document findings**: Create a list of items that should be `pub(crate)` or private
+
+### 6.2 - Refactor Physics Modules
+
+**Location**: `crates/core/src/physics/*.rs`
+
+**Changes Required**:
+
+#### `physics/rothermel.rs`
+```rust
+// BEFORE
+pub fn rothermel_spread_rate(...) -> f32 { ... }
+pub fn calculate_spread_rate_with_environment(...) -> f32 { ... }
+
+// AFTER
+pub(crate) fn rothermel_spread_rate(...) -> f32 { ... }
+pub(crate) fn calculate_spread_rate_with_environment(...) -> f32 { ... }
+```
+
+#### `physics/crown_fire.rs`
+```rust
+// BEFORE
+pub enum CrownFireType { Surface, Passive, Active }
+pub struct CrownFireBehavior { ... }
+pub fn calculate_critical_surface_intensity(...) -> f32 { ... }
+pub fn calculate_crown_fire_behavior(...) -> CrownFireBehavior { ... }
+
+// AFTER
+pub(crate) enum CrownFireType { Surface, Passive, Active }
+pub(crate) struct CrownFireBehavior { ... }
+pub(crate) fn calculate_critical_surface_intensity(...) -> f32 { ... }
+pub(crate) fn calculate_crown_fire_behavior(...) -> CrownFireBehavior { ... }
+```
+
+#### `physics/albini_spotting.rs`
+```rust
+// BEFORE
+pub fn calculate_lofting_height(fireline_intensity: f32) -> f32 { ... }
+pub fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 { ... }
+pub fn calculate_terminal_velocity(...) -> f32 { ... }
+pub fn calculate_maximum_spotting_distance(...) -> f32 { ... }
+
+// AFTER
+pub(crate) fn calculate_lofting_height(fireline_intensity: f32) -> f32 { ... }
+pub(crate) fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 { ... }
+pub(crate) fn calculate_terminal_velocity(...) -> f32 { ... }
+pub(crate) fn calculate_maximum_spotting_distance(...) -> f32 { ... }
+```
+
+#### `physics/fuel_moisture.rs`
+```rust
+// BEFORE
+pub fn calculate_equilibrium_moisture(...) -> f32 { ... }
+pub fn timelag_rate_constant(timelag_hours: f32) -> f32 { ... }
+pub fn update_moisture_timelag(...) { ... }
+pub fn calculate_weighted_moisture(...) -> f32 { ... }
+pub struct FuelMoistureState { ... }
+
+// AFTER
+pub(crate) fn calculate_equilibrium_moisture(...) -> f32 { ... }
+pub(crate) fn timelag_rate_constant(timelag_hours: f32) -> f32 { ... }
+pub(crate) fn update_moisture_timelag(...) { ... }
+pub(crate) fn calculate_weighted_moisture(...) -> f32 { ... }
+pub(crate) struct FuelMoistureState { ... }
+```
+
+#### `physics/smoldering.rs`
+```rust
+// BEFORE
+pub enum CombustionPhase { Flaming, Transition, Smoldering, Extinct }
+pub struct SmolderingState { ... }
+pub fn should_transition_to_smoldering(...) -> bool { ... }
+pub fn calculate_smoldering_heat_multiplier(...) -> f32 { ... }
+pub fn update_smoldering_state(...) -> SmolderingState { ... }
+
+// AFTER
+pub(crate) enum CombustionPhase { Flaming, Transition, Smoldering, Extinct }
+pub(crate) struct SmolderingState { ... }
+pub(crate) fn should_transition_to_smoldering(...) -> bool { ... }
+pub(crate) fn calculate_smoldering_heat_multiplier(...) -> f32 { ... }
+pub(crate) fn update_smoldering_state(...) -> SmolderingState { ... }
+```
+
+#### `physics/canopy_layers.rs`
+```rust
+// BEFORE
+pub enum CanopyLayer { GroundLitter, Shrub, Understory, MidStory, Overstory }
+pub struct CanopyStructure { ... }
+pub fn calculate_layer_transition_probability(...) -> f32 { ... }
+
+// AFTER
+pub(crate) enum CanopyLayer { GroundLitter, Shrub, Understory, MidStory, Overstory }
+pub(crate) struct CanopyStructure { ... }
+pub(crate) fn calculate_layer_transition_probability(...) -> f32 { ... }
+```
+
+#### `physics/suppression_physics.rs`
+```rust
+// BEFORE
+pub enum SuppressionAgent { Water, ShortTermRetardant, LongTermRetardant, Foam }
+pub fn apply_suppression_direct(...) { ... }
+
+// AFTER
+pub(crate) enum SuppressionAgent { Water, ShortTermRetardant, LongTermRetardant, Foam }
+// apply_suppression_direct remains pub - it's called from simulation which is pub
+pub fn apply_suppression_direct(...) { ... }
+```
+
+#### `physics/combustion_physics.rs`
+```rust
+// BEFORE
+pub fn get_oxygen_limited_burn_rate(...) -> f32 { ... }
+pub fn calculate_combustion_products(...) -> CombustionProducts { ... }
+
+// AFTER
+pub(crate) fn get_oxygen_limited_burn_rate(...) -> f32 { ... }
+pub(crate) fn calculate_combustion_products(...) -> CombustionProducts { ... }
+```
+
+#### `physics/element_heat_transfer.rs`
+```rust
+// BEFORE
+pub fn calculate_heat_transfer(...) -> f32 { ... }
+pub fn calculate_total_heat_transfer(...) -> f32 { ... }
+
+// AFTER
+pub(crate) fn calculate_heat_transfer(...) -> f32 { ... }
+pub(crate) fn calculate_total_heat_transfer(...) -> f32 { ... }
+```
+
+### 6.3 - Refactor Core Types
+
+**Location**: `crates/core/src/core_types/*.rs`
+
+#### `core_types/element.rs`
+```rust
+// BEFORE
+pub struct FuelElement {
+    pub id: u32,
+    pub position: Vec3,
+    pub fuel: Fuel,
+    pub temperature: f32,
+    pub moisture_fraction: f32,
+    pub fuel_remaining: f32,
+    pub ignited: bool,
+    pub flame_height: f32,
+    // ... other public fields
+}
+
+// AFTER
+pub struct FuelElement {
+    // All fields become private - accessed via getter methods
+    id: u32,
+    position: Vec3,
+    fuel: Fuel,
+    temperature: f32,
+    moisture_fraction: f32,
+    fuel_remaining: f32,
+    ignited: bool,
+    flame_height: f32,
+    // ... other private fields
+}
+
+impl FuelElement {
+    // Existing public getter methods remain (already implemented)
+    pub fn id(&self) -> u32 { self.id }
+    pub fn position(&self) -> &Vec3 { &self.position }
+    pub fn temperature(&self) -> f32 { self.temperature }
+    // ... etc
+    
+    // Internal mutation methods become pub(crate)
+    pub(crate) fn apply_heat(&mut self, heat_kj: f32, dt: f32, ambient_temp: f32) { ... }
+    pub(crate) fn set_ignited(&mut self, ignited: bool) { ... }
+    pub(crate) fn update_flame_height(&mut self) { ... }
+}
+```
+
+#### `core_types/ember.rs`
+```rust
+// BEFORE
+pub struct Ember {
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub temperature: f32,
+    pub mass: f32,
+    // ... other public fields
+}
+
+// AFTER
+pub struct Ember {
+    // Fields become private
+    position: Vec3,
+    velocity: Vec3,
+    temperature: f32,
+    mass: f32,
+    // ... other private fields
+}
+
+impl Ember {
+    // Public read-only accessors (already exist)
+    pub fn position(&self) -> Vec3 { self.position }
+    pub fn temperature(&self) -> f32 { self.temperature }
+    // ... etc
+    
+    // Internal methods become pub(crate)
+    pub(crate) fn update_physics(&mut self, wind: Vec3, ambient_temp: f32, dt: f32) { ... }
+    pub(crate) fn attempt_ignition(&mut self, simulation: &FireSimulation) -> bool { ... }
+}
+```
+
+#### `core_types/fuel.rs`
+```rust
+// Fuel struct fields can remain public - it's a data carrier used by FFI
+// This is acceptable as Fuel is immutable once created
+pub struct Fuel {
+    pub id: u8,
+    pub name: String,
+    pub heat_content: f32,
+    // ... all fields remain public (data struct)
+}
+```
+
+#### `core_types/weather.rs`
+```rust
+// WeatherPreset fields remain public - it's a configuration struct
+pub struct WeatherPreset {
+    pub name: String,
+    pub monthly_temps: [(f32, f32); 12],
+    // ... all fields remain public (configuration data)
+}
+
+// WeatherSystem internal state becomes private
+pub struct WeatherSystem {
+    // BEFORE: many pub fields
+    // AFTER: private fields, accessed via methods
+    temperature: f32,
+    humidity: f32,
+    wind_speed: f32,
+    wind_direction: f32,
+    // ... other private fields
+}
+
+impl WeatherSystem {
+    // Public read-only accessors
+    pub fn temperature(&self) -> f32 { self.temperature }
+    pub fn humidity(&self) -> f32 { self.humidity }
+    // ... etc
+    
+    // Internal update methods become pub(crate)
+    pub(crate) fn update(&mut self, dt: f32) { ... }
+}
+```
+
+#### `core_types/spatial.rs`
+```rust
+// BEFORE
+pub struct SpatialIndex { ... }
+
+// AFTER
+pub(crate) struct SpatialIndex { ... }
+
+impl SpatialIndex {
+    pub(crate) fn new(...) -> Self { ... }
+    pub(crate) fn insert(...) { ... }
+    pub(crate) fn query_radius(...) -> Vec<u32> { ... }
+}
+```
+
+### 6.4 - Refactor Grid Module
+
+**Location**: `crates/core/src/grid/*.rs`
+
+#### `grid/mod.rs` and `grid/simulation_grid.rs`
+```rust
+// GridCell fields remain pub - it's queried via FFI
+pub struct GridCell {
+    // Fields can stay public or use accessor methods
+    // Current implementation already uses accessors (temperature(), wind(), etc.)
+}
+
+// SimulationGrid internal methods become pub(crate)
+impl SimulationGrid {
+    pub fn new(...) -> Self { ... } // Remains pub - construction
+    
+    pub(crate) fn update_diffusion(&mut self, dt: f32) { ... }
+    pub(crate) fn update_buoyancy(&mut self, dt: f32) { ... }
+    pub(crate) fn mark_active_cells(&mut self, positions: &[Vec3], radius: f32) { ... }
+}
+```
+
+#### `grid/terrain.rs`
+```rust
+// TerrainData construction remains pub - used by FFI
+pub struct TerrainData { ... }
+
+impl TerrainData {
+    pub fn flat(...) -> Self { ... } // Remains pub - used by FFI/tests
+    pub fn single_hill(...) -> Self { ... } // Remains pub
+    
+    pub(crate) fn elevation_at(&self, x: f32, y: f32) -> f32 { ... }
+    pub(crate) fn slope_at(&self, x: f32, y: f32) -> f32 { ... }
+}
+```
+
+### 6.5 - Refactor Simulation Module
+
+**Location**: `crates/core/src/simulation/mod.rs`
+
+```rust
+pub struct FireSimulation {
+    // Fields become private
+    grid: SimulationGrid,
+    elements: Vec<Option<FuelElement>>,
+    burning_elements: HashSet<u32>,
+    spatial_index: SpatialIndex,
+    weather: WeatherSystem,
+    embers: Vec<Ember>,
+    // ... all private
+}
+
+impl FireSimulation {
+    // Public API - called by FFI
+    pub fn new(grid_cell_size: f32, terrain: TerrainData) -> Self { ... }
+    pub fn update(&mut self, dt: f32) { ... }
+    pub fn add_fuel_element(...) -> u32 { ... }
+    pub fn ignite_element(&mut self, id: u32, temp: f32) { ... }
+    pub fn apply_suppression_direct(...) { ... }
+    pub fn get_stats(&self) -> SimulationStats { ... }
+    pub fn terrain(&self) -> &TerrainData { ... }
+    
+    // Query methods (called by FFI) remain pub
+    pub fn get_element(&self, id: u32) -> Option<&FuelElement> { ... }
+    pub fn get_burning_elements(&self) -> Vec<&FuelElement> { ... }
+    pub fn get_cell_at_position(&self, pos: Vec3) -> Option<&GridCell> { ... }
+    
+    // Internal helper methods become pub(crate) or private
+    pub(crate) fn update_weather(&mut self, dt: f32) { ... }
+    pub(crate) fn update_burning_elements(&mut self, dt: f32) { ... }
+    pub(crate) fn update_embers(&mut self, dt: f32) { ... }
+    pub(crate) fn process_heat_transfers(&mut self, dt: f32) { ... }
+}
+```
+
+### 6.6 - Update lib.rs Re-exports
+
+**Location**: `crates/core/src/lib.rs`
+
+```rust
+// Re-export only what FFI and external users need
+pub use core_types::{Fuel, FuelPart, FuelElement, Vec3};
+pub use core_types::{WeatherSystem, WeatherPreset, ClimatePattern};
+pub use core_types::Ember; // Only for statistics/queries
+
+pub use grid::{SimulationGrid, GridCell, TerrainData};
+pub use simulation::{FireSimulation, SimulationStats};
+
+// DO NOT re-export internal physics modules
+// Physics functions are pub(crate) and used internally only
+```
+
+### 6.7 - Verify FFI Still Works
+
+**Location**: `crates/ffi/src/lib.rs`
+
+- Run `cargo check -p fire-sim-ffi` to ensure FFI compiles
+- All FFI functions should still access public methods on `FireSimulation`
+- FFI should NOT directly access internal fields or physics functions
+- If FFI breaks, it means we made something too private - add `pub` getters
+
+### 6.8 - Verify Tests Still Pass
+
+```bash
+# Run all tests
+cargo test --all-features
+
+# Run specific test suites
+cargo test -p fire-sim-core
+cargo test -p fire-sim-core --test integration_fire_behavior
+
+# Run clippy with strict warnings
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+**Expected outcomes**:
+- All 83+ unit tests pass
+- Integration tests pass
+- Clippy may suggest removing unnecessary `pub` (fix these)
+- **CRITICAL**: Fix all clippy warnings by changing code, NEVER use `#[allow(...)]` macros to suppress warnings
+- Demo applications compile and run
+
+### 6.9 - Update Documentation
+
+After refactoring, update:
+
+1. **README.md**: Ensure API examples use public methods only
+2. **Integration guide**: Verify FFI examples are correct
+3. **Inline docs**: Add `///` documentation to public methods
+4. **Mark internal functions**: Add `// Internal: ...` comments to `pub(crate)` functions
+
+### 6.10 - Performance Verification
+
+```bash
+# Benchmark before refactoring
+cargo bench --bench fire_spread > before.txt
+
+# Benchmark after refactoring
+cargo bench --bench fire_spread > after.txt
+
+# Compare - should be identical (visibility doesn't affect performance)
+diff before.txt after.txt
+```
+
+### Refactoring Checklist
+
+- [ ] All physics modules use `pub(crate)` for functions/types
+- [ ] FuelElement fields are private with public getters
+- [ ] Ember fields are private with public accessors
+- [ ] WeatherSystem internal state is private
+- [ ] SpatialIndex is fully `pub(crate)`
+- [ ] Grid internal methods are `pub(crate)`
+- [ ] FireSimulation fields are private
+- [ ] lib.rs only re-exports necessary types
+- [ ] FFI layer compiles without errors
+- [ ] All 83+ tests still pass
+- [ ] Clippy passes with `-D warnings` (NO `#[allow(...)]` macros used)
+- [ ] Demo apps compile and run
+- [ ] Performance benchmarks unchanged
+- [ ] Documentation updated
+
+### Benefits of This Refactoring
+
+1. **Encapsulation**: Internal implementation can change without breaking external code
+2. **API clarity**: Clear distinction between public API and internal helpers
+3. **Compile time**: Smaller public API surface = faster incremental builds
+4. **Safety**: Prevents accidental misuse of internal functions
+5. **Maintenance**: Easier to refactor internal code later
+6. **Documentation**: Public API is smaller and easier to document
+
+### Testing Strategy
+
+This refactoring should be **low-risk** because:
+- We're only changing visibility, not behavior
+- Rust's compiler enforces access rules
+- All existing tests will catch breakage
+- FFI layer will fail to compile if we break the interface
+
+**If tests fail**: We made something too private - add a `pub` getter or make it `pub(crate)`
+
+═══════════════════════════════════════════════════════════════════════
+## PHASE 7: OPTIMIZATION & PERFORMANCE ENHANCEMENTS
 ═══════════════════════════════════════════════════════════════════════
 
 **Goal**: Ensure all new features maintain 60 FPS with 600,000+ fuel elements and 1,000+ burning elements.
 
-**Note**: This phase was previously Phase 5, renumbered due to addition of multiplayer support phase.
+**Note**: This phase was previously Phase 5 and Phase 6, renumbered due to addition of multiplayer support and refactoring phases.
 
 ### 5.1 - Profiling Targets
 
@@ -1586,6 +2323,8 @@ Required benchmarks:
 
 ### Step-by-Step Process for Each Phase
 
+**Note**: For Phase 6 (Refactoring), follow the refactoring checklist instead of this general workflow.
+
 1. **Research Phase**
    - Find peer-reviewed papers for phenomenon
    - Document formulas and empirical constants
@@ -1612,6 +2351,7 @@ Required benchmarks:
 5. **Validation Phase**
    - Run full test suite: `cargo test --all-features`
    - Run clippy: `cargo clippy --all-targets --all-features -- -D warnings`
+   - **CRITICAL**: Fix all clippy warnings by changing code, NEVER use `#[allow(...)]` to suppress
    - Format code: `cargo fmt --all -v`
    - Profile performance: `cargo bench`
    - Create validation document: `docs/validation/PHASE_X_VALIDATION.md`
@@ -1630,12 +2370,15 @@ Required benchmarks:
 - [ ] Thread-safe FFI functions (Arc<Mutex<>>)
 - [ ] Unit tests passing (95%+ coverage)
 - [ ] Integration tests passing
-- [ ] Clippy warnings = 0
+- [ ] Clippy warnings = 0 (fix by changing code, NEVER use `#[allow(...)]` macros)
 - [ ] Code formatted (rustfmt)
 - [ ] Performance benchmarks meet targets
 - [ ] Validation document created
 - [ ] FFI interface documented
 - [ ] Game engine responsibilities clarified
+- [ ] **Visibility correctness: All physics functions are `pub(crate)` or private**
+- [ ] **No `pub` on internal structs (except FFI C-structs and statistics)**
+- [ ] **FFI functions are `pub extern "C"` with proper safety docs**
 
 ═══════════════════════════════════════════════════════════════════════
 ## EXCLUDED FEATURES (GAME ENGINE RESPONSIBILITIES)
@@ -1684,11 +2427,10 @@ The following are **NOT implemented** in the core simulation. The game engine wi
 - Energy/fatigue management
 - Team coordination and AI behaviors
 
-### ❌ Ember Rendering & Ignition Logic
+### ❌ Ember Rendering
 - Ember particle effects (Niagara/particle systems)
 - Ember trails, glow, and smoke visuals
-- **Ignition decision logic** (game checks fuel availability, suppression coverage)
-- Spot fire creation confirmation (game triggers `fire_sim_create_spot_fire` after validation)
+- Spot fire ignition VFX and sound effects (response to simulation events)
 
 **Core simulation provides**:
 - Physics state data (for rendering)
@@ -1739,6 +2481,7 @@ The following are **NOT implemented** in the core simulation. The game engine wi
 - ✅ Moisture evaporation (latent heat)
 - ✅ Ignition probability and conditions
 - ✅ Ember physics (generation, flight, cooling)
+- ✅ **Ember spot fire ignition** (automatic, physics-based)
 - ✅ Fuel consumption and burn rates
 
 **Suppression Physics**:
@@ -1766,12 +2509,11 @@ The following are **NOT implemented** in the core simulation. The game engine wi
 - ✅ `fire_sim_query_flame_height(x, y, z, radius)` → meters
 - ✅ `fire_sim_query_suppression(x, y, z)` → coverage data
 - ✅ `fire_sim_is_position_in_fire(x, y, z, margin)` → bool
-- ✅ `fire_sim_get_embers()` → ember state data
-- ✅ `fire_sim_get_ignitable_embers()` → embers ready to ignite
+- ✅ `fire_sim_get_embers()` → ember state data (for rendering only)
+- ✅ `fire_sim_get_spot_fire_events()` → ignitions this frame (for VFX/audio)
 
 **Action Interfaces** (game engine triggers):
 - ✅ `fire_sim_apply_suppression(pos, mass, agent_type)`
-- ✅ `fire_sim_create_spot_fire(ember_id, fuel_id)`
 - ✅ `fire_sim_submit_player_action(action)` (multiplayer)
 
 **Multiplayer Support**:
@@ -1800,11 +2542,10 @@ The following are **NOT implemented** in the core simulation. The game engine wi
 - Team coordination and AI
 
 **Gameplay Logic**:
-- Ember ignition decisions (check fuel availability, suppression)
-- Spot fire creation validation (bounds, terrain, suppression)
 - Mission objectives and scoring
 - Player input handling
 - UI/HUD rendering
+- **Response to spot fire events** (spawn VFX, play audio, show UI notifications)
 
 **Multiplayer**:
 - Network transport (send/receive actions)
@@ -1829,6 +2570,16 @@ Player Sprays Water:
 5. Game: Calls fire_sim_query_fire_intensity(spray_pos) each frame
 6. Game: Updates UI "Fire intensity: 5000 kW/m → 2000 kW/m"
 7. Game: If multiplayer, sends action to server for replication
+
+Ember Creates Spot Fire:
+1. Sim:  Ember lands (position.z < 1.0), temp = 350°C
+2. Sim:  Finds fuel element at landing position
+3. Sim:  Checks suppression coverage (20% coverage = OK to ignite)
+4. Sim:  Calculates ignition probability: temp × moisture × receptivity
+5. Sim:  Random roll succeeds → ignites fuel element
+6. Sim:  Adds to spot_fire_events[] for this frame
+7. Game: Calls fire_sim_get_spot_fire_events()
+8. Game: Spawns explosion VFX, plays ignition sound, shows UI alert
 ```
 
 ═══════════════════════════════════════════════════════════════════════
@@ -1839,7 +2590,11 @@ Player Sprays Water:
 - [ ] All suppression agent types implemented with research-based properties
 - [ ] Suppression coverage system working (evaporation, degradation)
 - [ ] FFI suppression application functions available
-- [ ] At least 10 unit tests passing for suppression physics
+- [ ] FFI fire state query functions available (intensity, heat, flame height)
+- [ ] Ember automatic ignition system implemented (physics-based)
+- [ ] Spot fire event tracking and FFI retrieval available
+- [ ] Suppression blocks ember ignition correctly
+- [ ] At least 15 unit tests passing for suppression physics and ember ignition
 - [ ] Validation document showing effectiveness matches research
 
 ### Phase 2 Complete When:
@@ -1874,6 +2629,23 @@ Player Sprays Water:
 - [ ] At least 5 unit tests passing for action processing
 
 ### Phase 6 Complete When:
+- [ ] All physics functions changed to `pub(crate)` or private
+- [ ] All internal structs changed to `pub(crate)`
+- [ ] FuelElement fields are private with public getters
+- [ ] Ember fields are private with public accessors
+- [ ] WeatherSystem state is private with getters
+- [ ] SpatialIndex is `pub(crate)`
+- [ ] FireSimulation fields are private
+- [ ] lib.rs re-exports minimal API surface
+- [ ] FFI layer compiles without errors
+- [ ] All 83+ unit tests still pass
+- [ ] Integration tests still pass
+- [ ] Clippy passes with `-D warnings` (NO `#[allow(...)]` macros used)
+- [ ] Demo applications compile and run
+- [ ] Performance benchmarks show no regression
+- [ ] Documentation updated for public API only
+
+### Phase 7 Complete When:
 - [ ] All profiling benchmarks meet targets (60 FPS)
 - [ ] Parallel processing optimizations applied
 - [ ] Memory usage <2GB for full-scale simulation
@@ -1893,6 +2665,8 @@ Player Sprays Water:
 6. Core simulation handles physics ONLY
 7. Every formula needs a validation test
 8. Performance target: 60 FPS with 600K+ fuel elements
+9. **VISIBILITY: Use private or `pub(crate)` by default - only FFI functions/structs and statistics should be `pub`**
+10. **CLIPPY: Fix ALL warnings by changing code - NEVER use `#[allow(...)]` macros to suppress warnings**
 
 **SIMULATION DOES NOT TRACK**:
 - ❌ Player positions, health, or inventory

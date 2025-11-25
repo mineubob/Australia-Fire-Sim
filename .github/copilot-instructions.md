@@ -1205,6 +1205,7 @@ fn test_smoldering_combustion() {
 7. ❌ **Simplified Stefan-Boltzmann**: Must use full T^4 formula with emissivity
 8. ❌ **Race Conditions in FFI**: Always use Arc<RwLock<>> for thread safety
 9. ❌ **Ignoring Phase 1-3 Systems**: All advanced models (Rothermel, Van Wagner, Albini, Nelson, Rein) are fully implemented
+10. ❌ **Suppressing Clippy Warnings**: NEVER use `#[allow(...)]` macros - fix warnings by changing code
 
 ### Code Style
 
@@ -1227,6 +1228,7 @@ fn test_smoldering_combustion() {
 
 - **Validate Rust code**: Before submitting any code changes, AI agents MUST validate Rust code using the following commands to ensure correctness and formatting:
     - Run `cargo clippy --all-targets --all-features -- -D warnings` to treat all clippy warnings as errors and catch potential issues.
+    - **CRITICAL**: Fix ALL clippy warnings by changing code - NEVER use `#[allow(...)]` macros to suppress warnings.
     - Run `cargo fmt --all -v --check` to verify formatting matches project style. For a quick automated fix, `cargo fmt --all -v` may be used instead (but a check should be performed before finalizing changes).
 
 ### References Used
@@ -1301,6 +1303,7 @@ When adding these features:
 8. **Validation is mandatory** - every formula should have tests against known values
 9. **Documentation is scientific** - include references, units, and justifications
 10. **User's mantra**: "I want it as realistic as possible - NEVER simplify"
+11. **Clippy warnings must be fixed** - NEVER use `#[allow(...)]` to suppress, always fix by changing code
 
 ═══════════════════════════════════════════════════════════════════════
 
