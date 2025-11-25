@@ -15,7 +15,7 @@ use crate::core_types::weather::WeatherSystem;
 use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise, update_wind_field};
 use crate::grid::{GridCell, SimulationGrid, TerrainData};
 use rayon::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Ultra-realistic fire simulation with full atmospheric modeling
 pub struct FireSimulation {
@@ -173,7 +173,7 @@ impl FireSimulation {
             false, // is_adsorbing - false for typical drying conditions
         );
 
-        for element in self.elements.iter_mut().flatten() {
+        self.elements.par_iter_mut().flatten().for_each(|element| {
             if let Some(ref mut moisture_state) = element.moisture_state {
                 let dt_hours = dt / 3600.0; // Convert seconds to hours
 
@@ -212,7 +212,7 @@ impl FireSimulation {
 
                 moisture_state.average_moisture = element.moisture_fraction;
             }
-        }
+        });
 
         // 2. Update wind field in grid based on terrain
         update_wind_field(&mut self.grid, wind_vector, dt);
@@ -220,7 +220,7 @@ impl FireSimulation {
         // 3. Mark active cells near burning elements
         let burning_positions: Vec<Vec3> = self
             .burning_elements
-            .iter()
+            .par_iter()
             .filter_map(|&id| self.get_element(id).map(|e| e.position))
             .collect();
         self.grid.mark_active_cells(&burning_positions, 30.0);
@@ -234,7 +234,7 @@ impl FireSimulation {
         let wind_speed_ms = wind_vector.magnitude();
 
         let nearby_cache: Vec<(u32, Vec3, Vec<u32>)> = elements_to_process
-            .iter()
+            .par_iter()
             .filter_map(|&element_id| {
                 self.get_element(element_id).map(|e| {
                     // Wind-directional search radius: base 10m, extends downwind
@@ -555,7 +555,6 @@ impl FireSimulation {
 
         // Apply heat transfers sequentially to avoid race conditions
         // Use a HashMap to accumulate heat for each target from multiple sources
-        use std::collections::HashMap;
         let mut heat_map: HashMap<u32, f32> = HashMap::new();
         for (target_id, heat) in heat_transfers {
             *heat_map.entry(target_id).or_insert(0.0) += heat;
