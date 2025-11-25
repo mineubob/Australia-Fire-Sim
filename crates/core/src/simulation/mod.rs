@@ -345,16 +345,17 @@ impl FireSimulation {
             if let Some(element) = self.get_element_mut(element_id) {
                 element.fuel_remaining -= fuel_consumed;
                 fuel_consumed_actual = fuel_consumed;
-                
+
                 // CRITICAL: Burning elements continue to heat up from their own combustion
                 // Heat released = fuel consumed × heat content (kJ/kg)
                 if fuel_consumed > 0.0 && element.fuel_remaining > 0.1 {
                     let combustion_heat = fuel_consumed * element.fuel.heat_content;
                     // Only fraction of heat goes to element (rest radiates away)
                     let self_heating = combustion_heat * 0.3; // 30% self-heating
-                    let temp_rise = self_heating / (element.fuel_remaining * element.fuel.specific_heat);
-                    element.temperature = (element.temperature + temp_rise)
-                        .min(element.fuel.max_flame_temperature);
+                    let temp_rise =
+                        self_heating / (element.fuel_remaining * element.fuel.specific_heat);
+                    element.temperature =
+                        (element.temperature + temp_rise).min(element.fuel.max_flame_temperature);
                 }
 
                 if element.fuel_remaining < 0.01 {

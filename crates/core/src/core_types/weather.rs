@@ -1007,7 +1007,7 @@ impl WeatherSystem {
     }
 
     /// Get spread rate multiplier based on FFDI
-    /// 
+    ///
     /// Capped at 5.0 to prevent unrealistic instant spread even in catastrophic conditions.
     /// Real fire spread still takes time even in extreme FFDI 100+ conditions.
     pub fn spread_rate_multiplier(&self) -> f32 {
