@@ -21,8 +21,9 @@
 //! - `nearby <id>` - Show elements near the specified element
 //! - `ignite <id>` - Manually ignite an element
 //! - `preset <name>` - Switch weather preset (perth, catastrophic, etc.)
-//! - `help` - Show available commands
 //! - `reset` - Reset simulation with new terrain dimensions
+//! - `heatmap [size]` - Generate a heatmap of the simulation
+//! - `help` - Show available commands
 //! - `quit` - Exit the simulation
 
 use fire_sim_core::{
@@ -44,12 +45,12 @@ fn main() {
 
     // Ask for terrain dimensions
     let (width, height) = prompt_terrain_dimensions();
-    
+
     // Create simulation with user-specified dimensions
     let mut sim = create_test_simulation(width, height);
     let mut current_width = width;
     let mut current_height = height;
-    
+
     println!(
         "Created simulation with {} elements on {}x{} terrain",
         sim.get_all_elements().len(),
@@ -119,13 +120,19 @@ fn main() {
                     }
                     "reset" | "r" => {
                         // Parse optional dimensions from command or use current
-                        let new_width = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(current_width);
-                        let new_height = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(current_height);
-                        
+                        let new_width = parts
+                            .get(1)
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(current_width);
+                        let new_height = parts
+                            .get(2)
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(current_height);
+
                         sim = create_test_simulation(new_width, new_height);
                         current_width = new_width;
                         current_height = new_height;
-                        
+
                         println!(
                             "Simulation reset! Created {} elements on {}x{} terrain",
                             sim.get_all_elements().len(),
@@ -134,7 +141,11 @@ fn main() {
                         );
                     }
                     "help" | "?" => show_help(),
-                    "heatmap" | "hm" => show_heatmap(&sim, current_width, current_height),
+                    "heatmap" | "hm" => {
+                        let grid_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
+
+                        show_heatmap(&sim, current_width, current_height, grid_size)
+                    }
                     "quit" | "q" | "exit" => {
                         println!("Goodbye!");
                         break;
@@ -164,25 +175,25 @@ fn main() {
 /// Prompt user for terrain dimensions at startup
 fn prompt_terrain_dimensions() -> (f32, f32) {
     println!("Enter terrain dimensions (or press Enter for defaults):");
-    
+
     // Width
     print!("  Width in meters [{}]: ", DEFAULT_WIDTH);
     io::stdout().flush().unwrap();
     let mut width_str = String::new();
     io::stdin().read_line(&mut width_str).unwrap();
     let width: f32 = width_str.trim().parse().unwrap_or(DEFAULT_WIDTH);
-    
+
     // Height
     print!("  Height in meters [{}]: ", DEFAULT_HEIGHT);
     io::stdout().flush().unwrap();
     let mut height_str = String::new();
     io::stdin().read_line(&mut height_str).unwrap();
     let height: f32 = height_str.trim().parse().unwrap_or(DEFAULT_HEIGHT);
-    
+
     // Validate dimensions
-    let width = width.max(10.0).min(1000.0);
-    let height = height.max(10.0).min(1000.0);
-    
+    let width = width.clamp(10.0, 1000.0);
+    let height = height.clamp(10.0, 1000.0);
+
     println!();
     (width, height)
 }
@@ -514,11 +525,10 @@ fn set_preset(sim: &mut FireSimulation, name: &str) {
 }
 
 /// Display an ASCII heatmap of temperature distribution
-fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32) {
+fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, grid_size: usize) {
     println!("\n═══════════════ TEMPERATURE HEATMAP ═══════════════");
 
     // Create a grid covering the simulation area with appropriate cell size
-    let grid_size = 30;
     let cell_width = terrain_width / grid_size as f32;
     let cell_height = terrain_height / grid_size as f32;
 
@@ -614,7 +624,7 @@ fn show_help() {
     println!("  embers, em           - List active embers");
     println!("  nearby <id>, n       - Show elements near <id>");
     println!("  ignite <id>, i       - Manually ignite element");
-    println!("  heatmap, hm          - Show temperature heatmap");
+    println!("  heatmap, hm [size]   - Show temperature heatmap");
     println!("  preset <name>, p     - Change weather preset");
     println!("                         (perth, catastrophic, goldfields, wheatbelt, hot)");
     println!("  reset [w] [h], r     - Reset simulation (optional: new width/height)");
