@@ -49,33 +49,6 @@ use serde::{Deserialize, Serialize};
 /// - **Density**: ~400 kg/m³ (charred wood/bark)
 /// - **Drag coefficient**: 0.4 (sphere approximation)
 /// - **Buoyancy**: Active when T > 300°C
-///
-/// # Example
-///
-/// ```
-/// use fire_sim_core::Ember;
-/// use nalgebra::Vector3;
-///
-/// let mut ember = Ember::new(
-///     1,
-///     Vector3::new(0.0, 0.0, 10.0),  // 10m above ground
-///     Vector3::new(5.0, 0.0, 10.0),  // Initial velocity
-///     800.0,                          // 800°C
-///     0.001,                          // 1 gram
-///     1,                              // Eucalyptus stringybark
-/// );
-///
-/// // Simulate 10 seconds of flight
-/// let wind = Vector3::new(10.0, 0.0, 0.0); // 10 m/s wind
-/// for _ in 0..100 {
-///     ember.update_physics(wind, 20.0, 0.1); // 0.1s timestep
-/// }
-///
-/// // Check if ember can ignite fuel
-/// if ember.can_ignite() {
-///     println!("Ember landed hot at {:?}", ember.position);
-/// }
-/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ember {
     pub(crate) id: u32,
