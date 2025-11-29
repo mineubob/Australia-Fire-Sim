@@ -1175,6 +1175,48 @@ fn test_smoldering_combustion() {
 - Simulation integration: 8 tests (fire danger ratings, Australian characteristics)
 
 ═══════════════════════════════════════════════════════════════════════
+## PERFORMANCE PROFILING
+═══════════════════════════════════════════════════════════════════════
+
+### Profiling with Samply
+
+To profile the fire simulation and identify performance bottlenecks:
+
+```bash
+# 1. Profile the simulation
+samply record --save-only target/release/demo-interactive
+
+# 2. Analyze the profile using our custom script
+python3 scripts/analyze_profile.py profile.json.gz profile.json.syms.json
+```
+
+**What the analyzer shows:**
+- Total sample count
+- Key fire simulation functions with percentages (UPDATE, MARK_ACTIVE, DIFFUSION, QUERY_RADIUS, etc.)
+- Top 40 hotspots filtered to relevant code (fire_sim_core, hashbrown, rayon, core::iter)
+- Performance summary with top 3 bottlenecks
+- Rayon parallel overhead tracking
+
+**Common bottlenecks identified:**
+- `query_radius` (30%): Spatial neighbor searches - Morton-encoded octree lookups
+- `update_diffusion` (21%): Grid atmospheric physics updates
+- `mark_active_cells` (17%): Grid cell activation near burning elements
+- `par_extend` (13%): Rayon parallel collection overhead
+- Iterator overhead: `core::iter::range::next`, `<core::slice::iter::Iter<T>>::next`
+
+**Optimization approach:**
+1. Profile first - never optimize without data
+2. Target functions >10% sample time
+3. Look for iterator overhead, allocations, parallel overhead
+4. Use pre-computed offsets to eliminate nested loops
+5. Track subsets instead of iterating all elements
+6. Sequential may be faster than parallel for small/medium workloads (<10k elements)
+
+**Script location:** `scripts/analyze_profile.py`
+
+The script automatically maps raw addresses to function names and provides actionable insights for optimization.
+
+═══════════════════════════════════════════════════════════════════════
 ## DEVELOPMENT GUIDELINES
 ═══════════════════════════════════════════════════════════════════════
 
@@ -1206,6 +1248,7 @@ fn test_smoldering_combustion() {
 8. ❌ **Race Conditions in FFI**: Always use Arc<RwLock<>> for thread safety
 9. ❌ **Ignoring Phase 1-3 Systems**: All advanced models (Rothermel, Van Wagner, Albini, Nelson, Rein) are fully implemented
 10. ❌ **Suppressing Clippy Warnings**: NEVER use `#[allow(...)]` macros - fix warnings by changing code
+11. ❌ **Hardcoded Dynamic Values**: NEVER hardcode values that should vary by context (see Dynamic Values Rule below)
 
 ### Code Style
 
@@ -1214,6 +1257,139 @@ fn test_smoldering_combustion() {
 - **Constants**: Use named constants with references (STEFAN_BOLTZMANN = 5.67e-8)
 - **Testing**: Each physics formula should have a validation test
 - **Documentation**: Explain WHY, not just WHAT (scientific reasoning)
+
+### Dynamic Values Rule (CRITICAL)
+
+**NEVER hardcode values that should be dynamic or context-dependent.**
+
+This rule applies to:
+
+#### 1. Fuel-Specific Properties
+❌ **WRONG**: Hardcoding thermal behavior constants
+```rust
+let cooling_rate = 0.1; // BAD: Same for all fuels
+let self_heating = combustion_heat * 0.3; // BAD: All fuels retain 30%
+let beta_op = 0.3; // BAD: Optimum packing ratio fixed
+let h = 500.0; // BAD: Same convection for grass and forest
+```
+
+✅ **CORRECT**: Use fuel-specific properties
+```rust
+let cooling_rate = element.fuel.cooling_rate; // Grass=0.15, Forest=0.05
+let self_heating = combustion_heat * element.fuel.self_heating_fraction; // Varies by fuel
+let beta_op = fuel.optimum_packing_ratio; // Fine=0.35, Coarse=0.25
+let h = element.fuel.convective_heat_coefficient; // Grass=600, Forest=400
+```
+
+**Examples of fuel-specific values** (MUST come from `fuel` struct, not hardcoded):
+- Thermal behavior: `cooling_rate`, `self_heating_fraction`, `convective_heat_coefficient`
+- Rothermel parameters: `optimum_packing_ratio`, `mineral_damping`, `effective_heating`
+- Fire characteristics: `ignition_temperature`, `max_flame_temperature`, `heat_content`
+- Moisture: `base_moisture`, `moisture_of_extinction`, timelag classes
+- Crown fire: `crown_bulk_density`, `crown_base_height`, `foliar_moisture_content`
+- Australian-specific: `volatile_oil_content`, `bark_properties`, `crown_fire_threshold`
+
+#### 2. Weather-Dependent Values
+❌ **WRONG**: Hardcoding environmental conditions
+```rust
+let wind_speed = 10.0; // BAD: Fixed wind
+let humidity = 30.0; // BAD: Constant humidity
+let temperature = 25.0; // BAD: Static temperature
+```
+
+✅ **CORRECT**: Use dynamic weather system
+```rust
+let wind_speed = weather.wind_speed; // Dynamic, changes with time
+let humidity = weather.humidity; // Diurnal cycles, seasonal variation
+let temperature = weather.temperature; // El Niño/La Niña effects
+```
+
+#### 3. Grid/Spatial Context Values
+❌ **WRONG**: Assuming uniform conditions
+```rust
+let oxygen = 0.21; // BAD: Assumes no depletion
+let cell_temp = ambient_temp; // BAD: Ignores fire heating
+```
+
+✅ **CORRECT**: Query actual grid state
+```rust
+let oxygen = cell.oxygen; // Depletes near fire
+let cell_temp = cell.temperature; // Heated by combustion
+```
+
+#### 4. Time-Dependent Values
+❌ **WRONG**: Fixed timestep assumptions
+```rust
+let moisture_change = -0.01; // BAD: Assumes fixed dt
+let spread_distance = 5.0; // BAD: Not time-scaled
+```
+
+✅ **CORRECT**: Scale by timestep
+```rust
+let moisture_change = moisture_rate * dt; // Time-scaled
+let spread_distance = spread_rate * dt; // Proper integration
+```
+
+#### 5. Element/Agent-Specific Values
+❌ **WRONG**: Uniform suppression effectiveness
+```rust
+let cooling_power = 100.0; // BAD: All agents same
+let application_rate = 5.0; // BAD: Fixed flow rate
+```
+
+✅ **CORRECT**: Use agent/element properties
+```rust
+let cooling_power = agent.suppression_capacity; // Water vs retardant
+let application_rate = nozzle.flow_rate; // Different equipment
+```
+
+#### 6. Physical Constants (Allowed to be hardcoded)
+These are universal and CAN be hardcoded:
+```rust
+const STEFAN_BOLTZMANN: f32 = 5.67e-8; // Physical constant
+const LATENT_HEAT_VAPORIZATION: f32 = 2260.0; // Water property
+const GRAVITY: f32 = 9.81; // Universal constant
+const SPECIFIC_HEAT_AIR: f32 = 1.005; // Air at STP
+```
+
+### When Adding New Code
+
+**Before writing any calculation, ask:**
+1. Does this value vary by **fuel type**? → Use `fuel.property`
+2. Does this value vary by **weather**? → Use `weather.property`
+3. Does this value vary by **location**? → Query grid/spatial index
+4. Does this value vary by **time**? → Scale by `dt` or use timelag system
+5. Does this value vary by **agent/element**? → Use instance properties
+
+**If any answer is YES, the value MUST NOT be hardcoded.**
+
+### Code Review Checklist
+
+When reviewing code (AI or human), check for:
+- [ ] No hardcoded fuel properties (check for literal numbers like `0.1`, `0.3`, `500.0`)
+- [ ] No hardcoded weather values (temperature, wind, humidity)
+- [ ] No assumptions of uniform grid conditions
+- [ ] All time-dependent calculations scale by `dt`
+- [ ] Physical constants have proper references and units
+- [ ] Comments explain WHY a value is used, with scientific source
+
+### Refactoring Hardcoded Values
+
+If you find a hardcoded value that should be dynamic:
+
+1. **Identify the property category** (fuel, weather, grid, time, agent)
+2. **Add property to appropriate struct** (e.g., `Fuel`, `WeatherSystem`)
+3. **Assign realistic values** for each instance (with scientific justification)
+4. **Update all usage sites** to use the dynamic property
+5. **Add tests** to validate behavior varies correctly
+6. **Document** in comments why the property varies
+
+**Example refactoring** (November 2025):
+- Converted 7 hardcoded thermal constants to fuel-specific properties
+- `cooling_rate`, `self_heating_fraction`, `optimum_packing_ratio`, etc.
+- See `docs/FUEL_SPECIFIC_PROPERTIES.md` for full details
+
+**This rule maintains extreme realism by ensuring simulation behavior adapts to actual physical context rather than simplified assumptions.**
 
 
 ### AI Agents & Tooling
