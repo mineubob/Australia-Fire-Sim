@@ -21,24 +21,17 @@
 pub mod core_types;
 
 // Ultra-realistic simulation modules (organized in subfolders)
-pub mod grid;
-pub mod physics;
+pub(crate) mod grid;
+pub(crate) mod physics;
 pub mod simulation;
-pub mod suppression;
-pub mod weather;
+pub(crate) mod suppression;
+pub(crate) mod weather;
 
-// Re-export core types
+// Re-export core types (public API)
 pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
 pub use core_types::{ClimatePattern, WeatherPreset, WeatherSystem};
-pub use core_types::{Ember, SpatialIndex};
+pub use core_types::Ember;
 
-// Re-export ultra-realistic types
+// Re-export simulation types (public API)
 pub use grid::{GridCell, SimulationGrid, TerrainData};
-pub use physics::{apply_suppression_direct, SuppressionAgent};
-pub use simulation::{ActionQueue, FireSimulation, PlayerAction, PlayerActionType, SimulationStats};
-
-// Re-export suppression types (Phase 1)
-pub use suppression::{SuppressionAgentProperties, SuppressionAgentType, SuppressionCoverage};
-
-// Re-export weather types (Phase 2)
-pub use weather::{AtmosphericProfile, PyrocumulusCloud};
+pub use simulation::{FireSimulation, SimulationStats};

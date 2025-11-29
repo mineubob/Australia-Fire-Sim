@@ -15,7 +15,7 @@ use crate::core_types::element::Vec3;
 
 /// Player action types for replication
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlayerActionType {
+pub(crate) enum PlayerActionType {
     /// Apply fire suppression at a position
     ApplySuppression,
     /// Ignite a spot fire at a position
@@ -47,19 +47,19 @@ impl PlayerActionType {
 
 /// Replicatable player action
 #[derive(Debug, Clone)]
-pub struct PlayerAction {
+pub(crate) struct PlayerAction {
     /// Type of action
-    pub action_type: PlayerActionType,
+    pub(crate) action_type: PlayerActionType,
     /// Player ID who performed the action
-    pub player_id: u32,
+    pub(crate) player_id: u32,
     /// Simulation time when action was submitted
-    pub timestamp: f32,
+    pub(crate) timestamp: f32,
     /// Position where action was applied
-    pub position: Vec3,
+    pub(crate) position: Vec3,
     /// Primary parameter (mass for suppression, intensity for ignition)
-    pub param1: f32,
+    pub(crate) param1: f32,
     /// Secondary parameter (agent type ID, element ID, etc.)
-    pub param2: u32,
+    pub(crate) param2: u32,
 }
 
 impl PlayerAction {
@@ -109,7 +109,7 @@ impl PlayerAction {
 
 /// Action queue for deterministic replay and multiplayer synchronization
 #[derive(Debug)]
-pub struct ActionQueue {
+pub(crate) struct ActionQueue {
     /// Actions pending execution (to be processed in next update)
     pending: Vec<PlayerAction>,
     /// Actions executed this frame (for broadcasting to clients)

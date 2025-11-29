@@ -55,7 +55,7 @@ use crate::core_types::weather::WeatherSystem;
 /// let spread_rate = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0, 20.0);
 /// // Expect ~30-50 m/min for dry grass with 5 m/s wind
 /// ```
-pub fn rothermel_spread_rate(
+pub(crate) fn rothermel_spread_rate(
     fuel: &Fuel,
     moisture_fraction: f32,
     wind_speed_ms: f32,
@@ -314,7 +314,7 @@ fn calculate_heat_preignition(fuel: &Fuel, moisture_fraction: f32, ambient_temp:
 ///
 /// # Returns
 /// Directional spread rate in meters per minute
-pub fn calculate_spread_rate_with_environment(
+pub(crate) fn calculate_spread_rate_with_environment(
     element: &FuelElement,
     weather: &WeatherSystem,
     target_position: Vec3,

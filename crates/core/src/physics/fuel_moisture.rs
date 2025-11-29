@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// # References
 /// Simard (1968), Nelson (2000)
-pub fn calculate_equilibrium_moisture(temperature: f32, humidity: f32, is_adsorbing: bool) -> f32 {
+pub(crate) fn calculate_equilibrium_moisture(temperature: f32, humidity: f32, is_adsorbing: bool) -> f32 {
     // Simard (1968) coefficients for adsorption and desorption
     // Modified Nelson (2000) formulation for better temperature response
     let (a, b, c, d) = if is_adsorbing {
@@ -68,7 +68,7 @@ pub fn calculate_equilibrium_moisture(temperature: f32, humidity: f32, is_adsorb
 ///
 /// # References
 /// Nelson (2000)
-pub fn timelag_rate_constant(timelag_hours: f32) -> f32 {
+pub(crate) fn timelag_rate_constant(timelag_hours: f32) -> f32 {
     if timelag_hours <= 0.0 {
         return 0.0;
     }
@@ -91,7 +91,7 @@ pub fn timelag_rate_constant(timelag_hours: f32) -> f32 {
 ///
 /// # References
 /// Nelson (2000), Equation 3
-pub fn update_moisture_timelag(
+pub(crate) fn update_moisture_timelag(
     current_moisture: f32,
     equilibrium_moisture: f32,
     timelag_hours: f32,
@@ -120,7 +120,7 @@ pub fn update_moisture_timelag(
 ///
 /// # Returns
 /// Weighted average moisture content (fraction 0-1)
-pub fn calculate_weighted_moisture(
+pub(crate) fn calculate_weighted_moisture(
     moisture_1h: f32,
     moisture_10h: f32,
     moisture_100h: f32,
@@ -137,22 +137,22 @@ pub fn calculate_weighted_moisture(
 
 /// Fuel moisture state for all timelag classes
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct FuelMoistureState {
+pub(crate) struct FuelMoistureState {
     /// Moisture in 1-hour fuels (fraction 0-1)
-    pub moisture_1h: f32,
+    moisture_1h: f32,
     /// Moisture in 10-hour fuels (fraction 0-1)
-    pub moisture_10h: f32,
+    moisture_10h: f32,
     /// Moisture in 100-hour fuels (fraction 0-1)
-    pub moisture_100h: f32,
+    moisture_100h: f32,
     /// Moisture in 1000-hour fuels (fraction 0-1)
-    pub moisture_1000h: f32,
+    moisture_1000h: f32,
     /// Weighted average moisture (fraction 0-1)
-    pub average_moisture: f32,
+    average_moisture: f32,
 }
 
 impl FuelMoistureState {
     /// Create new moisture state with initial values for each timelag class
-    pub fn new(
+    pub(crate) fn new(
         moisture_1h: f32,
         moisture_10h: f32,
         moisture_100h: f32,
@@ -168,8 +168,13 @@ impl FuelMoistureState {
         }
     }
 
+    /// Get average moisture content
+    pub(crate) fn average_moisture(&self) -> f32 {
+        self.average_moisture
+    }
+
     /// Update all moisture classes based on weather
-    pub fn update(&mut self, fuel: &Fuel, temperature: f32, humidity: f32, dt_hours: f32) {
+    pub(crate) fn update(&mut self, fuel: &Fuel, temperature: f32, humidity: f32, dt_hours: f32) {
         // Determine if fuel is adsorbing (gaining) or desorbing (losing) moisture
         let emc = calculate_equilibrium_moisture(temperature, humidity, false);
         let is_adsorbing = self.average_moisture < emc;

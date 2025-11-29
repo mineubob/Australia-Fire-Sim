@@ -25,31 +25,31 @@ use serde::{Deserialize, Serialize};
 /// 4. **Evaporation**: Agent mass decreases over time based on weather
 /// 5. **UV degradation**: Foam/retardant effectiveness decreases in sunlight
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct SuppressionCoverage {
+pub(crate) struct SuppressionCoverage {
     /// Type of suppression agent
-    pub agent_type: SuppressionAgentType,
+    agent_type: SuppressionAgentType,
 
     /// Mass per unit area (kg/m²)
     /// Decreases over time due to evaporation
-    pub mass_per_area: f32,
+    mass_per_area: f32,
 
     /// Simulation time when coverage was applied
-    pub application_time: f32,
+    application_time: f32,
 
     /// Fraction of fuel surface covered (0-1)
     /// Decreases due to UV degradation and evaporation
-    pub coverage_fraction: f32,
+    coverage_fraction: f32,
 
     /// Depth of penetration into fuel bed (meters)
     /// Set at application, doesn't change over time
-    pub penetration_depth: f32,
+    penetration_depth: f32,
 
     /// Whether coverage is still effective
-    pub active: bool,
+    active: bool,
 
     /// Remaining effectiveness of chemical inhibition (0-1)
     /// Decreases due to UV degradation
-    pub chemical_effectiveness: f32,
+    chemical_effectiveness: f32,
 }
 
 impl SuppressionCoverage {
@@ -60,7 +60,7 @@ impl SuppressionCoverage {
     /// - `mass_kg`: Total mass applied to the element
     /// - `fuel_surface_area`: Surface area of the fuel element (m²)
     /// - `simulation_time`: Current simulation time
-    pub fn new(
+    pub(crate) fn new(
         agent_type: SuppressionAgentType,
         mass_kg: f32,
         fuel_surface_area: f32,
@@ -73,17 +73,37 @@ impl SuppressionCoverage {
 
         // Coverage fraction based on application rate
         // If applied at recommended rate, coverage = 1.0
-        let coverage_fraction = (mass_per_area / props.application_rate).min(1.0);
+        let coverage_fraction = (mass_per_area / props.application_rate()).min(1.0);
 
         Self {
             agent_type,
             mass_per_area,
             application_time: simulation_time,
             coverage_fraction,
-            penetration_depth: props.penetration_depth,
+            penetration_depth: props.penetration_depth(),
             active: true,
             chemical_effectiveness: 1.0,
         }
+    }
+
+    /// Get agent type
+    pub(crate) fn agent_type(&self) -> SuppressionAgentType {
+        self.agent_type
+    }
+
+    /// Get coverage fraction
+    pub(crate) fn coverage_fraction(&self) -> f32 {
+        self.coverage_fraction
+    }
+
+    /// Get mass remaining per area
+    pub(crate) fn mass_per_area(&self) -> f32 {
+        self.mass_per_area
+    }
+
+    /// Check if coverage is still active
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
     }
 
     /// Modify incoming heat transfer based on suppression coverage
@@ -103,7 +123,7 @@ impl SuppressionCoverage {
     ///
     /// # Returns
     /// Tuple of (effective_heat_kj, heat_absorbed_kj)
-    pub fn modify_heat_transfer(
+    pub(crate) fn modify_heat_transfer(
         &mut self,
         incoming_heat_kj: f32,
         fuel_surface_area: f32,
@@ -158,7 +178,7 @@ impl SuppressionCoverage {
     /// - `wind_speed`: Wind speed (m/s)
     /// - `solar_radiation`: Solar radiation (W/m²)
     /// - `dt`: Time step (seconds)
-    pub fn update(
+    pub(crate) fn update(
         &mut self,
         temperature: f32,
         humidity: f32,
@@ -203,7 +223,7 @@ impl SuppressionCoverage {
     ///
     /// # Returns
     /// - Ignition probability modifier (0 = blocked, 1 = no effect)
-    pub fn ember_ignition_modifier(&self) -> f32 {
+    pub(crate) fn ember_ignition_modifier(&self) -> f32 {
         if !self.active {
             return 1.0;
         }

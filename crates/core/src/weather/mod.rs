@@ -11,8 +11,8 @@
 //!   stratosphere." Annales Geophysicae, 28(4), 937-963.
 //! - ICAO Standard Atmosphere (1993) for atmospheric profile modeling.
 
-mod atmosphere;
-mod pyrocumulus;
+pub(crate) mod atmosphere;
+pub(crate) mod pyrocumulus;
 
-pub use atmosphere::AtmosphericProfile;
-pub use pyrocumulus::PyrocumulusCloud;
+pub(crate) use atmosphere::AtmosphericProfile;
+pub(crate) use pyrocumulus::PyrocumulusCloud;

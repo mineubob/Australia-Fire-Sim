@@ -2,7 +2,7 @@ use crate::core_types::element::Vec3;
 use rustc_hash::FxHashMap;
 
 /// Spatial index using hash-based octree for fast neighbor queries
-pub struct SpatialIndex {
+pub(crate) struct SpatialIndex {
     octree: FxHashMap<u64, Vec<(u32, Vec3)>>,
     cell_size: f32,
     bounds: (Vec3, Vec3),

@@ -10,9 +10,9 @@
 //! - Pyrocumulus cloud formation (Phase 2)
 //! - Multiplayer action queue system (Phase 5)
 
-mod action_queue;
+pub(crate) mod action_queue;
 
-pub use action_queue::{ActionQueue, PlayerAction, PlayerActionType};
+pub(crate) use action_queue::{ActionQueue, PlayerAction, PlayerActionType};
 
 use crate::core_types::element::{FuelElement, FuelPart, Vec3};
 use crate::core_types::ember::Ember;

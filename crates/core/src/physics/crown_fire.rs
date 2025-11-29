@@ -19,7 +19,7 @@ use crate::core_types::element::FuelElement;
 
 /// Crown fire type classification
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum CrownFireType {
+pub(crate) enum CrownFireType {
     /// No crown fire - surface fire only
     Surface,
     /// Passive crown fire - intermittent torching of individual trees
@@ -30,17 +30,56 @@ pub enum CrownFireType {
 
 /// Crown fire behavior parameters
 #[derive(Debug, Clone, Copy)]
-pub struct CrownFireBehavior {
+pub(crate) struct CrownFireBehavior {
     /// Crown fire type
-    pub fire_type: CrownFireType,
+    fire_type: CrownFireType,
     /// Critical surface fire intensity for crown fire initiation (kW/m)
-    pub critical_surface_intensity: f32,
+    critical_surface_intensity: f32,
     /// Actual surface fire intensity (kW/m)
-    pub surface_intensity: f32,
+    surface_intensity: f32,
     /// Critical crown fire spread rate (m/min)
-    pub critical_crown_spread_rate: f32,
+    critical_crown_spread_rate: f32,
     /// Ratio of active to critical crown spread rate
-    pub crown_fraction_burned: f32,
+    crown_fraction_burned: f32,
+}
+
+impl CrownFireBehavior {
+    /// Create new crown fire behavior
+    pub(crate) fn new(
+        fire_type: CrownFireType,
+        critical_surface_intensity: f32,
+        surface_intensity: f32,
+        critical_crown_spread_rate: f32,
+        crown_fraction_burned: f32,
+    ) -> Self {
+        Self {
+            fire_type,
+            critical_surface_intensity,
+            surface_intensity,
+            critical_crown_spread_rate,
+            crown_fraction_burned,
+        }
+    }
+
+    /// Get the fire type
+    pub(crate) fn fire_type(&self) -> CrownFireType {
+        self.fire_type
+    }
+
+    /// Get surface intensity
+    pub(crate) fn surface_intensity(&self) -> f32 {
+        self.surface_intensity
+    }
+
+    /// Get critical surface intensity
+    pub(crate) fn critical_surface_intensity(&self) -> f32 {
+        self.critical_surface_intensity
+    }
+
+    /// Get crown fraction burned
+    pub(crate) fn crown_fraction_burned(&self) -> f32 {
+        self.crown_fraction_burned
+    }
 }
 
 /// Calculate critical surface fire intensity for crown fire initiation
@@ -59,7 +98,7 @@ pub struct CrownFireBehavior {
 ///
 /// # References
 /// Van Wagner (1977), Equation 4
-pub fn calculate_critical_surface_intensity(
+pub(crate) fn calculate_critical_surface_intensity(
     crown_bulk_density: f32,
     heat_content: f32,
     foliar_moisture_content: f32,
@@ -86,7 +125,7 @@ pub fn calculate_critical_surface_intensity(
 ///
 /// # References
 /// Van Wagner (1977), Equation 9
-pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
+pub(crate) fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
     if crown_bulk_density <= 0.0 {
         return 0.0;
     }
@@ -109,7 +148,7 @@ pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
 ///
 /// # References
 /// Cruz & Alexander (2010)
-pub fn calculate_crown_fraction_burned(active_spread_rate: f32, critical_spread_rate: f32) -> f32 {
+pub(crate) fn calculate_crown_fraction_burned(active_spread_rate: f32, critical_spread_rate: f32) -> f32 {
     if active_spread_rate <= critical_spread_rate {
         return 0.0;
     }
@@ -129,7 +168,7 @@ pub fn calculate_crown_fraction_burned(active_spread_rate: f32, critical_spread_
 ///
 /// # References
 /// Van Wagner (1977, 1993)
-pub fn determine_crown_fire_type(
+pub(crate) fn determine_crown_fire_type(
     surface_intensity: f32,
     critical_surface_intensity: f32,
     active_spread_rate: f32,
@@ -152,7 +191,7 @@ pub fn determine_crown_fire_type(
 /// For Australian fuels, uses the minimum of Van Wagner threshold and fuel-specific
 /// threshold, as Van Wagner was calibrated for Canadian conifers and may overestimate
 /// crown fire resistance in eucalyptus forests with volatile oils and ladder fuels.
-pub fn calculate_crown_fire_behavior(
+pub(crate) fn calculate_crown_fire_behavior(
     element: &FuelElement,
     crown_bulk_density: f32,
     crown_base_height: f32,
@@ -193,23 +232,23 @@ pub fn calculate_crown_fire_behavior(
         0.0
     };
 
-    CrownFireBehavior {
+    CrownFireBehavior::new(
         fire_type,
         critical_surface_intensity,
         surface_intensity,
         critical_crown_spread_rate,
         crown_fraction_burned,
-    }
+    )
 }
 
 /// Apply crown fire effects to fuel element
 ///
 /// Increases burn rate and intensity when crown fire conditions are met
-pub fn apply_crown_fire_effects(
+pub(crate) fn apply_crown_fire_effects(
     _element: &mut FuelElement,
     crown_behavior: &CrownFireBehavior,
 ) -> f32 {
-    match crown_behavior.fire_type {
+    match crown_behavior.fire_type() {
         CrownFireType::Surface => {
             // No crown fire enhancement
             1.0
@@ -218,13 +257,13 @@ pub fn apply_crown_fire_effects(
             // Passive crown fire - intermittent torching
             // Multiply burn rate by 1.5-2.0 based on intensity ratio
             let intensity_ratio =
-                crown_behavior.surface_intensity / crown_behavior.critical_surface_intensity;
+                crown_behavior.surface_intensity() / crown_behavior.critical_surface_intensity();
             1.0 + (intensity_ratio - 1.0) * 0.5
         }
         CrownFireType::Active => {
             // Active crown fire - full crown involvement
             // Multiply burn rate by 2.0-4.0 based on crown fraction burned
-            2.0 + crown_behavior.crown_fraction_burned * 2.0
+            2.0 + crown_behavior.crown_fraction_burned() * 2.0
         }
     }
 }

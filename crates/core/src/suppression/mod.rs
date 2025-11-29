@@ -13,8 +13,8 @@
 //! - FAO Irrigation and Drainage Paper 56: Penman-Monteith Evaporation
 //! - George & Johnson (2009): "Effectiveness of Aerial Fire Retardant"
 
-mod agent;
-mod coverage;
+pub(crate) mod agent;
+pub(crate) mod coverage;
 
-pub use agent::{SuppressionAgentProperties, SuppressionAgentType};
-pub use coverage::SuppressionCoverage;
+pub(crate) use agent::{SuppressionAgentProperties, SuppressionAgentType};
+pub(crate) use coverage::SuppressionCoverage;

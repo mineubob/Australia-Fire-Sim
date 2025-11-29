@@ -25,41 +25,41 @@ use serde::{Deserialize, Serialize};
 /// - **K-Index**: Thunderstorm/convection potential
 /// - **Mixing Height**: Depth of turbulent boundary layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AtmosphericProfile {
+pub(crate) struct AtmosphericProfile {
     // ═══════════════════════════════════════════════════════════════════
     // TEMPERATURE PROFILE
     // ═══════════════════════════════════════════════════════════════════
 
     /// Surface temperature (°C)
-    pub surface_temperature: f32,
+    pub(crate) surface_temperature: f32,
 
     /// Temperature lapse rate (°C/km)
     /// Standard atmosphere: 6.5°C/km
     /// Unstable: >6.5°C/km
     /// Stable/Inversion: <6.5°C/km or negative
-    pub lapse_rate: f32,
+    pub(crate) lapse_rate: f32,
 
     /// Temperature at 850 hPa (~1500m) (°C)
-    pub temp_850: f32,
+    pub(crate) temp_850: f32,
 
     /// Temperature at 700 hPa (~3000m) (°C)
-    pub temp_700: f32,
+    pub(crate) temp_700: f32,
 
     /// Temperature at 500 hPa (~5500m) (°C)
-    pub temp_500: f32,
+    pub(crate) temp_500: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // MOISTURE PROFILE
     // ═══════════════════════════════════════════════════════════════════
 
     /// Surface dewpoint temperature (°C)
-    pub surface_dewpoint: f32,
+    pub(crate) surface_dewpoint: f32,
 
     /// Dewpoint at 850 hPa (°C)
-    pub dewpoint_850: f32,
+    pub(crate) dewpoint_850: f32,
 
     /// Dewpoint at 700 hPa (°C)
-    pub dewpoint_700: f32,
+    pub(crate) dewpoint_700: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // STABILITY INDICES (COMPUTED)
@@ -69,19 +69,19 @@ pub struct AtmosphericProfile {
     /// Negative values indicate instability
     /// LI < -3: Unstable (favorable for pyrocumulus)
     /// LI > 0: Stable
-    pub lifted_index: f32,
+    pub(crate) lifted_index: f32,
 
     /// K-Index (dimensionless)
     /// K > 30: High thunderstorm/convection potential
     /// K > 40: Very high
-    pub k_index: f32,
+    pub(crate) k_index: f32,
 
     /// Haines Index (2-6)
     /// 2-3: Very low fire weather potential
     /// 4: Low to moderate
     /// 5: High
     /// 6: Very high (extreme fire behavior)
-    pub haines_index: u8,
+    pub(crate) haines_index: u8,
 
     // ═══════════════════════════════════════════════════════════════════
     // BOUNDARY LAYER
@@ -89,13 +89,13 @@ pub struct AtmosphericProfile {
 
     /// Mixing height - depth of turbulent boundary layer (meters)
     /// Higher values = stronger vertical mixing, more erratic fire behavior
-    pub mixing_height: f32,
+    pub(crate) mixing_height: f32,
 
     /// Inversion altitude (meters AGL), if present
-    pub inversion_altitude: Option<f32>,
+    pub(crate) inversion_altitude: Option<f32>,
 
     /// Inversion strength (°C difference across inversion)
-    pub inversion_strength: f32,
+    pub(crate) inversion_strength: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // WIND PROFILE
@@ -103,12 +103,12 @@ pub struct AtmosphericProfile {
 
     /// Wind shear magnitude (m/s per km)
     /// High shear + unstable = fire tornado risk
-    pub wind_shear: f32,
+    pub(crate) wind_shear: f32,
 
     /// Wind backing/veering with height
     /// Veering (clockwise): warm air advection
     /// Backing (counterclockwise): cold air advection
-    pub wind_direction_change: f32,
+    pub(crate) wind_direction_change: f32,
 }
 
 impl AtmosphericProfile {

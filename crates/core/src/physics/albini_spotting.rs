@@ -43,7 +43,7 @@ use crate::core_types::element::Vec3;
 ///
 /// # References
 /// Albini (1979), Equation 8, adjusted for Australian conditions
-pub fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
+pub(crate) fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
     if fireline_intensity <= 0.0 {
         return 0.0;
     }
@@ -67,7 +67,7 @@ pub fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
 /// # References
 /// Standard atmospheric boundary layer theory
 /// Wind shear exponent α ≈ 0.15 for open terrain
-pub fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 {
+pub(crate) fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 {
     if height <= 0.0 {
         return 0.0;
     }
@@ -93,7 +93,7 @@ pub fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 {
 ///
 /// # References
 /// Standard aerodynamics, Tarifa et al. (1965)
-pub fn calculate_terminal_velocity(ember_mass: f32, ember_diameter: f32) -> f32 {
+pub(crate) fn calculate_terminal_velocity(ember_mass: f32, ember_diameter: f32) -> f32 {
     const AIR_DENSITY: f32 = 1.225; // kg/m³ at sea level
     const DRAG_COEFFICIENT: f32 = 0.4; // Sphere approximation
     const GRAVITY: f32 = 9.81; // m/s²
@@ -128,7 +128,7 @@ pub fn calculate_terminal_velocity(ember_mass: f32, ember_diameter: f32) -> f32 
 ///
 /// # References
 /// Albini (1979, 1983)
-pub fn calculate_maximum_spotting_distance(
+pub(crate) fn calculate_maximum_spotting_distance(
     fireline_intensity: f32,
     wind_speed_10m: f32,
     ember_mass: f32,
@@ -194,7 +194,7 @@ pub fn calculate_maximum_spotting_distance(
 ///
 /// # References
 /// Tarifa et al. (1965), Albini (1983)
-pub fn calculate_ember_trajectory(
+pub(crate) fn calculate_ember_trajectory(
     initial_position: Vec3,
     initial_velocity: Vec3,
     ember_mass: f32,

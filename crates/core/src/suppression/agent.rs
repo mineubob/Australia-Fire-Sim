@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 /// - **LongTermRetardant**: Phosphate-based coating with long-lasting protection
 /// - **WettingAgent**: Surfactant-enhanced water for better fuel penetration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SuppressionAgentType {
+pub(crate) enum SuppressionAgentType {
     /// Pure water - basic suppression
     Water = 0,
     /// Class A foam for wildland fires (NFPA 1150)
@@ -60,9 +60,9 @@ impl SuppressionAgentType {
 /// - Retardant duration: USFS MTDC studies (4-8 hours)
 /// - Evaporation: FAO Penman-Monteith equation
 #[derive(Debug, Clone, Copy)]
-pub struct SuppressionAgentProperties {
+pub(crate) struct SuppressionAgentProperties {
     /// Type of agent
-    pub agent_type: SuppressionAgentType,
+    pub(crate) agent_type: SuppressionAgentType,
 
     // ═══════════════════════════════════════════════════════════════════
     // THERMAL PROPERTIES
@@ -70,16 +70,16 @@ pub struct SuppressionAgentProperties {
 
     /// Specific heat capacity (kJ/(kg·K))
     /// Water: 4.18, Foam: ~4.0, Retardant: ~3.5
-    pub specific_heat: f32,
+    pub(crate) specific_heat: f32,
 
     /// Latent heat of vaporization (kJ/kg)
     /// Water: 2260 kJ/kg at 100°C
     /// Foam/retardant have similar base water properties
-    pub latent_heat_vaporization: f32,
+    pub(crate) latent_heat_vaporization: f32,
 
     /// Boiling point (°C)
     /// Water: 100°C, may be slightly higher for retardants
-    pub boiling_point: f32,
+    pub(crate) boiling_point: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // COVERAGE PROPERTIES
@@ -87,15 +87,15 @@ pub struct SuppressionAgentProperties {
 
     /// Recommended application rate (kg/m²)
     /// Water: 2-4 kg/m², Foam: 0.5-1 kg/m², Retardant: 1-3 kg/m²
-    pub application_rate: f32,
+    pub(crate) application_rate: f32,
 
     /// Coverage efficiency relative to water (0-1)
     /// Water: 1.0, Foam: 3-5x (0.2-0.33 needed for same effect)
-    pub coverage_efficiency: f32,
+    pub(crate) coverage_efficiency: f32,
 
     /// Penetration depth into fuel bed (meters)
     /// How deep the agent penetrates into litter/duff
-    pub penetration_depth: f32,
+    pub(crate) penetration_depth: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // CHEMICAL PROPERTIES
@@ -104,17 +104,17 @@ pub struct SuppressionAgentProperties {
     /// Combustion inhibition factor (0-1)
     /// Retardants chemically inhibit combustion reactions
     /// Water: 0.0, Short-term: 0.3, Long-term: 0.6
-    pub combustion_inhibition: f32,
+    pub(crate) combustion_inhibition: f32,
 
     /// Oxygen displacement factor (0-1)
     /// Foam blankets exclude oxygen from fuel surface
     /// Water: 0.0, Foam: 0.7-0.8
-    pub oxygen_displacement: f32,
+    pub(crate) oxygen_displacement: f32,
 
     /// Fuel coating duration (seconds)
     /// How long the protective coating remains effective
     /// Short-term: 1800s (30 min), Long-term: 28800s (8 hours)
-    pub fuel_coating_duration: f32,
+    pub(crate) fuel_coating_duration: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // EVAPORATION & DEGRADATION
@@ -122,17 +122,17 @@ pub struct SuppressionAgentProperties {
 
     /// Evaporation rate modifier relative to water (0-2)
     /// Water: 1.0, Foam: 0.3 (slower), Retardant: 0.5
-    pub evaporation_rate_modifier: f32,
+    pub(crate) evaporation_rate_modifier: f32,
 
     /// UV degradation rate (fraction per hour under full sun)
     /// Foam/retardant degrade under UV exposure
     /// Water: 0.0, Foam: 0.15, Retardant: 0.05
-    pub uv_degradation_rate: f32,
+    pub(crate) uv_degradation_rate: f32,
 
     /// Rain washoff rate (fraction per mm rainfall)
     /// Retardant washes off over time in rain
     /// Water: 1.0 (fully washes), Retardant: 0.15-0.20
-    pub rain_washoff_rate: f32,
+    pub(crate) rain_washoff_rate: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // FOAM-SPECIFIC PROPERTIES
@@ -141,11 +141,11 @@ pub struct SuppressionAgentProperties {
     /// Foam expansion ratio
     /// Low expansion: 3-30:1, Medium: 30-200:1, High: 200-1000:1
     /// Higher expansion = more coverage but less mass per area
-    pub expansion_ratio: f32,
+    pub(crate) expansion_ratio: f32,
 
     /// Drain time (seconds) - how long foam maintains structure
     /// Class A foam: 15-60 minutes typical
-    pub drain_time: f32,
+    pub(crate) drain_time: f32,
 }
 
 impl SuppressionAgentProperties {
@@ -294,7 +294,7 @@ impl SuppressionAgentProperties {
     };
 
     /// Get properties for a given agent type
-    pub fn for_type(agent_type: SuppressionAgentType) -> Self {
+    pub(crate) fn for_type(agent_type: SuppressionAgentType) -> Self {
         match agent_type {
             SuppressionAgentType::Water => Self::WATER,
             SuppressionAgentType::FoamClassA => Self::FOAM_CLASS_A,
@@ -304,11 +304,31 @@ impl SuppressionAgentProperties {
         }
     }
 
+    /// Get application rate
+    pub(crate) fn application_rate(&self) -> f32 {
+        self.application_rate
+    }
+
+    /// Get penetration depth
+    pub(crate) fn penetration_depth(&self) -> f32 {
+        self.penetration_depth
+    }
+
+    /// Get evaporation rate modifier
+    pub(crate) fn evaporation_rate_modifier(&self) -> f32 {
+        self.evaporation_rate_modifier
+    }
+
+    /// Get UV degradation rate
+    pub(crate) fn uv_degradation_rate(&self) -> f32 {
+        self.uv_degradation_rate
+    }
+
     /// Calculate total cooling capacity (kJ/kg)
     ///
     /// Includes both sensible heat (temperature rise) and latent heat (vaporization).
     /// For water at 20°C: 4.18 × (100-20) + 2260 = 2594 kJ/kg
-    pub fn cooling_capacity(&self, agent_temp: f32) -> f32 {
+    pub(crate) fn cooling_capacity(&self, agent_temp: f32) -> f32 {
         let sensible = self.specific_heat * (self.boiling_point - agent_temp).max(0.0);
         self.latent_heat_vaporization + sensible
     }
@@ -325,7 +345,7 @@ impl SuppressionAgentProperties {
     ///
     /// # Scientific Reference
     /// FAO Irrigation and Drainage Paper 56 (1998)
-    pub fn evaporation_rate(
+    pub(crate) fn evaporation_rate(
         &self,
         temperature: f32,
         humidity: f32,

@@ -41,7 +41,7 @@ use crate::grid::TerrainData;
 ///
 /// # Returns
 /// Multiplier for fire spread rate (typically 0.3-5.0)
-pub fn slope_spread_multiplier_terrain(
+pub(crate) fn slope_spread_multiplier_terrain(
     from: &Vec3,
     to: &Vec3,
     terrain: &TerrainData,
@@ -108,7 +108,7 @@ pub fn slope_spread_multiplier_terrain(
 ///
 /// # Returns
 /// Multiplier for fire spread (typically 0.7-1.5)
-pub fn aspect_wind_multiplier(
+pub(crate) fn aspect_wind_multiplier(
     terrain: &TerrainData,
     position: &Vec3,
     wind_vector: &Vec3,
@@ -168,7 +168,7 @@ pub fn aspect_wind_multiplier(
 ///
 /// # Returns
 /// Combined multiplier for fire spread rate
-pub fn terrain_spread_multiplier(
+pub(crate) fn terrain_spread_multiplier(
     from: &Vec3,
     to: &Vec3,
     terrain: &TerrainData,

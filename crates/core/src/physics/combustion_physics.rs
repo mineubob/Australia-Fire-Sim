@@ -54,12 +54,34 @@ pub(crate) fn oxygen_limited_burn_rate(
 /// Calculate combustion products for a burning fuel element
 #[allow(dead_code)] // co_produced and heat_released fields
 pub(crate) struct CombustionProducts {
-    pub co2_produced: f32,   // kg
-    pub co_produced: f32,    // kg
-    pub h2o_produced: f32,   // kg
-    pub smoke_produced: f32, // kg
-    pub heat_released: f32,  // kJ
-    pub o2_consumed: f32,    // kg
+    co2_produced: f32,   // kg
+    co_produced: f32,    // kg
+    h2o_produced: f32,   // kg
+    smoke_produced: f32, // kg
+    heat_released: f32,  // kJ
+    o2_consumed: f32,    // kg
+}
+
+impl CombustionProducts {
+    /// Get O2 consumed
+    pub(crate) fn o2_consumed(&self) -> f32 {
+        self.o2_consumed
+    }
+
+    /// Get CO2 produced
+    pub(crate) fn co2_produced(&self) -> f32 {
+        self.co2_produced
+    }
+
+    /// Get H2O produced
+    pub(crate) fn h2o_produced(&self) -> f32 {
+        self.h2o_produced
+    }
+
+    /// Get smoke produced
+    pub(crate) fn smoke_produced(&self) -> f32 {
+        self.smoke_produced
+    }
 }
 
 pub(crate) fn calculate_combustion_products(

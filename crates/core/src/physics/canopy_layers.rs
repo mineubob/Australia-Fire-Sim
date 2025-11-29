@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 /// Canopy layer definition
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum CanopyLayer {
+pub(crate) enum CanopyLayer {
     /// Ground and surface fuels (0-2m)
     Understory,
     /// Intermediate layer with ladder fuels (2-10m)
@@ -53,36 +53,41 @@ impl CanopyLayer {
 
 /// Multi-layer canopy properties for a fuel location
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CanopyStructure {
+pub(crate) struct CanopyStructure {
     /// Fuel load in understory (kg/m²)
-    pub understory_load: f32,
+    understory_load: f32,
     /// Fuel load in midstory (kg/m²)
-    pub midstory_load: f32,
+    midstory_load: f32,
     /// Fuel load in overstory (kg/m²)
-    pub overstory_load: f32,
+    overstory_load: f32,
 
     /// Bulk density in each layer (kg/m³)
-    pub understory_density: f32,
-    pub midstory_density: f32,
-    pub overstory_density: f32,
+    understory_density: f32,
+    midstory_density: f32,
+    overstory_density: f32,
 
     /// Moisture content by layer (fraction 0-1)
-    pub understory_moisture: f32,
-    pub midstory_moisture: f32,
-    pub overstory_moisture: f32,
+    understory_moisture: f32,
+    midstory_moisture: f32,
+    overstory_moisture: f32,
 
     /// Vertical fuel continuity (0-1, how connected layers are)
-    pub ladder_fuel_factor: f32,
+    ladder_fuel_factor: f32,
 }
 
 impl CanopyStructure {
+    /// Get the ladder fuel factor
+    pub(crate) fn ladder_fuel_factor(&self) -> f32 {
+        self.ladder_fuel_factor
+    }
+
     /// Create canopy structure for eucalyptus stringybark forest
     ///
     /// Stringybark has strong vertical continuity due to:
     /// - Fibrous bark hanging from trunk (ladder fuel)
     /// - Low crown base height
     /// - Dense mid-story shrubs
-    pub fn eucalyptus_stringybark() -> Self {
+    pub(crate) fn eucalyptus_stringybark() -> Self {
         CanopyStructure {
             understory_load: 1.5, // kg/m² (grass, litter)
             midstory_load: 3.0,   // kg/m² (shrubs, bark strips)
@@ -106,7 +111,7 @@ impl CanopyStructure {
     /// - Minimal ladder fuels
     /// - Higher crown base
     /// - Gaps between layers
-    pub fn eucalyptus_smooth_bark() -> Self {
+    pub(crate) fn eucalyptus_smooth_bark() -> Self {
         CanopyStructure {
             understory_load: 1.2,
             midstory_load: 1.0, // Less midstory
@@ -125,7 +130,7 @@ impl CanopyStructure {
     }
 
     /// Create canopy structure for grassland (single layer)
-    pub fn grassland() -> Self {
+    pub(crate) fn grassland() -> Self {
         CanopyStructure {
             understory_load: 0.8,
             midstory_load: 0.0,
@@ -144,7 +149,7 @@ impl CanopyStructure {
     }
 
     /// Get fuel load for a specific layer
-    pub fn load_at_layer(&self, layer: CanopyLayer) -> f32 {
+    pub(crate) fn load_at_layer(&self, layer: CanopyLayer) -> f32 {
         match layer {
             CanopyLayer::Understory => self.understory_load,
             CanopyLayer::Midstory => self.midstory_load,
@@ -153,7 +158,7 @@ impl CanopyStructure {
     }
 
     /// Get bulk density for a specific layer
-    pub fn density_at_layer(&self, layer: CanopyLayer) -> f32 {
+    pub(crate) fn density_at_layer(&self, layer: CanopyLayer) -> f32 {
         match layer {
             CanopyLayer::Understory => self.understory_density,
             CanopyLayer::Midstory => self.midstory_density,
@@ -162,7 +167,7 @@ impl CanopyStructure {
     }
 
     /// Get moisture for a specific layer
-    pub fn moisture_at_layer(&self, layer: CanopyLayer) -> f32 {
+    pub(crate) fn moisture_at_layer(&self, layer: CanopyLayer) -> f32 {
         match layer {
             CanopyLayer::Understory => self.understory_moisture,
             CanopyLayer::Midstory => self.midstory_moisture,
@@ -197,7 +202,7 @@ impl CanopyStructure {
 ///
 /// # Returns
 /// Transition probability (0-1)
-pub fn calculate_layer_transition_probability(
+pub(crate) fn calculate_layer_transition_probability(
     lower_layer_intensity: f32,
     canopy: &CanopyStructure,
     from_layer: CanopyLayer,

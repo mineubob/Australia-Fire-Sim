@@ -39,58 +39,58 @@ use serde::{Deserialize, Serialize};
 /// - **Ember lofting**: Updrafts carry embers to extreme heights
 /// - **Moisture**: Precipitation may suppress fire (rare)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PyrocumulusCloud {
+pub(crate) struct PyrocumulusCloud {
     /// Cloud base position (x, y, z in meters)
-    pub position: Vec3,
+    pub(crate) position: Vec3,
 
     /// Cloud base altitude above ground level (meters)
-    pub base_altitude: f32,
+    pub(crate) base_altitude: f32,
 
     /// Cloud top altitude above ground level (meters)
-    pub top_altitude: f32,
+    pub(crate) top_altitude: f32,
 
     /// Horizontal extent radius (meters)
-    pub horizontal_extent: f32,
+    pub(crate) horizontal_extent: f32,
 
     /// Maximum updraft velocity (m/s)
     /// Typical: 10-30 m/s, extreme pyroCb: 50+ m/s
-    pub updraft_velocity: f32,
+    pub(crate) updraft_velocity: f32,
 
     /// Condensation rate (kg/s)
-    pub condensation_rate: f32,
+    pub(crate) condensation_rate: f32,
 
     /// Whether cloud is producing precipitation
-    pub precipitation: bool,
+    pub(crate) precipitation: bool,
 
     /// Amount of precipitation (mm/hr)
-    pub precipitation_rate: f32,
+    pub(crate) precipitation_rate: f32,
 
     /// Inflow/outflow wind modification at surface (m/s)
-    pub wind_modification: Vec3,
+    pub(crate) wind_modification: Vec3,
 
     /// Humidity increase in fire vicinity (fraction)
-    pub humidity_increase: f32,
+    pub(crate) humidity_increase: f32,
 
     /// Rotation detected (fire tornado risk)
-    pub rotation_detected: bool,
+    pub(crate) rotation_detected: bool,
 
     /// Rotation velocity if present (m/s tangential)
-    pub rotation_velocity: f32,
+    pub(crate) rotation_velocity: f32,
 
     /// Number of lightning strikes generated
-    pub lightning_strikes: u32,
+    pub(crate) lightning_strikes: u32,
 
     /// Cloud development stage (0-1)
     /// 0.0: Just forming
     /// 0.5: Developing
     /// 1.0: Mature
-    pub development_stage: f32,
+    pub(crate) development_stage: f32,
 
     /// Cloud age (seconds since formation)
-    pub age: f32,
+    pub(crate) age: f32,
 
     /// Fire intensity that generated this cloud (kW/m)
-    pub source_intensity: f32,
+    pub(crate) source_intensity: f32,
 }
 
 impl PyrocumulusCloud {
