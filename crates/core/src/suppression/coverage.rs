@@ -334,7 +334,7 @@ mod tests {
         );
 
         let incoming = 5000.0; // 5000 kJ
-        let (effective, absorbed) = coverage.modify_heat_transfer(incoming, 1.0, 0.1);
+        let (effective, absorbed) = coverage._modify_heat_transfer(incoming, 1.0, 0.1);
 
         // Some heat should be absorbed
         assert!(absorbed > 0.0);
@@ -359,8 +359,8 @@ mod tests {
         );
 
         let incoming = 1000.0;
-        let (foam_effective, _) = foam_coverage.modify_heat_transfer(incoming, 1.0, 0.1);
-        let (water_effective, _) = water_coverage.modify_heat_transfer(incoming, 1.0, 0.1);
+        let (foam_effective, _) = foam_coverage._modify_heat_transfer(incoming, 1.0, 0.1);
+        let (water_effective, _) = water_coverage._modify_heat_transfer(incoming, 1.0, 0.1);
 
         // Foam should reduce heat more than water (oxygen displacement)
         assert!(

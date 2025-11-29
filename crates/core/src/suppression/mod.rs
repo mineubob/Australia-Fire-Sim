@@ -18,5 +18,4 @@ pub mod coverage;  // Made pub for FFI access to SuppressionCoverage type
 
 // Re-export SuppressionAgentType as public for FFI
 pub use agent::SuppressionAgentType;
-pub(crate) use agent::SuppressionAgentProperties;
 pub use coverage::SuppressionCoverage;

@@ -357,12 +357,14 @@ impl FireSimulation {
     // ========================================================================
 
     /// Get reference to atmospheric profile (for stability indices)
-    pub fn atmospheric_profile(&self) -> &AtmosphericProfile {
+    /// Internal use only - exposed via FFI functions for external access
+    pub(crate) fn atmospheric_profile(&self) -> &AtmosphericProfile {
         &self.atmospheric_profile
     }
 
-    /// Get active pyrocumulus clouds
-    pub fn pyrocumulus_clouds(&self) -> &[PyrocumulusCloud] {
+    /// Get active pyrocumulus clouds (internal use)
+    /// External access via fire_sim_get_pyrocumulus_count() FFI function
+    pub(crate) fn pyrocumulus_clouds(&self) -> &[PyrocumulusCloud] {
         &self.pyrocumulus_clouds
     }
 
@@ -380,6 +382,40 @@ impl FireSimulation {
     /// - 6: High fire weather potential
     pub fn haines_index(&self) -> u8 {
         self.atmospheric_profile.haines_index
+    }
+
+    /// Get fire weather severity description based on atmospheric profile
+    ///
+    /// Returns a human-readable description of current fire weather conditions:
+    /// - "Low": Stable atmosphere, low fire risk
+    /// - "Moderate": Some instability, moderate fire risk
+    /// - "High": Unstable atmosphere, high fire risk
+    /// - "Extreme": Very unstable, extreme fire risk
+    pub fn fire_weather_severity(&self) -> &'static str {
+        self.atmospheric_profile.fire_weather_severity()
+    }
+
+    /// Get the type/stage of the largest active pyrocumulus cloud
+    ///
+    /// Returns a description of cloud development stage:
+    /// - "None": No pyrocumulus clouds active
+    /// - "Cumulus": Small convective cloud forming
+    /// - "Towering Cumulus": Large developing cloud
+    /// - "Pyrocumulus": Full fire-generated cloud
+    /// - "Pyrocumulonimbus": Extreme fire thunderstorm (pyroCb)
+    pub fn dominant_cloud_type(&self) -> &'static str {
+        self.pyrocumulus_clouds
+            .iter()
+            .map(|c| c.cloud_type())
+            .max_by_key(|s| match *s {
+                "None" => 0,
+                "Cumulus" => 1,
+                "Towering Cumulus" => 2,
+                "Pyrocumulus" => 3,
+                "Pyrocumulonimbus" => 4,
+                _ => 0,
+            })
+            .unwrap_or("None")
     }
 
     // ========================================================================
@@ -722,18 +758,20 @@ impl FireSimulation {
 
             let actual_burn_rate = base_burn_rate * oxygen_factor;
 
-            // 4e. Apply smoldering combustion multiplier (Phase 3)
-            let smoldering_multiplier = if let Some(element) = self.get_element(element_id) {
+            // 4e. Apply smoldering combustion multipliers (Phase 3)
+            // Uses both heat release and burn rate multipliers from Rein (2009)
+            let (smoldering_heat_mult, smoldering_burn_mult) = if let Some(element) = self.get_element(element_id) {
                 if let Some(ref smold_state) = element.smoldering_state {
-                    smold_state.heat_release_multiplier()
+                    (smold_state.heat_release_multiplier(), smold_state.burn_rate_multiplier())
                 } else {
-                    1.0
+                    (1.0, 1.0)
                 }
             } else {
-                1.0
+                (1.0, 1.0)
             };
 
-            let fuel_consumed = actual_burn_rate * smoldering_multiplier * dt;
+            // Burn rate is affected by both oxygen and smoldering phase
+            let fuel_consumed = actual_burn_rate * smoldering_burn_mult * dt;
 
             // 4f. Burn fuel and update element, INCLUDING temperature increase from combustion
             let mut should_extinguish = false;
@@ -743,9 +781,10 @@ impl FireSimulation {
                 fuel_consumed_actual = fuel_consumed;
 
                 // CRITICAL: Burning elements continue to heat up from their own combustion
-                // Heat released = fuel consumed × heat content (kJ/kg)
+                // Heat released = fuel consumed × heat content (kJ/kg) × smoldering heat multiplier
+                // Smoldering phase reduces heat release (Rein 2009)
                 if fuel_consumed > 0.0 && element.fuel_remaining > 0.1 {
-                    let combustion_heat = fuel_consumed * element.fuel.heat_content;
+                    let combustion_heat = fuel_consumed * element.fuel.heat_content * smoldering_heat_mult;
                     // Fuel-specific fraction of heat retained (grass=0.25, forest=0.40)
                     let self_heating = combustion_heat * element.fuel.self_heating_fraction;
                     let temp_rise =
@@ -797,11 +836,14 @@ impl FireSimulation {
                     if crown_behavior.fire_type() != crate::physics::CrownFireType::Surface {
                         if let Some(elem_mut) = self.get_element_mut(element_id) {
                             elem_mut.crown_fire_active = true;
-                            // Fuel-specific crown fire temperature (stringybark=0.95, smooth=0.90)
-                            elem_mut.temperature = elem_mut.temperature.max(
-                                elem_mut.fuel.max_flame_temperature
-                                    * elem_mut.fuel.crown_fire_temp_multiplier,
-                            );
+                            // Use crown_fraction_burned to scale temperature increase
+                            // crown_fraction_burned ranges from 0.0 (surface only) to 1.0 (fully active crown)
+                            let crown_intensity_factor = crown_behavior.crown_fraction_burned().clamp(0.0, 1.0);
+                            let base_crown_temp = elem_mut.fuel.max_flame_temperature
+                                * elem_mut.fuel.crown_fire_temp_multiplier;
+                            // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
+                            let crown_temp = base_crown_temp * (0.7 + 0.3 * crown_intensity_factor);
+                            elem_mut.temperature = elem_mut.temperature.max(crown_temp);
                         }
                     }
                 }

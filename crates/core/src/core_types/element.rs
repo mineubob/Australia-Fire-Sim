@@ -160,7 +160,8 @@ impl FuelElement {
     }
 
     /// Get fuel moisture state (if present)
-    pub fn moisture_state(&self) -> Option<&crate::physics::FuelMoistureState> {
+    /// Internal use - moisture state is used for physics calculations
+    pub(crate) fn moisture_state(&self) -> Option<&crate::physics::FuelMoistureState> {
         self.moisture_state.as_ref()
     }
 

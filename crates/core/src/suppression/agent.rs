@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 /// - **LongTermRetardant**: Phosphate-based coating with long-lasting protection
 /// - **WettingAgent**: Surfactant-enhanced water for better fuel penetration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum SuppressionAgentType {
+pub enum SuppressionAgentType {
     /// Pure water - basic suppression
     Water = 0,
     /// Class A foam for wildland fires (NFPA 1150)
