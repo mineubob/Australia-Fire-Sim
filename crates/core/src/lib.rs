@@ -13,6 +13,7 @@
 //! - Multi-band radiation transfer
 //! - Fuel element suppression coverage tracking
 //! - Ember spot fire ignition with suppression blocking
+//! - Advanced weather phenomena (pyrocumulus, atmospheric instability)
 
 // Core types and utilities
 pub mod core_types;
@@ -22,6 +23,7 @@ pub mod grid;
 pub mod physics;
 pub mod simulation;
 pub mod suppression;
+pub mod weather;
 
 // Re-export core types
 pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
@@ -35,3 +37,6 @@ pub use simulation::{FireSimulation, SimulationStats};
 
 // Re-export suppression types (Phase 1)
 pub use suppression::{SuppressionAgentProperties, SuppressionAgentType, SuppressionCoverage};
+
+// Re-export weather types (Phase 2)
+pub use weather::{AtmosphericProfile, PyrocumulusCloud};
