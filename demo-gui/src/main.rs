@@ -543,7 +543,7 @@ impl FromWorld for SimulationState {
 
 impl SimulationState {
     fn from_config(config: &DemoConfig) -> Self {
-        let terrain_hill = config.map_height.min(config.map_width) * 0.25;
+        let terrain_hill = config.map_height.min(config.map_width) * 0.15;
 
         // Create terrain based on config
         let terrain = match config.terrain_type {
@@ -596,7 +596,7 @@ impl SimulationState {
             for j in 0..config.elements_y {
                 let x = start_x + i as f32 * config.spacing;
                 let y = start_y + j as f32 * config.spacing;
-                let elevation = sim.get_terrain().elevation_at(x, y);
+                let elevation = sim.terrain().elevation_at(x, y);
 
                 let fuel = config.fuel_type.to_fuel();
                 sim.add_fuel_element(
@@ -696,7 +696,7 @@ fn setup_game(
     ));
 
     // Create terrain mesh
-    let terrain = &sim_state.simulation.grid.terrain;
+    let terrain = &sim_state.simulation.terrain();
     spawn_terrain(&mut commands, &mut meshes, &mut materials, terrain);
 
     // Spawn fuel element visuals
@@ -707,7 +707,8 @@ fn setup_game(
         .simulation
         .get_all_elements()
         .into_iter()
-        .map(|e| (e.id, e.position, e.is_ignited()))
+        .map(|e| e.get_stats())
+        .map(|e| (e.id, e.position, e.ignited))
         .collect();
 
     for (element_id, pos, is_ignited) in elements {
@@ -752,8 +753,8 @@ fn spawn_terrain(
 ) {
     // Create a 3D terrain mesh with actual elevation data
     let resolution = 5.0; // Sample every 5 meters
-    let nx = (terrain.width / resolution) as usize + 1;
-    let ny = (terrain.height / resolution) as usize + 1;
+    let nx = (terrain.width() / resolution) as usize + 1;
+    let ny = (terrain.height() / resolution) as usize + 1;
 
     let mut positions = Vec::new();
     let mut normals = Vec::new();
@@ -769,7 +770,7 @@ fn spawn_terrain(
 
             positions.push([x, z, y]); // Bevy uses Y-up, so we map: x→x, elevation→y, y→z
             normals.push([0.0, 1.0, 0.0]); // Will recalculate proper normals below
-            uvs.push([x / terrain.width, y / terrain.height]);
+            uvs.push([x / terrain.width(), y / terrain.height()]);
         }
     }
 
@@ -873,7 +874,8 @@ fn update_simulation(time: Res<Time>, mut sim_state: ResMut<SimulationState>) {
     // Accumulate time with speed multiplier
     sim_state.time_accumulator += time.delta_secs() * sim_state.speed;
 
-    // Update simulation at 10 FPS (0.1 second timesteps)
+    // Update simulation at 10 FPS (0.1 second timesteps) for smooth visualization
+    // The simulation internally handles proper heat transfer physics
     let timestep = 0.1;
     while sim_state.time_accumulator >= timestep {
         sim_state.simulation.update(timestep);
@@ -892,7 +894,7 @@ fn update_fuel_visuals(
             .simulation
             .get_all_elements()
             .into_iter()
-            .find(|e| e.id == fuel_visual.element_id)
+            .find(|e| e.id() == fuel_visual.element_id)
         {
             if let Some(material) = materials.get_mut(&material_handle.0) {
                 if element.is_ignited() {
@@ -954,7 +956,7 @@ fn update_ui(
     fuel_query: Query<(&GlobalTransform, &FuelVisual)>,
 ) -> Result {
     let stats = sim_state.simulation.get_stats();
-    let weather = &sim_state.simulation.weather;
+    let weather = sim_state.simulation.get_weather().get_stats();
 
     // Get FPS from diagnostics
     let fps = diagnostics
@@ -992,7 +994,7 @@ fn update_ui(
     egui::Window::new("Australia Fire Simulation")
         .anchor(egui::Align2::LEFT_TOP, [10.0, 10.0])
         .resizable(false)
-        .collapsible(false)
+        .collapsible(true)
         .show(ctx, |ui| {
             ui.colored_label(egui::Color32::LIGHT_GRAY, "Controls:");
             ui.label("  SPACE - Pause/Resume");
@@ -1057,14 +1059,14 @@ fn update_ui(
             ui.heading("WEATHER CONDITIONS");
             ui.label(format!("Temperature: {:.0}°C", weather.temperature));
             ui.label(format!("Humidity: {:.0}%", weather.humidity));
-            ui.label(format!("Wind Speed: {:.1} m/s", weather.wind_speed));
+            ui.label(format!("Wind Speed: {:.1} km/h", weather.wind_speed));
             ui.label(format!("Wind Direction: {:.0}°", weather.wind_direction,));
             ui.label(format!("Drought Factor: {:.1}", weather.drought_factor));
 
             ui.separator();
             ui.heading("FIRE DANGER");
-            ui.label(format!("FFDI: {:.1}", weather.calculate_ffdi()));
-            ui.label(format!("Rating: {}", weather.fire_danger_rating()));
+            ui.label(format!("FFDI: {:.1}", weather.ffdi));
+            ui.label(format!("Rating: {}", weather.fire_danger_rating));
         });
 
     // Tooltip on hover
@@ -1103,7 +1105,7 @@ fn update_ui(
                             .simulation
                             .get_all_elements()
                             .into_iter()
-                            .find(|e| e.id == element_id)
+                            .find_map(|e| (e.id() == element_id).then_some(e.get_stats()))
                         {
                             egui::Area::new(egui::Id::new("fuel_tooltip"))
                                 .fixed_pos(
@@ -1114,7 +1116,7 @@ fn update_ui(
                                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                                         ui.label(format!(
                                             "Fuel Element #{} ({})",
-                                            element.id, element.fuel.name
+                                            element.id, element.fuel_type_name
                                         ));
                                         ui.label(format!(
                                             "Position: ({:.1}, {:.1}, {:.1})",
@@ -1124,21 +1126,21 @@ fn update_ui(
                                         ));
                                         ui.label(format!(
                                             "Temperature: {:.0}°C",
-                                            element.temperature()
+                                            element.temperature
                                         ));
                                         ui.label(format!(
                                             "Fuel Remaining: {:.2} kg",
-                                            element.fuel_remaining()
+                                            element.fuel_remaining
                                         ));
                                         ui.label(format!(
                                             "Moisture: {:.1}%",
-                                            element.moisture_fraction() * 100.0
+                                            element.moisture_fraction * 100.0
                                         ));
                                         ui.label(format!(
                                             "Status: {}",
-                                            if element.is_ignited() {
+                                            if element.ignited {
                                                 "BURNING"
-                                            } else if element.fuel_remaining() < 0.1 {
+                                            } else if element.fuel_remaining < 0.1 {
                                                 "CONSUMED"
                                             } else {
                                                 "Unburned"
@@ -1146,7 +1148,7 @@ fn update_ui(
                                         ));
                                         ui.label(format!(
                                             "Flame Height: {:.2} m",
-                                            element.flame_height()
+                                            element.flame_height
                                         ));
                                     });
                                 });
@@ -1172,6 +1174,11 @@ fn handle_controls(
     mut next_state: ResMut<NextState<GameState>>,
     mut ray_cast: MeshRayCast,
 ) {
+    // Reset simulation - recreate from config
+    if keyboard.just_pressed(KeyCode::KeyR) {
+        *sim_state = SimulationState::from_config(&config);
+    }
+
     // Pause/Resume
     if keyboard.just_pressed(KeyCode::Space) {
         sim_state.paused = !sim_state.paused;
@@ -1183,76 +1190,6 @@ fn handle_controls(
     }
     if keyboard.just_pressed(KeyCode::BracketRight) {
         sim_state.speed = (sim_state.speed * 2.0).min(10.0);
-    }
-
-    // Reset simulation - recreate from config
-    if keyboard.just_pressed(KeyCode::KeyR) {
-        // Create terrain based on config
-        let terrain = match config.terrain_type {
-            TerrainType::Flat => TerrainData::flat(config.map_width, config.map_height, 5.0, 0.0),
-            TerrainType::Hill => {
-                TerrainData::single_hill(config.map_width, config.map_height, 5.0, 0.0, 80.0, 40.0)
-            }
-            TerrainType::Valley => TerrainData::valley_between_hills(
-                config.map_width,
-                config.map_height,
-                5.0,
-                0.0,
-                80.0,
-            ),
-        };
-
-        // Create simulation
-        let mut sim = FireSimulation::new(5.0, terrain);
-
-        // Set weather conditions from config
-        let weather = if config.use_weather_preset {
-            // Use dynamic weather preset
-            config.weather_preset.to_system()
-        } else {
-            // Use static weather values
-            WeatherSystem::new(
-                config.temperature,
-                config.humidity,
-                config.wind_speed,
-                config.wind_direction,
-                config.drought_factor,
-            )
-        };
-        sim.set_weather(weather);
-
-        // Add fuel elements in a grid
-        let center_x = config.map_width / 2.0;
-        let center_y = config.map_height / 2.0;
-        let start_x =
-            center_x - (config.elements_x.saturating_sub(1) as f32 * config.spacing) / 2.0;
-        let start_y =
-            center_y - (config.elements_y.saturating_sub(1) as f32 * config.spacing) / 2.0;
-
-        for i in 0..config.elements_x {
-            for j in 0..config.elements_y {
-                let x = start_x + i as f32 * config.spacing;
-                let y = start_y + j as f32 * config.spacing;
-                let elevation = sim.get_terrain().elevation_at(x, y);
-
-                let fuel = config.fuel_type.to_fuel();
-                sim.add_fuel_element(
-                    SimVec3::new(x, y, elevation + 0.5),
-                    fuel,
-                    config.fuel_mass,
-                    FuelPart::GroundVegetation,
-                    None,
-                );
-            }
-        }
-
-        // No auto-ignition - user will manually ignite fuel elements with 'I' key
-
-        sim_state.simulation = sim;
-        sim_state.paused = false;
-        sim_state.speed = 1.0;
-        sim_state.time_accumulator = 0.0;
-        // Note: Fuel entity map is not cleared - entities will be updated in update_fuel_visuals
     }
 
     // Manual ignition at cursor position
@@ -1302,11 +1239,16 @@ fn handle_controls(
                                 );
 
                                 // Find the closest fuel element to cursor position and ignite it
-                                let elements = sim_state.simulation.get_all_elements();
+                                let elements = sim_state
+                                    .simulation
+                                    .get_all_elements()
+                                    .into_iter()
+                                    .map(|e| e.get_stats())
+                                    .collect::<Vec<_>>();
                                 let mut closest_id: Option<u32> = None;
                                 let mut closest_dist = f32::MAX;
 
-                                for element in &elements {
+                                for element in elements.iter() {
                                     // element.position is sim coords (x, y)
                                     let dx = element.position.x - ignite_x;
                                     let dy = element.position.y - ignite_y;

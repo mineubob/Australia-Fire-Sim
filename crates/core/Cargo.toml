@@ -10,6 +10,7 @@ rayon.workspace = true
 nalgebra.workspace = true
 rand.workspace = true
 serde.workspace = true
+rustc-hash.workspace = true
 
 [dev-dependencies]
 approx = "0.5"

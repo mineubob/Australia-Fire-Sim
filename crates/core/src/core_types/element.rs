@@ -33,9 +33,9 @@ pub enum FuelPart {
 /// Individual fuel element in 3D space
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FuelElement {
-    pub id: u32,
-    pub position: Vec3, // World position in meters
-    pub fuel: Fuel,     // Comprehensive fuel type with all properties
+    pub(crate) id: u32,
+    pub(crate) position: Vec3, // World position in meters
+    pub(crate) fuel: Fuel,     // Comprehensive fuel type with all properties
 
     // Thermal state (accessible within crate only)
     pub(crate) temperature: f32,       // Current temperature (°C)
@@ -45,18 +45,32 @@ pub struct FuelElement {
     pub(crate) flame_height: f32, // meters (Byram's formula)
 
     // Structural relationships
-    pub parent_id: Option<u32>, // Parent structure/tree ID
-    pub part_type: FuelPart,    // What kind of fuel part
+    pub(crate) parent_id: Option<u32>, // Parent structure/tree ID
+    pub(crate) part_type: FuelPart,    // What kind of fuel part
 
     // Spatial context
     pub(crate) elevation: f32,      // Height above ground
     pub(crate) slope_angle: f32,    // Local terrain slope (degrees)
     pub(crate) neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
+
+    // Advanced physics state (Phase 1-3 enhancements)
+    /// Fuel moisture state by timelag class (Nelson 2000)
+    pub(crate) moisture_state: Option<crate::physics::FuelMoistureState>,
+    /// Smoldering combustion phase (Rein 2009)
+    pub(crate) smoldering_state: Option<crate::physics::SmolderingState>,
+    /// Crown fire initiated flag
+    pub(crate) crown_fire_active: bool,
+
+    // Ignition timing tracking
+    /// Cumulative time spent above ignition temperature (seconds)
+    /// Used for realistic ignition behavior: elements that have been hot
+    /// for extended periods should ignite deterministically
+    pub(crate) time_above_ignition: f32,
 }
 
 impl FuelElement {
     /// Create a new fuel element
-    pub fn new(
+    pub(crate) fn new(
         id: u32,
         position: Vec3,
         fuel: Fuel,
@@ -66,6 +80,17 @@ impl FuelElement {
     ) -> Self {
         let moisture_fraction = fuel.base_moisture;
         let elevation = position.z;
+
+        // Initialize fuel moisture timelag state
+        let moisture_state = Some(crate::physics::FuelMoistureState::new(
+            moisture_fraction,
+            moisture_fraction,
+            moisture_fraction,
+            moisture_fraction,
+        ));
+
+        // Initialize smoldering state
+        let smoldering_state = Some(crate::physics::SmolderingState::new());
 
         FuelElement {
             id,
@@ -81,18 +106,73 @@ impl FuelElement {
             slope_angle: 0.0,
             neighbors: Vec::new(),
             fuel,
+            moisture_state,
+            smoldering_state,
+            crown_fire_active: false,
+            time_above_ignition: 0.0,
         }
+    }
+
+    /// This fuel element's id.
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    /// Get world position
+    pub fn position(&self) -> &Vec3 {
+        &self.position
+    }
+
+    /// Get fuel type
+    pub fn fuel(&self) -> &Fuel {
+        &self.fuel
+    }
+
+    /// Get fuel part type
+    pub fn part_type(&self) -> FuelPart {
+        self.part_type
+    }
+
+    /// Get parent element ID (if any)
+    pub fn parent_id(&self) -> Option<u32> {
+        self.parent_id
+    }
+
+    /// Get elevation (height above ground)
+    pub fn elevation(&self) -> f32 {
+        self.elevation
+    }
+
+    /// Get local terrain slope angle in degrees
+    pub fn slope_angle(&self) -> f32 {
+        self.slope_angle
+    }
+
+    /// Get neighboring element IDs
+    pub fn neighbors(&self) -> &[u32] {
+        &self.neighbors
+    }
+
+    /// Get fuel moisture state (if present)
+    pub fn moisture_state(&self) -> Option<&crate::physics::FuelMoistureState> {
+        self.moisture_state.as_ref()
     }
 
     /// Set temperature (for testing)
     #[cfg(test)]
-    pub fn with_temperature(mut self, temperature: f32) -> Self {
+    pub(crate) fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
         self
     }
 
     /// Apply heat to this fuel element (CRITICAL: moisture evaporation first)
-    pub fn apply_heat(&mut self, heat_kj: f32, dt: f32, ambient_temperature: f32) {
+    pub(crate) fn apply_heat(
+        &mut self,
+        heat_kj: f32,
+        dt: f32,
+        ambient_temperature: f32,
+        ffdi_multiplier: f32,
+    ) {
         if heat_kj <= 0.0 || self.fuel_remaining <= 0.0 {
             return;
         }
@@ -134,12 +214,12 @@ impl FuelElement {
 
         // STEP 5: Check for ignition
         if !self.ignited && self.temperature >= self.fuel.ignition_temperature {
-            self.check_ignition_probability(dt);
+            self.check_ignition_probability(dt, ffdi_multiplier);
         }
     }
 
     /// Check if element should ignite (probabilistic)
-    fn check_ignition_probability(&mut self, dt: f32) {
+    fn check_ignition_probability(&mut self, dt: f32, ffdi_multiplier: f32) {
         // OPTIMIZATION: Early exit for saturated fuel (can't ignite)
         if self.moisture_fraction >= self.fuel.moisture_of_extinction {
             return;
@@ -150,28 +230,46 @@ impl FuelElement {
             return;
         }
 
+        // Track time above ignition temperature
+        if self.temperature > self.fuel.ignition_temperature {
+            self.time_above_ignition += dt;
+        } else {
+            // Reset timer if cooled below ignition
+            self.time_above_ignition = 0.0;
+        }
+
         // Moisture reduces ignition probability
         let moisture_factor =
             (1.0 - self.moisture_fraction / self.fuel.moisture_of_extinction).max(0.0);
 
-        // Temperature above ignition increases probability
-        let temp_factor = ((self.temperature - self.fuel.ignition_temperature) / 50.0).min(1.0);
+        // Temperature above ignition increases probability (capped at 1.0)
+        let temp_excess = (self.temperature - self.fuel.ignition_temperature).max(0.0);
+        let temp_factor = (temp_excess / 50.0).min(1.0);
 
-        let ignition_prob = moisture_factor * temp_factor * dt * 2.0;
+        // Base coefficient for probabilistic ignition
+        // 0.003 gives ~0.3% per second at max temp_factor
+        // Scales with FFDI for extreme conditions
+        let base_coefficient = 0.003;
+        let ignition_prob = moisture_factor * temp_factor * dt * base_coefficient * ffdi_multiplier;
 
-        if rand::random::<f32>() < ignition_prob {
+        // GUARANTEED IGNITION: Elements above ignition temp for sufficient time
+        // This ensures elements that have been hot for extended periods ignite
+        // Base: 60 seconds, scales inversely with temperature excess
+        //   - 300°C: 60s / 1.1 = 55s threshold
+        //   - 500°C: 60s / 2.1 = 29s threshold
+        //   - 758°C: 60s / 3.4 = 18s threshold
+        // Does NOT scale with FFDI - heat transfer controls spread rate instead
+        let time_threshold = 60.0 / (1.0 + temp_excess / 200.0);
+
+        let guaranteed_ignition = self.time_above_ignition >= time_threshold;
+
+        if guaranteed_ignition || rand::random::<f32>() < ignition_prob {
             self.ignited = true;
         }
     }
 
-    /// Manually ignite this element
-    pub fn ignite(&mut self, initial_temp: f32) {
-        self.ignited = true;
-        self.temperature = initial_temp.max(self.fuel.ignition_temperature);
-    }
-
     /// Calculate burn rate in kg/s
-    pub fn calculate_burn_rate(&self) -> f32 {
+    pub(crate) fn calculate_burn_rate(&self) -> f32 {
         // OPTIMIZATION: Early exits for non-burning conditions
         if !self.ignited {
             return 0.0;
@@ -201,7 +299,24 @@ impl FuelElement {
     }
 
     /// Calculate Byram's fireline intensity in kW/m
-    pub fn byram_fireline_intensity(&self) -> f32 {
+    ///
+    /// Uses Rothermel spread rate model for accurate intensity calculation.
+    ///
+    /// # Formula
+    /// ```text
+    /// I = (H × w × r) / 60 [kW/m]
+    /// ```
+    ///
+    /// Where:
+    /// - **I** = Fireline intensity (kW/m)
+    /// - **H** = Heat content of fuel (kJ/kg)
+    /// - **w** = Fuel consumed per unit area (kg/m²)
+    /// - **r** = Rate of spread (m/min)
+    ///
+    /// # References
+    /// - Byram, G.M. (1959). "Combustion of forest fuels." In Forest Fire: Control and Use.
+    /// - Rothermel, R.C. (1972). "A mathematical model for predicting fire spread in wildland fuels."
+    pub(crate) fn byram_fireline_intensity(&self, wind_speed_ms: f32) -> f32 {
         // OPTIMIZATION: Early exits for non-burning conditions
         if !self.ignited {
             return 0.0;
@@ -216,69 +331,25 @@ impl FuelElement {
             return 0.0;
         }
 
-        // I = (H × w × r) / 60 [kW/m]
-        let burn_rate = self.calculate_burn_rate();
-        let heat_release = self.fuel.heat_content * burn_rate * 0.9; // 90% efficiency
+        // Calculate spread rate using Rothermel model
+        // Use standard ambient temperature of 20°C for Byram intensity calculation
+        let spread_rate_m_per_min = crate::physics::rothermel::rothermel_spread_rate(
+            &self.fuel,
+            self.moisture_fraction,
+            wind_speed_ms,
+            self.slope_angle,
+            20.0, // Standard ambient temperature for intensity calculation
+        );
 
-        // Simplified spread rate estimate
-        let spread_rate_m_per_min = 0.5 * 60.0; // Placeholder
+        // Fuel loading (kg/m²) - mass per unit area
+        let fuel_loading = self.fuel.bulk_density * self.fuel.fuel_bed_depth;
 
-        (heat_release * spread_rate_m_per_min) / 60.0
-    }
+        // Heat release with combustion efficiency (90%)
+        let heat_per_area = self.fuel.heat_content * fuel_loading * 0.9;
 
-    /// Calculate flame height using Byram's formula
-    pub fn calculate_flame_height(&self) -> f32 {
-        let intensity = self.byram_fireline_intensity();
-
-        // L = 0.0775 × I^0.46 [meters]
-        if intensity > 0.0 {
-            0.0775 * intensity.powf(0.46)
-        } else {
-            0.0
-        }
-    }
-
-    /// Update flame height
-    pub fn update_flame_height(&mut self) {
-        self.flame_height = self.calculate_flame_height();
-    }
-
-    /// Burn fuel mass
-    pub fn burn_fuel(&mut self, dt: f32) {
-        if !self.ignited {
-            return;
-        }
-
-        let burn_rate = self.calculate_burn_rate();
-        self.fuel_remaining = (self.fuel_remaining - burn_rate * dt).max(0.0);
-
-        // Extinguish if fuel depleted
-        if self.fuel_remaining < 0.01 {
-            self.ignited = false;
-            self.temperature = 20.0; // Cool down to ambient
-            self.flame_height = 0.0;
-        }
-    }
-
-    /// Check if this element can ignite (not already burning, has fuel, etc.)
-    pub fn can_ignite(&self) -> bool {
-        !self.ignited
-            && self.fuel_remaining > 0.01
-            && self.moisture_fraction < self.fuel.moisture_of_extinction
-    }
-
-    /// Get heat radiation output in kW
-    pub fn get_radiation_power(&self) -> f32 {
-        if !self.ignited {
-            return 0.0;
-        }
-
-        // Simplified radiation based on temperature and surface area
-        let temp_k = self.temperature + 273.15;
-        let surface_area = self.fuel.surface_area_to_volume * self.fuel_remaining.sqrt();
-
-        // Stefan-Boltzmann simplified
-        5.67e-8 * (temp_k / 1000.0).powi(4) * surface_area * 10000.0
+        // Byram's formula: I = (H × w × r) / 60
+        // Units: (kJ/kg × kg/m² × m/min) / 60 = kW/m
+        (heat_per_area * spread_rate_m_per_min) / 60.0
     }
 
     // Public accessor methods for visualization/external use
@@ -307,4 +378,53 @@ impl FuelElement {
     pub fn flame_height(&self) -> f32 {
         self.flame_height
     }
+
+    /// Get smoldering state (if present)
+    pub fn smoldering_state(&self) -> Option<&crate::physics::SmolderingState> {
+        self.smoldering_state.as_ref()
+    }
+
+    /// Check if crown fire is currently active
+    pub fn is_crown_fire_active(&self) -> bool {
+        self.crown_fire_active
+    }
+
+    /// Get comprehensive statistics about this fuel element
+    pub fn get_stats(&self) -> FuelElementStats {
+        FuelElementStats {
+            id: self.id,
+            position: self.position,
+            temperature: self.temperature,
+            moisture_fraction: self.moisture_fraction,
+            fuel_remaining: self.fuel_remaining,
+            ignited: self.ignited,
+            flame_height: self.flame_height,
+            part_type: self.part_type,
+            elevation: self.elevation,
+            slope_angle: self.slope_angle,
+            crown_fire_active: self.crown_fire_active,
+            fuel_type_name: self.fuel.name.clone(),
+            ignition_temperature: self.fuel.ignition_temperature,
+            heat_content: self.fuel.heat_content,
+        }
+    }
+}
+
+/// Statistics snapshot of a fuel element
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuelElementStats {
+    pub id: u32,
+    pub position: Vector3<f32>,
+    pub temperature: f32,
+    pub moisture_fraction: f32,
+    pub fuel_remaining: f32,
+    pub ignited: bool,
+    pub flame_height: f32,
+    pub part_type: FuelPart,
+    pub elevation: f32,
+    pub slope_angle: f32,
+    pub crown_fire_active: bool,
+    pub fuel_type_name: String,
+    pub ignition_temperature: f32,
+    pub heat_content: f32,
 }

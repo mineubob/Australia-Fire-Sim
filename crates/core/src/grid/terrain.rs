@@ -38,11 +38,11 @@ impl TerrainCache {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerrainData {
     /// Width of terrain in meters
-    pub width: f32,
+    pub(crate) width: f32,
     /// Height of terrain in meters
-    pub height: f32,
+    pub(crate) height: f32,
     /// Grid resolution in meters per sample
-    pub resolution: f32,
+    pub(crate) resolution: f32,
     /// Number of elevation samples in X direction
     pub(crate) nx: usize,
     /// Number of elevation samples in Y direction
@@ -50,9 +50,9 @@ pub struct TerrainData {
     /// Elevation data in meters (row-major order: [y * nx + x])
     pub(crate) elevations: Vec<f32>,
     /// Minimum elevation in dataset
-    pub min_elevation: f32,
+    pub(crate) min_elevation: f32,
     /// Maximum elevation in dataset
-    pub max_elevation: f32,
+    pub(crate) max_elevation: f32,
 }
 
 impl TerrainData {
@@ -381,6 +381,16 @@ impl TerrainData {
         let dz_dy = (z_north - z_south) / (2.0 * delta);
 
         Vec3::new(dz_dx, dz_dy, 1.0).normalize()
+    }
+
+    /// Get terrain width in meters
+    pub fn width(&self) -> f32 {
+        self.width
+    }
+
+    /// Get terrain height in meters
+    pub fn height(&self) -> f32 {
+        self.height
     }
 }
 

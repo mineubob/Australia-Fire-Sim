@@ -616,8 +616,11 @@ impl WeatherPreset {
             0.0
         };
 
-        // Diurnal cycle: coldest at 6am, hottest at 2pm
-        let hour_factor = ((time_of_day - 6.0) * std::f32::consts::PI / 8.0)
+        // Diurnal cycle: coldest at 6am, hottest at 2pm (8 hour half-period)
+        // Using π/16 factor so sin reaches 1.0 at 14:00 (2pm)
+        // At 6am: sin(0 * π/16) = 0 (min temp)
+        // At 2pm: sin(8 * π/16) = sin(π/2) = 1.0 (max temp)
+        let hour_factor = ((time_of_day - 6.0) * std::f32::consts::PI / 16.0)
             .sin()
             .max(0.0);
 
@@ -729,9 +732,9 @@ impl WeatherPreset {
 /// - **5-12**: Moderate (heightened awareness)
 /// - **12-24**: High (avoid fire-prone activities)
 /// - **24-50**: Very High (prepare to evacuate)
-/// - **50-75**: Severe (serious fire danger)
-/// - **75-100**: Extreme (catastrophic conditions likely)
-/// - **100+**: Catastrophic (Code Red - leave high-risk areas)
+/// - **50-100**: Severe (serious fire danger)
+/// - **100-150**: Extreme (catastrophic conditions likely)
+/// - **150+**: Catastrophic (Code Red - leave high-risk areas)
 ///
 /// # Example
 ///
@@ -752,16 +755,16 @@ impl WeatherPreset {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeatherSystem {
     /// Current air temperature (°C)
-    pub temperature: f32,
+    pub(crate) temperature: f32,
 
     /// Current relative humidity (0-100%)
-    pub humidity: f32,
+    pub(crate) humidity: f32,
 
     /// Current wind speed (km/h)
-    pub wind_speed: f32,
+    pub(crate) wind_speed: f32,
 
     /// Wind direction in degrees (0=North, 90=East, 180=South, 270=West)
-    pub wind_direction: f32,
+    pub(crate) wind_direction: f32,
 
     /// Drought factor (0-10)
     ///
@@ -771,7 +774,7 @@ pub struct WeatherSystem {
     /// - 4-6: Significant drying, fire spread increases
     /// - 6-8: Severe drought, rapid fire spread
     /// - 8-10: Extreme drought, explosive fire behavior
-    pub drought_factor: f32,
+    pub(crate) drought_factor: f32,
 
     /// Time of day in hours (0-24)
     ///
@@ -804,7 +807,7 @@ pub struct WeatherSystem {
     pub(crate) preset: Option<WeatherPreset>,
 
     /// Active climate pattern (El Niño, La Niña, or Neutral)
-    pub climate_pattern: ClimatePattern,
+    pub(crate) climate_pattern: ClimatePattern,
 
     /// Whether a heatwave is occurring
     pub(crate) is_heatwave: bool,
@@ -979,9 +982,12 @@ impl WeatherSystem {
         let df = self.drought_factor.max(1.0);
 
         // McArthur Mark 5 FFDI formula (official)
+        // Reference: Noble et al. (1980) - "McArthur's fire-danger meters expressed as equations"
+        // Australian Journal of Ecology, 5(2), 201-203
         // Calibration constant 2.11 provides best match to WA Fire Behaviour Calculator:
         // - T=30°C, H=30%, V=30km/h, D=5 → FFDI=13.0 (reference: 12.7)
         // - T=45°C, H=10%, V=60km/h, D=10 → FFDI=172.3 (reference: 173.5)
+        // https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest
         let exponent = -0.45 + 0.987 * df.ln() - 0.0345 * self.humidity
             + 0.0338 * self.temperature
             + 0.0234 * self.wind_speed;
@@ -997,16 +1003,23 @@ impl WeatherSystem {
             f if f < 12.0 => "Moderate",
             f if f < 24.0 => "High",
             f if f < 50.0 => "Very High",
-            f if f < 75.0 => "Severe",
-            f if f < 100.0 => "Extreme",
+            f if f < 100.0 => "Severe",
+            f if f < 150.0 => "Extreme",
             _ => "CATASTROPHIC", // Code Red
         }
     }
 
     /// Get spread rate multiplier based on FFDI
+    ///
+    /// Capped at 3.5 to achieve realistic spread rates:
+    ///   - Moderate (FFDI ~11): 1.0x → 1-10 ha/hr
+    ///   - Catastrophic (FFDI ~172): 3.5x → 100-300 ha/hr
+    ///
+    /// Real fire spread still takes time even in extreme FFDI 100+ conditions.
     pub fn spread_rate_multiplier(&self) -> f32 {
-        // FFDI directly scales spread rate
-        (self.calculate_ffdi() / 10.0).max(1.0)
+        // FFDI scales spread rate, but cap at 3.5x to achieve target rates
+        // This ensures spread is faster in extreme conditions while remaining realistic
+        (self.calculate_ffdi() / 20.0).clamp(1.0, 3.5)
     }
 
     /// Get wind vector in m/s
@@ -1275,6 +1288,53 @@ impl WeatherSystem {
 
         (base_moisture * humidity_factor * temp_factor).clamp(0.0, 1.0)
     }
+
+    /// Get comprehensive statistics about current weather conditions
+    pub fn get_stats(&self) -> WeatherStats {
+        WeatherStats {
+            temperature: self.temperature,
+            humidity: self.humidity,
+            wind_speed: self.wind_speed,
+            wind_direction: self.wind_direction,
+            wind_speed_ms: self.wind_speed_ms(),
+            drought_factor: self.drought_factor,
+            time_of_day: self.time_of_day,
+            day_of_year: self.day_of_year,
+            ffdi: self.calculate_ffdi(),
+            fire_danger_rating: self.fire_danger_rating().to_string(),
+            spread_rate_multiplier: self.spread_rate_multiplier(),
+            solar_radiation: self.solar_radiation(),
+            fuel_curing: self.fuel_curing(),
+            climate_pattern: self.climate_pattern,
+            is_heatwave: self.is_heatwave,
+            heatwave_days_remaining: self.heatwave_days_remaining,
+            preset_name: self.preset_name(),
+            weather_front_progress: self.weather_front_progress,
+        }
+    }
+}
+
+/// Statistics snapshot of weather system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeatherStats {
+    pub temperature: f32,
+    pub humidity: f32,
+    pub wind_speed: f32,
+    pub wind_direction: f32,
+    pub wind_speed_ms: f32,
+    pub drought_factor: f32,
+    pub time_of_day: f32,
+    pub day_of_year: u16,
+    pub ffdi: f32,
+    pub fire_danger_rating: String,
+    pub spread_rate_multiplier: f32,
+    pub solar_radiation: f32,
+    pub fuel_curing: f32,
+    pub climate_pattern: ClimatePattern,
+    pub is_heatwave: bool,
+    pub heatwave_days_remaining: u8,
+    pub preset_name: Option<String>,
+    pub weather_front_progress: f32,
 }
 
 #[cfg(test)]
