@@ -67,7 +67,6 @@ pub(crate) struct SuppressionAgentProperties {
     // ═══════════════════════════════════════════════════════════════════
     // THERMAL PROPERTIES
     // ═══════════════════════════════════════════════════════════════════
-
     /// Specific heat capacity (kJ/(kg·K))
     /// Water: 4.18, Foam: ~4.0, Retardant: ~3.5
     pub(crate) specific_heat: f32,
@@ -84,7 +83,6 @@ pub(crate) struct SuppressionAgentProperties {
     // ═══════════════════════════════════════════════════════════════════
     // COVERAGE PROPERTIES
     // ═══════════════════════════════════════════════════════════════════
-
     /// Recommended application rate (kg/m²)
     /// Water: 2-4 kg/m², Foam: 0.5-1 kg/m², Retardant: 1-3 kg/m²
     pub(crate) application_rate: f32,
@@ -100,7 +98,6 @@ pub(crate) struct SuppressionAgentProperties {
     // ═══════════════════════════════════════════════════════════════════
     // CHEMICAL PROPERTIES
     // ═══════════════════════════════════════════════════════════════════
-
     /// Combustion inhibition factor (0-1)
     /// Retardants chemically inhibit combustion reactions
     /// Water: 0.0, Short-term: 0.3, Long-term: 0.6
@@ -119,7 +116,6 @@ pub(crate) struct SuppressionAgentProperties {
     // ═══════════════════════════════════════════════════════════════════
     // EVAPORATION & DEGRADATION
     // ═══════════════════════════════════════════════════════════════════
-
     /// Evaporation rate modifier relative to water (0-2)
     /// Water: 1.0, Foam: 0.3 (slower), Retardant: 0.5
     pub(crate) evaporation_rate_modifier: f32,
@@ -137,7 +133,6 @@ pub(crate) struct SuppressionAgentProperties {
     // ═══════════════════════════════════════════════════════════════════
     // FOAM-SPECIFIC PROPERTIES
     // ═══════════════════════════════════════════════════════════════════
-
     /// Foam expansion ratio
     /// Low expansion: 3-30:1, Medium: 30-200:1, High: 200-1000:1
     /// Higher expansion = more coverage but less mass per area
@@ -160,13 +155,13 @@ impl SuppressionAgentProperties {
         latent_heat_vaporization: 2260.0,
         boiling_point: 100.0,
         // Coverage
-        application_rate: 3.0,     // kg/m² typical ground application
-        coverage_efficiency: 1.0,  // Baseline
-        penetration_depth: 0.02,   // 2cm typical
+        application_rate: 3.0,    // kg/m² typical ground application
+        coverage_efficiency: 1.0, // Baseline
+        penetration_depth: 0.02,  // 2cm typical
         // Chemical
-        combustion_inhibition: 0.0,   // No chemical inhibition
-        oxygen_displacement: 0.0,     // No oxygen exclusion
-        fuel_coating_duration: 0.0,   // No lasting coating
+        combustion_inhibition: 0.0, // No chemical inhibition
+        oxygen_displacement: 0.0,   // No oxygen exclusion
+        fuel_coating_duration: 0.0, // No lasting coating
         // Evaporation
         evaporation_rate_modifier: 1.0,
         uv_degradation_rate: 0.0,
@@ -190,20 +185,20 @@ impl SuppressionAgentProperties {
         latent_heat_vaporization: 2260.0, // Water base
         boiling_point: 100.0,
         // Coverage - much more efficient than water
-        application_rate: 0.8,             // kg/m² (less needed)
-        coverage_efficiency: 4.0,          // 4x water (NFPA research)
-        penetration_depth: 0.05,           // 5cm (surfactant helps)
+        application_rate: 0.8,    // kg/m² (less needed)
+        coverage_efficiency: 4.0, // 4x water (NFPA research)
+        penetration_depth: 0.05,  // 5cm (surfactant helps)
         // Chemical
-        combustion_inhibition: 0.1,        // Slight inhibition
-        oxygen_displacement: 0.75,         // 75% oxygen exclusion
-        fuel_coating_duration: 1800.0,     // 30 min
+        combustion_inhibition: 0.1,    // Slight inhibition
+        oxygen_displacement: 0.75,     // 75% oxygen exclusion
+        fuel_coating_duration: 1800.0, // 30 min
         // Evaporation - slower due to foam structure
-        evaporation_rate_modifier: 0.3,    // 70% slower
-        uv_degradation_rate: 0.15,         // Degrades in sun
-        rain_washoff_rate: 0.5,            // Partially washes
+        evaporation_rate_modifier: 0.3, // 70% slower
+        uv_degradation_rate: 0.15,      // Degrades in sun
+        rain_washoff_rate: 0.5,         // Partially washes
         // Foam
-        expansion_ratio: 10.0,             // Low-expansion foam
-        drain_time: 1200.0,                // 20 min drain
+        expansion_ratio: 10.0, // Low-expansion foam
+        drain_time: 1200.0,    // 20 min drain
     };
 
     /// Get properties for Short-Term Retardant
@@ -218,12 +213,12 @@ impl SuppressionAgentProperties {
         boiling_point: 105.0,
         // Coverage
         application_rate: 1.5,
-        coverage_efficiency: 2.5,       // 2.5x water
+        coverage_efficiency: 2.5, // 2.5x water
         penetration_depth: 0.03,
         // Chemical
-        combustion_inhibition: 0.35,    // Moderate inhibition
-        oxygen_displacement: 0.2,       // Some exclusion
-        fuel_coating_duration: 3600.0,  // 1 hour
+        combustion_inhibition: 0.35,   // Moderate inhibition
+        oxygen_displacement: 0.2,      // Some exclusion
+        fuel_coating_duration: 3600.0, // 1 hour
         // Evaporation
         evaporation_rate_modifier: 0.5,
         uv_degradation_rate: 0.10,
@@ -249,7 +244,7 @@ impl SuppressionAgentProperties {
         boiling_point: 110.0,
         // Coverage
         application_rate: 2.0,
-        coverage_efficiency: 3.0,       // 3x water
+        coverage_efficiency: 3.0, // 3x water
         penetration_depth: 0.04,
         // Chemical - primary mechanism is combustion inhibition
         combustion_inhibition: 0.6,     // 60% combustion reduction
@@ -257,8 +252,8 @@ impl SuppressionAgentProperties {
         fuel_coating_duration: 28800.0, // 8 hours (USFS research)
         // Evaporation
         evaporation_rate_modifier: 0.4,
-        uv_degradation_rate: 0.05,      // Slow UV degradation
-        rain_washoff_rate: 0.15,        // Resists washoff
+        uv_degradation_rate: 0.05, // Slow UV degradation
+        rain_washoff_rate: 0.15,   // Resists washoff
         // Foam (N/A)
         expansion_ratio: 1.0,
         drain_time: 0.0,
@@ -278,12 +273,12 @@ impl SuppressionAgentProperties {
         boiling_point: 100.0,
         // Coverage - better penetration
         application_rate: 2.0,
-        coverage_efficiency: 1.8,       // 1.8x water
-        penetration_depth: 0.08,        // 8cm (deep penetration)
+        coverage_efficiency: 1.8, // 1.8x water
+        penetration_depth: 0.08,  // 8cm (deep penetration)
         // Chemical
-        combustion_inhibition: 0.05,    // Slight
-        oxygen_displacement: 0.05,      // Slight
-        fuel_coating_duration: 600.0,   // 10 min
+        combustion_inhibition: 0.05,  // Slight
+        oxygen_displacement: 0.05,    // Slight
+        fuel_coating_duration: 600.0, // 10 min
         // Evaporation
         evaporation_rate_modifier: 0.9,
         uv_degradation_rate: 0.0,

@@ -29,7 +29,6 @@ pub(crate) struct AtmosphericProfile {
     // ═══════════════════════════════════════════════════════════════════
     // TEMPERATURE PROFILE
     // ═══════════════════════════════════════════════════════════════════
-
     /// Surface temperature (°C)
     pub(crate) surface_temperature: f32,
 
@@ -51,7 +50,6 @@ pub(crate) struct AtmosphericProfile {
     // ═══════════════════════════════════════════════════════════════════
     // MOISTURE PROFILE
     // ═══════════════════════════════════════════════════════════════════
-
     /// Surface dewpoint temperature (°C)
     pub(crate) surface_dewpoint: f32,
 
@@ -64,7 +62,6 @@ pub(crate) struct AtmosphericProfile {
     // ═══════════════════════════════════════════════════════════════════
     // STABILITY INDICES (COMPUTED)
     // ═══════════════════════════════════════════════════════════════════
-
     /// Lifted Index (°C)
     /// Negative values indicate instability
     /// LI < -3: Unstable (favorable for pyrocumulus)
@@ -86,7 +83,6 @@ pub(crate) struct AtmosphericProfile {
     // ═══════════════════════════════════════════════════════════════════
     // BOUNDARY LAYER
     // ═══════════════════════════════════════════════════════════════════
-
     /// Mixing height - depth of turbulent boundary layer (meters)
     /// Higher values = stronger vertical mixing, more erratic fire behavior
     pub(crate) mixing_height: f32,
@@ -100,7 +96,6 @@ pub(crate) struct AtmosphericProfile {
     // ═══════════════════════════════════════════════════════════════════
     // WIND PROFILE
     // ═══════════════════════════════════════════════════════════════════
-
     /// Wind shear magnitude (m/s per km)
     /// High shear + unstable = fire tornado risk
     pub(crate) wind_shear: f32,
@@ -152,7 +147,8 @@ impl AtmosphericProfile {
 
         // Calculate stability indices
         let lifted_index = Self::calculate_lifted_index(surface_temp, surface_dewpoint, temp_500);
-        let k_index = Self::calculate_k_index(temp_850, temp_700, temp_500, dewpoint_850, dewpoint_700);
+        let k_index =
+            Self::calculate_k_index(temp_850, temp_700, temp_500, dewpoint_850, dewpoint_700);
         let haines_index = Self::calculate_haines_index_low(temp_850, temp_700, dewpoint_850);
 
         // Mixing height - depends on surface heating and stability
@@ -214,8 +210,8 @@ impl AtmosphericProfile {
     /// of Saturation Vapor Pressure." Journal of Applied Meteorology, 35(4), 601-609.
     fn calculate_dewpoint(temp: f32, humidity: f32) -> f32 {
         // Magnus-Tetens constants (Alduchov & Eskridge 1996)
-        const MAGNUS_A: f32 = 17.27;   // Dimensionless coefficient
-        const MAGNUS_B: f32 = 237.7;   // °C - temperature offset
+        const MAGNUS_A: f32 = 17.27; // Dimensionless coefficient
+        const MAGNUS_B: f32 = 237.7; // °C - temperature offset
         const MIN_HUMIDITY: f32 = 0.01; // Minimum humidity to avoid log(0)
 
         let humidity = humidity.clamp(MIN_HUMIDITY, 1.0);
@@ -362,7 +358,8 @@ impl AtmosphericProfile {
             1.0
         };
 
-        let adjusted_threshold = min_intensity * instability_factor * mixing_factor * inversion_factor;
+        let adjusted_threshold =
+            min_intensity * instability_factor * mixing_factor * inversion_factor;
         let can_form = fire_intensity_kwm > adjusted_threshold && self.lifted_index < 0.0;
 
         (can_form, fire_intensity_kwm / adjusted_threshold)
@@ -436,10 +433,10 @@ impl Default for AtmosphericProfile {
     /// Default: Neutral atmosphere typical of mild conditions
     fn default() -> Self {
         Self::from_surface_conditions(
-            25.0,  // 25°C surface temp
-            0.5,   // 50% humidity
-            5.0,   // 5 m/s wind
-            true,  // daytime
+            25.0, // 25°C surface temp
+            0.5,  // 50% humidity
+            5.0,  // 5 m/s wind
+            true, // daytime
         )
     }
 }
@@ -461,18 +458,27 @@ mod tests {
     fn test_haines_index_range() {
         // Low Haines Index - cool, moist
         let low = AtmosphericProfile::from_surface_conditions(15.0, 0.8, 2.0, true);
-        assert!(low.haines_index <= 5, "Cool/moist should have moderate or lower Haines, got {}", low.haines_index);
+        assert!(
+            low.haines_index <= 5,
+            "Cool/moist should have moderate or lower Haines, got {}",
+            low.haines_index
+        );
 
         // High Haines Index - hot, dry
         let high = AtmosphericProfile::from_surface_conditions(42.0, 0.15, 15.0, true);
         // Very hot and dry will have high Haines, but the simplified model may not reach 6
-        assert!(high.haines_index >= 4, "Hot/dry should have moderate to high Haines, got {}", high.haines_index);
-        
+        assert!(
+            high.haines_index >= 4,
+            "Hot/dry should have moderate to high Haines, got {}",
+            high.haines_index
+        );
+
         // Verify relative ordering
         assert!(
             high.haines_index >= low.haines_index,
             "Hot/dry ({}) should have >= Haines than cool/moist ({})",
-            high.haines_index, low.haines_index
+            high.haines_index,
+            low.haines_index
         );
     }
 
@@ -492,7 +498,7 @@ mod tests {
         // (affects dewpoint and therefore LCL and parcel trajectory)
         let dry = AtmosphericProfile::from_surface_conditions(30.0, 0.2, 10.0, true);
         let moist = AtmosphericProfile::from_surface_conditions(30.0, 0.8, 10.0, true);
-        
+
         // Both should be in valid range
         assert!(
             (-15.0..=15.0).contains(&dry.lifted_index),
@@ -553,7 +559,10 @@ mod tests {
         };
 
         let risk = high_shear.fire_tornado_risk(30_000.0);
-        assert!(risk > 0.3, "High intensity + shear should have fire tornado risk");
+        assert!(
+            risk > 0.3,
+            "High intensity + shear should have fire tornado risk"
+        );
 
         let low_intensity_risk = high_shear.fire_tornado_risk(5_000.0);
         assert!(

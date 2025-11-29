@@ -148,7 +148,10 @@ pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
 ///
 /// # References
 /// Cruz & Alexander (2010)
-pub(crate) fn calculate_crown_fraction_burned(active_spread_rate: f32, critical_spread_rate: f32) -> f32 {
+pub(crate) fn calculate_crown_fraction_burned(
+    active_spread_rate: f32,
+    critical_spread_rate: f32,
+) -> f32 {
     if active_spread_rate <= critical_spread_rate {
         return 0.0;
     }

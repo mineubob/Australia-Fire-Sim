@@ -34,7 +34,11 @@ use serde::{Deserialize, Serialize};
 ///
 /// # References
 /// Simard (1968), Nelson (2000)
-pub(crate) fn calculate_equilibrium_moisture(temperature: f32, humidity: f32, is_adsorbing: bool) -> f32 {
+pub(crate) fn calculate_equilibrium_moisture(
+    temperature: f32,
+    humidity: f32,
+    is_adsorbing: bool,
+) -> f32 {
     // Simard (1968) coefficients for adsorption and desorption
     // Modified Nelson (2000) formulation for better temperature response
     let (a, b, c, d) = if is_adsorbing {

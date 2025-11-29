@@ -113,7 +113,13 @@ impl PlayerAction {
     }
 
     /// Create a suppression action
-    pub fn suppression(player_id: u32, timestamp: f32, position: Vec3, mass: f32, agent_type: u8) -> Self {
+    pub fn suppression(
+        player_id: u32,
+        timestamp: f32,
+        position: Vec3,
+        mass: f32,
+        agent_type: u8,
+    ) -> Self {
         Self::new(
             PlayerActionType::ApplySuppression,
             player_id,

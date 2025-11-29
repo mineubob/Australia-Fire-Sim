@@ -14,7 +14,7 @@
 //! - George & Johnson (2009): "Effectiveness of Aerial Fire Retardant"
 
 pub(crate) mod agent;
-pub mod coverage;  // Made pub for FFI access to SuppressionCoverage type
+pub mod coverage; // Made pub for FFI access to SuppressionCoverage type
 
 // Re-export SuppressionAgentType as public for FFI
 pub use agent::SuppressionAgentType;

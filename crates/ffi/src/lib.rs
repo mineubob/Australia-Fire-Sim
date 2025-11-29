@@ -1,4 +1,6 @@
-use fire_sim_core::{FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionAgentType, TerrainData, Vec3};
+use fire_sim_core::{
+    FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionAgentType, TerrainData, Vec3,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
@@ -619,10 +621,7 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
 /// # Safety
 /// `out_count` must be a valid, non-null pointer
 #[no_mangle]
-pub unsafe extern "C" fn fire_sim_get_burning_count(
-    sim_id: usize,
-    out_count: *mut u32,
-) -> i32 {
+pub unsafe extern "C" fn fire_sim_get_burning_count(sim_id: usize, out_count: *mut u32) -> i32 {
     if out_count.is_null() {
         return FIRE_SIM_NULL_POINTER;
     }
@@ -646,10 +645,7 @@ pub unsafe extern "C" fn fire_sim_get_burning_count(
 /// # Safety
 /// `out_count` must be a valid, non-null pointer
 #[no_mangle]
-pub unsafe extern "C" fn fire_sim_get_ember_count(
-    sim_id: usize,
-    out_count: *mut u32,
-) -> i32 {
+pub unsafe extern "C" fn fire_sim_get_ember_count(sim_id: usize, out_count: *mut u32) -> i32 {
     if out_count.is_null() {
         return FIRE_SIM_NULL_POINTER;
     }
@@ -733,7 +729,10 @@ pub unsafe extern "C" fn fire_sim_get_terrain_info(
     out_min_elev: *mut f32,
     out_max_elev: *mut f32,
 ) -> i32 {
-    if out_width.is_null() || out_height.is_null() || out_min_elev.is_null() || out_max_elev.is_null()
+    if out_width.is_null()
+        || out_height.is_null()
+        || out_min_elev.is_null()
+        || out_max_elev.is_null()
     {
         return FIRE_SIM_NULL_POINTER;
     }

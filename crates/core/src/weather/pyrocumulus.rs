@@ -214,12 +214,7 @@ impl PyrocumulusCloud {
     /// - `dt`: Time step (seconds)
     /// - `fire_intensity`: Current fire intensity (kW/m)
     /// - `atmosphere`: Current atmospheric profile
-    pub fn update(
-        &mut self,
-        dt: f32,
-        fire_intensity: f32,
-        atmosphere: &AtmosphericProfile,
-    ) {
+    pub fn update(&mut self, dt: f32, fire_intensity: f32, atmosphere: &AtmosphericProfile) {
         self.age += dt;
 
         // 1. Development stage
@@ -377,22 +372,17 @@ mod tests {
         };
 
         // High intensity should form cloud
-        let cloud = PyrocumulusCloud::try_form(
-            Vec3::new(0.0, 0.0, 0.0),
-            25_000.0,
-            &atmosphere,
-            0.3,
-        );
+        let cloud =
+            PyrocumulusCloud::try_form(Vec3::new(0.0, 0.0, 0.0), 25_000.0, &atmosphere, 0.3);
 
-        assert!(cloud.is_some(), "High intensity + unstable should form pyroCu");
+        assert!(
+            cloud.is_some(),
+            "High intensity + unstable should form pyroCu"
+        );
 
         // Low intensity should not
-        let no_cloud = PyrocumulusCloud::try_form(
-            Vec3::new(0.0, 0.0, 0.0),
-            3_000.0,
-            &atmosphere,
-            0.3,
-        );
+        let no_cloud =
+            PyrocumulusCloud::try_form(Vec3::new(0.0, 0.0, 0.0), 3_000.0, &atmosphere, 0.3);
 
         assert!(no_cloud.is_none(), "Low intensity should not form pyroCu");
     }
@@ -408,12 +398,8 @@ mod tests {
         };
 
         // Even high intensity shouldn't form in stable conditions
-        let cloud = PyrocumulusCloud::try_form(
-            Vec3::new(0.0, 0.0, 0.0),
-            50_000.0,
-            &atmosphere,
-            0.3,
-        );
+        let cloud =
+            PyrocumulusCloud::try_form(Vec3::new(0.0, 0.0, 0.0), 50_000.0, &atmosphere, 0.3);
 
         assert!(cloud.is_none(), "Stable atmosphere should prevent pyroCu");
     }
@@ -426,12 +412,9 @@ mod tests {
             ..Default::default()
         };
 
-        let mut cloud = PyrocumulusCloud::try_form(
-            Vec3::new(0.0, 0.0, 0.0),
-            25_000.0,
-            &atmosphere,
-            0.3,
-        ).unwrap();
+        let mut cloud =
+            PyrocumulusCloud::try_form(Vec3::new(0.0, 0.0, 0.0), 25_000.0, &atmosphere, 0.3)
+                .unwrap();
 
         let initial_top = cloud.top_altitude;
 
@@ -441,7 +424,10 @@ mod tests {
         }
 
         assert!(cloud.development_stage > 0.4, "Should be developing");
-        assert!(cloud.top_altitude >= initial_top, "Cloud should grow upward");
+        assert!(
+            cloud.top_altitude >= initial_top,
+            "Cloud should grow upward"
+        );
     }
 
     #[test]
@@ -451,12 +437,9 @@ mod tests {
             ..Default::default()
         };
 
-        let mut cloud = PyrocumulusCloud::try_form(
-            Vec3::new(0.0, 0.0, 0.0),
-            30_000.0,
-            &atmosphere,
-            0.3,
-        ).unwrap();
+        let mut cloud =
+            PyrocumulusCloud::try_form(Vec3::new(0.0, 0.0, 0.0), 30_000.0, &atmosphere, 0.3)
+                .unwrap();
 
         // Allow some development
         for _ in 0..60 {
@@ -492,7 +475,8 @@ mod tests {
             50_000.0, // Very high intensity
             &atmosphere,
             0.3,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Force deep development
         cloud.top_altitude = 12000.0;
@@ -509,12 +493,9 @@ mod tests {
             ..Default::default()
         };
 
-        let mut cloud = PyrocumulusCloud::try_form(
-            Vec3::new(0.0, 0.0, 0.0),
-            40_000.0,
-            &high_shear,
-            0.3,
-        ).unwrap();
+        let mut cloud =
+            PyrocumulusCloud::try_form(Vec3::new(0.0, 0.0, 0.0), 40_000.0, &high_shear, 0.3)
+                .unwrap();
 
         cloud.updraft_velocity = 25.0; // Strong updraft
 

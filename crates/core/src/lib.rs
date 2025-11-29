@@ -22,23 +22,23 @@ pub mod core_types;
 
 // Ultra-realistic simulation modules (organized in subfolders)
 pub(crate) mod grid;
-pub mod physics;      // Made pub for FFI access to SuppressionAgent
+pub mod physics; // Made pub for FFI access to SuppressionAgent
 pub mod simulation;
-pub mod suppression;  // Made pub for FFI access to SuppressionAgentType
+pub mod suppression; // Made pub for FFI access to SuppressionAgentType
 pub(crate) mod weather;
 
 // Re-export core types (public API)
+pub use core_types::Ember;
 pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
 pub use core_types::{ClimatePattern, WeatherPreset, WeatherSystem};
-pub use core_types::Ember;
 
 // Re-export simulation types (public API)
 pub use grid::{GridCell, SimulationGrid, TerrainData};
 pub use simulation::{FireSimulation, SimulationStats};
 
 // Re-export suppression types (for FFI)
-pub use suppression::SuppressionAgentType;
 pub use physics::SuppressionAgent;
+pub use suppression::SuppressionAgentType;
 
 // Re-export physics types for integration tests
 pub use physics::CombustionPhase;

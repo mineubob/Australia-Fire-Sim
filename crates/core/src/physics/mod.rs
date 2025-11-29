@@ -8,7 +8,7 @@ pub(crate) mod element_heat_transfer;
 pub(crate) mod fuel_moisture;
 pub(crate) mod rothermel;
 pub(crate) mod smoldering;
-pub mod suppression_physics;  // Made pub for FFI access to SuppressionAgent
+pub mod suppression_physics; // Made pub for FFI access to SuppressionAgent
 pub(crate) mod terrain_physics;
 
 // Re-export internal functions and types for crate-internal use only
@@ -33,12 +33,16 @@ pub(crate) use terrain_physics::terrain_spread_multiplier;
 
 /// Public re-exports of validation test functions from albini_spotting module
 pub mod albini_spotting_validation {
-    pub use super::albini_spotting::{calculate_lofting_height, calculate_maximum_spotting_distance};
+    pub use super::albini_spotting::{
+        calculate_lofting_height, calculate_maximum_spotting_distance,
+    };
 }
 
 /// Public re-exports of validation test functions from crown_fire module
 pub mod crown_fire_validation {
-    pub use super::crown_fire::{calculate_critical_crown_spread_rate, calculate_critical_surface_intensity};
+    pub use super::crown_fire::{
+        calculate_critical_crown_spread_rate, calculate_critical_surface_intensity,
+    };
 }
 
 /// Public re-exports of validation test functions from rothermel module

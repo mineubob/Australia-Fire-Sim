@@ -299,8 +299,16 @@ mod tests {
         let combined = terrain_spread_multiplier(&from, &to, &terrain, &wind);
 
         // Combined effect should produce a valid clamped result
-        assert!(combined >= 0.2, "Should respect minimum clamp: {}", combined);
-        assert!(combined <= 10.0, "Should respect maximum clamp: {}", combined);
+        assert!(
+            combined >= 0.2,
+            "Should respect minimum clamp: {}",
+            combined
+        );
+        assert!(
+            combined <= 10.0,
+            "Should respect maximum clamp: {}",
+            combined
+        );
     }
 
     #[test]

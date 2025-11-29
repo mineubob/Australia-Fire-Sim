@@ -93,10 +93,10 @@ impl FireSimulation {
 
         // Initialize atmospheric profile with default conditions
         let atmospheric_profile = AtmosphericProfile::from_surface_conditions(
-            25.0,  // temperature °C
-            50.0,  // humidity %
-            10.0,  // wind speed km/h
-            true,  // is_daytime
+            25.0, // temperature °C
+            50.0, // humidity %
+            10.0, // wind speed km/h
+            true, // is_daytime
         );
 
         FireSimulation {
@@ -600,8 +600,13 @@ impl FireSimulation {
                     if let Some(ref mut moisture_state) = element.moisture_state {
                         // Use the FuelMoistureState's update method which properly
                         // handles all timelag classes and calculates weighted average
-                        moisture_state.update(&element.fuel, weather_temp, weather_humidity / 100.0, dt_hours);
-                        
+                        moisture_state.update(
+                            &element.fuel,
+                            weather_temp,
+                            weather_humidity / 100.0,
+                            dt_hours,
+                        );
+
                         // Update the element's overall moisture fraction
                         element.moisture_fraction = moisture_state.average_moisture();
                     }
@@ -761,15 +766,19 @@ impl FireSimulation {
 
             // 4e. Apply smoldering combustion multipliers (Phase 3)
             // Uses both heat release and burn rate multipliers from Rein (2009)
-            let (smoldering_heat_mult, smoldering_burn_mult) = if let Some(element) = self.get_element(element_id) {
-                if let Some(ref smold_state) = element.smoldering_state {
-                    (smold_state.heat_release_multiplier(), smold_state.burn_rate_multiplier())
+            let (smoldering_heat_mult, smoldering_burn_mult) =
+                if let Some(element) = self.get_element(element_id) {
+                    if let Some(ref smold_state) = element.smoldering_state {
+                        (
+                            smold_state.heat_release_multiplier(),
+                            smold_state.burn_rate_multiplier(),
+                        )
+                    } else {
+                        (1.0, 1.0)
+                    }
                 } else {
                     (1.0, 1.0)
-                }
-            } else {
-                (1.0, 1.0)
-            };
+                };
 
             // Burn rate is affected by both oxygen and smoldering phase
             let fuel_consumed = actual_burn_rate * smoldering_burn_mult * dt;
@@ -785,7 +794,8 @@ impl FireSimulation {
                 // Heat released = fuel consumed × heat content (kJ/kg) × smoldering heat multiplier
                 // Smoldering phase reduces heat release (Rein 2009)
                 if fuel_consumed > 0.0 && element.fuel_remaining > 0.1 {
-                    let combustion_heat = fuel_consumed * element.fuel.heat_content * smoldering_heat_mult;
+                    let combustion_heat =
+                        fuel_consumed * element.fuel.heat_content * smoldering_heat_mult;
                     // Fuel-specific fraction of heat retained (grass=0.25, forest=0.40)
                     let self_heating = combustion_heat * element.fuel.self_heating_fraction;
                     let temp_rise =
@@ -839,7 +849,8 @@ impl FireSimulation {
                             elem_mut.crown_fire_active = true;
                             // Use crown_fraction_burned to scale temperature increase
                             // crown_fraction_burned ranges from 0.0 (surface only) to 1.0 (fully active crown)
-                            let crown_intensity_factor = crown_behavior.crown_fraction_burned().clamp(0.0, 1.0);
+                            let crown_intensity_factor =
+                                crown_behavior.crown_fraction_burned().clamp(0.0, 1.0);
                             let base_crown_temp = elem_mut.fuel.max_flame_temperature
                                 * elem_mut.fuel.crown_fire_temp_multiplier;
                             // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
@@ -1108,7 +1119,8 @@ impl FireSimulation {
                     if ember_prob > 0.0 && rand::random::<f32>() < ember_prob {
                         // Calculate ember lofting height using Albini model
                         let intensity = element.byram_fireline_intensity(wind_vector.norm());
-                        let base_lofting_height = crate::physics::calculate_lofting_height(intensity);
+                        let base_lofting_height =
+                            crate::physics::calculate_lofting_height(intensity);
 
                         // Apply pyrocumulus lofting enhancement (Phase 2)
                         let lofting_height = base_lofting_height * ember_lofting_multiplier;
@@ -1134,7 +1146,14 @@ impl FireSimulation {
         let mut new_ember_id = self._next_ember_id;
         for (position, velocity, temperature, fuel_id) in new_embers {
             let ember_mass = 0.0005; // kg (0.5g typical)
-            let ember = Ember::new(new_ember_id, position, velocity, temperature, ember_mass, fuel_id);
+            let ember = Ember::new(
+                new_ember_id,
+                position,
+                velocity,
+                temperature,
+                ember_mass,
+                fuel_id,
+            );
             self.embers.push(ember);
             new_ember_id += 1;
         }
@@ -1227,8 +1246,11 @@ impl FireSimulation {
 
                     // Combined ignition probability (Koo et al. 2010 probabilistic model)
                     // Now includes suppression blocking
-                    let ignition_prob =
-                        temp_factor * receptivity * moisture_factor * distance_factor * suppression_factor;
+                    let ignition_prob = temp_factor
+                        * receptivity
+                        * moisture_factor
+                        * distance_factor
+                        * suppression_factor;
 
                     // Probabilistic ignition
                     if ignition_prob > 0.0 && rand::random::<f32>() < ignition_prob {

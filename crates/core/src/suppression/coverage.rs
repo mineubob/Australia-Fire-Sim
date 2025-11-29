@@ -158,8 +158,8 @@ impl SuppressionCoverage {
         let remaining_heat = incoming_heat_kj - heat_for_evaporation;
 
         // 2. Chemical combustion inhibition (retardants)
-        let inhibition_factor =
-            1.0 - (props.combustion_inhibition * self.coverage_fraction * self.chemical_effectiveness);
+        let inhibition_factor = 1.0
+            - (props.combustion_inhibition * self.coverage_fraction * self.chemical_effectiveness);
 
         // 3. Oxygen displacement (foam blanketing)
         let oxygen_factor = 1.0 - (props.oxygen_displacement * self.coverage_fraction);
@@ -244,7 +244,8 @@ impl SuppressionCoverage {
         };
 
         // Combined blocking effect (1 - combined probability of NOT blocking)
-        let total_block = 1.0 - ((1.0 - coverage_block) * (1.0 - chemical_block) * (1.0 - moisture_effect));
+        let total_block =
+            1.0 - ((1.0 - coverage_block) * (1.0 - chemical_block) * (1.0 - moisture_effect));
 
         // Return modifier (lower = more blocking)
         1.0 - total_block.clamp(0.0, 0.95) // Never completely block (5% minimum chance)
@@ -263,8 +264,8 @@ impl SuppressionCoverage {
         // Empirical relationship: ~0.1 kg/m² agent adds ~0.05 moisture fraction
         // Reference: USFS - Fire retardant and water drops on wildland fuels
         const MOISTURE_CONVERSION_FACTOR: f32 = 0.5; // kg/m² agent → moisture fraction
-        const MAX_MOISTURE_INCREASE: f32 = 0.3;      // Maximum 30% moisture increase
-        
+        const MAX_MOISTURE_INCREASE: f32 = 0.3; // Maximum 30% moisture increase
+
         (self.mass_per_area * MOISTURE_CONVERSION_FACTOR).min(MAX_MOISTURE_INCREASE)
     }
 
@@ -314,9 +315,9 @@ mod tests {
     fn test_coverage_creation() {
         let coverage = SuppressionCoverage::new(
             SuppressionAgentType::Water,
-            5.0,  // 5 kg
-            2.0,  // 2 m²
-            0.0,  // time 0
+            5.0, // 5 kg
+            2.0, // 2 m²
+            0.0, // time 0
         );
 
         assert!(coverage.active);
@@ -328,8 +329,8 @@ mod tests {
     fn test_heat_absorption() {
         let mut coverage = SuppressionCoverage::new(
             SuppressionAgentType::Water,
-            10.0,  // 10 kg
-            1.0,   // 1 m²
+            10.0, // 10 kg
+            1.0,  // 1 m²
             0.0,
         );
 
@@ -346,17 +347,13 @@ mod tests {
     fn test_foam_oxygen_displacement() {
         let mut foam_coverage = SuppressionCoverage::new(
             SuppressionAgentType::FoamClassA,
-            5.0,  // 5 kg
-            1.0,  // 1 m²
+            5.0, // 5 kg
+            1.0, // 1 m²
             0.0,
         );
 
-        let mut water_coverage = SuppressionCoverage::new(
-            SuppressionAgentType::Water,
-            5.0,
-            1.0,
-            0.0,
-        );
+        let mut water_coverage =
+            SuppressionCoverage::new(SuppressionAgentType::Water, 5.0, 1.0, 0.0);
 
         let incoming = 1000.0;
         let (foam_effective, _) = foam_coverage._modify_heat_transfer(incoming, 1.0, 0.1);
@@ -373,23 +370,18 @@ mod tests {
 
     #[test]
     fn test_evaporation_over_time() {
-        let mut coverage = SuppressionCoverage::new(
-            SuppressionAgentType::Water,
-            5.0,
-            1.0,
-            0.0,
-        );
+        let mut coverage = SuppressionCoverage::new(SuppressionAgentType::Water, 5.0, 1.0, 0.0);
 
         let initial_mass = coverage.mass_per_area;
 
         // Simulate hot, dry conditions for 60 seconds
         for _ in 0..60 {
             coverage.update(
-                35.0,   // 35°C
-                0.2,    // 20% humidity
-                5.0,    // 5 m/s wind
-                800.0,  // Bright sun
-                1.0,    // 1 second
+                35.0,  // 35°C
+                0.2,   // 20% humidity
+                5.0,   // 5 m/s wind
+                800.0, // Bright sun
+                1.0,   // 1 second
             );
         }
 
@@ -405,14 +397,14 @@ mod tests {
     fn test_ember_ignition_blocking() {
         let heavy_coverage = SuppressionCoverage::new(
             SuppressionAgentType::FoamClassA,
-            10.0,  // Heavy coverage
+            10.0, // Heavy coverage
             1.0,
             0.0,
         );
 
         let light_coverage = SuppressionCoverage::new(
             SuppressionAgentType::Water,
-            0.1,   // Very light coverage - minimal effect expected
+            0.1, // Very light coverage - minimal effect expected
             1.0,
             0.0,
         );
@@ -436,12 +428,8 @@ mod tests {
 
     #[test]
     fn test_retardant_long_duration() {
-        let retardant = SuppressionCoverage::new(
-            SuppressionAgentType::LongTermRetardant,
-            5.0,
-            1.0,
-            0.0,
-        );
+        let retardant =
+            SuppressionCoverage::new(SuppressionAgentType::LongTermRetardant, 5.0, 1.0, 0.0);
 
         // Should be within duration at 4 hours
         assert!(retardant.is_within_duration(4.0 * 3600.0));
@@ -457,14 +445,14 @@ mod tests {
     fn test_moisture_contribution() {
         let wet_coverage = SuppressionCoverage::new(
             SuppressionAgentType::Water,
-            5.0,  // Heavy water
+            5.0, // Heavy water
             1.0,
             0.0,
         );
 
         let dry_coverage = SuppressionCoverage::new(
             SuppressionAgentType::Water,
-            0.1,  // Light water
+            0.1, // Light water
             1.0,
             0.0,
         );
@@ -480,7 +468,7 @@ mod tests {
     fn test_coverage_deactivation() {
         let mut coverage = SuppressionCoverage::new(
             SuppressionAgentType::Water,
-            0.1,  // Small amount
+            0.1, // Small amount
             1.0,
             0.0,
         );
