@@ -166,7 +166,7 @@ impl Fuel {
             max_flame_temperature: 1400.0,
             specific_heat: 1.5,
             bulk_density: 550.0,
-            surface_area_to_volume: 8.0,
+            surface_area_to_volume: 150.0, // Research: 50-200 m²/m³ for fibrous bark strips (CSIRO)
             fuel_bed_depth: 0.5,
             base_moisture: 0.10,
             moisture_of_extinction: 0.35,
@@ -221,7 +221,7 @@ impl Fuel {
             max_flame_temperature: 1300.0,
             specific_heat: 1.5,
             bulk_density: 600.0,
-            surface_area_to_volume: 6.0,
+            surface_area_to_volume: 80.0, // Research: 50-100 m²/m³ for smooth bark (CSIRO)
             fuel_bed_depth: 0.3,
             base_moisture: 0.12,
             moisture_of_extinction: 0.35,
