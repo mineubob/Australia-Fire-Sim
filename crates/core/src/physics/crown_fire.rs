@@ -147,6 +147,11 @@ pub fn determine_crown_fire_type(
 /// Calculate complete crown fire behavior
 ///
 /// Integrates Van Wagner (1977, 1993) crown fire initiation and spread models
+/// with fuel-specific thresholds for Australian eucalyptus species.
+///
+/// For Australian fuels, uses the minimum of Van Wagner threshold and fuel-specific
+/// threshold, as Van Wagner was calibrated for Canadian conifers and may overestimate
+/// crown fire resistance in eucalyptus forests with volatile oils and ladder fuels.
 pub fn calculate_crown_fire_behavior(
     element: &FuelElement,
     crown_bulk_density: f32,
@@ -156,12 +161,16 @@ pub fn calculate_crown_fire_behavior(
     wind_speed_ms: f32,
 ) -> CrownFireBehavior {
     // Calculate critical surface intensity (Van Wagner 1977)
-    let critical_surface_intensity = calculate_critical_surface_intensity(
+    let van_wagner_threshold = calculate_critical_surface_intensity(
         crown_bulk_density,
         element.fuel.heat_content,
         foliar_moisture_content,
         crown_base_height,
     );
+
+    // Use minimum of Van Wagner and fuel-specific threshold
+    // This accounts for Australian eucalyptus behavior which differs from Canadian conifers
+    let critical_surface_intensity = van_wagner_threshold.min(element.fuel.crown_fire_threshold);
 
     // Get current surface fire intensity (Byram)
     let surface_intensity = element.byram_fireline_intensity(wind_speed_ms);

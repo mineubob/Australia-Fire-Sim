@@ -118,6 +118,15 @@ pub struct Fuel {
     pub particle_density: f32, // kg/m³ (ρ_p, softwood=450, hardwood=550, grass=300)
     pub effective_heating: f32, // 0-1 (fine=0.5-0.6, medium=0.4-0.5, coarse=0.3-0.4)
     pub packing_ratio: f32,   // 0-1 (β, actual/optimum, compacted=0.8, loose=0.5)
+    pub optimum_packing_ratio: f32, // β_op (optimal compaction, grass=0.35, shrub=0.30, forest=0.25)
+
+    // Thermal behavior coefficients (fuel-specific, not hardcoded)
+    pub cooling_rate: f32, // Newton's cooling coefficient (per second, grass=0.15, forest=0.05)
+    pub self_heating_fraction: f32, // Fraction of combustion heat retained (0-1, grass=0.25, forest=0.40)
+    pub convective_heat_coefficient: f32, // h for heat transfer (W/(m²·K), grass=600, forest=400)
+    pub atmospheric_heat_efficiency: f32, // How much heat transfers to air (0-1, grass=0.85, forest=0.70)
+    pub wind_sensitivity: f32,            // Wind effect multiplier (grass=1.0, forest=0.6)
+    pub crown_fire_temp_multiplier: f32,  // Crown fire temperature boost (0-1, stringybark=0.95)
 
     // Australian-specific
     pub volatile_oil_content: f32,       // kg/kg (eucalypts: 0.02-0.05)
@@ -167,10 +176,19 @@ impl Fuel {
             max_spotting_distance: 25000.0, // 25km spotting!
 
             // Rothermel parameters (eucalyptus hardwood)
-            mineral_damping: 0.41,   // Moderate mineral content (wood)
-            particle_density: 550.0, // kg/m³ (eucalyptus hardwood)
-            effective_heating: 0.45, // Medium-coarse fuel
-            packing_ratio: 0.6,      // Fibrous bark, moderately packed
+            mineral_damping: 0.41,       // Moderate mineral content (wood)
+            particle_density: 550.0,     // kg/m³ (eucalyptus hardwood)
+            effective_heating: 0.45,     // Medium-coarse fuel
+            packing_ratio: 0.6,          // Fibrous bark, moderately packed
+            optimum_packing_ratio: 0.25, // Coarse fuel optimal compaction
+
+            // Thermal behavior (coarse fuel - retains heat well)
+            cooling_rate: 0.05,                 // Slow cooling (thick bark)
+            self_heating_fraction: 0.4,         // Retains 40% of combustion heat
+            convective_heat_coefficient: 400.0, // Moderate convection
+            atmospheric_heat_efficiency: 0.7,   // 70% heat to atmosphere
+            wind_sensitivity: 0.6,              // Moderate wind effect (sheltered by canopy)
+            crown_fire_temp_multiplier: 0.95,   // Very hot crown fires
 
             volatile_oil_content: 0.04,
             oil_vaporization_temp: 170.0,
@@ -213,10 +231,19 @@ impl Fuel {
             max_spotting_distance: 10000.0, // 10km
 
             // Rothermel parameters (eucalyptus hardwood, denser)
-            mineral_damping: 0.41,   // Moderate mineral content
-            particle_density: 600.0, // kg/m³ (dense eucalyptus)
-            effective_heating: 0.40, // Coarse fuel
-            packing_ratio: 0.5,      // Smooth bark, loosely packed
+            mineral_damping: 0.41,       // Moderate mineral content
+            particle_density: 600.0,     // kg/m³ (dense eucalyptus)
+            effective_heating: 0.40,     // Coarse fuel
+            packing_ratio: 0.5,          // Smooth bark, loosely packed
+            optimum_packing_ratio: 0.28, // Medium fuel optimal compaction
+
+            // Thermal behavior (medium fuel)
+            cooling_rate: 0.08,                 // Moderate cooling
+            self_heating_fraction: 0.35,        // Retains 35% of combustion heat
+            convective_heat_coefficient: 450.0, // Good convection
+            atmospheric_heat_efficiency: 0.75,  // 75% heat to atmosphere
+            wind_sensitivity: 0.7,              // Moderate-high wind effect
+            crown_fire_temp_multiplier: 0.90,   // Hot crown fires
 
             volatile_oil_content: 0.02,
             oil_vaporization_temp: 170.0,
@@ -249,7 +276,7 @@ impl Fuel {
             max_flame_temperature: 900.0,
             specific_heat: 2.1, // Higher specific heat
             bulk_density: 200.0,
-            surface_area_to_volume: 12.0, // High surface area
+            surface_area_to_volume: 3500.0, // Fine grass - Rothermel typical value for herbaceous
             fuel_bed_depth: 0.1,
             base_moisture: 0.05, // Very dry
             moisture_of_extinction: 0.25,
@@ -259,10 +286,19 @@ impl Fuel {
             max_spotting_distance: 500.0,
 
             // Rothermel parameters (fine herbaceous fuel)
-            mineral_damping: 0.85,   // Low mineral content (grass)
-            particle_density: 300.0, // kg/m³ (light herbaceous)
-            effective_heating: 0.55, // Fine fuel heats quickly
-            packing_ratio: 0.8,      // Compacted grass bed
+            mineral_damping: 0.85,       // Low mineral content (grass)
+            particle_density: 300.0,     // kg/m³ (light herbaceous)
+            effective_heating: 0.55,     // Fine fuel heats quickly
+            packing_ratio: 0.8,          // Compacted grass bed
+            optimum_packing_ratio: 0.35, // Fine fuel optimal compaction
+
+            // Thermal behavior (fine fuel - rapid heat exchange)
+            cooling_rate: 0.15,                 // Fast cooling (high surface area)
+            self_heating_fraction: 0.25,        // Radiates 75% away (fine)
+            convective_heat_coefficient: 600.0, // High convection (fine)
+            atmospheric_heat_efficiency: 0.85,  // 85% heat to atmosphere
+            wind_sensitivity: 1.0,              // Maximum wind effect (fine fuel)
+            crown_fire_temp_multiplier: 0.0,    // No crown fire (grass)
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
@@ -305,10 +341,19 @@ impl Fuel {
             max_spotting_distance: 2000.0,
 
             // Rothermel parameters (medium shrub fuel)
-            mineral_damping: 0.55,   // Moderate-low mineral content
-            particle_density: 450.0, // kg/m³ (woody shrubs)
-            effective_heating: 0.48, // Medium fuel
-            packing_ratio: 0.65,     // Moderately packed brush
+            mineral_damping: 0.55,       // Moderate-low mineral content
+            particle_density: 450.0,     // kg/m³ (woody shrubs)
+            effective_heating: 0.48,     // Medium fuel
+            packing_ratio: 0.65,         // Moderately packed brush
+            optimum_packing_ratio: 0.30, // Shrub optimal compaction
+
+            // Thermal behavior (medium shrub fuel)
+            cooling_rate: 0.10,                 // Moderate cooling
+            self_heating_fraction: 0.32,        // Retains 32% of combustion heat
+            convective_heat_coefficient: 500.0, // Moderate convection
+            atmospheric_heat_efficiency: 0.80,  // 80% heat to atmosphere
+            wind_sensitivity: 0.85,             // High wind effect (exposed)
+            crown_fire_temp_multiplier: 0.85,   // Moderate crown fires
 
             volatile_oil_content: 0.01,
             oil_vaporization_temp: 180.0,
@@ -355,6 +400,15 @@ impl Fuel {
             particle_density: 400.0, // kg/m³ (decomposed wood)
             effective_heating: 0.42, // Medium-coarse fuel
             packing_ratio: 0.55,   // Loose litter bed
+            optimum_packing_ratio: 0.22, // Dead fuel optimal compaction
+
+            // Thermal behavior (dead coarse fuel)
+            cooling_rate: 0.06,          // Slow cooling (insulated by litter)
+            self_heating_fraction: 0.38, // Retains 38% of combustion heat
+            convective_heat_coefficient: 350.0, // Low convection (ground)
+            atmospheric_heat_efficiency: 0.65, // 65% heat to atmosphere
+            wind_sensitivity: 0.50,      // Low wind effect (ground level)
+            crown_fire_temp_multiplier: 0.0, // No crown fire (ground litter)
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
@@ -397,10 +451,19 @@ impl Fuel {
             max_spotting_distance: 200.0,
 
             // Rothermel parameters (live herbaceous/foliage)
-            mineral_damping: 0.75,   // Low mineral content (living tissue)
-            particle_density: 350.0, // kg/m³ (living plant tissue)
-            effective_heating: 0.50, // Fine to medium fuel
-            packing_ratio: 0.70,     // Moderately dense vegetation
+            mineral_damping: 0.75,       // Low mineral content (living tissue)
+            particle_density: 350.0,     // kg/m³ (living plant tissue)
+            effective_heating: 0.50,     // Fine to medium fuel
+            packing_ratio: 0.70,         // Moderately dense vegetation
+            optimum_packing_ratio: 0.32, // Live fuel optimal compaction
+
+            // Thermal behavior (live fuel - moisture dominated)
+            cooling_rate: 0.12,          // Fast cooling (moisture evaporation)
+            self_heating_fraction: 0.20, // Low retention (moisture absorbs heat)
+            convective_heat_coefficient: 550.0, // High convection (moisture)
+            atmospheric_heat_efficiency: 0.90, // 90% heat to atmosphere (cooling)
+            wind_sensitivity: 0.75,      // Moderate-high wind effect
+            crown_fire_temp_multiplier: 0.80, // Cooler fires (moisture)
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
@@ -486,10 +549,19 @@ impl Fuel {
             max_spotting_distance: 0.0,
 
             // Rothermel parameters (non-burnable)
-            mineral_damping: 1.0,     // N/A for non-burnable
-            particle_density: 1000.0, // Water density
-            effective_heating: 0.0,   // N/A
-            packing_ratio: 1.0,       // N/A
+            mineral_damping: 1.0,       // N/A for non-burnable
+            particle_density: 1000.0,   // Water density
+            effective_heating: 0.0,     // N/A
+            packing_ratio: 1.0,         // N/A
+            optimum_packing_ratio: 1.0, // N/A
+
+            // Thermal behavior (water - cooling only)
+            cooling_rate: 0.20, // Fast cooling (evaporation)
+            self_heating_fraction: 0.0,
+            convective_heat_coefficient: 1000.0, // High cooling
+            atmospheric_heat_efficiency: 1.0,    // All heat absorbed
+            wind_sensitivity: 0.0,               // No wind effect
+            crown_fire_temp_multiplier: 0.0,
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
@@ -532,10 +604,19 @@ impl Fuel {
             max_spotting_distance: 0.0,
 
             // Rothermel parameters (non-burnable)
-            mineral_damping: 1.0,     // N/A for non-burnable
-            particle_density: 2700.0, // Rock density
-            effective_heating: 0.0,   // N/A
-            packing_ratio: 1.0,       // N/A
+            mineral_damping: 1.0,       // N/A for non-burnable
+            particle_density: 2700.0,   // Rock density
+            effective_heating: 0.0,     // N/A
+            packing_ratio: 1.0,         // N/A
+            optimum_packing_ratio: 1.0, // N/A
+
+            // Thermal behavior (rock - heat sink)
+            cooling_rate: 0.03, // Very slow cooling (thermal mass)
+            self_heating_fraction: 0.0,
+            convective_heat_coefficient: 200.0, // Low convection (smooth)
+            atmospheric_heat_efficiency: 0.30,  // Absorbs heat
+            wind_sensitivity: 0.0,              // No wind effect
+            crown_fire_temp_multiplier: 0.0,
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,

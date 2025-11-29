@@ -88,24 +88,30 @@ pub fn apply_suppression_direct(
         cell.suppression_agent += concentration_increase;
 
         // Cooling effect based on agent type
-        // Assume agent is at standard temperature (20°C) for direct application
-        const STANDARD_AGENT_TEMP: f32 = 20.0;
-        let cooling_capacity = calculate_cooling_capacity(agent_type, STANDARD_AGENT_TEMP);
+        // Typical suppression agent delivery temperature (°C)
+        // Water from trucks: 15-25°C, aerial drops: 10-20°C
+        let agent_temp = 20.0;
+        let cooling_capacity = calculate_cooling_capacity(agent_type, agent_temp);
 
         let cooling_kj = mass * cooling_capacity;
         let air_mass = cell.air_density() * cell_volume;
-        let specific_heat_air = 1.005; // kJ/(kg·K)
-        let temp_drop = cooling_kj / (air_mass * specific_heat_air);
+        const SPECIFIC_HEAT_AIR: f32 = 1.005; // kJ/(kg·K) - physical constant
+        let temp_drop = cooling_kj / (air_mass * SPECIFIC_HEAT_AIR);
 
         cell.temperature = (cell.temperature - temp_drop).max(ambient_temp);
 
         // Increase humidity (water vapor)
         if matches!(agent_type, SuppressionAgent::Water | SuppressionAgent::Foam) {
-            let vapor_added = mass * 0.1; // Some evaporates immediately
+            // Immediate evaporation fraction (varies by agent type and temperature)
+            let evaporation_fraction = 0.1; // 10% for water at ambient conditions
+            let vapor_added = mass * evaporation_fraction;
             cell.water_vapor += vapor_added / cell_volume;
 
             // Humidity increases
-            let max_vapor = 0.04; // Max ~40 g/m³
+            // Max vapor capacity depends on temperature (Clausius-Clapeyron)
+            // At 20°C: ~17 g/m³, at 30°C: ~30 g/m³, at 40°C: ~51 g/m³
+            let temp_celsius = cell.temperature.max(0.0);
+            let max_vapor = 0.017 * (1.0 + (temp_celsius - 20.0) * 0.07); // Temperature-dependent saturation
             let vapor_fraction = (cell.water_vapor / max_vapor).min(1.0);
             cell.humidity = cell.humidity.max(vapor_fraction);
         }

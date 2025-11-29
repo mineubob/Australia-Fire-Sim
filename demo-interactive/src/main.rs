@@ -31,7 +31,10 @@ use fire_sim_core::{
 };
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    time::Instant,
+};
 
 /// Default terrain dimensions
 const DEFAULT_WIDTH: f32 = 150.0;
@@ -288,20 +291,23 @@ fn step_simulation(sim: &mut FireSimulation, count: u32) {
     for i in 0..count {
         let burning_before = sim.get_burning_elements().len();
         let embers_before = sim.ember_count();
+        let start = Instant::now();
 
         sim.update(dt);
 
         let burning_after = sim.get_burning_elements().len();
         let embers_after = sim.ember_count();
+        let time = start.elapsed();
 
         if i == count - 1 || burning_after != burning_before || embers_after != embers_before {
             println!(
-                "  Step {}: Burning: {} → {}, Embers: {} → {}",
+                "  Step {}: Burning: {} → {}, Embers: {} → {}, Time: {}ms",
                 i + 1,
                 burning_before,
                 burning_after,
                 embers_before,
-                embers_after
+                embers_after,
+                time.as_millis()
             );
         }
     }

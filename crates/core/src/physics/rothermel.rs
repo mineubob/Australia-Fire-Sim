@@ -41,6 +41,7 @@ use crate::core_types::weather::WeatherSystem;
 /// * `moisture_fraction` - Fuel moisture content (0-1)
 /// * `wind_speed_ms` - Wind speed at midflame height (m/s)
 /// * `slope_angle` - Terrain slope angle (degrees)
+/// * `ambient_temp` - Ambient air temperature (°C)
 ///
 /// # Returns
 /// Fire spread rate in meters per minute
@@ -51,7 +52,7 @@ use crate::core_types::weather::WeatherSystem;
 /// use fire_sim_core::Fuel;
 ///
 /// let fuel = Fuel::dry_grass();
-/// let spread_rate = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0);
+/// let spread_rate = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0, 20.0);
 /// // Expect ~30-50 m/min for dry grass with 5 m/s wind
 /// ```
 pub fn rothermel_spread_rate(
@@ -59,6 +60,7 @@ pub fn rothermel_spread_rate(
     moisture_fraction: f32,
     wind_speed_ms: f32,
     slope_angle: f32,
+    ambient_temp: f32,
 ) -> f32 {
     // Early exit if fuel too wet to burn
     if moisture_fraction >= fuel.moisture_of_extinction {
@@ -78,7 +80,7 @@ pub fn rothermel_spread_rate(
     let slope_coefficient = calculate_slope_coefficient(slope_angle);
 
     // 5. Calculate heat of pre-ignition (Q_ig)
-    let heat_preignition = calculate_heat_preignition(fuel, moisture_fraction);
+    let heat_preignition = calculate_heat_preignition(fuel, moisture_fraction, ambient_temp);
 
     // 6. Effective heating number (from fuel properties)
     let effective_heating = fuel.effective_heating;
@@ -87,8 +89,10 @@ pub fn rothermel_spread_rate(
     // R = I_R × ξ × (1 + Φ_w + Φ_s) / (ρ_b × ε × Q_ig)
     // Apply Australian calibration factor (Australian fuels spread faster than US fuels)
     // Cruz et al. (2015) Australian Forestry empirical data shows significantly higher spread rates
-    // Calibration factor of 50 brings results in line with observed Australian grassfire spread rates
-    let australian_calibration = 50.0;
+    // Calibration factor of 0.05 brings results in line with observed Australian grassfire spread rates
+    // This matches the 10-20% rule (Alexander & Cruz 2019) where spread ≈ 10-20% of wind speed
+    // Combined with realistic σ=3500 for fine grass, this produces correct wind-dependent spread
+    let australian_calibration = 0.05;
 
     let spread_rate =
         (reaction_intensity * propagating_flux * (1.0 + wind_coefficient + slope_coefficient))
@@ -227,7 +231,7 @@ fn calculate_wind_coefficient(fuel: &Fuel, wind_speed_ms: f32) -> f32 {
 
     // Packing ratio effects (from fuel properties)
     let beta = (fuel.bulk_density / fuel.particle_density).min(1.0);
-    let beta_op = 0.3; // Optimum packing ratio (could also be fuel-specific in future)
+    let beta_op = fuel.optimum_packing_ratio; // Fuel-specific optimal compaction (grass=0.35, shrub=0.30, forest=0.25)
     let packing_effect = if beta > 0.01 && beta_op > 0.01 {
         (beta / beta_op).powf(-0.3) // E = 0.3 (typical exponent)
     } else {
@@ -285,14 +289,12 @@ fn calculate_slope_coefficient(slope_angle: f32) -> f32 {
 /// Where:
 /// - **C_p** = Specific heat of fuel (kJ/(kg·K))
 /// - **T_ig** = Ignition temperature (°C)
-/// - **T_a** = Ambient temperature (°C, assumed 20°C)
+/// - **T_a** = Ambient temperature (°C)
 /// - **M_f** = Moisture fraction (kg/kg)
 /// - **2260** = Latent heat of vaporization for water (kJ/kg)
-fn calculate_heat_preignition(fuel: &Fuel, moisture_fraction: f32) -> f32 {
-    const AMBIENT_TEMP: f32 = 20.0; // °C
-
+fn calculate_heat_preignition(fuel: &Fuel, moisture_fraction: f32, ambient_temp: f32) -> f32 {
     // Sensible heat to raise fuel to ignition
-    let sensible_heat = fuel.specific_heat * (fuel.ignition_temperature - AMBIENT_TEMP);
+    let sensible_heat = fuel.specific_heat * (fuel.ignition_temperature - ambient_temp);
 
     // Latent heat to evaporate moisture
     let latent_heat = moisture_fraction * 2260.0;
@@ -327,6 +329,7 @@ pub fn calculate_spread_rate_with_environment(
         element.moisture_fraction(),
         wind_speed_ms,
         element.slope_angle,
+        weather.temperature,
     );
 
     // Apply wind directionality (from element_heat_transfer.rs)
@@ -355,7 +358,7 @@ mod tests {
     #[test]
     fn test_rothermel_dry_grass() {
         let fuel = Fuel::dry_grass();
-        let spread_rate = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0);
+        let spread_rate = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0, 20.0);
 
         // Dry grass with moderate wind should spread fast (5-100 m/min depending on conditions)
         // Cruz et al. (2015) documents Australian grassland fires at 10-60 m/min
@@ -370,8 +373,8 @@ mod tests {
     fn test_rothermel_wind_effect() {
         let fuel = Fuel::dry_grass();
 
-        let no_wind = rothermel_spread_rate(&fuel, 0.05, 0.0, 0.0);
-        let with_wind = rothermel_spread_rate(&fuel, 0.05, 10.0, 0.0);
+        let no_wind = rothermel_spread_rate(&fuel, 0.05, 0.0, 0.0, 20.0);
+        let with_wind = rothermel_spread_rate(&fuel, 0.05, 10.0, 0.0, 20.0);
 
         // Wind should significantly increase spread rate
         assert!(
@@ -384,8 +387,8 @@ mod tests {
     fn test_rothermel_slope_effect() {
         let fuel = Fuel::dry_grass();
 
-        let flat = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0);
-        let uphill = rothermel_spread_rate(&fuel, 0.05, 5.0, 20.0);
+        let flat = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0, 20.0);
+        let uphill = rothermel_spread_rate(&fuel, 0.05, 5.0, 20.0, 20.0);
 
         // Uphill slope should increase spread rate
         // 20° slope increases spread by ~10-50% depending on fuel and conditions (Rothermel 1972)
@@ -402,8 +405,8 @@ mod tests {
     fn test_rothermel_moisture_effect() {
         let fuel = Fuel::dry_grass();
 
-        let dry = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0);
-        let wet = rothermel_spread_rate(&fuel, 0.20, 5.0, 0.0);
+        let dry = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0, 20.0);
+        let wet = rothermel_spread_rate(&fuel, 0.20, 5.0, 0.0, 20.0);
 
         // Higher moisture should reduce spread rate
         assert!(dry > wet, "Dry fuel should spread faster than wet fuel");

@@ -60,6 +60,12 @@ pub struct FuelElement {
     pub(crate) smoldering_state: Option<crate::physics::SmolderingState>,
     /// Crown fire initiated flag
     pub(crate) crown_fire_active: bool,
+
+    // Ignition timing tracking
+    /// Cumulative time spent above ignition temperature (seconds)
+    /// Used for realistic ignition behavior: elements that have been hot
+    /// for extended periods should ignite deterministically
+    pub(crate) time_above_ignition: f32,
 }
 
 impl FuelElement {
@@ -103,6 +109,7 @@ impl FuelElement {
             moisture_state,
             smoldering_state,
             crown_fire_active: false,
+            time_above_ignition: 0.0,
         }
     }
 
@@ -159,7 +166,13 @@ impl FuelElement {
     }
 
     /// Apply heat to this fuel element (CRITICAL: moisture evaporation first)
-    pub(crate) fn apply_heat(&mut self, heat_kj: f32, dt: f32, ambient_temperature: f32) {
+    pub(crate) fn apply_heat(
+        &mut self,
+        heat_kj: f32,
+        dt: f32,
+        ambient_temperature: f32,
+        ffdi_multiplier: f32,
+    ) {
         if heat_kj <= 0.0 || self.fuel_remaining <= 0.0 {
             return;
         }
@@ -201,12 +214,12 @@ impl FuelElement {
 
         // STEP 5: Check for ignition
         if !self.ignited && self.temperature >= self.fuel.ignition_temperature {
-            self.check_ignition_probability(dt);
+            self.check_ignition_probability(dt, ffdi_multiplier);
         }
     }
 
     /// Check if element should ignite (probabilistic)
-    fn check_ignition_probability(&mut self, dt: f32) {
+    fn check_ignition_probability(&mut self, dt: f32, ffdi_multiplier: f32) {
         // OPTIMIZATION: Early exit for saturated fuel (can't ignite)
         if self.moisture_fraction >= self.fuel.moisture_of_extinction {
             return;
@@ -217,16 +230,40 @@ impl FuelElement {
             return;
         }
 
+        // Track time above ignition temperature
+        if self.temperature > self.fuel.ignition_temperature {
+            self.time_above_ignition += dt;
+        } else {
+            // Reset timer if cooled below ignition
+            self.time_above_ignition = 0.0;
+        }
+
         // Moisture reduces ignition probability
         let moisture_factor =
             (1.0 - self.moisture_fraction / self.fuel.moisture_of_extinction).max(0.0);
 
-        // Temperature above ignition increases probability
-        let temp_factor = ((self.temperature - self.fuel.ignition_temperature) / 50.0).min(1.0);
+        // Temperature above ignition increases probability (capped at 1.0)
+        let temp_excess = (self.temperature - self.fuel.ignition_temperature).max(0.0);
+        let temp_factor = (temp_excess / 50.0).min(1.0);
 
-        let ignition_prob = moisture_factor * temp_factor * dt * 2.0;
+        // Base coefficient for probabilistic ignition
+        // 0.003 gives ~0.3% per second at max temp_factor
+        // Scales with FFDI for extreme conditions
+        let base_coefficient = 0.003;
+        let ignition_prob = moisture_factor * temp_factor * dt * base_coefficient * ffdi_multiplier;
 
-        if rand::random::<f32>() < ignition_prob {
+        // GUARANTEED IGNITION: Elements above ignition temp for sufficient time
+        // This ensures elements that have been hot for extended periods ignite
+        // Base: 60 seconds, scales inversely with temperature excess
+        //   - 300°C: 60s / 1.1 = 55s threshold
+        //   - 500°C: 60s / 2.1 = 29s threshold
+        //   - 758°C: 60s / 3.4 = 18s threshold
+        // Does NOT scale with FFDI - heat transfer controls spread rate instead
+        let time_threshold = 60.0 / (1.0 + temp_excess / 200.0);
+
+        let guaranteed_ignition = self.time_above_ignition >= time_threshold;
+
+        if guaranteed_ignition || rand::random::<f32>() < ignition_prob {
             self.ignited = true;
         }
     }
@@ -295,11 +332,13 @@ impl FuelElement {
         }
 
         // Calculate spread rate using Rothermel model
+        // Use standard ambient temperature of 20°C for Byram intensity calculation
         let spread_rate_m_per_min = crate::physics::rothermel::rothermel_spread_rate(
             &self.fuel,
             self.moisture_fraction,
             wind_speed_ms,
             self.slope_angle,
+            20.0, // Standard ambient temperature for intensity calculation
         );
 
         // Fuel loading (kg/m²) - mass per unit area

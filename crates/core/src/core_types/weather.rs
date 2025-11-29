@@ -732,9 +732,9 @@ impl WeatherPreset {
 /// - **5-12**: Moderate (heightened awareness)
 /// - **12-24**: High (avoid fire-prone activities)
 /// - **24-50**: Very High (prepare to evacuate)
-/// - **50-75**: Severe (serious fire danger)
-/// - **75-100**: Extreme (catastrophic conditions likely)
-/// - **100+**: Catastrophic (Code Red - leave high-risk areas)
+/// - **50-100**: Severe (serious fire danger)
+/// - **100-150**: Extreme (catastrophic conditions likely)
+/// - **150+**: Catastrophic (Code Red - leave high-risk areas)
 ///
 /// # Example
 ///
@@ -1003,20 +1003,23 @@ impl WeatherSystem {
             f if f < 12.0 => "Moderate",
             f if f < 24.0 => "High",
             f if f < 50.0 => "Very High",
-            f if f < 75.0 => "Severe",
-            f if f < 100.0 => "Extreme",
+            f if f < 100.0 => "Severe",
+            f if f < 150.0 => "Extreme",
             _ => "CATASTROPHIC", // Code Red
         }
     }
 
     /// Get spread rate multiplier based on FFDI
     ///
-    /// Capped at 5.0 to prevent unrealistic instant spread even in catastrophic conditions.
+    /// Capped at 3.5 to achieve realistic spread rates:
+    ///   - Moderate (FFDI ~11): 1.0x → 1-10 ha/hr
+    ///   - Catastrophic (FFDI ~172): 3.5x → 100-300 ha/hr
+    ///
     /// Real fire spread still takes time even in extreme FFDI 100+ conditions.
     pub fn spread_rate_multiplier(&self) -> f32 {
-        // FFDI scales spread rate, but cap at 5x to prevent numerical instability
+        // FFDI scales spread rate, but cap at 3.5x to achieve target rates
         // This ensures spread is faster in extreme conditions while remaining realistic
-        (self.calculate_ffdi() / 20.0).clamp(1.0, 5.0)
+        (self.calculate_ffdi() / 20.0).clamp(1.0, 3.5)
     }
 
     /// Get wind vector in m/s

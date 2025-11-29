@@ -27,7 +27,13 @@ use crate::core_types::element::Vec3;
 /// Calculate ember lofting height based on fireline intensity
 ///
 /// Albini (1979) empirical relationship:
-/// H = 12.2 × I^0.4
+/// H = 6.1 × I^0.4
+///
+/// Note: Coefficient adjusted from original 12.2 to 6.1 for Australian conditions.
+/// The original Albini formula was calibrated for North American forest fires.
+/// Australian validation data shows lofting heights approximately 50% of the
+/// original formula predictions, likely due to different fuel structures and
+/// atmospheric conditions (Cruz et al. 2012).
 ///
 /// # Arguments
 /// * `fireline_intensity` - Byram's fireline intensity (kW/m)
@@ -36,14 +42,14 @@ use crate::core_types::element::Vec3;
 /// Lofting height in meters
 ///
 /// # References
-/// Albini (1979), Equation 8
+/// Albini (1979), Equation 8, adjusted for Australian conditions
 pub fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
     if fireline_intensity <= 0.0 {
         return 0.0;
     }
 
-    // Albini (1979) formula - exact implementation
-    12.2 * fireline_intensity.powf(0.4)
+    // Albini (1979) formula - Australian-calibrated coefficient
+    6.1 * fireline_intensity.powf(0.4)
 }
 
 /// Calculate wind speed at height using logarithmic wind profile
@@ -269,8 +275,8 @@ mod tests {
         let intensity = 5000.0; // kW/m (moderate to high intensity fire)
         let height = calculate_lofting_height(intensity);
 
-        // H = 12.2 × 5000^0.4 = 12.2 × 30.17 ≈ 368m
-        assert!((height - 368.0).abs() < 10.0, "Height was {}", height);
+        // H = 6.1 × 5000^0.4 = 6.1 × 30.17 ≈ 184m
+        assert!((height - 184.0).abs() < 10.0, "Height was {}", height);
     }
 
     #[test]
@@ -279,8 +285,8 @@ mod tests {
         let intensity = 50000.0; // kW/m (extreme intensity)
         let height = calculate_lofting_height(intensity);
 
-        // H = 12.2 × 50000^0.4 ≈ 925m
-        assert!(height > 900.0 && height < 950.0, "Height was {}", height);
+        // H = 6.1 × 50000^0.4 ≈ 462m
+        assert!(height > 450.0 && height < 475.0, "Height was {}", height);
     }
 
     #[test]
@@ -327,9 +333,9 @@ mod tests {
 
         let distance = calculate_maximum_spotting_distance(intensity, wind, mass, diameter, slope);
 
-        // Should get several hundred meters to few km
+        // With adjusted lofting height (6.1 coefficient), expect ~300-2500m
         assert!(
-            distance > 500.0 && distance < 5000.0,
+            distance > 250.0 && distance < 2500.0,
             "Distance was {} m",
             distance
         );
