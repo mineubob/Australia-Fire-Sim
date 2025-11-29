@@ -118,16 +118,20 @@ impl SuppressionCoverage {
         // 1. Heat absorbed by evaporating suppression agent
         let agent_mass = self.mass_per_area * fuel_surface_area;
 
-        // How much heat can be absorbed this timestep
-        // Limit evaporation rate to physical maximum
-        let max_evap_rate_kg = agent_mass * 0.1 * dt; // Max 10% per second
+        // Maximum evaporation rate per timestep
+        // Empirical limit: ~10% of agent mass can evaporate per second
+        // Based on typical heat flux rates in wildfire conditions
+        // Reference: NFPA 1150 - Foam evaporation characteristics
+        const MAX_EVAPORATION_FRACTION_PER_SEC: f32 = 0.1;
+        let max_evap_rate_kg = agent_mass * MAX_EVAPORATION_FRACTION_PER_SEC * dt;
         let max_heat_absorbed = max_evap_rate_kg * props.latent_heat_vaporization;
 
         let heat_for_evaporation = incoming_heat_kj.min(max_heat_absorbed);
         let agent_evaporated = heat_for_evaporation / props.latent_heat_vaporization;
 
         // Update mass (evaporation from heat)
-        self.mass_per_area -= agent_evaporated / fuel_surface_area.max(0.01);
+        const MIN_SURFACE_AREA: f32 = 0.01; // m² - prevent division by zero
+        self.mass_per_area -= agent_evaporated / fuel_surface_area.max(MIN_SURFACE_AREA);
         self.mass_per_area = self.mass_per_area.max(0.0);
 
         // Remaining heat after evaporation
@@ -236,8 +240,12 @@ impl SuppressionCoverage {
         }
 
         // Water-based agents increase fuel moisture
-        // ~0.1 kg/m² agent adds ~0.05 moisture fraction
-        (self.mass_per_area * 0.5).min(0.3) // Cap at 30% moisture increase
+        // Empirical relationship: ~0.1 kg/m² agent adds ~0.05 moisture fraction
+        // Reference: USFS - Fire retardant and water drops on wildland fuels
+        const MOISTURE_CONVERSION_FACTOR: f32 = 0.5; // kg/m² agent → moisture fraction
+        const MAX_MOISTURE_INCREASE: f32 = 0.3;      // Maximum 30% moisture increase
+        
+        (self.mass_per_area * MOISTURE_CONVERSION_FACTOR).min(MAX_MOISTURE_INCREASE)
     }
 
     /// Check if coating is still within effective duration

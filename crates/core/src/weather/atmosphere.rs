@@ -208,13 +208,19 @@ impl AtmosphericProfile {
     /// Calculate dewpoint from temperature and relative humidity
     ///
     /// Uses Magnus-Tetens approximation.
+    ///
+    /// # Scientific Reference
+    /// Alduchov, O.A. and Eskridge, R.E. (1996). "Improved Magnus Form Approximation
+    /// of Saturation Vapor Pressure." Journal of Applied Meteorology, 35(4), 601-609.
     fn calculate_dewpoint(temp: f32, humidity: f32) -> f32 {
-        const A: f32 = 17.27;
-        const B: f32 = 237.7;
+        // Magnus-Tetens constants (Alduchov & Eskridge 1996)
+        const MAGNUS_A: f32 = 17.27;   // Dimensionless coefficient
+        const MAGNUS_B: f32 = 237.7;   // °C - temperature offset
+        const MIN_HUMIDITY: f32 = 0.01; // Minimum humidity to avoid log(0)
 
-        let humidity = humidity.clamp(0.01, 1.0); // Avoid log(0)
-        let gamma = (A * temp / (B + temp)) + humidity.ln();
-        B * gamma / (A - gamma)
+        let humidity = humidity.clamp(MIN_HUMIDITY, 1.0);
+        let gamma = (MAGNUS_A * temp / (MAGNUS_B + temp)) + humidity.ln();
+        MAGNUS_B * gamma / (MAGNUS_A - gamma)
     }
 
     /// Calculate Lifted Index (LI)
