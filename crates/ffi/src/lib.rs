@@ -1,4 +1,4 @@
-use fire_sim_core::{FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3};
+use fire_sim_core::{FireSimulation, Fuel, FuelPart, SuppressionAgent, SuppressionAgentType, TerrainData, Vec3};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
@@ -413,6 +413,252 @@ pub unsafe extern "C" fn fire_sim_get_stats(
         *out_fuel_consumed = stats.total_fuel_consumed;
     }) {
         Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
+}
+
+// ============================================================================
+// PHASE 1: SUPPRESSION AND FIRE STATE QUERY FFI
+// ============================================================================
+
+/// C-compatible fuel element fire state
+#[repr(C)]
+pub struct ElementFireState {
+    pub element_id: u32,
+    pub temperature: f32,
+    pub fuel_remaining: f32,
+    pub moisture_fraction: f32,
+    pub is_ignited: bool,
+    pub flame_height: f32,
+    pub is_crown_fire: bool,
+    pub has_suppression: bool,
+    pub suppression_effectiveness: f32,
+}
+
+/// Apply suppression to fuel elements in a radius
+///
+/// This function applies suppression agent to all fuel elements within
+/// the specified radius, creating suppression coverage that blocks
+/// ember ignition and reduces fire spread.
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `x`, `y`, `z`: Center position of suppression application
+/// - `radius`: Radius of coverage in meters
+/// - `mass_per_element`: Mass of agent per element in kg
+/// - `agent_type`: Type of suppression agent (0-4)
+/// - `out_count`: Pointer to receive number of elements treated
+///
+/// # Agent Types
+/// - 0: Water
+/// - 1: FoamClassA
+/// - 2: ShortTermRetardant
+/// - 3: LongTermRetardant
+/// - 4: WettingAgent
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_count` set
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_INVALID_FUEL` (-3) if agent_type is invalid
+/// - `FIRE_SIM_NULL_POINTER` (-2) if out_count is null
+///
+/// # Safety
+/// `out_count` must be a valid, non-null pointer
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_apply_suppression_to_elements(
+    sim_id: usize,
+    x: f32,
+    y: f32,
+    z: f32,
+    radius: f32,
+    mass_per_element: f32,
+    agent_type: u8,
+    out_count: *mut u32,
+) -> i32 {
+    if out_count.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    let agent = match SuppressionAgentType::from_u8(agent_type) {
+        Some(a) => a,
+        None => return FIRE_SIM_INVALID_FUEL,
+    };
+
+    match with_fire_sim_write(&sim_id, |sim| {
+        let position = Vec3::new(x, y, z);
+        sim.apply_suppression_to_elements(position, radius, mass_per_element, agent)
+    }) {
+        Some(count) => {
+            *out_count = count as u32;
+            FIRE_SIM_SUCCESS
+        }
+        None => FIRE_SIM_INVALID_ID,
+    }
+}
+
+/// Get fire state of a specific fuel element
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `element_id`: ID of the fuel element
+/// - `out_state`: Pointer to receive element fire state
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_state` populated
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id or element doesn't exist
+/// - `FIRE_SIM_NULL_POINTER` (-2) if out_state is null
+///
+/// # Safety
+/// `out_state` must be a valid, non-null pointer
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_get_element_state(
+    sim_id: usize,
+    element_id: u32,
+    out_state: *mut ElementFireState,
+) -> i32 {
+    if out_state.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    match with_fire_sim_read(&sim_id, |sim| {
+        if let Some(element) = sim.get_element(element_id) {
+            let (has_suppression, suppression_effectiveness) =
+                if let Some(coverage) = element.suppression_coverage() {
+                    (coverage.active, coverage.effectiveness_percent())
+                } else {
+                    (false, 0.0)
+                };
+
+            *out_state = ElementFireState {
+                element_id,
+                temperature: element.temperature(),
+                fuel_remaining: element.fuel_remaining(),
+                moisture_fraction: element.moisture_fraction(),
+                is_ignited: element.is_ignited(),
+                flame_height: element.flame_height(),
+                is_crown_fire: element.is_crown_fire_active(),
+                has_suppression,
+                suppression_effectiveness,
+            };
+            true
+        } else {
+            false
+        }
+    }) {
+        Some(true) => FIRE_SIM_SUCCESS,
+        _ => FIRE_SIM_INVALID_ID,
+    }
+}
+
+/// Get fire state of all burning elements
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `out_states`: Pointer to array to receive burning element states
+/// - `max_count`: Maximum number of states to return
+/// - `out_actual_count`: Pointer to receive actual count returned
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_NULL_POINTER` (-2) if any pointer is null
+///
+/// # Safety
+/// - `out_states` must be a valid pointer to an array of at least `max_count` ElementFireState
+/// - `out_actual_count` must be a valid, non-null pointer
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_get_burning_elements(
+    sim_id: usize,
+    out_states: *mut ElementFireState,
+    max_count: u32,
+    out_actual_count: *mut u32,
+) -> i32 {
+    if out_states.is_null() || out_actual_count.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    match with_fire_sim_read(&sim_id, |sim| {
+        let burning = sim.get_burning_elements();
+        let count = burning.len().min(max_count as usize);
+
+        for (i, element) in burning.iter().take(count).enumerate() {
+            let (has_suppression, suppression_effectiveness) =
+                if let Some(coverage) = element.suppression_coverage() {
+                    (coverage.active, coverage.effectiveness_percent())
+                } else {
+                    (false, 0.0)
+                };
+
+            *out_states.add(i) = ElementFireState {
+                element_id: element.id(),
+                temperature: element.temperature(),
+                fuel_remaining: element.fuel_remaining(),
+                moisture_fraction: element.moisture_fraction(),
+                is_ignited: element.is_ignited(),
+                flame_height: element.flame_height(),
+                is_crown_fire: element.is_crown_fire_active(),
+                has_suppression,
+                suppression_effectiveness,
+            };
+        }
+
+        *out_actual_count = count as u32;
+    }) {
+        Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
+}
+
+/// Get count of burning elements
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_count` set
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_NULL_POINTER` (-2) if out_count is null
+///
+/// # Safety
+/// `out_count` must be a valid, non-null pointer
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_get_burning_count(
+    sim_id: usize,
+    out_count: *mut u32,
+) -> i32 {
+    if out_count.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    match with_fire_sim_read(&sim_id, |sim| sim.get_stats().burning_elements) {
+        Some(count) => {
+            *out_count = count as u32;
+            FIRE_SIM_SUCCESS
+        }
+        None => FIRE_SIM_INVALID_ID,
+    }
+}
+
+/// Get count of active embers
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_count` set
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_NULL_POINTER` (-2) if out_count is null
+///
+/// # Safety
+/// `out_count` must be a valid, non-null pointer
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_get_ember_count(
+    sim_id: usize,
+    out_count: *mut u32,
+) -> i32 {
+    if out_count.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    match with_fire_sim_read(&sim_id, |sim| sim.ember_count()) {
+        Some(count) => {
+            *out_count = count as u32;
+            FIRE_SIM_SUCCESS
+        }
         None => FIRE_SIM_INVALID_ID,
     }
 }

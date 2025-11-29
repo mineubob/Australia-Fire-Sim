@@ -11,6 +11,8 @@
 //! - Advanced suppression physics (water, retardant, foam)
 //! - Buoyancy-driven convection and plume dynamics
 //! - Multi-band radiation transfer
+//! - Fuel element suppression coverage tracking
+//! - Ember spot fire ignition with suppression blocking
 
 // Core types and utilities
 pub mod core_types;
@@ -19,6 +21,7 @@ pub mod core_types;
 pub mod grid;
 pub mod physics;
 pub mod simulation;
+pub mod suppression;
 
 // Re-export core types
 pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
@@ -29,3 +32,6 @@ pub use core_types::{Ember, SpatialIndex};
 pub use grid::{GridCell, SimulationGrid, TerrainData};
 pub use physics::{apply_suppression_direct, SuppressionAgent};
 pub use simulation::{FireSimulation, SimulationStats};
+
+// Re-export suppression types (Phase 1)
+pub use suppression::{SuppressionAgentProperties, SuppressionAgentType, SuppressionCoverage};

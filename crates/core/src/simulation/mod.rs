@@ -266,6 +266,60 @@ impl FireSimulation {
         crate::physics::apply_suppression_direct(position, mass, agent_type, &mut self.grid);
     }
 
+    /// Apply suppression to fuel elements in a radius (Phase 1)
+    ///
+    /// This method applies suppression agent to fuel elements within a specified radius,
+    /// creating suppression coverage that blocks ember ignition and reduces fire spread.
+    ///
+    /// # Parameters
+    /// - `position`: Center of suppression application (x, y, z)
+    /// - `radius`: Radius of coverage in meters
+    /// - `mass_per_element`: Mass of agent applied per fuel element (kg)
+    /// - `agent_type`: Type of suppression agent
+    ///
+    /// # Returns
+    /// Number of fuel elements that received suppression coverage
+    pub fn apply_suppression_to_elements(
+        &mut self,
+        position: Vec3,
+        radius: f32,
+        mass_per_element: f32,
+        agent_type: crate::suppression::SuppressionAgentType,
+    ) -> usize {
+        let nearby_ids = self.spatial_index.query_radius(position, radius);
+        let sim_time = self.simulation_time;
+
+        let mut count = 0;
+        for id in nearby_ids {
+            if let Some(element) = self.get_element_mut(id) {
+                element.apply_suppression(agent_type, mass_per_element, sim_time);
+                count += 1;
+            }
+        }
+
+        count
+    }
+
+    /// Get suppression coverage status for a fuel element
+    ///
+    /// # Returns
+    /// Tuple of (has_coverage, effectiveness_percent, is_within_duration)
+    pub fn get_element_suppression_status(&self, element_id: u32) -> Option<(bool, f32, bool)> {
+        if let Some(element) = self.get_element(element_id) {
+            if let Some(coverage) = element.suppression_coverage() {
+                Some((
+                    coverage.active,
+                    coverage.effectiveness_percent(),
+                    coverage.is_within_duration(self.simulation_time),
+                ))
+            } else {
+                Some((false, 0.0, false))
+            }
+        } else {
+            None
+        }
+    }
+
     /// Main simulation update
     ///
     /// # Fire Ignition Mechanisms
@@ -324,6 +378,14 @@ impl FireSimulation {
         let ambient_temp = self.grid.ambient_temperature;
         let dt_hours = dt / 3600.0; // Convert seconds to hours
 
+        // Weather data for suppression evaporation (Phase 1)
+        let weather_temp = self.weather.temperature;
+        let weather_humidity = self.weather.humidity;
+        let weather_wind = wind_vector.magnitude();
+        // Estimate solar radiation from time of day and weather
+        // Simplified: 0-1000 W/m² based on humidity (clear sky vs cloudy)
+        let solar_radiation = (1.0 - weather_humidity * 0.7) * 800.0;
+
         // Use chunked parallel processing to reduce Rayon overhead
         const ELEMENT_CHUNK_SIZE: usize = 1024;
 
@@ -377,6 +439,15 @@ impl FireSimulation {
 
                         moisture_state.average_moisture = element.moisture_fraction;
                     }
+
+                    // Update suppression coverage evaporation/degradation (Phase 1)
+                    element.update_suppression(
+                        weather_temp,
+                        weather_humidity,
+                        weather_wind,
+                        solar_radiation,
+                        dt,
+                    );
                 }
             });
 
@@ -897,9 +968,14 @@ impl FireSimulation {
                         0.0 // Too far
                     };
 
+                    // 5. Suppression factor (Phase 1 - blocks ember ignition)
+                    // Suppression coverage reduces ignition probability
+                    let suppression_factor = fuel_element.ember_ignition_modifier();
+
                     // Combined ignition probability (Koo et al. 2010 probabilistic model)
+                    // Now includes suppression blocking
                     let ignition_prob =
-                        temp_factor * receptivity * moisture_factor * distance_factor;
+                        temp_factor * receptivity * moisture_factor * distance_factor * suppression_factor;
 
                     // Probabilistic ignition
                     if ignition_prob > 0.0 && rand::random::<f32>() < ignition_prob {
