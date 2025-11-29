@@ -167,9 +167,10 @@ impl ActionQueue {
         self.executed_this_frame.push(action.clone());
         self.history.push(action);
 
-        // Trim history if too large
+        // Trim history if too large (use drain to avoid O(n) remove(0))
         if self.history.len() > self.max_history {
-            self.history.remove(0);
+            let excess = self.history.len() - self.max_history;
+            self.history.drain(0..excess);
         }
     }
 

@@ -1053,42 +1053,48 @@ impl FireSimulation {
             .fold(1.0_f32, |acc, m| acc.max(m));
 
         // 6e. Generate embers with Albini spotting physics (enhanced by pyrocumulus)
+        // Collect ember data first to avoid borrow conflicts (ember generation requires mutable push)
+        let new_embers: Vec<(Vec3, Vec3, f32, u8)> = self
+            .burning_elements
+            .iter()
+            .filter_map(|&element_id| {
+                self.get_element(element_id).and_then(|element| {
+                    // Probabilistic ember generation based on fuel ember production
+                    // High multiplier for realistic ember generation rates (stringybark produces many embers)
+                    // For stringybark (0.9 production): 0.9 × 1.0 × 0.8 = 72% chance per second
+                    let ember_prob = element.fuel.ember_production * dt * 0.8;
+                    if ember_prob > 0.0 && rand::random::<f32>() < ember_prob {
+                        // Calculate ember lofting height using Albini model
+                        let intensity = element.byram_fireline_intensity(wind_vector.norm());
+                        let base_lofting_height = crate::physics::calculate_lofting_height(intensity);
+
+                        // Apply pyrocumulus lofting enhancement (Phase 2)
+                        let lofting_height = base_lofting_height * ember_lofting_multiplier;
+
+                        Some((
+                            element.position + Vec3::new(0.0, 0.0, 1.0),
+                            Vec3::new(
+                                wind_vector.x * 0.5,
+                                wind_vector.y * 0.5,
+                                lofting_height.min(100.0) * 0.1, // Initial upward velocity
+                            ),
+                            element.temperature,
+                            element.fuel.id,
+                        ))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+
+        // Now push embers (requires mutable borrow)
         let mut new_ember_id = self._next_ember_id;
-        // Clone burning_elements to avoid borrow checker issues
-        let burning_ids: Vec<u32> = self.burning_elements.iter().copied().collect();
-        for element_id in burning_ids {
-            if let Some(element) = self.get_element(element_id) {
-                // Probabilistic ember generation based on fuel ember production
-                // High multiplier for realistic ember generation rates (stringybark produces many embers)
-                // For stringybark (0.9 production): 0.9 × 1.0 × 0.8 = 72% chance per second
-                let ember_prob = element.fuel.ember_production * dt * 0.8;
-                if ember_prob > 0.0 && rand::random::<f32>() < ember_prob {
-                    // Calculate ember lofting height using Albini model
-                    let intensity = element.byram_fireline_intensity(wind_vector.norm());
-                    let base_lofting_height = crate::physics::calculate_lofting_height(intensity);
-
-                    // Apply pyrocumulus lofting enhancement (Phase 2)
-                    let lofting_height = base_lofting_height * ember_lofting_multiplier;
-
-                    // Generate ember with physics-based initial conditions
-                    // Albini model calculates trajectory - all embers generated (even short distance)
-                    let ember_mass = 0.0005; // kg (0.5g typical)
-                    let ember = Ember::new(
-                        new_ember_id,
-                        element.position + Vec3::new(0.0, 0.0, 1.0),
-                        Vec3::new(
-                            wind_vector.x * 0.5,
-                            wind_vector.y * 0.5,
-                            lofting_height.min(100.0) * 0.1, // Initial upward velocity
-                        ),
-                        element.temperature,
-                        ember_mass,
-                        element.fuel.id,
-                    );
-                    self.embers.push(ember);
-                    new_ember_id += 1;
-                }
-            }
+        for (position, velocity, temperature, fuel_id) in new_embers {
+            let ember_mass = 0.0005; // kg (0.5g typical)
+            let ember = Ember::new(new_ember_id, position, velocity, temperature, ember_mass, fuel_id);
+            self.embers.push(ember);
+            new_ember_id += 1;
         }
         self._next_ember_id = new_ember_id;
 
