@@ -159,12 +159,6 @@ impl FuelElement {
         &self.neighbors
     }
 
-    /// Get fuel moisture state (if present)
-    /// Internal use - moisture state is used for physics calculations
-    pub(crate) fn moisture_state(&self) -> Option<&crate::physics::FuelMoistureState> {
-        self.moisture_state.as_ref()
-    }
-
     /// Set temperature (for testing)
     #[cfg(test)]
     pub(crate) fn with_temperature(mut self, temperature: f32) -> Self {

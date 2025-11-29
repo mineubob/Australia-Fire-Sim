@@ -13,9 +13,7 @@
 //!   "Empirical-based models for predicting head-fire rate of spread in Australian fuel types."
 //!   Australian Forestry, 78(3), 118-158.
 
-use crate::core_types::element::{FuelElement, Vec3};
 use crate::core_types::fuel::Fuel;
-use crate::core_types::weather::WeatherSystem;
 
 /// Calculate Rothermel fire spread rate (m/min)
 ///
@@ -300,54 +298,6 @@ fn calculate_heat_preignition(fuel: &Fuel, moisture_fraction: f32, ambient_temp:
     let latent_heat = moisture_fraction * 2260.0;
 
     sensible_heat + latent_heat
-}
-
-/// Calculate spread rate with full environmental factors
-///
-/// Convenience function that calculates Rothermel spread rate using
-/// environmental conditions and terrain.
-///
-/// # Arguments
-/// * `element` - Fuel element with position and fuel properties
-/// * `weather` - Weather system for wind speed
-/// * `target_position` - Direction of spread (for wind alignment)
-///
-/// # Returns
-/// Directional spread rate in meters per minute
-pub(crate) fn calculate_spread_rate_with_environment(
-    element: &FuelElement,
-    weather: &WeatherSystem,
-    target_position: Vec3,
-) -> f32 {
-    // Get wind vector
-    let wind = weather.wind_vector();
-    let wind_speed_ms = wind.magnitude();
-
-    // Calculate base spread rate
-    let base_spread = rothermel_spread_rate(
-        &element.fuel,
-        element.moisture_fraction(),
-        wind_speed_ms,
-        element.slope_angle,
-        weather.temperature,
-    );
-
-    // Apply wind directionality (from element_heat_transfer.rs)
-    let direction = (target_position - element.position).normalize();
-    let wind_alignment = if wind_speed_ms > 0.1 {
-        direction.dot(&wind.normalize())
-    } else {
-        0.0
-    };
-
-    // Directional adjustment (exponential boost downwind, suppression upwind)
-    let directional_factor = if wind_alignment > 0.0 {
-        1.0 + wind_alignment * 2.5 // Boost downwind
-    } else {
-        1.0 + wind_alignment * 0.5 // Slight reduction upwind
-    };
-
-    base_spread * directional_factor
 }
 
 #[cfg(test)]

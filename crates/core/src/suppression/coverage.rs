@@ -135,8 +135,13 @@ impl SuppressionCoverage {
 
         let props = SuppressionAgentProperties::for_type(self.agent_type);
 
-        // 1. Heat absorbed by evaporating suppression agent
+        // 1. Heat absorbed by suppression agent (using full cooling capacity)
+        // This includes both sensible heat (warming to boiling) and latent heat (evaporation)
         let agent_mass = self.mass_per_area * fuel_surface_area;
+
+        // Calculate cooling capacity at typical ambient temperature (20°C)
+        // This is more scientifically accurate than just using latent heat
+        let cooling_capacity_per_kg = props.cooling_capacity(20.0);
 
         // Maximum evaporation rate per timestep
         // Empirical limit: ~10% of agent mass can evaporate per second
@@ -144,10 +149,10 @@ impl SuppressionCoverage {
         // Reference: NFPA 1150 - Foam evaporation characteristics
         const MAX_EVAPORATION_FRACTION_PER_SEC: f32 = 0.1;
         let max_evap_rate_kg = agent_mass * MAX_EVAPORATION_FRACTION_PER_SEC * dt;
-        let max_heat_absorbed = max_evap_rate_kg * props.latent_heat_vaporization;
+        let max_heat_absorbed = max_evap_rate_kg * cooling_capacity_per_kg;
 
         let heat_for_evaporation = incoming_heat_kj.min(max_heat_absorbed);
-        let agent_evaporated = heat_for_evaporation / props.latent_heat_vaporization;
+        let agent_evaporated = heat_for_evaporation / cooling_capacity_per_kg;
 
         // Update mass (evaporation from heat)
         const MIN_SURFACE_AREA: f32 = 0.01; // m² - prevent division by zero
@@ -159,10 +164,10 @@ impl SuppressionCoverage {
 
         // 2. Chemical combustion inhibition (retardants)
         let inhibition_factor = 1.0
-            - (props.combustion_inhibition * self.coverage_fraction * self.chemical_effectiveness);
+            - (props.combustion_inhibition() * self.coverage_fraction * self.chemical_effectiveness);
 
         // 3. Oxygen displacement (foam blanketing)
-        let oxygen_factor = 1.0 - (props.oxygen_displacement * self.coverage_fraction);
+        let oxygen_factor = 1.0 - (props.oxygen_displacement() * self.coverage_fraction);
 
         // Combined effectiveness
         let effective_heat = remaining_heat * inhibition_factor * oxygen_factor;
@@ -200,7 +205,7 @@ impl SuppressionCoverage {
         if solar_radiation > 200.0 {
             // Only significant in bright conditions
             let uv_factor = (solar_radiation / 1000.0).min(1.0);
-            let degradation = props.uv_degradation_rate * uv_factor * (dt / 3600.0);
+            let degradation = props.uv_degradation_rate() * uv_factor * (dt / 3600.0);
             self.coverage_fraction -= degradation;
             self.chemical_effectiveness -= degradation * 0.5; // Chemical degrades slower
         }
@@ -234,7 +239,7 @@ impl SuppressionCoverage {
         let coverage_block = self.coverage_fraction;
 
         // Chemical inhibition reduces ignition probability
-        let chemical_block = props.combustion_inhibition * self.chemical_effectiveness;
+        let chemical_block = props.combustion_inhibition() * self.chemical_effectiveness;
 
         // Moisture content increase from suppression
         let moisture_effect = if self.mass_per_area > 0.5 {
@@ -279,7 +284,7 @@ impl SuppressionCoverage {
     pub fn is_within_duration(&self, current_time: f32) -> bool {
         let props = SuppressionAgentProperties::for_type(self.agent_type);
         let elapsed = current_time - self.application_time;
-        elapsed <= props.fuel_coating_duration
+        elapsed <= props.fuel_coating_duration()
     }
 
     /// Get remaining effectiveness as a percentage

@@ -22,8 +22,6 @@
 //! 4. Trajectory integration accounting for wind drift
 //! 5. Terrain effects on landing distance
 
-use crate::core_types::element::Vec3;
-
 /// Calculate ember lofting height based on fireline intensity
 ///
 /// Albini (1979) empirical relationship:
@@ -169,102 +167,6 @@ pub fn calculate_maximum_spotting_distance(
     base_distance * terrain_factor
 }
 
-#[allow(clippy::too_many_arguments)] // Required for caculation
-/// Detailed ember trajectory calculation with integration
-///
-/// Integrates ember motion equations considering:
-/// - Wind drift at varying heights
-/// - Gravitational descent
-/// - Buoyancy (if still burning)
-/// - Drag forces
-///
-/// # Arguments
-/// * `initial_position` - Starting position (typically at lofting height)
-/// * `initial_velocity` - Initial velocity vector (m/s)
-/// * `ember_mass` - Mass of ember (kg)
-/// * `ember_diameter` - Characteristic diameter (m)
-/// * `ember_temperature` - Current temperature (°C)
-/// * `wind_speed_10m` - Wind speed at 10m (m/s)
-/// * `wind_direction` - Wind direction unit vector
-/// * `dt` - Time step (seconds)
-/// * `max_time` - Maximum simulation time (seconds)
-///
-/// # Returns
-/// Final landing position (Vec3)
-///
-/// # References
-/// Tarifa et al. (1965), Albini (1983)
-pub(crate) fn calculate_ember_trajectory(
-    initial_position: Vec3,
-    initial_velocity: Vec3,
-    ember_mass: f32,
-    ember_diameter: f32,
-    ember_temperature: f32,
-    wind_speed_10m: f32,
-    wind_direction: Vec3,
-    dt: f32,
-    max_time: f32,
-) -> Vec3 {
-    const AIR_DENSITY: f32 = 1.225; // kg/m³
-    const DRAG_COEFFICIENT: f32 = 0.4;
-    const GRAVITY: f32 = 9.81; // m/s²
-
-    let mut position = initial_position;
-    let mut velocity = initial_velocity;
-    let mut time = 0.0;
-
-    let cross_section_area = std::f32::consts::PI * (ember_diameter / 2.0).powi(2);
-    let ember_volume = (4.0 / 3.0) * std::f32::consts::PI * (ember_diameter / 2.0).powi(3);
-
-    // Integrate trajectory until ember hits ground or max time
-    while position.z > 0.0 && time < max_time {
-        // Wind at current height
-        let wind_at_height = wind_speed_at_height(wind_speed_10m, position.z);
-        let wind_velocity = wind_direction * wind_at_height;
-
-        // Relative velocity (air relative to ember)
-        let relative_velocity = wind_velocity - velocity;
-        let relative_speed = relative_velocity.magnitude();
-
-        // Drag force
-        let drag_force = if relative_speed > 0.0 {
-            let drag_magnitude =
-                0.5 * AIR_DENSITY * DRAG_COEFFICIENT * cross_section_area * relative_speed.powi(2);
-            relative_velocity.normalize() * drag_magnitude
-        } else {
-            Vec3::zeros()
-        };
-
-        // Buoyancy (if ember is hot)
-        let buoyancy_force = if ember_temperature > 300.0 {
-            let temp_ratio = (ember_temperature + 273.15) / 293.15; // Kelvin ratio
-            AIR_DENSITY * GRAVITY * ember_volume * (temp_ratio - 1.0)
-        } else {
-            0.0
-        };
-
-        // Gravity
-        let gravity_force = -GRAVITY * ember_mass;
-
-        // Total acceleration
-        let accel_x = drag_force.x / ember_mass;
-        let accel_y = drag_force.y / ember_mass;
-        let accel_z = (drag_force.z + buoyancy_force) / ember_mass + gravity_force / ember_mass;
-
-        let acceleration = Vec3::new(accel_x, accel_y, accel_z);
-
-        // Update velocity and position (Euler integration)
-        velocity += acceleration * dt;
-        position += velocity * dt;
-        time += dt;
-    }
-
-    // Clamp to ground level
-    position.z = position.z.max(0.0);
-
-    position
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,39 +283,6 @@ mod tests {
         assert!(
             downhill < flat,
             "Downhill should decrease spotting distance"
-        );
-    }
-
-    #[test]
-    fn test_trajectory_integration() {
-        // Start at lofting height
-        let initial_pos = Vec3::new(0.0, 0.0, 200.0); // 200m high
-        let initial_vel = Vec3::new(5.0, 0.0, 5.0); // Initial upward/forward velocity
-
-        let final_pos = calculate_ember_trajectory(
-            initial_pos,
-            initial_vel,
-            0.001,                    // 1g
-            0.02,                     // 2cm
-            800.0,                    // Hot ember
-            15.0,                     // 15 m/s wind
-            Vec3::new(1.0, 0.0, 0.0), // Wind direction (east)
-            0.1,                      // 0.1s timestep
-            120.0,                    // 2 minutes max
-        );
-
-        // Should land on ground
-        assert!((final_pos.z - 0.0).abs() < 0.1, "Should land on ground");
-
-        // Should travel downwind
-        assert!(final_pos.x > 0.0, "Should travel downwind");
-
-        // Should have traveled significant distance
-        let horizontal_distance = (final_pos.x.powi(2) + final_pos.y.powi(2)).sqrt();
-        assert!(
-            horizontal_distance > 100.0,
-            "Should travel > 100m, was {}",
-            horizontal_distance
         );
     }
 }

@@ -1,7 +1,6 @@
 //! Physics modules for ultra-realistic fire simulation
 
 pub(crate) mod albini_spotting;
-pub(crate) mod canopy_layers;
 pub(crate) mod combustion_physics;
 pub(crate) mod crown_fire;
 pub(crate) mod element_heat_transfer;

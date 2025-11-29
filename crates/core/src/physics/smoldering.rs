@@ -75,11 +75,6 @@ impl SmolderingState {
     pub(crate) fn burn_rate_multiplier(&self) -> f32 {
         self.burn_rate_multiplier
     }
-
-    /// Get phase duration
-    pub(crate) fn phase_duration(&self) -> f32 {
-        self.phase_duration
-    }
 }
 
 impl Default for SmolderingState {

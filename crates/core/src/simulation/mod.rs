@@ -356,18 +356,6 @@ impl FireSimulation {
     // Phase 2: Advanced Weather Phenomena Accessors
     // ========================================================================
 
-    /// Get reference to atmospheric profile (for stability indices)
-    /// Internal use only - exposed via FFI functions for external access
-    pub(crate) fn atmospheric_profile(&self) -> &AtmosphericProfile {
-        &self.atmospheric_profile
-    }
-
-    /// Get active pyrocumulus clouds (internal use)
-    /// External access via fire_sim_get_pyrocumulus_count() FFI function
-    pub(crate) fn pyrocumulus_clouds(&self) -> &[PyrocumulusCloud] {
-        &self.pyrocumulus_clouds
-    }
-
     /// Get number of active pyrocumulus clouds
     pub fn pyrocumulus_count(&self) -> usize {
         self.pyrocumulus_clouds.len()

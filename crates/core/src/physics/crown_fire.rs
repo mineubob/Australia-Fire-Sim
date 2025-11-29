@@ -33,12 +33,6 @@ pub(crate) enum CrownFireType {
 pub(crate) struct CrownFireBehavior {
     /// Crown fire type
     fire_type: CrownFireType,
-    /// Critical surface fire intensity for crown fire initiation (kW/m)
-    critical_surface_intensity: f32,
-    /// Actual surface fire intensity (kW/m)
-    surface_intensity: f32,
-    /// Critical crown fire spread rate (m/min)
-    critical_crown_spread_rate: f32,
     /// Ratio of active to critical crown spread rate
     crown_fraction_burned: f32,
 }
@@ -47,16 +41,10 @@ impl CrownFireBehavior {
     /// Create new crown fire behavior
     pub(crate) fn new(
         fire_type: CrownFireType,
-        critical_surface_intensity: f32,
-        surface_intensity: f32,
-        critical_crown_spread_rate: f32,
         crown_fraction_burned: f32,
     ) -> Self {
         Self {
             fire_type,
-            critical_surface_intensity,
-            surface_intensity,
-            critical_crown_spread_rate,
             crown_fraction_burned,
         }
     }
@@ -64,16 +52,6 @@ impl CrownFireBehavior {
     /// Get the fire type
     pub(crate) fn fire_type(&self) -> CrownFireType {
         self.fire_type
-    }
-
-    /// Get surface intensity
-    pub(crate) fn surface_intensity(&self) -> f32 {
-        self.surface_intensity
-    }
-
-    /// Get critical surface intensity
-    pub(crate) fn critical_surface_intensity(&self) -> f32 {
-        self.critical_surface_intensity
     }
 
     /// Get crown fraction burned
@@ -235,40 +213,7 @@ pub(crate) fn calculate_crown_fire_behavior(
         0.0
     };
 
-    CrownFireBehavior::new(
-        fire_type,
-        critical_surface_intensity,
-        surface_intensity,
-        critical_crown_spread_rate,
-        crown_fraction_burned,
-    )
-}
-
-/// Apply crown fire effects to fuel element
-///
-/// Increases burn rate and intensity when crown fire conditions are met
-pub(crate) fn apply_crown_fire_effects(
-    _element: &mut FuelElement,
-    crown_behavior: &CrownFireBehavior,
-) -> f32 {
-    match crown_behavior.fire_type() {
-        CrownFireType::Surface => {
-            // No crown fire enhancement
-            1.0
-        }
-        CrownFireType::Passive => {
-            // Passive crown fire - intermittent torching
-            // Multiply burn rate by 1.5-2.0 based on intensity ratio
-            let intensity_ratio =
-                crown_behavior.surface_intensity() / crown_behavior.critical_surface_intensity();
-            1.0 + (intensity_ratio - 1.0) * 0.5
-        }
-        CrownFireType::Active => {
-            // Active crown fire - full crown involvement
-            // Multiply burn rate by 2.0-4.0 based on crown fraction burned
-            2.0 + crown_behavior.crown_fraction_burned() * 2.0
-        }
-    }
+    CrownFireBehavior::new(fire_type, crown_fraction_burned)
 }
 
 #[cfg(test)]
@@ -398,7 +343,7 @@ mod tests {
         );
 
         // Should classify as some type of crown fire behavior
-        assert!(behavior.critical_surface_intensity > 0.0);
-        assert!(behavior.critical_crown_spread_rate > 0.0);
+        // crown_fraction_burned is the output we can verify
+        assert!(behavior.crown_fraction_burned() >= 0.0);
     }
 }

@@ -60,40 +60,33 @@ impl SuppressionAgentType {
 /// - Retardant duration: USFS MTDC studies (4-8 hours)
 /// - Evaporation: FAO Penman-Monteith equation
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct SuppressionAgentProperties {
-    /// Type of agent
-    pub(crate) agent_type: SuppressionAgentType,
-
+pub struct SuppressionAgentProperties {
     // ═══════════════════════════════════════════════════════════════════
     // THERMAL PROPERTIES
     // ═══════════════════════════════════════════════════════════════════
     /// Specific heat capacity (kJ/(kg·K))
     /// Water: 4.18, Foam: ~4.0, Retardant: ~3.5
-    pub(crate) specific_heat: f32,
+    specific_heat: f32,
 
     /// Latent heat of vaporization (kJ/kg)
     /// Water: 2260 kJ/kg at 100°C
     /// Foam/retardant have similar base water properties
-    pub(crate) latent_heat_vaporization: f32,
+    latent_heat_vaporization: f32,
 
     /// Boiling point (°C)
     /// Water: 100°C, may be slightly higher for retardants
-    pub(crate) boiling_point: f32,
+    boiling_point: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // COVERAGE PROPERTIES
     // ═══════════════════════════════════════════════════════════════════
     /// Recommended application rate (kg/m²)
     /// Water: 2-4 kg/m², Foam: 0.5-1 kg/m², Retardant: 1-3 kg/m²
-    pub(crate) application_rate: f32,
-
-    /// Coverage efficiency relative to water (0-1)
-    /// Water: 1.0, Foam: 3-5x (0.2-0.33 needed for same effect)
-    pub(crate) coverage_efficiency: f32,
+    application_rate: f32,
 
     /// Penetration depth into fuel bed (meters)
     /// How deep the agent penetrates into litter/duff
-    pub(crate) penetration_depth: f32,
+    penetration_depth: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // CHEMICAL PROPERTIES
@@ -101,46 +94,29 @@ pub(crate) struct SuppressionAgentProperties {
     /// Combustion inhibition factor (0-1)
     /// Retardants chemically inhibit combustion reactions
     /// Water: 0.0, Short-term: 0.3, Long-term: 0.6
-    pub(crate) combustion_inhibition: f32,
+    combustion_inhibition: f32,
 
     /// Oxygen displacement factor (0-1)
     /// Foam blankets exclude oxygen from fuel surface
     /// Water: 0.0, Foam: 0.7-0.8
-    pub(crate) oxygen_displacement: f32,
+    oxygen_displacement: f32,
 
     /// Fuel coating duration (seconds)
     /// How long the protective coating remains effective
     /// Short-term: 1800s (30 min), Long-term: 28800s (8 hours)
-    pub(crate) fuel_coating_duration: f32,
+    fuel_coating_duration: f32,
 
     // ═══════════════════════════════════════════════════════════════════
     // EVAPORATION & DEGRADATION
     // ═══════════════════════════════════════════════════════════════════
     /// Evaporation rate modifier relative to water (0-2)
     /// Water: 1.0, Foam: 0.3 (slower), Retardant: 0.5
-    pub(crate) evaporation_rate_modifier: f32,
+    evaporation_rate_modifier: f32,
 
     /// UV degradation rate (fraction per hour under full sun)
     /// Foam/retardant degrade under UV exposure
     /// Water: 0.0, Foam: 0.15, Retardant: 0.05
-    pub(crate) uv_degradation_rate: f32,
-
-    /// Rain washoff rate (fraction per mm rainfall)
-    /// Retardant washes off over time in rain
-    /// Water: 1.0 (fully washes), Retardant: 0.15-0.20
-    pub(crate) rain_washoff_rate: f32,
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FOAM-SPECIFIC PROPERTIES
-    // ═══════════════════════════════════════════════════════════════════
-    /// Foam expansion ratio
-    /// Low expansion: 3-30:1, Medium: 30-200:1, High: 200-1000:1
-    /// Higher expansion = more coverage but less mass per area
-    pub(crate) expansion_ratio: f32,
-
-    /// Drain time (seconds) - how long foam maintains structure
-    /// Class A foam: 15-60 minutes typical
-    pub(crate) drain_time: f32,
+    uv_degradation_rate: f32,
 }
 
 impl SuppressionAgentProperties {
@@ -149,14 +125,12 @@ impl SuppressionAgentProperties {
     /// Basic fire suppression through evaporative cooling.
     /// 2260 kJ/kg latent heat of vaporization is the primary mechanism.
     pub const WATER: Self = Self {
-        agent_type: SuppressionAgentType::Water,
         // Thermal
         specific_heat: 4.18,
         latent_heat_vaporization: 2260.0,
         boiling_point: 100.0,
         // Coverage
         application_rate: 3.0,    // kg/m² typical ground application
-        coverage_efficiency: 1.0, // Baseline
         penetration_depth: 0.02,  // 2cm typical
         // Chemical
         combustion_inhibition: 0.0, // No chemical inhibition
@@ -165,10 +139,6 @@ impl SuppressionAgentProperties {
         // Evaporation
         evaporation_rate_modifier: 1.0,
         uv_degradation_rate: 0.0,
-        rain_washoff_rate: 1.0,
-        // Foam
-        expansion_ratio: 1.0,
-        drain_time: 0.0,
     };
 
     /// Get properties for Class A Foam
@@ -179,14 +149,12 @@ impl SuppressionAgentProperties {
     /// - Oxygen exclusion (foam blanket)
     /// - Slower evaporation (insulating layer)
     pub const FOAM_CLASS_A: Self = Self {
-        agent_type: SuppressionAgentType::FoamClassA,
         // Thermal
         specific_heat: 4.0,
         latent_heat_vaporization: 2260.0, // Water base
         boiling_point: 100.0,
         // Coverage - much more efficient than water
         application_rate: 0.8,    // kg/m² (less needed)
-        coverage_efficiency: 4.0, // 4x water (NFPA research)
         penetration_depth: 0.05,  // 5cm (surfactant helps)
         // Chemical
         combustion_inhibition: 0.1,    // Slight inhibition
@@ -195,10 +163,6 @@ impl SuppressionAgentProperties {
         // Evaporation - slower due to foam structure
         evaporation_rate_modifier: 0.3, // 70% slower
         uv_degradation_rate: 0.15,      // Degrades in sun
-        rain_washoff_rate: 0.5,         // Partially washes
-        // Foam
-        expansion_ratio: 10.0, // Low-expansion foam
-        drain_time: 1200.0,    // 20 min drain
     };
 
     /// Get properties for Short-Term Retardant
@@ -206,14 +170,12 @@ impl SuppressionAgentProperties {
     /// Water-based gel that provides temporary fire protection.
     /// Effective for 30-60 minutes after application.
     pub const SHORT_TERM_RETARDANT: Self = Self {
-        agent_type: SuppressionAgentType::ShortTermRetardant,
         // Thermal
         specific_heat: 3.8,
         latent_heat_vaporization: 2400.0, // Slightly higher (gel)
         boiling_point: 105.0,
         // Coverage
         application_rate: 1.5,
-        coverage_efficiency: 2.5, // 2.5x water
         penetration_depth: 0.03,
         // Chemical
         combustion_inhibition: 0.35,   // Moderate inhibition
@@ -222,10 +184,6 @@ impl SuppressionAgentProperties {
         // Evaporation
         evaporation_rate_modifier: 0.5,
         uv_degradation_rate: 0.10,
-        rain_washoff_rate: 0.3,
-        // Foam (N/A for gel)
-        expansion_ratio: 1.0,
-        drain_time: 0.0,
     };
 
     /// Get properties for Long-Term Retardant
@@ -237,14 +195,12 @@ impl SuppressionAgentProperties {
     /// USFS MTDC: Fire retardant remains effective for 4-8 hours
     /// under typical conditions, reducing fire intensity by 40-60%.
     pub const LONG_TERM_RETARDANT: Self = Self {
-        agent_type: SuppressionAgentType::LongTermRetardant,
         // Thermal
         specific_heat: 3.5,
         latent_heat_vaporization: 1800.0, // Lower (phosphate salts)
         boiling_point: 110.0,
         // Coverage
         application_rate: 2.0,
-        coverage_efficiency: 3.0, // 3x water
         penetration_depth: 0.04,
         // Chemical - primary mechanism is combustion inhibition
         combustion_inhibition: 0.6,     // 60% combustion reduction
@@ -253,10 +209,6 @@ impl SuppressionAgentProperties {
         // Evaporation
         evaporation_rate_modifier: 0.4,
         uv_degradation_rate: 0.05, // Slow UV degradation
-        rain_washoff_rate: 0.15,   // Resists washoff
-        // Foam (N/A)
-        expansion_ratio: 1.0,
-        drain_time: 0.0,
     };
 
     /// Get properties for Wetting Agent
@@ -266,14 +218,12 @@ impl SuppressionAgentProperties {
     /// - Penetration into deep litter/duff
     /// - Coating of hydrophobic fuels (waxy leaves)
     pub const WETTING_AGENT: Self = Self {
-        agent_type: SuppressionAgentType::WettingAgent,
         // Thermal (similar to water)
         specific_heat: 4.15,
         latent_heat_vaporization: 2260.0,
         boiling_point: 100.0,
         // Coverage - better penetration
         application_rate: 2.0,
-        coverage_efficiency: 1.8, // 1.8x water
         penetration_depth: 0.08,  // 8cm (deep penetration)
         // Chemical
         combustion_inhibition: 0.05,  // Slight
@@ -282,10 +232,6 @@ impl SuppressionAgentProperties {
         // Evaporation
         evaporation_rate_modifier: 0.9,
         uv_degradation_rate: 0.0,
-        rain_washoff_rate: 0.8,
-        // Foam (N/A)
-        expansion_ratio: 1.0,
-        drain_time: 0.0,
     };
 
     /// Get properties for a given agent type
@@ -309,9 +255,19 @@ impl SuppressionAgentProperties {
         self.penetration_depth
     }
 
-    /// Get evaporation rate modifier
-    pub(crate) fn evaporation_rate_modifier(&self) -> f32 {
-        self.evaporation_rate_modifier
+    /// Get oxygen displacement factor
+    pub fn oxygen_displacement(&self) -> f32 {
+        self.oxygen_displacement
+    }
+
+    /// Get combustion inhibition factor
+    pub(crate) fn combustion_inhibition(&self) -> f32 {
+        self.combustion_inhibition
+    }
+
+    /// Get fuel coating duration
+    pub(crate) fn fuel_coating_duration(&self) -> f32 {
+        self.fuel_coating_duration
     }
 
     /// Get UV degradation rate
@@ -323,7 +279,10 @@ impl SuppressionAgentProperties {
     ///
     /// Includes both sensible heat (temperature rise) and latent heat (vaporization).
     /// For water at 20°C: 4.18 × (100-20) + 2260 = 2594 kJ/kg
-    pub(crate) fn cooling_capacity(&self, agent_temp: f32) -> f32 {
+    ///
+    /// # Scientific Reference
+    /// NFPA 1145: Guide for the Use of Class A Foams in Fire Fighting
+    pub fn cooling_capacity(&self, agent_temp: f32) -> f32 {
         let sensible = self.specific_heat * (self.boiling_point - agent_temp).max(0.0);
         self.latent_heat_vaporization + sensible
     }
@@ -388,11 +347,15 @@ mod tests {
         let foam = SuppressionAgentProperties::FOAM_CLASS_A;
         let water = SuppressionAgentProperties::WATER;
 
-        // Foam should have higher coverage efficiency
-        assert!(foam.coverage_efficiency > water.coverage_efficiency * 3.0);
+        // Foam should have higher cooling capacity due to better properties
+        // (Though cooling_capacity is similar, the oxygen displacement makes foam more effective)
+        let foam_cooling = foam.cooling_capacity(20.0);
+        let water_cooling = water.cooling_capacity(20.0);
+        // Water and foam have similar latent heat, so cooling capacity is similar
+        assert!((foam_cooling - water_cooling).abs() < 500.0);
 
-        // Foam should have oxygen displacement
-        assert!(foam.oxygen_displacement > 0.5);
+        // Foam should have oxygen displacement (the key differentiator)
+        assert!(foam.oxygen_displacement() > 0.5);
     }
 
     #[test]
@@ -400,10 +363,10 @@ mod tests {
         let lt_retardant = SuppressionAgentProperties::LONG_TERM_RETARDANT;
 
         // Long-term retardant should have high combustion inhibition
-        assert!(lt_retardant.combustion_inhibition >= 0.5);
+        assert!(lt_retardant.combustion_inhibition() >= 0.5);
 
         // Should last 4-8 hours
-        assert!(lt_retardant.fuel_coating_duration >= 4.0 * 3600.0);
+        assert!(lt_retardant.fuel_coating_duration() >= 4.0 * 3600.0);
     }
 
     #[test]

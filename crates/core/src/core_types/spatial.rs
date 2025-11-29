@@ -34,29 +34,7 @@ impl SpatialIndex {
         self.octree.entry(hash).or_default().push((id, position));
     }
 
-    /// Bulk insert elements (more efficient than repeated insert calls)
-    pub fn insert_bulk(&mut self, elements: &[(u32, Vec3)]) {
-        // Pre-compute capacity needed
-        if self.octree.capacity() < self.octree.len() + elements.len() / 10 {
-            self.octree.reserve(elements.len() / 10);
-        }
-
-        for &(id, position) in elements {
-            let hash = self.hash_position(position);
-            self.octree.entry(hash).or_default().push((id, position));
-        }
-    }
-
-    /// Remove an element from the spatial index
-    pub fn remove(&mut self, id: u32, position: Vec3) {
-        let hash = self.hash_position(position);
-        if let Some(cell) = self.octree.get_mut(&hash) {
-            cell.retain(|(elem_id, _)| *elem_id != id);
-            if cell.is_empty() {
-                self.octree.remove(&hash);
-            }
-        }
-    } // Query all elements within a radius
+    /// Query all elements within a radius
     pub fn query_radius(&self, pos: Vec3, radius: f32) -> Vec<u32> {
         let cells_needed = (radius / self.cell_size).ceil() as i32;
         let radius_sq = radius * radius;
@@ -186,29 +164,6 @@ impl SpatialIndex {
         }
 
         results
-    }
-
-    /// Clear and rebuild the entire index
-    pub fn rebuild<F>(&mut self, elements: &[u32], position_fn: F)
-    where
-        F: Fn(u32) -> Vec3,
-    {
-        self.octree.clear();
-
-        for &id in elements {
-            let position = position_fn(id);
-            self.insert(id, position);
-        }
-    }
-
-    /// Get number of cells in the index
-    pub fn cell_count(&self) -> usize {
-        self.octree.len()
-    }
-
-    /// Get number of elements in the index
-    pub fn element_count(&self) -> usize {
-        self.octree.values().map(|v| v.len()).sum()
     }
 }
 

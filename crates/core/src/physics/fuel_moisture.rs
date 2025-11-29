@@ -101,12 +101,14 @@ pub(crate) fn update_moisture_timelag(
     timelag_hours: f32,
     dt_hours: f32,
 ) -> f32 {
-    if timelag_hours <= 0.0 {
+    // Get rate constant using timelag_rate_constant
+    let rate = timelag_rate_constant(timelag_hours);
+    if rate <= 0.0 {
         return equilibrium_moisture;
     }
 
-    // Nelson (2000) exponential lag equation
-    let lag_factor = (-dt_hours / timelag_hours).exp();
+    // Nelson (2000) exponential lag equation: M(t+dt) = M_e + (M(t) - M_e) × exp(-dt × rate)
+    let lag_factor = (-dt_hours * rate).exp();
     let new_moisture =
         equilibrium_moisture + (current_moisture - equilibrium_moisture) * lag_factor;
 

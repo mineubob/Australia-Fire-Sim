@@ -214,18 +214,6 @@ impl ActionQueue {
     pub fn take_pending(&mut self) -> Vec<PlayerAction> {
         std::mem::take(&mut self.pending)
     }
-
-    /// Get history length
-    pub fn history_len(&self) -> usize {
-        self.history.len()
-    }
-
-    /// Clear all state (for simulation reset)
-    pub fn clear(&mut self) {
-        self.pending.clear();
-        self.executed_this_frame.clear();
-        self.history.clear();
-    }
 }
 
 #[cfg(test)]
@@ -278,7 +266,7 @@ mod tests {
         }
 
         // History should be trimmed to 5
-        assert_eq!(queue.history_len(), 5);
+        assert_eq!(queue.history().len(), 5);
 
         // Oldest actions should be removed
         assert_eq!(queue.history()[0].timestamp, 2.0);
@@ -295,6 +283,6 @@ mod tests {
 
         queue.begin_frame();
         assert_eq!(queue.executed_this_frame().len(), 0);
-        assert_eq!(queue.history_len(), 1);
+        assert_eq!(queue.history().len(), 1);
     }
 }
