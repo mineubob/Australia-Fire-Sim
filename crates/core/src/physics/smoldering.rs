@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 /// Combustion phase classification
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub(crate) enum CombustionPhase {
+pub enum CombustionPhase {
     /// Not ignited yet
     Unignited,
     /// Active flaming combustion (>700°C typically)
@@ -38,7 +38,7 @@ pub(crate) enum CombustionPhase {
 
 /// Smoldering combustion parameters
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub(crate) struct SmolderingState {
+pub struct SmolderingState {
     /// Current combustion phase
     phase: CombustionPhase,
     /// Heat release rate multiplier (relative to flaming)
@@ -62,7 +62,7 @@ impl SmolderingState {
     }
 
     /// Get the current combustion phase
-    pub(crate) fn phase(&self) -> CombustionPhase {
+    pub fn phase(&self) -> CombustionPhase {
         self.phase
     }
 

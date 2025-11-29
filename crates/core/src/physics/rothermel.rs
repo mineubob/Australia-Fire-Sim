@@ -48,14 +48,14 @@ use crate::core_types::weather::WeatherSystem;
 ///
 /// # Example
 /// ```
-/// use fire_sim_core::physics::rothermel::rothermel_spread_rate;
+/// use fire_sim_core::physics::rothermel_validation::rothermel_spread_rate;
 /// use fire_sim_core::Fuel;
 ///
 /// let fuel = Fuel::dry_grass();
 /// let spread_rate = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0, 20.0);
 /// // Expect ~30-50 m/min for dry grass with 5 m/s wind
 /// ```
-pub(crate) fn rothermel_spread_rate(
+pub fn rothermel_spread_rate(
     fuel: &Fuel,
     moisture_fraction: f32,
     wind_speed_ms: f32,

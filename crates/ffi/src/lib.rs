@@ -524,7 +524,7 @@ pub unsafe extern "C" fn fire_sim_get_element_state(
         if let Some(element) = sim.get_element(element_id) {
             let (has_suppression, suppression_effectiveness) =
                 if let Some(coverage) = element.suppression_coverage() {
-                    (coverage.active, coverage.effectiveness_percent())
+                    (coverage.is_active(), coverage.effectiveness_percent())
                 } else {
                     (false, 0.0)
                 };
@@ -584,7 +584,7 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
         for (i, element) in burning.iter().take(count).enumerate() {
             let (has_suppression, suppression_effectiveness) =
                 if let Some(coverage) = element.suppression_coverage() {
-                    (coverage.active, coverage.effectiveness_percent())
+                    (coverage.is_active(), coverage.effectiveness_percent())
                 } else {
                     (false, 0.0)
                 };
@@ -773,7 +773,7 @@ pub extern "C" fn fire_sim_terrain_slope_multiplier(
     with_fire_sim_read(&sim_id, |sim| {
         let from = Vec3::new(from_x, from_y, 0.0);
         let to = Vec3::new(to_x, to_y, 0.0);
-        fire_sim_core::physics::slope_spread_multiplier_terrain(&from, &to, sim.terrain())
+        sim.slope_spread_multiplier(&from, &to)
     })
     .unwrap_or(1.0)
 }

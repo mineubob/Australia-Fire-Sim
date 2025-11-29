@@ -98,7 +98,7 @@ impl CrownFireBehavior {
 ///
 /// # References
 /// Van Wagner (1977), Equation 4
-pub(crate) fn calculate_critical_surface_intensity(
+pub fn calculate_critical_surface_intensity(
     crown_bulk_density: f32,
     heat_content: f32,
     foliar_moisture_content: f32,
@@ -125,7 +125,7 @@ pub(crate) fn calculate_critical_surface_intensity(
 ///
 /// # References
 /// Van Wagner (1977), Equation 9
-pub(crate) fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
+pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
     if crown_bulk_density <= 0.0 {
         return 0.0;
     }

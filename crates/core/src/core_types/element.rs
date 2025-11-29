@@ -404,7 +404,7 @@ impl FuelElement {
     pub fn has_active_suppression(&self) -> bool {
         self.suppression_coverage
             .as_ref()
-            .map(|c| c.active)
+            .map(|c| c.is_active())
             .unwrap_or(false)
     }
 
@@ -437,10 +437,10 @@ impl FuelElement {
         // If already has coverage, combine them
         if let Some(ref existing) = self.suppression_coverage {
             // Add masses if same agent type
-            if existing.agent_type == agent_type && existing.active {
+            if existing.agent_type() == agent_type && existing.is_active() {
                 self.suppression_coverage = Some(SuppressionCoverage::new(
                     agent_type,
-                    mass_kg + existing.mass_per_area * surface_area,
+                    mass_kg + existing.mass_per_area() * surface_area,
                     surface_area,
                     simulation_time,
                 ));
@@ -472,7 +472,7 @@ impl FuelElement {
             coverage.update(temperature, humidity, wind_speed, solar_radiation, dt);
 
             // Remove inactive coverage
-            if !coverage.active {
+            if !coverage.is_active() {
                 self.suppression_coverage = None;
             }
         }

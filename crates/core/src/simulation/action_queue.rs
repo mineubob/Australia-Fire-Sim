@@ -15,7 +15,7 @@ use crate::core_types::element::Vec3;
 
 /// Player action types for replication
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PlayerActionType {
+pub enum PlayerActionType {
     /// Apply fire suppression at a position
     ApplySuppression,
     /// Ignite a spot fire at a position
@@ -47,19 +47,19 @@ impl PlayerActionType {
 
 /// Replicatable player action
 #[derive(Debug, Clone)]
-pub(crate) struct PlayerAction {
+pub struct PlayerAction {
     /// Type of action
-    pub(crate) action_type: PlayerActionType,
+    action_type: PlayerActionType,
     /// Player ID who performed the action
-    pub(crate) player_id: u32,
+    player_id: u32,
     /// Simulation time when action was submitted
-    pub(crate) timestamp: f32,
+    timestamp: f32,
     /// Position where action was applied
-    pub(crate) position: Vec3,
+    position: Vec3,
     /// Primary parameter (mass for suppression, intensity for ignition)
-    pub(crate) param1: f32,
+    param1: f32,
     /// Secondary parameter (agent type ID, element ID, etc.)
-    pub(crate) param2: u32,
+    param2: u32,
 }
 
 impl PlayerAction {
@@ -80,6 +80,36 @@ impl PlayerAction {
             param1,
             param2,
         }
+    }
+
+    /// Get the action type
+    pub fn action_type(&self) -> PlayerActionType {
+        self.action_type
+    }
+
+    /// Get the player ID
+    pub fn player_id(&self) -> u32 {
+        self.player_id
+    }
+
+    /// Get the timestamp
+    pub fn timestamp(&self) -> f32 {
+        self.timestamp
+    }
+
+    /// Get the position
+    pub fn position(&self) -> Vec3 {
+        self.position
+    }
+
+    /// Get the primary parameter (mass, intensity, etc.)
+    pub fn param1(&self) -> f32 {
+        self.param1
+    }
+
+    /// Get the secondary parameter (agent type, element ID, etc.)
+    pub fn param2(&self) -> u32 {
+        self.param2
     }
 
     /// Create a suppression action

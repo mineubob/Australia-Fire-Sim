@@ -43,7 +43,7 @@ use crate::core_types::element::Vec3;
 ///
 /// # References
 /// Albini (1979), Equation 8, adjusted for Australian conditions
-pub(crate) fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
+pub fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
     if fireline_intensity <= 0.0 {
         return 0.0;
     }
@@ -128,7 +128,7 @@ pub(crate) fn calculate_terminal_velocity(ember_mass: f32, ember_diameter: f32) 
 ///
 /// # References
 /// Albini (1979, 1983)
-pub(crate) fn calculate_maximum_spotting_distance(
+pub fn calculate_maximum_spotting_distance(
     fireline_intensity: f32,
     wind_speed_10m: f32,
     ember_mass: f32,

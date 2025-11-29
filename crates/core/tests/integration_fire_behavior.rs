@@ -3,12 +3,9 @@
 //! These tests validate that all advanced fire behavior models (crown fire, fuel moisture,
 //! spotting, smoldering) work correctly in real fire scenarios.
 
-use fire_sim_core::core_types::element::{FuelPart, Vec3};
-use fire_sim_core::core_types::fuel::Fuel;
-use fire_sim_core::core_types::weather::WeatherSystem;
-use fire_sim_core::grid::TerrainData;
-use fire_sim_core::physics::smoldering::CombustionPhase;
-use fire_sim_core::simulation::FireSimulation;
+use fire_sim_core::{
+    CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem,
+};
 
 /// Helper to create a simple eucalyptus tree with realistic structure
 fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f32) -> Vec<u32> {
@@ -153,7 +150,7 @@ fn test_single_tree_complete_burnout() {
 
                     // Check if in smoldering phase
                     if let Some(smolder_state) = &elem.smoldering_state() {
-                        if matches!(smolder_state.phase, CombustionPhase::Smoldering) {
+                        if smolder_state.phase() == CombustionPhase::Smoldering {
                             smoldering_count += 1;
                         }
                     }
@@ -318,7 +315,7 @@ fn test_multiple_trees_fire_spread() {
                             }
 
                             if let Some(smolder_state) = &elem.smoldering_state() {
-                                if matches!(smolder_state.phase, CombustionPhase::Smoldering) {
+                                if smolder_state.phase() == CombustionPhase::Smoldering {
                                     smoldering += 1;
                                 }
                             }
@@ -591,7 +588,7 @@ fn test_weather_conditions_spread_rate() {
         );
 
         // Create simulation
-        let terrain = fire_sim_core::grid::TerrainData::flat(100.0, 100.0, 3.0, 0.0);
+        let terrain = TerrainData::flat(100.0, 100.0, 3.0, 0.0);
         let mut sim = FireSimulation::new(5.0, terrain);
 
         // Create simple grid of fuel elements (5x5 = 25 elements, 5m spacing)

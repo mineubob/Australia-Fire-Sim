@@ -10,9 +10,12 @@
 //! - Pyrocumulus cloud formation (Phase 2)
 //! - Multiplayer action queue system (Phase 5)
 
-pub(crate) mod action_queue;
+pub mod action_queue;
 
-pub(crate) use action_queue::{ActionQueue, PlayerAction, PlayerActionType};
+// Re-export public types from action_queue
+pub use action_queue::{PlayerAction, PlayerActionType};
+// Keep ActionQueue internal
+pub(crate) use action_queue::ActionQueue;
 
 use crate::core_types::element::{FuelElement, FuelPart, Vec3};
 use crate::core_types::ember::Ember;
@@ -337,7 +340,7 @@ impl FireSimulation {
         if let Some(element) = self.get_element(element_id) {
             if let Some(coverage) = element.suppression_coverage() {
                 Some((
-                    coverage.active,
+                    coverage.is_active(),
                     coverage.effectiveness_percent(),
                     coverage.is_within_duration(self.simulation_time),
                 ))
@@ -377,6 +380,29 @@ impl FireSimulation {
     /// - 6: High fire weather potential
     pub fn haines_index(&self) -> u8 {
         self.atmospheric_profile.haines_index
+    }
+
+    // ========================================================================
+    // Phase 3: Terrain Physics Accessors
+    // ========================================================================
+
+    /// Calculate terrain-based slope spread multiplier between two positions
+    ///
+    /// Uses Horn's method for accurate slope/aspect calculation and applies
+    /// Rothermel's slope effect formula for fire spread.
+    ///
+    /// # Parameters
+    /// - `from`: Source position (x, y)
+    /// - `to`: Target position (x, y)
+    ///
+    /// # Returns
+    /// Spread rate multiplier (typically 0.3-5.0)
+    /// - >1.0: Fire spreads faster (uphill)
+    /// - <1.0: Fire spreads slower (downhill)
+    /// - 1.0: No slope effect (flat terrain)
+    pub fn slope_spread_multiplier(&self, from: &Vec3, to: &Vec3) -> f32 {
+        let wind = Vec3::zeros();
+        crate::physics::terrain_spread_multiplier(from, to, &self.grid.terrain, &wind)
     }
 
     // ========================================================================
@@ -458,22 +484,22 @@ impl FireSimulation {
         self.action_queue.begin_frame();
         let pending_actions = self.action_queue.take_pending();
         for action in pending_actions {
-            match action.action_type {
+            match action.action_type() {
                 PlayerActionType::ApplySuppression => {
                     // Apply suppression at position with specified mass and agent type
                     if let Some(agent_type) =
-                        crate::suppression::SuppressionAgentType::from_u8(action.param2 as u8)
+                        crate::suppression::SuppressionAgentType::from_u8(action.param2() as u8)
                     {
                         self.apply_suppression_to_elements(
-                            action.position,
-                            10.0,          // radius
-                            action.param1, // mass
+                            action.position(),
+                            10.0,            // radius
+                            action.param1(), // mass
                             agent_type,
                         );
                     }
                 }
                 PlayerActionType::IgniteSpot => {
-                    self.ignite_at_position(action.position);
+                    self.ignite_at_position(action.position());
                 }
                 PlayerActionType::ModifyWeather => {
                     // Reserved for scenario control (not implemented yet)
@@ -500,7 +526,7 @@ impl FireSimulation {
         // 1a. OPTIMIZATION: Combined ambient cooling + moisture update in SINGLE pass
         // Previously: two separate iterations over ALL elements (~600k+ elements each)
         // Now: one iteration with both operations (50% reduction in memory scans)
-        let equilibrium_moisture = crate::physics::calculate_equilibrium_moisture(
+        let _equilibrium_moisture = crate::physics::calculate_equilibrium_moisture(
             self.weather.temperature,
             self.weather.humidity,
             false, // is_adsorbing - false for typical drying conditions
@@ -535,39 +561,12 @@ impl FireSimulation {
 
                     // Update fuel moisture (Nelson timelag system - Phase 1)
                     if let Some(ref mut moisture_state) = element.moisture_state {
-                        moisture_state.moisture_1h = crate::physics::update_moisture_timelag(
-                            moisture_state.moisture_1h,
-                            equilibrium_moisture,
-                            element.fuel.timelag_1h,
-                            dt_hours,
-                        );
-                        moisture_state.moisture_10h = crate::physics::update_moisture_timelag(
-                            moisture_state.moisture_10h,
-                            equilibrium_moisture,
-                            element.fuel.timelag_10h,
-                            dt_hours,
-                        );
-                        moisture_state.moisture_100h = crate::physics::update_moisture_timelag(
-                            moisture_state.moisture_100h,
-                            equilibrium_moisture,
-                            element.fuel.timelag_100h,
-                            dt_hours,
-                        );
-                        moisture_state.moisture_1000h = crate::physics::update_moisture_timelag(
-                            moisture_state.moisture_1000h,
-                            equilibrium_moisture,
-                            element.fuel.timelag_1000h,
-                            dt_hours,
-                        );
-
-                        // Update overall moisture fraction (weighted average)
-                        let dist = element.fuel.size_class_distribution;
-                        element.moisture_fraction = moisture_state.moisture_1h * dist[0]
-                            + moisture_state.moisture_10h * dist[1]
-                            + moisture_state.moisture_100h * dist[2]
-                            + moisture_state.moisture_1000h * dist[3];
-
-                        moisture_state.average_moisture = element.moisture_fraction;
+                        // Use the FuelMoistureState's update method which properly
+                        // handles all timelag classes and calculates weighted average
+                        moisture_state.update(&element.fuel, weather_temp, weather_humidity / 100.0, dt_hours);
+                        
+                        // Update the element's overall moisture fraction
+                        element.moisture_fraction = moisture_state.average_moisture();
                     }
 
                     // Update suppression coverage evaporation/degradation (Phase 1)
@@ -726,7 +725,7 @@ impl FireSimulation {
             // 4e. Apply smoldering combustion multiplier (Phase 3)
             let smoldering_multiplier = if let Some(element) = self.get_element(element_id) {
                 if let Some(ref smold_state) = element.smoldering_state {
-                    smold_state.heat_release_multiplier
+                    smold_state.heat_release_multiplier()
                 } else {
                     1.0
                 }
@@ -795,7 +794,7 @@ impl FireSimulation {
                     );
 
                     // If active or passive crown fire, mark it and potentially ignite crown elements
-                    if crown_behavior.fire_type != crate::physics::CrownFireType::Surface {
+                    if crown_behavior.fire_type() != crate::physics::CrownFireType::Surface {
                         if let Some(elem_mut) = self.get_element_mut(element_id) {
                             elem_mut.crown_fire_active = true;
                             // Fuel-specific crown fire temperature (stringybark=0.95, smooth=0.90)
@@ -874,11 +873,11 @@ impl FireSimulation {
                             heat_content,
                         );
 
-                    cell.oxygen -= products.o2_consumed / cell_volume;
+                    cell.oxygen -= products.o2_consumed() / cell_volume;
                     cell.oxygen = cell.oxygen.max(0.0);
-                    cell.carbon_dioxide += products.co2_produced / cell_volume;
-                    cell.water_vapor += products.h2o_produced / cell_volume;
-                    cell.smoke_particles += products.smoke_produced / cell_volume;
+                    cell.carbon_dioxide += products.co2_produced() / cell_volume;
+                    cell.water_vapor += products.h2o_produced() / cell_volume;
+                    cell.smoke_particles += products.smoke_produced() / cell_volume;
                 }
             }
 

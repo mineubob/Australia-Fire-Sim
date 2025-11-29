@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 /// 4. **Evaporation**: Agent mass decreases over time based on weather
 /// 5. **UV degradation**: Foam/retardant effectiveness decreases in sunlight
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub(crate) struct SuppressionCoverage {
+pub struct SuppressionCoverage {
     /// Type of suppression agent
     agent_type: SuppressionAgentType,
 
@@ -91,8 +91,8 @@ impl SuppressionCoverage {
         self.agent_type
     }
 
-    /// Get coverage fraction
-    pub(crate) fn coverage_fraction(&self) -> f32 {
+    /// Get coverage fraction (reserved for future use)
+    pub(crate) fn _coverage_fraction(&self) -> f32 {
         self.coverage_fraction
     }
 
@@ -102,11 +102,11 @@ impl SuppressionCoverage {
     }
 
     /// Check if coverage is still active
-    pub(crate) fn is_active(&self) -> bool {
+    pub fn is_active(&self) -> bool {
         self.active
     }
 
-    /// Modify incoming heat transfer based on suppression coverage
+    /// Modify incoming heat transfer based on suppression coverage (reserved for future use)
     ///
     /// Returns the effective heat after suppression effects are applied.
     ///
@@ -123,7 +123,7 @@ impl SuppressionCoverage {
     ///
     /// # Returns
     /// Tuple of (effective_heat_kj, heat_absorbed_kj)
-    pub(crate) fn modify_heat_transfer(
+    pub(crate) fn _modify_heat_transfer(
         &mut self,
         incoming_heat_kj: f32,
         fuel_surface_area: f32,

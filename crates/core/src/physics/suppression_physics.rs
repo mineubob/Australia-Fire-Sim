@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 /// Types of suppression agents
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub(crate) enum SuppressionAgent {
+pub enum SuppressionAgent {
     Water,
     ShortTermRetardant,
     LongTermRetardant,

@@ -22,9 +22,9 @@
 
 use fire_sim_core::{
     physics::{
-        albini_spotting::{calculate_lofting_height, calculate_maximum_spotting_distance},
-        crown_fire::{calculate_critical_crown_spread_rate, calculate_critical_surface_intensity},
-        rothermel::rothermel_spread_rate,
+        albini_spotting_validation::{calculate_lofting_height, calculate_maximum_spotting_distance},
+        crown_fire_validation::{calculate_critical_crown_spread_rate, calculate_critical_surface_intensity},
+        rothermel_validation::rothermel_spread_rate,
     },
     FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem,
 };
