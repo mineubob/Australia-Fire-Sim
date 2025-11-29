@@ -14,6 +14,8 @@
 //! - Fuel element suppression coverage tracking
 //! - Ember spot fire ignition with suppression blocking
 //! - Advanced weather phenomena (pyrocumulus, atmospheric instability)
+//! - Terrain-based fire spread physics (Phase 3)
+//! - Multiplayer action queue system (Phase 5)
 
 // Core types and utilities
 pub mod core_types;
@@ -33,7 +35,7 @@ pub use core_types::{Ember, SpatialIndex};
 // Re-export ultra-realistic types
 pub use grid::{GridCell, SimulationGrid, TerrainData};
 pub use physics::{apply_suppression_direct, SuppressionAgent};
-pub use simulation::{FireSimulation, SimulationStats};
+pub use simulation::{ActionQueue, FireSimulation, PlayerAction, PlayerActionType, SimulationStats};
 
 // Re-export suppression types (Phase 1)
 pub use suppression::{SuppressionAgentProperties, SuppressionAgentType, SuppressionCoverage};

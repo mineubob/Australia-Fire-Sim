@@ -6,6 +6,13 @@
 //! - Chemistry-based combustion
 //! - Advanced suppression physics
 //! - Buoyancy-driven convection and plumes
+//! - Terrain-based fire spread physics (Phase 3)
+//! - Pyrocumulus cloud formation (Phase 2)
+//! - Multiplayer action queue system (Phase 5)
+
+mod action_queue;
+
+pub use action_queue::{ActionQueue, PlayerAction, PlayerActionType};
 
 use crate::core_types::element::{FuelElement, FuelPart, Vec3};
 use crate::core_types::ember::Ember;
@@ -14,6 +21,7 @@ use crate::core_types::spatial::SpatialIndex;
 use crate::core_types::weather::WeatherSystem;
 use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise, update_wind_field};
 use crate::grid::{GridCell, SimulationGrid, TerrainData};
+use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -51,6 +59,16 @@ pub struct FireSimulation {
     nearby_cache: HashMap<u32, Vec<u32>>,
     cache_valid_frames: u32,
     current_frame: u32,
+
+    // Phase 2: Advanced Weather Phenomena
+    /// Atmospheric profile for stability indices
+    atmospheric_profile: AtmosphericProfile,
+    /// Active pyrocumulus clouds
+    pyrocumulus_clouds: Vec<PyrocumulusCloud>,
+
+    // Phase 5: Multiplayer Action Queue
+    /// Action queue for deterministic multiplayer replay
+    action_queue: ActionQueue,
 }
 
 impl FireSimulation {
@@ -70,6 +88,14 @@ impl FireSimulation {
         let spatial_index = SpatialIndex::new(bounds, 15.0);
         let grid = SimulationGrid::new(width, height, depth, grid_cell_size, terrain);
 
+        // Initialize atmospheric profile with default conditions
+        let atmospheric_profile = AtmosphericProfile::from_surface_conditions(
+            25.0,  // temperature °C
+            50.0,  // humidity %
+            10.0,  // wind speed km/h
+            true,  // is_daytime
+        );
+
         FireSimulation {
             grid,
             elements: Vec::new(),
@@ -85,6 +111,9 @@ impl FireSimulation {
             nearby_cache: HashMap::with_capacity(1000),
             cache_valid_frames: 5, // Cache neighbors for 5 frames (~0.1s at 50fps)
             current_frame: 0,
+            atmospheric_profile,
+            pyrocumulus_clouds: Vec::new(),
+            action_queue: ActionQueue::default(),
         }
     }
 
@@ -320,6 +349,79 @@ impl FireSimulation {
         }
     }
 
+    // ========================================================================
+    // Phase 2: Advanced Weather Phenomena Accessors
+    // ========================================================================
+
+    /// Get reference to atmospheric profile (for stability indices)
+    pub fn atmospheric_profile(&self) -> &AtmosphericProfile {
+        &self.atmospheric_profile
+    }
+
+    /// Get active pyrocumulus clouds
+    pub fn pyrocumulus_clouds(&self) -> &[PyrocumulusCloud] {
+        &self.pyrocumulus_clouds
+    }
+
+    /// Get number of active pyrocumulus clouds
+    pub fn pyrocumulus_count(&self) -> usize {
+        self.pyrocumulus_clouds.len()
+    }
+
+    /// Get Haines Index from atmospheric profile (2-6 scale)
+    ///
+    /// Haines Index measures atmospheric dryness and stability:
+    /// - 2-3: Very low fire weather potential
+    /// - 4: Low fire weather potential  
+    /// - 5: Moderate fire weather potential
+    /// - 6: High fire weather potential
+    pub fn haines_index(&self) -> u8 {
+        self.atmospheric_profile.haines_index
+    }
+
+    // ========================================================================
+    // Phase 5: Multiplayer Action Queue Accessors
+    // ========================================================================
+
+    /// Submit a player action for processing
+    pub fn submit_action(&mut self, action: PlayerAction) {
+        self.action_queue.submit_action(action);
+    }
+
+    /// Get actions executed in the last frame (for network broadcast)
+    pub fn get_executed_actions(&self) -> &[PlayerAction] {
+        self.action_queue.executed_this_frame()
+    }
+
+    /// Get full action history (for late joiners)
+    pub fn get_action_history(&self) -> &[PlayerAction] {
+        self.action_queue.history()
+    }
+
+    /// Get pending action count
+    pub fn pending_action_count(&self) -> usize {
+        self.action_queue.pending_actions().len()
+    }
+
+    /// Get frame number (for synchronization)
+    pub fn frame_number(&self) -> u32 {
+        self.current_frame
+    }
+
+    /// Ignite at position (convenience method for multiplayer)
+    pub fn ignite_at_position(&mut self, position: Vec3) {
+        // Find nearest fuel element within 5m
+        let nearby_ids = self.spatial_index.query_radius(position, 5.0);
+        for id in nearby_ids {
+            if let Some(element) = self.get_element(id) {
+                if !element.ignited && element.fuel_remaining > 0.1 {
+                    self.ignite_element(id, element.fuel.ignition_temperature + 50.0);
+                    break;
+                }
+            }
+        }
+    }
+
     /// Main simulation update
     ///
     /// # Fire Ignition Mechanisms
@@ -351,6 +453,34 @@ impl FireSimulation {
     /// where ember spotting is often the dominant spread mechanism during extreme fire weather.
     pub fn update(&mut self, dt: f32) {
         self.simulation_time += dt;
+
+        // Phase 5: Process pending player actions (for multiplayer)
+        self.action_queue.begin_frame();
+        let pending_actions = self.action_queue.take_pending();
+        for action in pending_actions {
+            match action.action_type {
+                PlayerActionType::ApplySuppression => {
+                    // Apply suppression at position with specified mass and agent type
+                    if let Some(agent_type) =
+                        crate::suppression::SuppressionAgentType::from_u8(action.param2 as u8)
+                    {
+                        self.apply_suppression_to_elements(
+                            action.position,
+                            10.0,          // radius
+                            action.param1, // mass
+                            agent_type,
+                        );
+                    }
+                }
+                PlayerActionType::IgniteSpot => {
+                    self.ignite_at_position(action.position);
+                }
+                PlayerActionType::ModifyWeather => {
+                    // Reserved for scenario control (not implemented yet)
+                }
+            }
+            self.action_queue.mark_executed(action);
+        }
 
         // 1. Update weather
         self.weather.update(dt);
@@ -812,7 +942,17 @@ impl FireSimulation {
 
                         // Apply FFDI multiplier for Australian fire danger scaling
                         // (FFDI multiplier ranges from 0.5× at Low to 8.0× at Catastrophic)
-                        let heat = base_heat * ffdi_multiplier;
+                        let mut heat = base_heat * ffdi_multiplier;
+
+                        // Phase 3: Apply terrain-based slope effect on fire spread
+                        // Uses Horn's method for accurate slope/aspect calculation
+                        let terrain_multiplier = crate::physics::terrain_spread_multiplier(
+                            &source_pos,
+                            &target.position,
+                            &self.grid.terrain,
+                            &wind_vector,
+                        );
+                        heat *= terrain_multiplier;
 
                         if heat > 0.0 {
                             // Accumulate heat directly into heat_map (no intermediate Vec allocation)
@@ -852,9 +992,71 @@ impl FireSimulation {
         // 6. Simulate plume rise
         simulate_plume_rise(&mut self.grid, &burning_positions, dt);
 
-        // 6a. Generate embers with Albini spotting physics (Phase 2)
-        let mut new_ember_id = self._next_ember_id;
+        // 6. Update advanced weather phenomena (Phase 2)
+
+        // 6a. Update atmospheric profile based on current weather
+        self.atmospheric_profile = AtmosphericProfile::from_surface_conditions(
+            self.weather.temperature,
+            self.weather.humidity,
+            wind_vector.magnitude(),
+            self.weather.is_daytime(),
+        );
+
+        // 6b. Check for pyrocumulus formation near high-intensity fires
+        // Pyrocumulus clouds form when fire intensity exceeds ~10,000 kW/m
         for &element_id in &self.burning_elements {
+            if let Some(element) = self.get_element(element_id) {
+                let intensity = element.byram_fireline_intensity(wind_vector.magnitude());
+
+                // Only high-intensity fires can generate pyrocumulus
+                if intensity > 10000.0 && self.pyrocumulus_clouds.len() < 10 {
+                    if let Some(cloud) = PyrocumulusCloud::try_form(
+                        element.position,
+                        intensity,
+                        &self.atmospheric_profile,
+                        self.weather.humidity,
+                    ) {
+                        self.pyrocumulus_clouds.push(cloud);
+                    }
+                }
+            }
+        }
+
+        // 6c. Update existing pyrocumulus clouds
+        // Calculate average fire intensity for cloud update
+        let avg_fire_intensity = if !self.burning_elements.is_empty() {
+            let total_intensity: f32 = self
+                .burning_elements
+                .iter()
+                .filter_map(|&id| {
+                    self.get_element(id)
+                        .map(|e| e.byram_fireline_intensity(wind_vector.magnitude()))
+                })
+                .sum();
+            total_intensity / self.burning_elements.len() as f32
+        } else {
+            0.0
+        };
+
+        for cloud in &mut self.pyrocumulus_clouds {
+            cloud.update(dt, avg_fire_intensity, &self.atmospheric_profile);
+        }
+
+        // Remove dissipated clouds
+        self.pyrocumulus_clouds.retain(|c| c.is_active());
+
+        // 6d. Calculate ember lofting enhancement from pyrocumulus clouds
+        let ember_lofting_multiplier = self
+            .pyrocumulus_clouds
+            .iter()
+            .map(|c| c.ember_lofting_multiplier())
+            .fold(1.0_f32, |acc, m| acc.max(m));
+
+        // 6e. Generate embers with Albini spotting physics (enhanced by pyrocumulus)
+        let mut new_ember_id = self._next_ember_id;
+        // Clone burning_elements to avoid borrow checker issues
+        let burning_ids: Vec<u32> = self.burning_elements.iter().copied().collect();
+        for element_id in burning_ids {
             if let Some(element) = self.get_element(element_id) {
                 // Probabilistic ember generation based on fuel ember production
                 // High multiplier for realistic ember generation rates (stringybark produces many embers)
@@ -863,7 +1065,10 @@ impl FireSimulation {
                 if ember_prob > 0.0 && rand::random::<f32>() < ember_prob {
                     // Calculate ember lofting height using Albini model
                     let intensity = element.byram_fireline_intensity(wind_vector.norm());
-                    let lofting_height = crate::physics::calculate_lofting_height(intensity);
+                    let base_lofting_height = crate::physics::calculate_lofting_height(intensity);
+
+                    // Apply pyrocumulus lofting enhancement (Phase 2)
+                    let lofting_height = base_lofting_height * ember_lofting_multiplier;
 
                     // Generate ember with physics-based initial conditions
                     // Albini model calculates trajectory - all embers generated (even short distance)

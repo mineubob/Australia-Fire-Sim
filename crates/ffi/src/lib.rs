@@ -777,3 +777,234 @@ pub extern "C" fn fire_sim_terrain_slope_multiplier(
     })
     .unwrap_or(1.0)
 }
+
+// ============================================================================
+// PHASE 4: LIVE WEATHER DATA FFI
+// ============================================================================
+
+/// Initialize weather from live/external data
+///
+/// Game engine is responsible for fetching weather data from external APIs
+/// (BOM, NOAA, etc.) and providing it to the simulation.
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `temperature`: Temperature in °C
+/// - `humidity`: Relative humidity (0-100%)
+/// - `wind_speed`: Wind speed in km/h
+/// - `wind_direction`: Wind direction in degrees (0=N, 90=E)
+/// - `pressure`: Atmospheric pressure in hPa
+/// - `drought_factor`: Drought factor (0-10)
+/// - `fuel_curing`: Fuel curing percentage (0-100)
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+#[no_mangle]
+pub extern "C" fn fire_sim_set_weather_from_live(
+    sim_id: usize,
+    temperature: f32,
+    humidity: f32,
+    wind_speed: f32,
+    wind_direction: f32,
+    _pressure: f32, // Reserved for future use
+    drought_factor: f32,
+    _fuel_curing: f32, // Reserved for future use
+) -> i32 {
+    match with_fire_sim_write(&sim_id, |sim| {
+        // Get current weather and modify it with live data
+        let mut weather = sim.get_weather().clone();
+
+        // Use setter methods to update weather conditions
+        weather.set_temperature(temperature);
+        weather.set_humidity(humidity);
+        weather.set_wind_speed(wind_speed);
+        weather.set_wind_direction(wind_direction);
+        weather.set_drought_factor(drought_factor);
+        // Note: pressure and fuel_curing are reserved for future implementation
+
+        sim.set_weather(weather);
+    }) {
+        Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
+}
+
+/// Get Haines Index from atmospheric profile
+///
+/// The Haines Index is a fire weather severity index (2-6 scale):
+/// - 2-3: Very low fire weather potential
+/// - 4: Low fire weather potential
+/// - 5: Moderate fire weather potential
+/// - 6: High fire weather potential
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+///
+/// # Returns
+/// Haines Index (2-6), or 0 if invalid sim_id
+#[no_mangle]
+pub extern "C" fn fire_sim_get_haines_index(sim_id: usize) -> u8 {
+    with_fire_sim_read(&sim_id, |sim| sim.haines_index()).unwrap_or(0)
+}
+
+/// Get number of active pyrocumulus clouds
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+///
+/// # Returns
+/// Number of active pyrocumulus clouds
+#[no_mangle]
+pub extern "C" fn fire_sim_get_pyrocumulus_count(sim_id: usize) -> u32 {
+    with_fire_sim_read(&sim_id, |sim| sim.pyrocumulus_count() as u32).unwrap_or(0)
+}
+
+// ============================================================================
+// PHASE 5: MULTIPLAYER ACTION QUEUE FFI
+// ============================================================================
+
+/// C-compatible player action for FFI
+#[repr(C)]
+pub struct CPlayerAction {
+    pub action_type: u8,
+    pub player_id: u32,
+    pub timestamp: f32,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub param1: f32,
+    pub param2: u32,
+}
+
+/// Submit a player action for processing
+///
+/// The game engine:
+/// 1. Receives action from client via network
+/// 2. Validates action (anti-cheat)
+/// 3. Submits to simulation using this function
+/// 4. Replicates to all clients
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `action`: Pointer to player action struct
+///
+/// # Returns
+/// `true` if action was accepted and queued
+///
+/// # Safety
+/// The `action` pointer must be valid and non-null
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_submit_player_action(
+    sim_id: usize,
+    action: *const CPlayerAction,
+) -> bool {
+    if action.is_null() {
+        return false;
+    }
+
+    let action_ref = &*action;
+
+    with_fire_sim_write(&sim_id, |sim| {
+        let action_type = match fire_sim_core::PlayerActionType::from_u8(action_ref.action_type) {
+            Some(t) => t,
+            None => return,
+        };
+
+        let player_action = fire_sim_core::PlayerAction::new(
+            action_type,
+            action_ref.player_id,
+            action_ref.timestamp,
+            Vec3::new(
+                action_ref.position_x,
+                action_ref.position_y,
+                action_ref.position_z,
+            ),
+            action_ref.param1,
+            action_ref.param2,
+        );
+
+        sim.submit_action(player_action);
+    })
+    .is_some()
+}
+
+/// Get current frame number (for synchronization)
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+///
+/// # Returns
+/// Current frame number, or 0 if invalid
+#[no_mangle]
+pub extern "C" fn fire_sim_get_frame_number(sim_id: usize) -> u32 {
+    with_fire_sim_read(&sim_id, |sim| sim.frame_number()).unwrap_or(0)
+}
+
+/// Get action history length (for late joiners)
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+///
+/// # Returns
+/// Number of actions in history
+#[no_mangle]
+pub extern "C" fn fire_sim_get_action_history_length(sim_id: usize) -> u32 {
+    with_fire_sim_read(&sim_id, |sim| sim.get_action_history().len() as u32).unwrap_or(0)
+}
+
+/// Simulation snapshot for state synchronization
+#[repr(C)]
+pub struct SimulationSnapshot {
+    pub frame_number: u32,
+    pub simulation_time: f32,
+    pub burning_element_count: u32,
+    pub total_fuel_consumed: f32,
+    pub active_ember_count: u32,
+    pub pyrocumulus_count: u32,
+    pub haines_index: u8,
+}
+
+/// Get current simulation state snapshot
+///
+/// Used for:
+/// - Displaying statistics to players
+/// - Synchronization checks (frame number matching)
+/// - Late joiner validation
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `out_snapshot`: Pointer to receive snapshot data
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_NULL_POINTER` (-2) if pointer is null
+///
+/// # Safety
+/// The `out_snapshot` pointer must be valid
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_get_snapshot(
+    sim_id: usize,
+    out_snapshot: *mut SimulationSnapshot,
+) -> i32 {
+    if out_snapshot.is_null() {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    match with_fire_sim_read(&sim_id, |sim| {
+        let stats = sim.get_stats();
+        *out_snapshot = SimulationSnapshot {
+            frame_number: sim.frame_number(),
+            simulation_time: stats.simulation_time,
+            burning_element_count: stats.burning_elements as u32,
+            total_fuel_consumed: stats.total_fuel_consumed,
+            active_ember_count: sim.ember_count() as u32,
+            pyrocumulus_count: sim.pyrocumulus_count() as u32,
+            haines_index: sim.haines_index(),
+        };
+    }) {
+        Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
+}

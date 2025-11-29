@@ -1022,6 +1022,15 @@ impl WeatherSystem {
         (self.calculate_ffdi() / 20.0).clamp(1.0, 3.5)
     }
 
+    /// Check if it's currently daytime (6am to 6pm)
+    ///
+    /// Daytime affects atmospheric stability and convection strength.
+    /// During daytime, solar heating creates unstable conditions that
+    /// enhance fire behavior through stronger convection.
+    pub fn is_daytime(&self) -> bool {
+        self.time_of_day >= 6.0 && self.time_of_day < 18.0
+    }
+
     /// Get wind vector in m/s
     pub fn wind_vector(&self) -> Vec3 {
         let wind_ms = self.wind_speed / 3.6; // Convert km/h to m/s
