@@ -386,33 +386,34 @@ impl FireSimulation {
 
     /// Get fire weather severity description based on atmospheric profile
     ///
-    /// Returns a human-readable description of current fire weather conditions:
-    /// - "Low": Stable atmosphere, low fire risk
-    /// - "Moderate": Some instability, moderate fire risk
-    /// - "High": Unstable atmosphere, high fire risk
-    /// - "Extreme": Very unstable, extreme fire risk
+    /// Returns a human-readable description of current fire weather conditions
+    /// based on Haines Index (Haines 1988):
+    /// - "Very Low": Haines Index 2-3, stable atmosphere
+    /// - "Low to Moderate": Haines Index 4, some instability
+    /// - "High": Haines Index 5, significant instability
+    /// - "Very High - Extreme Fire Behavior Possible": Haines Index 6
     pub fn fire_weather_severity(&self) -> &'static str {
         self.atmospheric_profile.fire_weather_severity()
     }
 
     /// Get the type/stage of the largest active pyrocumulus cloud
     ///
-    /// Returns a description of cloud development stage:
+    /// Returns a description of cloud development stage based on vertical extent:
     /// - "None": No pyrocumulus clouds active
-    /// - "Cumulus": Small convective cloud forming
-    /// - "Towering Cumulus": Large developing cloud
-    /// - "Pyrocumulus": Full fire-generated cloud
-    /// - "Pyrocumulonimbus": Extreme fire thunderstorm (pyroCb)
+    /// - "Cumulus Flammagenitus": Fire-generated cumulus, <2km depth
+    /// - "Moderate Pyrocumulus": 2-5km depth, significant convection
+    /// - "Deep Pyrocumulus": 5-10km depth, strong updrafts
+    /// - "Pyrocumulonimbus (pyroCb)": >10km depth or lightning present
     pub fn dominant_cloud_type(&self) -> &'static str {
         self.pyrocumulus_clouds
             .iter()
             .map(|c| c.cloud_type())
             .max_by_key(|s| match *s {
                 "None" => 0,
-                "Cumulus" => 1,
-                "Towering Cumulus" => 2,
-                "Pyrocumulus" => 3,
-                "Pyrocumulonimbus" => 4,
+                "Cumulus Flammagenitus" => 1,
+                "Moderate Pyrocumulus" => 2,
+                "Deep Pyrocumulus" => 3,
+                "Pyrocumulonimbus (pyroCb)" => 4,
                 _ => 0,
             })
             .unwrap_or("None")
