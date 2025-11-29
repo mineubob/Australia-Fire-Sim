@@ -265,12 +265,14 @@ impl TerrainData {
         e0 * (1.0 - fy) + e1 * fy
     }
 
-    /// Calculate slope angle at position in degrees
+    /// Calculate slope angle at position in degrees using simple 4-point gradient
+    ///
+    /// This is a fast approximation suitable for most use cases.
+    /// For more accurate results, use `slope_at_horn()` which uses Horn's method.
     pub fn slope_at(&self, x: f32, y: f32) -> f32 {
         let delta = self.resolution;
 
-        // Sample elevations around point (z_center not used in final calculation)
-        let _z_center = self.elevation_at(x, y);
+        // Sample elevations around point
         let z_east = self.elevation_at(x + delta, y);
         let z_west = self.elevation_at(x - delta, y);
         let z_north = self.elevation_at(x, y + delta);
@@ -283,6 +285,87 @@ impl TerrainData {
         // Slope magnitude
         let slope_rad = (dz_dx * dz_dx + dz_dy * dz_dy).sqrt().atan();
         slope_rad.to_degrees()
+    }
+
+    /// Calculate slope angle using Horn's method (3x3 kernel)
+    ///
+    /// Horn's method provides more accurate slope estimation by using
+    /// a 3x3 neighborhood kernel that weighs diagonal neighbors less.
+    ///
+    /// # Scientific Reference
+    /// Horn, B.K.P. (1981). "Hill Shading and the Reflectance Map."
+    /// Proceedings of the IEEE, 69(1), 14-47.
+    ///
+    /// # Returns
+    /// Slope angle in degrees (0° = flat, 90° = vertical)
+    pub fn slope_at_horn(&self, x: f32, y: f32) -> f32 {
+        let d = self.resolution;
+
+        // Sample 3x3 neighborhood
+        // z[0] z[1] z[2]   (NW) (N) (NE)
+        // z[3] z[4] z[5]   (W)  (C) (E)
+        // z[6] z[7] z[8]   (SW) (S) (SE)
+        let z = [
+            self.elevation_at(x - d, y + d), // NW (0)
+            self.elevation_at(x, y + d),     // N  (1)
+            self.elevation_at(x + d, y + d), // NE (2)
+            self.elevation_at(x - d, y),     // W  (3)
+            self.elevation_at(x, y),         // C  (4)
+            self.elevation_at(x + d, y),     // E  (5)
+            self.elevation_at(x - d, y - d), // SW (6)
+            self.elevation_at(x, y - d),     // S  (7)
+            self.elevation_at(x + d, y - d), // SE (8)
+        ];
+
+        // Horn's method gradient calculation
+        // dz/dx = ((z[2] + 2*z[5] + z[8]) - (z[0] + 2*z[3] + z[6])) / (8 * d)
+        // dz/dy = ((z[6] + 2*z[7] + z[8]) - (z[0] + 2*z[1] + z[2])) / (8 * d)
+        let dz_dx = ((z[2] + 2.0 * z[5] + z[8]) - (z[0] + 2.0 * z[3] + z[6])) / (8.0 * d);
+        let dz_dy = ((z[6] + 2.0 * z[7] + z[8]) - (z[0] + 2.0 * z[1] + z[2])) / (8.0 * d);
+
+        // Slope magnitude
+        let slope_rad = (dz_dx * dz_dx + dz_dy * dz_dy).sqrt().atan();
+        slope_rad.to_degrees()
+    }
+
+    /// Calculate aspect using Horn's method (3x3 kernel)
+    ///
+    /// # Scientific Reference
+    /// Horn, B.K.P. (1981). "Hill Shading and the Reflectance Map."
+    ///
+    /// # Returns
+    /// Aspect in degrees (0° = North, 90° = East, 180° = South, 270° = West)
+    pub fn aspect_at_horn(&self, x: f32, y: f32) -> f32 {
+        let d = self.resolution;
+
+        // Sample 3x3 neighborhood
+        let z = [
+            self.elevation_at(x - d, y + d), // NW (0)
+            self.elevation_at(x, y + d),     // N  (1)
+            self.elevation_at(x + d, y + d), // NE (2)
+            self.elevation_at(x - d, y),     // W  (3)
+            self.elevation_at(x, y),         // C  (4)
+            self.elevation_at(x + d, y),     // E  (5)
+            self.elevation_at(x - d, y - d), // SW (6)
+            self.elevation_at(x, y - d),     // S  (7)
+            self.elevation_at(x + d, y - d), // SE (8)
+        ];
+
+        // Horn's method gradient calculation
+        let dz_dx = ((z[2] + 2.0 * z[5] + z[8]) - (z[0] + 2.0 * z[3] + z[6])) / (8.0 * d);
+        let dz_dy = ((z[6] + 2.0 * z[7] + z[8]) - (z[0] + 2.0 * z[1] + z[2])) / (8.0 * d);
+
+        // Aspect is direction of steepest descent
+        // Using atan2 to get direction in -180 to 180 range
+        let aspect_rad = (-dz_dx).atan2(-dz_dy);
+        let aspect_deg = aspect_rad.to_degrees();
+
+        // Convert to 0-360 range with N=0
+        if aspect_deg < 0.0 {
+            aspect_deg + 360.0
+        } else {
+            aspect_deg
+        }
     }
 
     /// Calculate aspect (direction of slope) at position in degrees (0-360)
@@ -391,6 +474,21 @@ impl TerrainData {
     /// Get terrain height in meters
     pub fn height(&self) -> f32 {
         self.height
+    }
+
+    /// Get minimum elevation in meters
+    pub fn min_elevation(&self) -> f32 {
+        self.min_elevation
+    }
+
+    /// Get maximum elevation in meters
+    pub fn max_elevation(&self) -> f32 {
+        self.max_elevation
+    }
+
+    /// Get terrain resolution in meters
+    pub fn resolution(&self) -> f32 {
+        self.resolution
     }
 }
 

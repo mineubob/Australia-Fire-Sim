@@ -662,3 +662,118 @@ pub unsafe extern "C" fn fire_sim_get_ember_count(
         None => FIRE_SIM_INVALID_ID,
     }
 }
+
+// ============================================================================
+// PHASE 3: TERRAIN DATA FFI
+// ============================================================================
+
+/// Query terrain elevation at world position
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `x`, `y`: World coordinates
+///
+/// # Returns
+/// Elevation in meters, or 0.0 if no terrain or invalid sim_id
+///
+/// # Safety
+/// This function is safe to call with any coordinates
+#[no_mangle]
+pub extern "C" fn fire_sim_terrain_elevation(sim_id: usize, x: f32, y: f32) -> f32 {
+    with_fire_sim_read(&sim_id, |sim| sim.terrain().elevation_at(x, y)).unwrap_or(0.0)
+}
+
+/// Query terrain slope at world position using Horn's method
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `x`, `y`: World coordinates
+///
+/// # Returns
+/// Slope in degrees (0° = flat, 90° = vertical), or 0.0 if invalid
+#[no_mangle]
+pub extern "C" fn fire_sim_terrain_slope(sim_id: usize, x: f32, y: f32) -> f32 {
+    with_fire_sim_read(&sim_id, |sim| sim.terrain().slope_at_horn(x, y)).unwrap_or(0.0)
+}
+
+/// Query terrain aspect at world position using Horn's method
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `x`, `y`: World coordinates
+///
+/// # Returns
+/// Aspect in degrees (0° = North, 90° = East, 180° = South, 270° = West)
+#[no_mangle]
+pub extern "C" fn fire_sim_terrain_aspect(sim_id: usize, x: f32, y: f32) -> f32 {
+    with_fire_sim_read(&sim_id, |sim| sim.terrain().aspect_at_horn(x, y)).unwrap_or(0.0)
+}
+
+/// Query terrain dimensions
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `out_width`: Pointer to receive terrain width (meters)
+/// - `out_height`: Pointer to receive terrain height (meters)
+/// - `out_min_elev`: Pointer to receive minimum elevation
+/// - `out_max_elev`: Pointer to receive maximum elevation
+///
+/// # Returns
+/// - `FIRE_SIM_SUCCESS` (0) on success
+/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
+/// - `FIRE_SIM_NULL_POINTER` (-2) if any pointer is null
+///
+/// # Safety
+/// All pointers must be valid, non-null
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_get_terrain_info(
+    sim_id: usize,
+    out_width: *mut f32,
+    out_height: *mut f32,
+    out_min_elev: *mut f32,
+    out_max_elev: *mut f32,
+) -> i32 {
+    if out_width.is_null() || out_height.is_null() || out_min_elev.is_null() || out_max_elev.is_null()
+    {
+        return FIRE_SIM_NULL_POINTER;
+    }
+
+    match with_fire_sim_read(&sim_id, |sim| {
+        let terrain = sim.terrain();
+        *out_width = terrain.width();
+        *out_height = terrain.height();
+        *out_min_elev = terrain.min_elevation();
+        *out_max_elev = terrain.max_elevation();
+    }) {
+        Some(_) => FIRE_SIM_SUCCESS,
+        None => FIRE_SIM_INVALID_ID,
+    }
+}
+
+/// Calculate slope-based fire spread multiplier between two positions
+///
+/// Uses Horn's method and Rothermel slope formulation to calculate
+/// how terrain affects fire spread rate.
+///
+/// # Parameters
+/// - `sim_id`: Simulation ID
+/// - `from_x`, `from_y`: Source position
+/// - `to_x`, `to_y`: Target position
+///
+/// # Returns
+/// Multiplier (typically 0.3-5.0), or 1.0 if invalid
+#[no_mangle]
+pub extern "C" fn fire_sim_terrain_slope_multiplier(
+    sim_id: usize,
+    from_x: f32,
+    from_y: f32,
+    to_x: f32,
+    to_y: f32,
+) -> f32 {
+    with_fire_sim_read(&sim_id, |sim| {
+        let from = Vec3::new(from_x, from_y, 0.0);
+        let to = Vec3::new(to_x, to_y, 0.0);
+        fire_sim_core::physics::slope_spread_multiplier_terrain(&from, &to, sim.terrain())
+    })
+    .unwrap_or(1.0)
+}

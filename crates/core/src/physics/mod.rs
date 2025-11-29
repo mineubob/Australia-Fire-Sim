@@ -9,6 +9,7 @@ pub mod fuel_moisture;
 pub mod rothermel;
 pub mod smoldering;
 pub mod suppression_physics;
+pub mod terrain_physics;
 
 // Re-export public functions and types
 pub use albini_spotting::{calculate_lofting_height, calculate_maximum_spotting_distance};
@@ -20,3 +21,6 @@ pub use fuel_moisture::{
 pub use rothermel::{calculate_spread_rate_with_environment, rothermel_spread_rate};
 pub use smoldering::{update_smoldering_state, CombustionPhase, SmolderingState};
 pub use suppression_physics::{apply_suppression_direct, SuppressionAgent};
+pub use terrain_physics::{
+    aspect_wind_multiplier, slope_spread_multiplier_terrain, terrain_spread_multiplier,
+};
