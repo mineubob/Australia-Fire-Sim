@@ -1038,6 +1038,32 @@ Examples:
   demo-headless -t 25 --humidity 50 -w 15 --duration 30
 ```
 
+Note: the interactive demo (`demo-interactive`) can be driven non-interactively (useful for AIs and CI) by piping expected responses using a heredoc. Example (run from the repo root):
+
+```bash
+./target/release/demo-interactive <<'HEREDOC'
+1000
+1000
+p perth
+i 7
+s 100
+HEREDOC
+```
+
+This prints the steps that the interactive harness prompts for and feeds them automatically so you can validate behaviour in automation.
+
+Annotated: what each line in the heredoc is doing
+
+- 1000 — terrain width (meters). The demo **expects** a width value — provide a number here.
+- 1000 — terrain height (meters). The demo **expects** a height value — provide a number here.
+- p perth — select a weather preset ("p" is the demo command to choose a preset, then the preset name). This line is optional — if omitted the demo will use its default preset.
+- i 7 — ignite element id 7 ("i" is the demo command to ignite the specified fuel element ID). The demo **expects** an ignite command when you want to start a fire.
+- s 100 — step the simulation 100 times ("s" steps forwards in time; each step is one internal physics timestep). The demo **expects** a step count to advance the simulation.
+
+Notes:
+- You can change these numbers to other values or leave a prompt blank in the heredoc to accept demo defaults.
+- Use quoted heredoc (<<'HEREDOC') to prevent shell expansion and ensure the demo receives the lines exactly as shown.
+
 ═══════════════════════════════════════════════════════════════════════
 ## VALIDATION & TESTING
 ═══════════════════════════════════════════════════════════════════════
