@@ -109,9 +109,13 @@ pub struct Fuel {
 
     // Fire behavior
     pub burn_rate_coefficient: f32,
-    pub ember_production: f32,      // 0-1 scale
+    pub ember_production: f32,      // Probability per second (stringybark=0.9, grass=0.1)
     pub ember_receptivity: f32,     // 0-1 (how easily spot fires ignite)
     pub max_spotting_distance: f32, // meters
+    
+    // Ember physics properties (fuel-specific)
+    pub ember_mass_kg: f32,               // Typical ember mass in kg (stringybark=0.001, grass=0.0002)
+    pub ember_launch_velocity_factor: f32, // Horizontal velocity fraction (0-1, bark=0.5, grass=0.3)
 
     // Rothermel model parameters (fuel-specific)
     pub mineral_damping: f32, // 0-1 (mineral/ash content effect, wood=0.41, grass=0.7-0.9)
@@ -147,6 +151,9 @@ pub struct Fuel {
     pub timelag_100h: f32,  // hours (coarse fuels 25-75mm, branches: 100h)
     pub timelag_1000h: f32, // hours (very coarse fuels >75mm, logs: 1000h)
     pub size_class_distribution: [f32; 4], // Fraction in each timelag class [1h, 10h, 100h, 1000h]
+
+    // Canopy structure for fire transition modeling
+    pub canopy_structure: crate::physics::CanopyStructure,
 }
 
 impl Fuel {
@@ -171,9 +178,13 @@ impl Fuel {
             base_moisture: 0.10,
             moisture_of_extinction: 0.35,
             burn_rate_coefficient: 0.08,
-            ember_production: 0.9, // EXTREME ember production
+            ember_production: 0.9, // EXTREME: 90% chance per second
             ember_receptivity: 0.6,
             max_spotting_distance: 25000.0, // 25km spotting!
+            
+            // Ember physics (stringybark produces large bark embers)
+            ember_mass_kg: 0.001,             // 1g embers (large bark pieces)
+            ember_launch_velocity_factor: 0.5, // Moderate horizontal launch
 
             // Rothermel parameters (eucalyptus hardwood)
             mineral_damping: 0.41,       // Moderate mineral content (wood)
@@ -208,6 +219,9 @@ impl Fuel {
             timelag_100h: 100.0,   // Medium branches
             timelag_1000h: 1000.0, // Large branches and trunk
             size_class_distribution: [0.15, 0.25, 0.35, 0.25], // Mixed with emphasis on 100h
+
+            // Canopy structure (high ladder fuel continuity)
+            canopy_structure: crate::physics::CanopyStructure::eucalyptus_stringybark(),
         }
     }
 
@@ -226,9 +240,13 @@ impl Fuel {
             base_moisture: 0.12,
             moisture_of_extinction: 0.35,
             burn_rate_coefficient: 0.06,
-            ember_production: 0.5,
+            ember_production: 0.35, // Moderate: 35% chance per second
             ember_receptivity: 0.5,
             max_spotting_distance: 10000.0, // 10km
+            
+            // Ember physics (smooth bark produces fewer, smaller embers)
+            ember_mass_kg: 0.0007,            // 0.7g embers
+            ember_launch_velocity_factor: 0.4, // Lower launch velocity
 
             // Rothermel parameters (eucalyptus hardwood, denser)
             mineral_damping: 0.41,       // Moderate mineral content
@@ -263,6 +281,9 @@ impl Fuel {
             timelag_100h: 100.0,
             timelag_1000h: 1000.0,
             size_class_distribution: [0.10, 0.20, 0.40, 0.30], // Emphasis on larger fuels
+
+            // Canopy structure (low ladder fuel continuity)
+            canopy_structure: crate::physics::CanopyStructure::eucalyptus_smooth_bark(),
         }
     }
 
@@ -281,9 +302,13 @@ impl Fuel {
             base_moisture: 0.05, // Very dry
             moisture_of_extinction: 0.25,
             burn_rate_coefficient: 0.15, // Burns fast
-            ember_production: 0.2,       // Minimal embers
+            ember_production: 0.1,       // Low: 10% chance per second
             ember_receptivity: 0.8,      // Easy to ignite
-            max_spotting_distance: 500.0,
+            max_spotting_distance: 1000.0, // 1km
+            
+            // Ember physics (grass produces very light embers)
+            ember_mass_kg: 0.0002,            // 0.2g embers (light grass)
+            ember_launch_velocity_factor: 0.3, // Low horizontal component
 
             // Rothermel parameters (fine herbaceous fuel)
             mineral_damping: 0.85,       // Low mineral content (grass)
@@ -318,6 +343,9 @@ impl Fuel {
             timelag_100h: 100.0,
             timelag_1000h: 1000.0,
             size_class_distribution: [1.0, 0.0, 0.0, 0.0], // All 1-hour timelag
+
+            // Canopy structure (grassland - no vertical structure)
+            canopy_structure: crate::physics::CanopyStructure::grassland(),
         }
     }
 
@@ -336,9 +364,13 @@ impl Fuel {
             base_moisture: 0.15,
             moisture_of_extinction: 0.30,
             burn_rate_coefficient: 0.10,
-            ember_production: 0.4,
+            ember_production: 0.24, // Medium: 24% chance per second
             ember_receptivity: 0.6,
-            max_spotting_distance: 2000.0,
+            max_spotting_distance: 3000.0, // 3km
+            
+            // Ember physics (medium-sized woody embers)
+            ember_mass_kg: 0.0004,            // 0.4g embers
+            ember_launch_velocity_factor: 0.35, // Medium launch velocity
 
             // Rothermel parameters (medium shrub fuel)
             mineral_damping: 0.55,       // Moderate-low mineral content
@@ -367,12 +399,15 @@ impl Fuel {
             crown_base_height: 0.5,         // m (low shrub canopy)
             foliar_moisture_content: 110.0, // % (higher for live shrubs)
 
-            // Nelson Timelag parameters (mixed fine to medium)
+            // Nelson Timelag parameters (fine to medium)
             timelag_1h: 1.0,
             timelag_10h: 10.0,
             timelag_100h: 100.0,
             timelag_1000h: 1000.0,
-            size_class_distribution: [0.30, 0.40, 0.25, 0.05], // Emphasis on fine/medium
+            size_class_distribution: [0.40, 0.35, 0.20, 0.05], // Emphasis on finer fuels
+
+            // Canopy structure (grassland - shrubs don't have tree canopy)
+            canopy_structure: crate::physics::CanopyStructure::grassland(),
         }
     }
 
@@ -391,9 +426,13 @@ impl Fuel {
             base_moisture: 0.05, // Very dry
             moisture_of_extinction: 0.25,
             burn_rate_coefficient: 0.12,
-            ember_production: 0.5,
+            ember_production: 0.35, // Moderate: 35% chance per second
             ember_receptivity: 0.9, // Highly susceptible
-            max_spotting_distance: 1000.0,
+            max_spotting_distance: 5000.0, // 5km
+            
+            // Ember physics (wood produces typical-sized embers)
+            ember_mass_kg: 0.0005,            // 0.5g embers (typical)
+            ember_launch_velocity_factor: 0.4, // Moderate launch velocity
 
             // Rothermel parameters (medium-coarse dead fuel)
             mineral_damping: 0.45, // Higher mineral/ash content (dead material)
@@ -428,6 +467,9 @@ impl Fuel {
             timelag_100h: 100.0,
             timelag_1000h: 1000.0,
             size_class_distribution: [0.20, 0.35, 0.35, 0.10], // Varied size classes
+
+            // Canopy structure (grassland - ground litter)
+            canopy_structure: crate::physics::CanopyStructure::grassland(),
         }
     }
 
@@ -446,9 +488,13 @@ impl Fuel {
             base_moisture: 0.60, // Very high moisture
             moisture_of_extinction: 0.40,
             burn_rate_coefficient: 0.04,
-            ember_production: 0.1,
+            ember_production: 0.03, // Very low: 3% chance per second
             ember_receptivity: 0.2, // Resistant to spot fires
             max_spotting_distance: 200.0,
+            
+            // Ember physics (minimal ember production from green fuel)
+            ember_mass_kg: 0.0003,            // 0.3g embers
+            ember_launch_velocity_factor: 0.2, // Minimal launch velocity
 
             // Rothermel parameters (live herbaceous/foliage)
             mineral_damping: 0.75,       // Low mineral content (living tissue)
@@ -477,12 +523,15 @@ impl Fuel {
             crown_base_height: 0.2,         // m (low ground vegetation)
             foliar_moisture_content: 150.0, // % (very high, green foliage)
 
-            // Nelson Timelag parameters (live fine fuels)
+            // Nelson Timelag parameters (fine live fuels)
             timelag_1h: 1.0,
             timelag_10h: 10.0,
             timelag_100h: 100.0,
             timelag_1000h: 1000.0,
             size_class_distribution: [0.80, 0.15, 0.05, 0.0], // Mostly fine live fuels
+
+            // Canopy structure (grassland - low vegetation)
+            canopy_structure: crate::physics::CanopyStructure::grassland(),
         }
     }
 
@@ -547,6 +596,10 @@ impl Fuel {
             ember_production: 0.0,
             ember_receptivity: 0.0,
             max_spotting_distance: 0.0,
+            
+            // Ember physics (non-burnable - no embers)
+            ember_mass_kg: 0.0,
+            ember_launch_velocity_factor: 0.0,
 
             // Rothermel parameters (non-burnable)
             mineral_damping: 1.0,       // N/A for non-burnable
@@ -575,12 +628,15 @@ impl Fuel {
             crown_base_height: 0.0,
             foliar_moisture_content: 0.0,
 
-            // Nelson Timelag parameters (N/A for water)
+            // Nelson Timelag parameters (N/A - non-burnable)
             timelag_1h: 1.0,
             timelag_10h: 10.0,
             timelag_100h: 100.0,
             timelag_1000h: 1000.0,
             size_class_distribution: [0.0, 0.0, 0.0, 0.0],
+
+            // Canopy structure (grassland - water has no structure)
+            canopy_structure: crate::physics::CanopyStructure::grassland(),
         }
     }
 
@@ -602,10 +658,14 @@ impl Fuel {
             ember_production: 0.0,
             ember_receptivity: 0.0,
             max_spotting_distance: 0.0,
+            
+            // Ember physics (non-burnable - no embers)
+            ember_mass_kg: 0.0,
+            ember_launch_velocity_factor: 0.0,
 
             // Rothermel parameters (non-burnable)
-            mineral_damping: 1.0,       // N/A for non-burnable
-            particle_density: 2700.0,   // Rock density
+            mineral_damping: 0.0, // Not applicable
+            particle_density: 2700.0, // Rock density
             effective_heating: 0.0,     // N/A
             packing_ratio: 1.0,         // N/A
             optimum_packing_ratio: 1.0, // N/A
@@ -636,6 +696,9 @@ impl Fuel {
             timelag_100h: 100.0,
             timelag_1000h: 1000.0,
             size_class_distribution: [0.0, 0.0, 0.0, 0.0],
+
+            // Canopy structure (grassland - rock has no structure)
+            canopy_structure: crate::physics::CanopyStructure::grassland(),
         }
     }
 }

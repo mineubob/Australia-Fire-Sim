@@ -24,7 +24,7 @@ use crate::core_types::spatial::SpatialIndex;
 use crate::core_types::weather::WeatherSystem;
 use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise, update_wind_field};
 use crate::grid::{GridCell, SimulationGrid, TerrainData};
-use crate::physics::{calculate_layer_transition_probability, CanopyLayer, CanopyStructure};
+use crate::physics::{calculate_layer_transition_probability, CanopyLayer};
 use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -461,7 +461,7 @@ impl FireSimulation {
 
     /// Get pending action count
     pub fn pending_action_count(&self) -> usize {
-        self.action_queue.pending_actions().len()
+        self.action_queue.pending_actions_len()
     }
 
     /// Get frame number (for synchronization)
@@ -850,8 +850,9 @@ impl FireSimulation {
                 self.burning_elements.remove(&element_id);
             }
 
+            let ambient_temperature = self.grid.ambient_temperature;
             // 4g. Check for crown fire transition using Van Wagner model AND canopy layer physics
-            if let Some(element) = self.get_element(element_id) {
+            if let Some(element) = self.get_element_mut(element_id) {
                 if !element.crown_fire_active
                     && matches!(
                         element.part_type,
@@ -864,7 +865,7 @@ impl FireSimulation {
                         element.moisture_fraction,
                         wind_vector.norm(),
                         element.slope_angle,
-                        self.grid.ambient_temperature,
+                        ambient_temperature,
                     );
 
                     // Use fuel properties for crown fire calculation
@@ -880,25 +881,16 @@ impl FireSimulation {
                     // Calculate Byram's fireline intensity for layer transition
                     let intensity = element.byram_fireline_intensity(wind_vector.norm());
 
-                    // Get canopy structure based on fuel type (stringybark vs smooth bark)
-                    let canopy_structure = if element.fuel.bark_properties.ladder_fuel_factor > 0.7
-                    {
-                        CanopyStructure::eucalyptus_stringybark()
-                    } else if element.fuel.bark_properties.ladder_fuel_factor > 0.2 {
-                        CanopyStructure::eucalyptus_smooth_bark()
-                    } else {
-                        CanopyStructure::grassland()
-                    };
-
                     // Calculate layer transition probability using canopy physics
                     // Determine current layer based on element height
-                    let current_layer = if element.position.z < 2.0 {
-                        CanopyLayer::Understory
-                    } else if element.position.z < 8.0 {
-                        CanopyLayer::Midstory
-                    } else {
-                        CanopyLayer::Overstory
-                    };
+                    let current_layer =
+                        if CanopyLayer::Understory.contains_height(element.position.z) {
+                            CanopyLayer::Understory
+                        } else if CanopyLayer::Midstory.contains_height(element.position.z) {
+                            CanopyLayer::Midstory
+                        } else {
+                            CanopyLayer::Overstory
+                        };
 
                     // Calculate probability of transitioning to next layer
                     let transition_prob = if current_layer != CanopyLayer::Overstory {
@@ -909,7 +901,7 @@ impl FireSimulation {
                         };
                         calculate_layer_transition_probability(
                             intensity,
-                            &canopy_structure,
+                            &element.fuel.canopy_structure.clone(),
                             current_layer,
                             target_layer,
                         )
@@ -925,22 +917,20 @@ impl FireSimulation {
                         transition_prob > 0.0 && rand::random::<f32>() < transition_prob;
 
                     if crown_fire_indicated || layer_transition_indicated {
-                        if let Some(elem_mut) = self.get_element_mut(element_id) {
-                            elem_mut.crown_fire_active = true;
-                            // Use crown_fraction_burned to scale temperature increase
-                            // Also factor in ladder fuel connectivity from canopy structure
-                            let crown_intensity_factor =
-                                crown_behavior.crown_fraction_burned().clamp(0.0, 1.0);
-                            let ladder_boost = 1.0
-                                + canopy_structure.ladder_fuel_factor()
-                                    * LADDER_FUEL_TEMP_BOOST_FACTOR;
-                            let base_crown_temp = elem_mut.fuel.max_flame_temperature
-                                * elem_mut.fuel.crown_fire_temp_multiplier;
-                            // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
-                            let crown_temp =
-                                base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
-                            elem_mut.temperature = elem_mut.temperature.max(crown_temp);
-                        }
+                        element.crown_fire_active = true;
+                        // Use crown_fraction_burned to scale temperature increase
+                        // Also factor in ladder fuel connectivity from canopy structure
+                        let crown_intensity_factor =
+                            crown_behavior.crown_fraction_burned().clamp(0.0, 1.0);
+                        let ladder_boost = 1.0
+                            + element.fuel.canopy_structure.ladder_fuel_factor()
+                                * LADDER_FUEL_TEMP_BOOST_FACTOR;
+                        let base_crown_temp = element.fuel.max_flame_temperature
+                            * element.fuel.crown_fire_temp_multiplier;
+                        // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
+                        let crown_temp =
+                            base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
+                        element.temperature = element.temperature.max(crown_temp);
                     }
                 }
             }
@@ -1196,10 +1186,10 @@ impl FireSimulation {
             .iter()
             .filter_map(|&element_id| {
                 self.get_element(element_id).and_then(|element| {
-                    // Probabilistic ember generation based on fuel ember production
-                    // High multiplier for realistic ember generation rates (stringybark produces many embers)
-                    // For stringybark (0.9 production): 0.9 × 1.0 × 0.8 = 72% chance per second
-                    let ember_prob = element.fuel.ember_production * dt * 0.8;
+                    // Probabilistic ember generation based on fuel-specific production rate
+                    // For stringybark: 0.9 = 90% chance per second
+                    // For grass: 0.1 = 10% chance per second
+                    let ember_prob = element.fuel.ember_production * dt;
                     if ember_prob > 0.0 && rand::random::<f32>() < ember_prob {
                         // Calculate ember lofting height using Albini model
                         let intensity = element.byram_fireline_intensity(wind_vector.norm());
@@ -1212,9 +1202,9 @@ impl FireSimulation {
                         Some((
                             element.position + Vec3::new(0.0, 0.0, 1.0),
                             Vec3::new(
-                                wind_vector.x * 0.5,
-                                wind_vector.y * 0.5,
-                                lofting_height.min(100.0) * 0.1, // Initial upward velocity
+                                wind_vector.x * element.fuel.ember_launch_velocity_factor,
+                                wind_vector.y * element.fuel.ember_launch_velocity_factor,
+                                lofting_height.min(100.0) * 0.1, // Initial upward velocity (universal)
                             ),
                             element.temperature,
                             element.fuel.id,
@@ -1229,7 +1219,11 @@ impl FireSimulation {
         // Now push embers (requires mutable borrow)
         let mut new_ember_id = self._next_ember_id;
         for (position, velocity, temperature, fuel_id) in new_embers {
-            let ember_mass = 0.0005; // kg (0.5g typical)
+            // Get fuel-specific ember mass
+            let ember_mass = self.elements.iter()
+                .find_map(|e| e.as_ref().filter(|el| el.fuel.id == fuel_id))
+                .map(|el| el.fuel.ember_mass_kg)
+                .unwrap_or(0.0005); // Fallback to typical mass
             let ember = Ember::new(
                 new_ember_id,
                 position,

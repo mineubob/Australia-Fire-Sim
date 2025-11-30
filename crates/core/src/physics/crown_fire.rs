@@ -39,10 +39,7 @@ pub(crate) struct CrownFireBehavior {
 
 impl CrownFireBehavior {
     /// Create new crown fire behavior
-    pub(crate) fn new(
-        fire_type: CrownFireType,
-        crown_fraction_burned: f32,
-    ) -> Self {
+    pub(crate) fn new(fire_type: CrownFireType, crown_fraction_burned: f32) -> Self {
         Self {
             fire_type,
             crown_fraction_burned,

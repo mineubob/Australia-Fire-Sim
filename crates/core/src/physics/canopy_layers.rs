@@ -44,7 +44,7 @@ impl CanopyLayer {
 }
 
 /// Canopy structure properties for a fuel type
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CanopyStructure {
     /// Fuel load by layer (kg/m²)
     pub understory_load: f32,

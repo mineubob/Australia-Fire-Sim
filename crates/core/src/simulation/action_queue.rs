@@ -178,9 +178,9 @@ impl ActionQueue {
         self.pending.push(action);
     }
 
-    /// Get pending actions (not yet executed)
-    pub fn pending_actions(&self) -> &[PlayerAction] {
-        &self.pending
+    /// Get amount of pending actions (not yet executed)
+    pub fn pending_actions_len(&self) -> usize {
+        self.pending.len()
     }
 
     /// Get actions executed in the last frame (for broadcasting)
@@ -248,11 +248,11 @@ mod tests {
         let action = PlayerAction::suppression(1, 0.0, Vec3::new(10.0, 20.0, 0.0), 5.0, 0);
         queue.submit_action(action);
 
-        assert_eq!(queue.pending_actions().len(), 1);
+        assert_eq!(queue.pending_actions_len(), 1);
 
         let pending = queue.take_pending();
         assert_eq!(pending.len(), 1);
-        assert_eq!(queue.pending_actions().len(), 0);
+        assert_eq!(queue.pending_actions_len(), 0);
     }
 
     #[test]

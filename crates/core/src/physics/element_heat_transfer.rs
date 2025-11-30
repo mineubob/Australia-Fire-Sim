@@ -311,8 +311,10 @@ pub(crate) fn calculate_heat_transfer_raw(
             // Natural convection coefficient for wildfire conditions (W/(m²·K))
             // Varies with temperature difference: h ≈ 1.32 * (ΔT/L)^0.25
             // Typical range: 5-50 W/(m²·K) for natural convection
-            // Using conservative value for element-to-element transfer
-            let convection_coeff = 25.0; // Moderate natural convection
+            // NOTE: This is element-to-element transfer, not element-to-grid
+            // Using reduced value (25.0) as conservative baseline for peer transfer
+            // Grid transfer uses fuel-specific convective_heat_coefficient
+            let convection_coeff = 25.0; // Conservative for element-to-element
             convection_coeff * temp_diff * target_surface_area_vol * 0.001
         } else {
             0.0
@@ -339,6 +341,9 @@ pub(crate) fn calculate_heat_transfer_raw(
         //
         // At 6.9 m/s (25 km/h): 1.0 + 1.0 × sqrt(6.9) × 0.8 = ~3.1× (Moderate)
         // At 16.7 m/s (60 km/h): 1.0 + 1.0 × sqrt(16.7) × 0.8 = ~4.3× (Extreme base)
+        //
+        // NOTE: 0.8 coefficient is for element-to-element transfer physics (universal)
+        // Fuel-specific wind_sensitivity is applied at higher level (Rothermel model)
         let base_multiplier = 1.0 + alignment * wind_speed_ms.sqrt() * 0.8;
 
         if wind_speed_ms > 15.0 {

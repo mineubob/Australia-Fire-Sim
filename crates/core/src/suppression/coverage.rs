@@ -164,7 +164,9 @@ impl SuppressionCoverage {
 
         // 2. Chemical combustion inhibition (retardants)
         let inhibition_factor = 1.0
-            - (props.combustion_inhibition() * self.coverage_fraction * self.chemical_effectiveness);
+            - (props.combustion_inhibition()
+                * self.coverage_fraction
+                * self.chemical_effectiveness);
 
         // 3. Oxygen displacement (foam blanketing)
         let oxygen_factor = 1.0 - (props.oxygen_displacement() * self.coverage_fraction);

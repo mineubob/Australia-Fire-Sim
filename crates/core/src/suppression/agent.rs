@@ -130,8 +130,8 @@ impl SuppressionAgentProperties {
         latent_heat_vaporization: 2260.0,
         boiling_point: 100.0,
         // Coverage
-        application_rate: 3.0,    // kg/m² typical ground application
-        penetration_depth: 0.02,  // 2cm typical
+        application_rate: 3.0,   // kg/m² typical ground application
+        penetration_depth: 0.02, // 2cm typical
         // Chemical
         combustion_inhibition: 0.0, // No chemical inhibition
         oxygen_displacement: 0.0,   // No oxygen exclusion
@@ -154,8 +154,8 @@ impl SuppressionAgentProperties {
         latent_heat_vaporization: 2260.0, // Water base
         boiling_point: 100.0,
         // Coverage - much more efficient than water
-        application_rate: 0.8,    // kg/m² (less needed)
-        penetration_depth: 0.05,  // 5cm (surfactant helps)
+        application_rate: 0.8,   // kg/m² (less needed)
+        penetration_depth: 0.05, // 5cm (surfactant helps)
         // Chemical
         combustion_inhibition: 0.1,    // Slight inhibition
         oxygen_displacement: 0.75,     // 75% oxygen exclusion
@@ -224,7 +224,7 @@ impl SuppressionAgentProperties {
         boiling_point: 100.0,
         // Coverage - better penetration
         application_rate: 2.0,
-        penetration_depth: 0.08,  // 8cm (deep penetration)
+        penetration_depth: 0.08, // 8cm (deep penetration)
         // Chemical
         combustion_inhibition: 0.05,  // Slight
         oxygen_displacement: 0.05,    // Slight
