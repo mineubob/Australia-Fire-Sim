@@ -40,14 +40,14 @@ pub enum CombustionPhase {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SmolderingState {
     /// Current combustion phase
-    pub phase: CombustionPhase,
+    phase: CombustionPhase,
     /// Heat release rate multiplier (relative to flaming)
     /// Flaming = 1.0, Smoldering = 0.01-0.1
-    pub heat_release_multiplier: f32,
+    heat_release_multiplier: f32,
     /// Burn rate multiplier (slower in smoldering)
-    pub burn_rate_multiplier: f32,
+    burn_rate_multiplier: f32,
     /// Time spent in current phase (seconds)
-    pub phase_duration: f32,
+    phase_duration: f32,
 }
 
 impl SmolderingState {
@@ -59,6 +59,21 @@ impl SmolderingState {
             burn_rate_multiplier: 0.0,
             phase_duration: 0.0,
         }
+    }
+
+    /// Get the current combustion phase
+    pub fn phase(&self) -> CombustionPhase {
+        self.phase
+    }
+
+    /// Get the heat release multiplier
+    pub(crate) fn heat_release_multiplier(&self) -> f32 {
+        self.heat_release_multiplier
+    }
+
+    /// Get the burn rate multiplier
+    pub(crate) fn burn_rate_multiplier(&self) -> f32 {
+        self.burn_rate_multiplier
     }
 }
 
@@ -85,7 +100,7 @@ impl Default for SmolderingState {
 ///
 /// # References
 /// Rein (2009), Drysdale (2011)
-pub fn should_transition_to_smoldering(
+pub(crate) fn should_transition_to_smoldering(
     temperature: f32,
     oxygen_fraction: f32,
     time_burning: f32,
@@ -117,7 +132,7 @@ pub fn should_transition_to_smoldering(
 ///
 /// # References
 /// Rein (2009) - Smoldering heat release is 10-100x lower than flaming
-pub fn calculate_smoldering_heat_multiplier(temperature: f32, oxygen_fraction: f32) -> f32 {
+pub(crate) fn calculate_smoldering_heat_multiplier(temperature: f32, oxygen_fraction: f32) -> f32 {
     if temperature < 200.0 {
         return 0.0; // Too cold for smoldering
     }
@@ -152,7 +167,7 @@ pub fn calculate_smoldering_heat_multiplier(temperature: f32, oxygen_fraction: f
 ///
 /// # References
 /// Ohlemiller (1985)
-pub fn calculate_smoldering_burn_rate_multiplier(temperature: f32) -> f32 {
+pub(crate) fn calculate_smoldering_burn_rate_multiplier(temperature: f32) -> f32 {
     if temperature < 200.0 {
         0.0 // No smoldering
     } else if temperature < 400.0 {
@@ -177,7 +192,7 @@ pub fn calculate_smoldering_burn_rate_multiplier(temperature: f32) -> f32 {
 ///
 /// # Returns
 /// Updated smoldering state
-pub fn update_smoldering_state(
+pub(crate) fn update_smoldering_state(
     mut state: SmolderingState,
     temperature: f32,
     oxygen_fraction: f32,

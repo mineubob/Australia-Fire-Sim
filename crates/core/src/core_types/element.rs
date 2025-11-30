@@ -1,4 +1,5 @@
 use crate::core_types::fuel::Fuel;
+use crate::suppression::SuppressionCoverage;
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 
@@ -50,7 +51,8 @@ pub struct FuelElement {
 
     // Spatial context
     pub(crate) elevation: f32,      // Height above ground
-    pub(crate) slope_angle: f32,    // Local terrain slope (degrees)
+    pub(crate) slope_angle: f32,    // Local terrain slope (degrees) - CACHED from terrain
+    pub(crate) aspect_angle: f32,   // Local terrain aspect (degrees 0-360) - CACHED from terrain
     pub(crate) neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
 
     // Advanced physics state (Phase 1-3 enhancements)
@@ -66,6 +68,10 @@ pub struct FuelElement {
     /// Used for realistic ignition behavior: elements that have been hot
     /// for extended periods should ignite deterministically
     pub(crate) time_above_ignition: f32,
+
+    // Suppression coverage (Phase 1)
+    /// Active suppression agent coverage on this fuel element
+    pub(crate) suppression_coverage: Option<SuppressionCoverage>,
 }
 
 impl FuelElement {
@@ -104,12 +110,14 @@ impl FuelElement {
             part_type,
             elevation,
             slope_angle: 0.0,
+            aspect_angle: 0.0, // Will be set by simulation when terrain is available
             neighbors: Vec::new(),
             fuel,
             moisture_state,
             smoldering_state,
             crown_fire_active: false,
             time_above_ignition: 0.0,
+            suppression_coverage: None,
         }
     }
 
@@ -148,14 +156,14 @@ impl FuelElement {
         self.slope_angle
     }
 
+    /// Get local terrain aspect angle in degrees (0-360)
+    pub fn aspect_angle(&self) -> f32 {
+        self.aspect_angle
+    }
+
     /// Get neighboring element IDs
     pub fn neighbors(&self) -> &[u32] {
         &self.neighbors
-    }
-
-    /// Get fuel moisture state (if present)
-    pub fn moisture_state(&self) -> Option<&crate::physics::FuelMoistureState> {
-        self.moisture_state.as_ref()
     }
 
     /// Set temperature (for testing)
@@ -344,8 +352,8 @@ impl FuelElement {
         // Fuel loading (kg/m²) - mass per unit area
         let fuel_loading = self.fuel.bulk_density * self.fuel.fuel_bed_depth;
 
-        // Heat release with combustion efficiency (90%)
-        let heat_per_area = self.fuel.heat_content * fuel_loading * 0.9;
+        // Heat release with fuel-specific combustion efficiency
+        let heat_per_area = self.fuel.heat_content * fuel_loading * self.fuel.combustion_efficiency;
 
         // Byram's formula: I = (H × w × r) / 60
         // Units: (kJ/kg × kg/m² × m/min) / 60 = kW/m
@@ -387,6 +395,92 @@ impl FuelElement {
     /// Check if crown fire is currently active
     pub fn is_crown_fire_active(&self) -> bool {
         self.crown_fire_active
+    }
+
+    /// Get suppression coverage (if present)
+    pub fn suppression_coverage(&self) -> Option<&SuppressionCoverage> {
+        self.suppression_coverage.as_ref()
+    }
+
+    /// Check if element has active suppression coverage
+    pub fn has_active_suppression(&self) -> bool {
+        self.suppression_coverage
+            .as_ref()
+            .map(|c| c.is_active())
+            .unwrap_or(false)
+    }
+
+    /// Get ember ignition modifier from suppression coverage
+    ///
+    /// Returns a value between 0 and 1:
+    /// - 1.0 = no suppression effect (ember ignition at full probability)
+    /// - 0.0 = full suppression (ember ignition blocked)
+    pub fn ember_ignition_modifier(&self) -> f32 {
+        self.suppression_coverage
+            .as_ref()
+            .map(|c| c.ember_ignition_modifier())
+            .unwrap_or(1.0)
+    }
+
+    /// Apply suppression coverage to this fuel element
+    pub(crate) fn apply_suppression(
+        &mut self,
+        agent_type: crate::suppression::SuppressionAgentType,
+        mass_kg: f32,
+        simulation_time: f32,
+    ) {
+        // Calculate approximate surface area based on fuel properties
+        // Uses fuel-specific geometry factor (bark=0.12, grass=0.15, wood=0.1)
+        let surface_area = self.fuel.surface_area_to_volume
+            * self.fuel_remaining.sqrt()
+            * self.fuel.surface_area_geometry_factor;
+        let surface_area = surface_area.max(0.1); // Minimum 0.1 m²
+
+        let new_coverage =
+            SuppressionCoverage::new(agent_type, mass_kg, surface_area, simulation_time);
+
+        // If already has coverage, combine them
+        if let Some(ref existing) = self.suppression_coverage {
+            // Add masses if same agent type
+            if existing.agent_type() == agent_type && existing.is_active() {
+                self.suppression_coverage = Some(SuppressionCoverage::new(
+                    agent_type,
+                    mass_kg + existing.mass_per_area() * surface_area,
+                    surface_area,
+                    simulation_time,
+                ));
+            } else {
+                // Replace with new coverage
+                self.suppression_coverage = Some(new_coverage);
+            }
+        } else {
+            self.suppression_coverage = Some(new_coverage);
+        }
+
+        // Suppression adds moisture to fuel
+        if let Some(ref coverage) = self.suppression_coverage {
+            self.moisture_fraction =
+                (self.moisture_fraction + coverage.moisture_contribution()).min(1.0);
+        }
+    }
+
+    /// Update suppression coverage state over time
+    pub(crate) fn update_suppression(
+        &mut self,
+        temperature: f32,
+        humidity: f32,
+        wind_speed: f32,
+        solar_radiation: f32,
+        dt: f32,
+    ) {
+        if let Some(ref mut coverage) = self.suppression_coverage {
+            coverage.update(temperature, humidity, wind_speed, solar_radiation, dt);
+
+            // Remove inactive coverage
+            if !coverage.is_active() {
+                self.suppression_coverage = None;
+            }
+        }
     }
 
     /// Get comprehensive statistics about this fuel element

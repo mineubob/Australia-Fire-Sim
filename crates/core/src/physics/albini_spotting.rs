@@ -67,7 +67,7 @@ pub fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
 /// # References
 /// Standard atmospheric boundary layer theory
 /// Wind shear exponent α ≈ 0.15 for open terrain
-pub fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 {
+pub(crate) fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 {
     if height <= 0.0 {
         return 0.0;
     }
@@ -93,7 +93,7 @@ pub fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 {
 ///
 /// # References
 /// Standard aerodynamics, Tarifa et al. (1965)
-pub fn calculate_terminal_velocity(ember_mass: f32, ember_diameter: f32) -> f32 {
+pub(crate) fn calculate_terminal_velocity(ember_mass: f32, ember_diameter: f32) -> f32 {
     const AIR_DENSITY: f32 = 1.225; // kg/m³ at sea level
     const DRAG_COEFFICIENT: f32 = 0.4; // Sphere approximation
     const GRAVITY: f32 = 9.81; // m/s²
@@ -169,7 +169,6 @@ pub fn calculate_maximum_spotting_distance(
     base_distance * terrain_factor
 }
 
-#[allow(clippy::too_many_arguments)] // Required for caculation
 /// Detailed ember trajectory calculation with integration
 ///
 /// Integrates ember motion equations considering:
@@ -194,6 +193,7 @@ pub fn calculate_maximum_spotting_distance(
 ///
 /// # References
 /// Tarifa et al. (1965), Albini (1983)
+#[allow(clippy::too_many_arguments)] // Required for scientific calculation
 pub fn calculate_ember_trajectory(
     initial_position: Vec3,
     initial_velocity: Vec3,

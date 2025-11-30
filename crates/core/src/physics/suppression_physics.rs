@@ -72,7 +72,7 @@ fn calculate_cooling_capacity(agent_type: SuppressionAgent, temperature: f32) ->
 /// - `mass`: Mass of suppression agent in kg
 /// - `agent_type`: Type of suppression agent (Water, Retardant, Foam)
 /// - `grid`: Mutable reference to the simulation grid
-pub fn apply_suppression_direct(
+pub(crate) fn apply_suppression_direct(
     position: Vec3,
     mass: f32,
     agent_type: SuppressionAgent,
