@@ -13,6 +13,10 @@
 //!
 //! # Scientific References
 //!
+//! - Albini, F.A. (1979). "Spot fire distance from burning trees: a predictive model"
+//!   USDA Forest Service Research Paper INT-56
+//! - Albini, F.A. (1983). "Transport of firebrands by line thermals"
+//!   Combustion Science and Technology, 32(5-6), 277-288
 //! - Koo, E., Pagni, P.J., Weise, D.R., Woycheese, J.P. (2010). "Firebrands and spotting ignition
 //!   in large-scale fires." International Journal of Wildland Fire, 19(7), 818-843.
 //! - Ellis, P.F. (2011). "Fuelbed ignition potential and bark morphology explain the notoriety
@@ -222,6 +226,47 @@ impl Ember {
     /// Get source fuel type ID
     pub fn source_fuel_type(&self) -> u8 {
         self.source_fuel_type
+    }
+
+    /// Predict final landing position using Albini trajectory model
+    ///
+    /// Uses the detailed trajectory integration from Albini (1983) to predict
+    /// where this ember will land based on current conditions.
+    ///
+    /// # Arguments
+    /// * `wind_speed_10m` - Wind speed at 10m reference height (m/s)
+    /// * `wind_direction` - Wind direction as unit vector
+    /// * `dt` - Integration time step (seconds)
+    /// * `max_time` - Maximum simulation time (seconds)
+    ///
+    /// # Returns
+    /// Predicted landing position (Vec3)
+    ///
+    /// # References
+    /// Albini (1979, 1983) trajectory integration
+    pub fn predict_landing_position(
+        &self,
+        wind_speed_10m: f32,
+        wind_direction: Vec3,
+        dt: f32,
+        max_time: f32,
+    ) -> Vec3 {
+        // Calculate ember diameter from mass assuming density of 400 kg/m³
+        // Volume = mass / density, diameter = (6V/π)^(1/3)
+        let volume = self.mass / 400.0;
+        let ember_diameter = (6.0 * volume / std::f32::consts::PI).powf(1.0 / 3.0);
+
+        crate::physics::calculate_ember_trajectory(
+            self.position,
+            self.velocity,
+            self.mass,
+            ember_diameter,
+            self.temperature,
+            wind_speed_10m,
+            wind_direction,
+            dt,
+            max_time,
+        )
     }
 }
 

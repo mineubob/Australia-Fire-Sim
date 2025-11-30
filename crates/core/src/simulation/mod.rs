@@ -24,6 +24,7 @@ use crate::core_types::spatial::SpatialIndex;
 use crate::core_types::weather::WeatherSystem;
 use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise, update_wind_field};
 use crate::grid::{GridCell, SimulationGrid, TerrainData};
+use crate::physics::{calculate_layer_transition_probability, CanopyLayer, CanopyStructure};
 use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -459,6 +460,42 @@ impl FireSimulation {
         self.current_frame
     }
 
+    /// Predict potential spot fire locations based on current embers
+    ///
+    /// Uses Albini (1983) trajectory integration to predict where active embers
+    /// will land. Useful for:
+    /// - Firefighter positioning
+    /// - Evacuation planning
+    /// - Asset protection prioritization
+    ///
+    /// # Arguments
+    /// * `max_prediction_time` - Maximum time to simulate trajectories (seconds)
+    ///
+    /// # Returns
+    /// Vector of predicted landing positions for all active embers
+    pub fn predict_spot_fire_locations(&self, max_prediction_time: f32) -> Vec<Vec3> {
+        let wind = self.weather.wind_vector();
+        let wind_speed = wind.magnitude();
+        let wind_direction = if wind_speed > 0.1 {
+            wind.normalize()
+        } else {
+            Vec3::new(1.0, 0.0, 0.0)
+        };
+
+        self.embers
+            .iter()
+            .filter(|e| e.is_active())
+            .map(|ember| {
+                ember.predict_landing_position(
+                    wind_speed,
+                    wind_direction,
+                    0.1, // 0.1s integration step
+                    max_prediction_time,
+                )
+            })
+            .collect()
+    }
+
     /// Ignite at position (convenience method for multiplayer)
     pub fn ignite_at_position(&mut self, position: Vec3) {
         // Find nearest fuel element within 5m
@@ -804,7 +841,7 @@ impl FireSimulation {
                 self.burning_elements.remove(&element_id);
             }
 
-            // 4g. Check for crown fire transition (Phase 1 - Van Wagner model)
+            // 4g. Check for crown fire transition using Van Wagner model AND canopy layer physics
             if let Some(element) = self.get_element(element_id) {
                 if !element.crown_fire_active
                     && matches!(
@@ -831,18 +868,67 @@ impl FireSimulation {
                         wind_vector.norm(),
                     );
 
-                    // If active or passive crown fire, mark it and potentially ignite crown elements
-                    if crown_behavior.fire_type() != crate::physics::CrownFireType::Surface {
+                    // Calculate Byram's fireline intensity for layer transition
+                    let intensity = element.byram_fireline_intensity(wind_vector.norm());
+
+                    // Get canopy structure based on fuel type (stringybark vs smooth bark)
+                    let canopy_structure = if element.fuel.bark_properties.ladder_fuel_factor > 0.7
+                    {
+                        CanopyStructure::eucalyptus_stringybark()
+                    } else if element.fuel.bark_properties.ladder_fuel_factor > 0.2 {
+                        CanopyStructure::eucalyptus_smooth_bark()
+                    } else {
+                        CanopyStructure::grassland()
+                    };
+
+                    // Calculate layer transition probability using canopy physics
+                    // Determine current layer based on element height
+                    let current_layer = if element.position.z < 2.0 {
+                        CanopyLayer::Understory
+                    } else if element.position.z < 8.0 {
+                        CanopyLayer::Midstory
+                    } else {
+                        CanopyLayer::Overstory
+                    };
+
+                    // Calculate probability of transitioning to next layer
+                    let transition_prob = if current_layer != CanopyLayer::Overstory {
+                        let target_layer = match current_layer {
+                            CanopyLayer::Understory => CanopyLayer::Midstory,
+                            CanopyLayer::Midstory => CanopyLayer::Overstory,
+                            CanopyLayer::Overstory => CanopyLayer::Overstory,
+                        };
+                        calculate_layer_transition_probability(
+                            intensity,
+                            &canopy_structure,
+                            current_layer,
+                            target_layer,
+                        )
+                    } else {
+                        0.0
+                    };
+
+                    // Combine Van Wagner crown fire model with canopy layer physics
+                    // If either model indicates crown fire potential, transition occurs
+                    let crown_fire_indicated =
+                        crown_behavior.fire_type() != crate::physics::CrownFireType::Surface;
+                    let layer_transition_indicated =
+                        transition_prob > 0.0 && rand::random::<f32>() < transition_prob;
+
+                    if crown_fire_indicated || layer_transition_indicated {
                         if let Some(elem_mut) = self.get_element_mut(element_id) {
                             elem_mut.crown_fire_active = true;
                             // Use crown_fraction_burned to scale temperature increase
-                            // crown_fraction_burned ranges from 0.0 (surface only) to 1.0 (fully active crown)
+                            // Also factor in ladder fuel connectivity from canopy structure
                             let crown_intensity_factor =
                                 crown_behavior.crown_fraction_burned().clamp(0.0, 1.0);
+                            let ladder_boost =
+                                1.0 + canopy_structure.ladder_fuel_factor() * 0.2; // Up to 20% boost
                             let base_crown_temp = elem_mut.fuel.max_flame_temperature
                                 * elem_mut.fuel.crown_fire_temp_multiplier;
                             // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
-                            let crown_temp = base_crown_temp * (0.7 + 0.3 * crown_intensity_factor);
+                            let crown_temp =
+                                base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
                             elem_mut.temperature = elem_mut.temperature.max(crown_temp);
                         }
                     }

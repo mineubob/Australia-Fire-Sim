@@ -1,6 +1,7 @@
 //! Physics modules for ultra-realistic fire simulation
 
 pub(crate) mod albini_spotting;
+pub(crate) mod canopy_layers;
 pub(crate) mod combustion_physics;
 pub(crate) mod crown_fire;
 pub(crate) mod element_heat_transfer;
@@ -11,7 +12,10 @@ pub mod suppression_physics; // Made pub for FFI access to SuppressionAgent
 pub(crate) mod terrain_physics;
 
 // Re-export internal functions and types for crate-internal use only
-pub(crate) use albini_spotting::calculate_lofting_height;
+pub(crate) use albini_spotting::{calculate_ember_trajectory, calculate_lofting_height};
+pub(crate) use canopy_layers::{
+    calculate_layer_transition_probability, CanopyLayer, CanopyStructure,
+};
 pub(crate) use crown_fire::{calculate_crown_fire_behavior, CrownFireType};
 pub(crate) use fuel_moisture::{calculate_equilibrium_moisture, FuelMoistureState};
 pub(crate) use smoldering::update_smoldering_state;
@@ -33,7 +37,14 @@ pub(crate) use terrain_physics::terrain_spread_multiplier;
 /// Public re-exports of validation test functions from albini_spotting module
 pub mod albini_spotting_validation {
     pub use super::albini_spotting::{
-        calculate_lofting_height, calculate_maximum_spotting_distance,
+        calculate_ember_trajectory, calculate_lofting_height, calculate_maximum_spotting_distance,
+    };
+}
+
+/// Public re-exports of validation test functions from canopy_layers module
+pub mod canopy_layers_validation {
+    pub use super::canopy_layers::{
+        calculate_layer_transition_probability, CanopyLayer, CanopyStructure,
     };
 }
 
