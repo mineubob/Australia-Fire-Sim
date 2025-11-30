@@ -24,7 +24,7 @@ pub use smoldering::{CombustionPhase, SmolderingState};
 pub(crate) use suppression_physics::apply_suppression_direct;
 // Re-export SuppressionAgent publicly for FFI
 pub use suppression_physics::SuppressionAgent;
-pub(crate) use terrain_physics::terrain_spread_multiplier;
+pub(crate) use terrain_physics::{terrain_spread_multiplier, terrain_spread_multiplier_cached};
 
 // ============================================================================
 // PUBLIC RE-EXPORTS FOR VALIDATION TESTING

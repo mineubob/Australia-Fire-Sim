@@ -51,7 +51,8 @@ pub struct FuelElement {
 
     // Spatial context
     pub(crate) elevation: f32,      // Height above ground
-    pub(crate) slope_angle: f32,    // Local terrain slope (degrees)
+    pub(crate) slope_angle: f32,    // Local terrain slope (degrees) - CACHED from terrain
+    pub(crate) aspect_angle: f32,   // Local terrain aspect (degrees 0-360) - CACHED from terrain
     pub(crate) neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
 
     // Advanced physics state (Phase 1-3 enhancements)
@@ -109,6 +110,7 @@ impl FuelElement {
             part_type,
             elevation,
             slope_angle: 0.0,
+            aspect_angle: 0.0, // Will be set by simulation when terrain is available
             neighbors: Vec::new(),
             fuel,
             moisture_state,
@@ -152,6 +154,11 @@ impl FuelElement {
     /// Get local terrain slope angle in degrees
     pub fn slope_angle(&self) -> f32 {
         self.slope_angle
+    }
+
+    /// Get local terrain aspect angle in degrees (0-360)
+    pub fn aspect_angle(&self) -> f32 {
+        self.aspect_angle
     }
 
     /// Get neighboring element IDs
