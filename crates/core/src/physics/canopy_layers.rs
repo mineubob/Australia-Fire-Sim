@@ -65,6 +65,25 @@ pub struct CanopyStructure {
     ladder_fuel_factor: f32,
 }
 
+// ============================================================================
+// CANOPY STRUCTURE CONSTANTS
+// ============================================================================
+// Scientific basis: Ellis (2011), Cheney et al. (2012)
+
+/// Ladder fuel factor for stringybark eucalypts (high vertical continuity)
+/// Stringybark has fibrous, loosely-attached bark that creates strong vertical
+/// fuel continuity from ground to crown.
+/// Reference: Ellis (2011) "Fuelbed ignition potential and bark morphology"
+const STRINGYBARK_LADDER_FUEL_FACTOR: f32 = 0.9;
+
+/// Ladder fuel factor for smooth bark eucalypts (low vertical continuity)
+/// Smooth bark species shed bark cleanly, creating gaps in vertical fuel structure.
+/// Reference: Cheney et al. (2012) "Predicting fire behaviour in dry eucalypt forest"
+const SMOOTH_BARK_LADDER_FUEL_FACTOR: f32 = 0.3;
+
+/// Ladder fuel factor for grassland (no vertical structure)
+const GRASSLAND_LADDER_FUEL_FACTOR: f32 = 0.0;
+
 impl CanopyStructure {
     /// Get the ladder fuel factor
     pub fn ladder_fuel_factor(&self) -> f32 {
@@ -91,7 +110,7 @@ impl CanopyStructure {
             midstory_moisture: 0.15,   // Dead bark strips
             overstory_moisture: 0.90,  // Live foliage
 
-            ladder_fuel_factor: 0.9, // Very high continuity (stringybark!)
+            ladder_fuel_factor: STRINGYBARK_LADDER_FUEL_FACTOR,
         }
     }
 
@@ -115,7 +134,7 @@ impl CanopyStructure {
             midstory_moisture: 0.20,
             overstory_moisture: 0.95,
 
-            ladder_fuel_factor: 0.3, // Low continuity
+            ladder_fuel_factor: SMOOTH_BARK_LADDER_FUEL_FACTOR,
         }
     }
 
@@ -134,7 +153,7 @@ impl CanopyStructure {
             midstory_moisture: 0.0,
             overstory_moisture: 0.0,
 
-            ladder_fuel_factor: 0.0, // No vertical structure
+            ladder_fuel_factor: GRASSLAND_LADDER_FUEL_FACTOR,
         }
     }
 

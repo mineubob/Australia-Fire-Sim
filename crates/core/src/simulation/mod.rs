@@ -29,6 +29,15 @@ use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
+// ============================================================================
+// CROWN FIRE PHYSICS CONSTANTS
+// ============================================================================
+
+/// Maximum boost factor for crown fire temperature from ladder fuels
+/// Ladder fuels (e.g., stringybark bark strips) create vertical fuel continuity
+/// that intensifies crown fire development. Based on Ellis (2011).
+const LADDER_FUEL_TEMP_BOOST_FACTOR: f32 = 0.2; // Up to 20% temperature boost
+
 /// Ultra-realistic fire simulation with full atmospheric modeling
 pub struct FireSimulation {
     // Atmospheric grid
@@ -922,8 +931,9 @@ impl FireSimulation {
                             // Also factor in ladder fuel connectivity from canopy structure
                             let crown_intensity_factor =
                                 crown_behavior.crown_fraction_burned().clamp(0.0, 1.0);
-                            let ladder_boost =
-                                1.0 + canopy_structure.ladder_fuel_factor() * 0.2; // Up to 20% boost
+                            let ladder_boost = 1.0
+                                + canopy_structure.ladder_fuel_factor()
+                                    * LADDER_FUEL_TEMP_BOOST_FACTOR;
                             let base_crown_temp = elem_mut.fuel.max_flame_temperature
                                 * elem_mut.fuel.crown_fire_temp_multiplier;
                             // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
