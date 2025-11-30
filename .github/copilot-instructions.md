@@ -69,6 +69,11 @@ crates/core/src/
 
 The interactive demo (`demo-interactive`) can be driven non-interactively using a heredoc. Example (run from the repo root):
 
+**Building with symbols for profiling:**
+```bash
+CARGO_PROFILE_RELEASE_DEBUG=true CARGO_PROFILE_RELEASE_STRIP=false cargo build --release --bin demo-interactive
+```
+
 ```bash
 ./target/release/demo-interactive <<'HEREDOC'
 1000
