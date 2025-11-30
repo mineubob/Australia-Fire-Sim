@@ -11,3 +11,6 @@ Cargo.lock
 *.a
 *.lib
 *.exe
+
+# Profiling data.
+profile.json*
