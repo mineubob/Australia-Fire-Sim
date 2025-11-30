@@ -20,6 +20,10 @@
 //! - `embers` - List all active embers
 //! - `nearby <id>` - Show elements near the specified element
 //! - `ignite <id>` - Manually ignite an element
+//! - `ignite_position <x> <y> [radius] [amount]` - Ignite elements around position in XY circle
+//!   - radius: optional, meters (default 1.0)
+//!   - amount: optional, number of elements to ignite (from ground-up). Use -1 for all (default -1)
+//!   - filters: optional tokens to further limit selection: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>
 //! - `preset <name>` - Switch weather preset (perth, catastrophic, etc.)
 //! - `reset` - Reset simulation with new terrain dimensions
 //! - `heatmap [size]` - Generate a heatmap of the simulation
@@ -112,6 +116,151 @@ fn main() {
                             ignite_element(&mut sim, id);
                         } else {
                             println!("Usage: ignite <id>");
+                        }
+                    }
+                    "ignite_position" | "ip" => {
+                        let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
+                            println!("Usage: ignite_position <x> <y> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
+                            println!("Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>");
+                            continue;
+                        };
+
+                        let Some(y) = parts.get(2).and_then(|s| s.parse::<i32>().ok()) else {
+                            println!("Usage: ignite_position <x> <y> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
+                            println!("Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>");
+                            continue;
+                        };
+
+                        // Parse optional radius and amount parameters
+                        // Usage: ignite_position <x> <y> [radius] [amount]
+                        // amount: number of elements to ignite (from ground up). -1 = all
+                        let radius = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+                        let amount = parts
+                            .get(4)
+                            .and_then(|s| s.parse::<i32>().ok())
+                            .unwrap_or(-1);
+
+                        // Parse optional filters after amount: fuel=<name>, part=<partname>, minz=<f>, maxz=<f>
+                        // Example: ignite_position 10 20 5 -1 fuel=dry_grass part=GroundVegetation minz=0 maxz=1
+                        let mut fuel_filter: Option<String> = None;
+                        let mut part_filter: Option<String> = None;
+                        let mut min_z: Option<f32> = None;
+                        let mut max_z: Option<f32> = None;
+
+                        for token in parts.iter().skip(5) {
+                            if let Some((key, val)) = token.split_once('=') {
+                                match key.to_lowercase().as_str() {
+                                    "fuel" => fuel_filter = Some(val.to_lowercase()),
+                                    "part" => part_filter = Some(val.to_lowercase()),
+                                    "minz" => min_z = val.parse::<f32>().ok(),
+                                    "maxz" => max_z = val.parse::<f32>().ok(),
+                                    _ => {
+                                        println!("Unknown filter '{}', supported: fuel=, part=, minz=, maxz=", key);
+                                    }
+                                }
+                            }
+                        }
+
+                        let center = Vec3::new(x as f32, y as f32, 0.0);
+
+                        // Gather elements within a 3D radius (spatial index) but treat the
+                        // ignition area as a 2D circle on the ground. Filter by horizontal
+                        // distance (ignoring Z) so tall elements above ground are included
+                        // if they're within the XY radius.
+                        let candidates = sim.get_elements_in_radius(center, radius);
+
+                        // Compute horizontal distance and filter by circle radius
+                        // For each candidate compute: id, horizontal distance, ignition temp, z
+                        let mut id_dist_ign: Vec<(u32, f32, f32, f32)> = candidates
+                            .into_iter()
+                            .filter_map(|e| {
+                                let dx = e.position().x - center.x;
+                                let dy = e.position().y - center.y;
+                                let dist2d = (dx * dx + dy * dy).sqrt();
+                                if dist2d <= radius {
+                                    // Apply filters: fuel name, part type, min/max z
+                                    if let Some(ref f) = fuel_filter {
+                                        let fuel_name = e.fuel().name.to_lowercase();
+                                        if !fuel_name.contains(f) {
+                                            return None;
+                                        }
+                                    }
+
+                                    if let Some(ref p) = part_filter {
+                                        let part_name = match e.part_type() {
+                                            fire_sim_core::core_types::element::FuelPart::Root => "root".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::TrunkLower => "trunklower".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::TrunkMiddle => "trunkmiddle".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::TrunkUpper => "trunkupper".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::BarkLayer(h) => format!("barklayer({:.0})", h),
+                                            fire_sim_core::core_types::element::FuelPart::Branch { height, angle: _angle } => format!("branch({:.0})", height),
+                                            fire_sim_core::core_types::element::FuelPart::Crown => "crown".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::GroundLitter => "groundlitter".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::GroundVegetation => "groundvegetation".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::BuildingWall { floor } => format!("buildingwall({})", floor),
+                                            fire_sim_core::core_types::element::FuelPart::BuildingRoof => "buildingroof".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::BuildingInterior => "buildinginterior".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::Vehicle => "vehicle".to_string(),
+                                            fire_sim_core::core_types::element::FuelPart::Surface => "surface".to_string(),
+                                        };
+
+                                        if !part_name.to_lowercase().contains(p) {
+                                            return None;
+                                        }
+                                    }
+
+                                    if let Some(minz) = min_z {
+                                        if e.position().z < minz {
+                                            return None;
+                                        }
+                                    }
+
+                                    if let Some(maxz) = max_z {
+                                        if e.position().z > maxz {
+                                            return None;
+                                        }
+                                    }
+
+                                    Some((e.id(), dist2d, e.fuel().ignition_temperature, e.position().z))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        
+                        if id_dist_ign.is_empty() {
+                            println!("No elements found within radius {:.1} at ({}, {})", radius, x, y);
+                        } else {
+                            // Sort by Z ascending (ground-up), then horizontal distance ascending
+                            id_dist_ign.sort_by(|a, b| {
+                                let z_cmp = a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal);
+                                if z_cmp == std::cmp::Ordering::Equal {
+                                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+                                } else {
+                                    z_cmp
+                                }
+                            });
+
+                            let total = id_dist_ign.len();
+                            let to_ignite: Vec<(u32, f32, f32, f32)> = if amount < 0 {
+                                id_dist_ign.clone()
+                            } else {
+                                let amt = amount as usize;
+                                id_dist_ign.into_iter().take(amt).collect()
+                            };
+
+                            println!(
+                                "Found {} element(s) within radius {:.1} — igniting {} (ground-up → closest):",
+                                total,
+                                radius,
+                                if amount < 0 { total } else { to_ignite.len() }
+                            );
+
+                            for (id, dist, ign_temp, z) in to_ignite.iter() {
+                                println!("  ID {}: {:.2}m, z={:.2} — ignition temp {:.1}°C", id, dist, z, ign_temp);
+                                // Ignite with a margin above ignition temperature
+                                sim.ignite_element(*id, ign_temp + 100.0);
+                            }
                         }
                     }
                     "preset" | "p" => {
@@ -630,6 +779,10 @@ fn show_help() {
     println!("  embers, em           - List active embers");
     println!("  nearby <id>, n       - Show elements near <id>");
     println!("  ignite <id>, i       - Manually ignite element");
+    println!("  ignite_position <x> <y> [radius] [amount] - Ignite elements in an XY circle around (x,y)");
+    println!("                         radius defaults to 1.0m; amount: number to ignite (from ground-up). -1 = all (default -1)");
+    println!("                         Optional filters: fuel=<name> (substring), part=<partname> (substring), minz=<f32>, maxz=<f32>");
+    println!("                         Example: ignite_position 10 20 5 -1 fuel=dry_grass part=groundvegetation minz=0 maxz=0.5");
     println!("  heatmap, hm [size]   - Show temperature heatmap");
     println!("  preset <name>, p     - Change weather preset");
     println!("                         (perth, catastrophic, goldfields, wheatbelt, hot)");
