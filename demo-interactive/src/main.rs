@@ -121,13 +121,17 @@ fn main() {
                     "ignite_position" | "ip" => {
                         let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
                             println!("Usage: ignite_position <x> <y> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
-                            println!("Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>");
+                            println!(
+                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
+                            );
                             continue;
                         };
 
                         let Some(y) = parts.get(2).and_then(|s| s.parse::<i32>().ok()) else {
                             println!("Usage: ignite_position <x> <y> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
-                            println!("Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>");
+                            println!(
+                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
+                            );
                             continue;
                         };
 
@@ -227,13 +231,17 @@ fn main() {
                                 }
                             })
                             .collect();
-                        
+
                         if id_dist_ign.is_empty() {
-                            println!("No elements found within radius {:.1} at ({}, {})", radius, x, y);
+                            println!(
+                                "No elements found within radius {:.1} at ({}, {})",
+                                radius, x, y
+                            );
                         } else {
                             // Sort by Z ascending (ground-up), then horizontal distance ascending
                             id_dist_ign.sort_by(|a, b| {
-                                let z_cmp = a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal);
+                                let z_cmp =
+                                    a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal);
                                 if z_cmp == std::cmp::Ordering::Equal {
                                     a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
                                 } else {
@@ -257,7 +265,10 @@ fn main() {
                             );
 
                             for (id, dist, ign_temp, z) in to_ignite.iter() {
-                                println!("  ID {}: {:.2}m, z={:.2} — ignition temp {:.1}°C", id, dist, z, ign_temp);
+                                println!(
+                                    "  ID {}: {:.2}m, z={:.2} — ignition temp {:.1}°C",
+                                    id, dist, z, ign_temp
+                                );
                                 // Ignite with a margin above ignition temperature
                                 sim.ignite_element(*id, ign_temp + 100.0);
                             }
