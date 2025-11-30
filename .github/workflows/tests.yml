@@ -1,10 +1,9 @@
 name: Tests
 
 on:
-  push:
-    branches: [ main, copilot/** ]
   pull_request:
     branches: [ main ]
+  workflow_run: 
 
 env:
   CARGO_TERM_COLOR: always
