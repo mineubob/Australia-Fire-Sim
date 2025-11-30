@@ -345,8 +345,8 @@ impl FuelElement {
         // Fuel loading (kg/m²) - mass per unit area
         let fuel_loading = self.fuel.bulk_density * self.fuel.fuel_bed_depth;
 
-        // Heat release with combustion efficiency (90%)
-        let heat_per_area = self.fuel.heat_content * fuel_loading * 0.9;
+        // Heat release with fuel-specific combustion efficiency
+        let heat_per_area = self.fuel.heat_content * fuel_loading * self.fuel.combustion_efficiency;
 
         // Byram's formula: I = (H × w × r) / 60
         // Units: (kJ/kg × kg/m² × m/min) / 60 = kW/m
@@ -423,7 +423,10 @@ impl FuelElement {
         simulation_time: f32,
     ) {
         // Calculate approximate surface area based on fuel properties
-        let surface_area = self.fuel.surface_area_to_volume * self.fuel_remaining.sqrt() * 0.1;
+        // Uses fuel-specific geometry factor (bark=0.12, grass=0.15, wood=0.1)
+        let surface_area = self.fuel.surface_area_to_volume
+            * self.fuel_remaining.sqrt()
+            * self.fuel.surface_area_geometry_factor;
         let surface_area = surface_area.max(0.1); // Minimum 0.1 m²
 
         let new_coverage =

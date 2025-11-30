@@ -609,9 +609,8 @@ impl FireSimulation {
         let weather_temp = self.weather.temperature;
         let weather_humidity = self.weather.humidity;
         let weather_wind = wind_vector.magnitude();
-        // Estimate solar radiation from time of day and weather
-        // Simplified: 0-1000 W/m² based on humidity (clear sky vs cloudy)
-        let solar_radiation = (1.0 - weather_humidity * 0.7) * 800.0;
+        // Get solar radiation from weather system (accounts for time of day, season, regional presets)
+        let solar_radiation = self.weather.solar_radiation();
 
         // Use chunked parallel processing to reduce Rayon overhead
         const ELEMENT_CHUNK_SIZE: usize = 1024;
@@ -1220,7 +1219,9 @@ impl FireSimulation {
         let mut new_ember_id = self._next_ember_id;
         for (position, velocity, temperature, fuel_id) in new_embers {
             // Get fuel-specific ember mass
-            let ember_mass = self.elements.iter()
+            let ember_mass = self
+                .elements
+                .iter()
                 .find_map(|e| e.as_ref().filter(|el| el.fuel.id == fuel_id))
                 .map(|el| el.fuel.ember_mass_kg)
                 .unwrap_or(0.0005); // Fallback to typical mass

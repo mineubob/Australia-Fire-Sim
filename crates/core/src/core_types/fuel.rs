@@ -109,12 +109,12 @@ pub struct Fuel {
 
     // Fire behavior
     pub burn_rate_coefficient: f32,
-    pub ember_production: f32,      // Probability per second (stringybark=0.9, grass=0.1)
-    pub ember_receptivity: f32,     // 0-1 (how easily spot fires ignite)
+    pub ember_production: f32, // Probability per second (stringybark=0.9, grass=0.1)
+    pub ember_receptivity: f32, // 0-1 (how easily spot fires ignite)
     pub max_spotting_distance: f32, // meters
-    
+
     // Ember physics properties (fuel-specific)
-    pub ember_mass_kg: f32,               // Typical ember mass in kg (stringybark=0.001, grass=0.0002)
+    pub ember_mass_kg: f32, // Typical ember mass in kg (stringybark=0.001, grass=0.0002)
     pub ember_launch_velocity_factor: f32, // Horizontal velocity fraction (0-1, bark=0.5, grass=0.3)
 
     // Rothermel model parameters (fuel-specific)
@@ -131,6 +131,10 @@ pub struct Fuel {
     pub atmospheric_heat_efficiency: f32, // How much heat transfers to air (0-1, grass=0.85, forest=0.70)
     pub wind_sensitivity: f32,            // Wind effect multiplier (grass=1.0, forest=0.6)
     pub crown_fire_temp_multiplier: f32,  // Crown fire temperature boost (0-1, stringybark=0.95)
+
+    // Combustion and geometry properties (fuel-specific)
+    pub combustion_efficiency: f32, // Fraction of fuel fully combusted (0-1, dry_wood=0.95, green=0.70)
+    pub surface_area_geometry_factor: f32, // Geometry multiplier for surface area calc (wood=0.1, grass=0.15)
 
     // Australian-specific
     pub volatile_oil_content: f32,       // kg/kg (eucalypts: 0.02-0.05)
@@ -181,9 +185,9 @@ impl Fuel {
             ember_production: 0.9, // EXTREME: 90% chance per second
             ember_receptivity: 0.6,
             max_spotting_distance: 25000.0, // 25km spotting!
-            
+
             // Ember physics (stringybark produces large bark embers)
-            ember_mass_kg: 0.001,             // 1g embers (large bark pieces)
+            ember_mass_kg: 0.001,              // 1g embers (large bark pieces)
             ember_launch_velocity_factor: 0.5, // Moderate horizontal launch
 
             // Rothermel parameters (eucalyptus hardwood)
@@ -200,6 +204,10 @@ impl Fuel {
             atmospheric_heat_efficiency: 0.7,   // 70% heat to atmosphere
             wind_sensitivity: 0.6,              // Moderate wind effect (sheltered by canopy)
             crown_fire_temp_multiplier: 0.95,   // Very hot crown fires
+
+            // Combustion and geometry
+            combustion_efficiency: 0.92, // High efficiency (dry hardwood)
+            surface_area_geometry_factor: 0.12, // Irregular bark strips increase area
 
             volatile_oil_content: 0.04,
             oil_vaporization_temp: 170.0,
@@ -243,9 +251,9 @@ impl Fuel {
             ember_production: 0.35, // Moderate: 35% chance per second
             ember_receptivity: 0.5,
             max_spotting_distance: 10000.0, // 10km
-            
+
             // Ember physics (smooth bark produces fewer, smaller embers)
-            ember_mass_kg: 0.0007,            // 0.7g embers
+            ember_mass_kg: 0.0007,             // 0.7g embers
             ember_launch_velocity_factor: 0.4, // Lower launch velocity
 
             // Rothermel parameters (eucalyptus hardwood, denser)
@@ -262,6 +270,10 @@ impl Fuel {
             atmospheric_heat_efficiency: 0.75,  // 75% heat to atmosphere
             wind_sensitivity: 0.7,              // Moderate-high wind effect
             crown_fire_temp_multiplier: 0.90,   // Hot crown fires
+
+            // Combustion and geometry
+            combustion_efficiency: 0.93, // High efficiency (dense hardwood)
+            surface_area_geometry_factor: 0.08, // Smooth bark, lower surface area
 
             volatile_oil_content: 0.02,
             oil_vaporization_temp: 170.0,
@@ -301,13 +313,13 @@ impl Fuel {
             fuel_bed_depth: 0.1,
             base_moisture: 0.05, // Very dry
             moisture_of_extinction: 0.25,
-            burn_rate_coefficient: 0.15, // Burns fast
-            ember_production: 0.1,       // Low: 10% chance per second
-            ember_receptivity: 0.8,      // Easy to ignite
+            burn_rate_coefficient: 0.15,   // Burns fast
+            ember_production: 0.1,         // Low: 10% chance per second
+            ember_receptivity: 0.8,        // Easy to ignite
             max_spotting_distance: 1000.0, // 1km
-            
+
             // Ember physics (grass produces very light embers)
-            ember_mass_kg: 0.0002,            // 0.2g embers (light grass)
+            ember_mass_kg: 0.0002,             // 0.2g embers (light grass)
             ember_launch_velocity_factor: 0.3, // Low horizontal component
 
             // Rothermel parameters (fine herbaceous fuel)
@@ -324,6 +336,10 @@ impl Fuel {
             atmospheric_heat_efficiency: 0.85,  // 85% heat to atmosphere
             wind_sensitivity: 1.0,              // Maximum wind effect (fine fuel)
             crown_fire_temp_multiplier: 0.0,    // No crown fire (grass)
+
+            // Combustion and geometry
+            combustion_efficiency: 0.85, // Moderate efficiency (fast burn, incomplete)
+            surface_area_geometry_factor: 0.15, // Fine grass has high surface area
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
@@ -367,9 +383,9 @@ impl Fuel {
             ember_production: 0.24, // Medium: 24% chance per second
             ember_receptivity: 0.6,
             max_spotting_distance: 3000.0, // 3km
-            
+
             // Ember physics (medium-sized woody embers)
-            ember_mass_kg: 0.0004,            // 0.4g embers
+            ember_mass_kg: 0.0004,              // 0.4g embers
             ember_launch_velocity_factor: 0.35, // Medium launch velocity
 
             // Rothermel parameters (medium shrub fuel)
@@ -386,6 +402,10 @@ impl Fuel {
             atmospheric_heat_efficiency: 0.80,  // 80% heat to atmosphere
             wind_sensitivity: 0.85,             // High wind effect (exposed)
             crown_fire_temp_multiplier: 0.85,   // Moderate crown fires
+
+            // Combustion and geometry
+            combustion_efficiency: 0.88, // Good efficiency (woody fuel)
+            surface_area_geometry_factor: 0.10, // Medium-sized branches
 
             volatile_oil_content: 0.01,
             oil_vaporization_temp: 180.0,
@@ -426,12 +446,12 @@ impl Fuel {
             base_moisture: 0.05, // Very dry
             moisture_of_extinction: 0.25,
             burn_rate_coefficient: 0.12,
-            ember_production: 0.35, // Moderate: 35% chance per second
-            ember_receptivity: 0.9, // Highly susceptible
+            ember_production: 0.35,        // Moderate: 35% chance per second
+            ember_receptivity: 0.9,        // Highly susceptible
             max_spotting_distance: 5000.0, // 5km
-            
+
             // Ember physics (wood produces typical-sized embers)
-            ember_mass_kg: 0.0005,            // 0.5g embers (typical)
+            ember_mass_kg: 0.0005,             // 0.5g embers (typical)
             ember_launch_velocity_factor: 0.4, // Moderate launch velocity
 
             // Rothermel parameters (medium-coarse dead fuel)
@@ -448,6 +468,10 @@ impl Fuel {
             atmospheric_heat_efficiency: 0.65, // 65% heat to atmosphere
             wind_sensitivity: 0.50,      // Low wind effect (ground level)
             crown_fire_temp_multiplier: 0.0, // No crown fire (ground litter)
+
+            // Combustion and geometry
+            combustion_efficiency: 0.90, // High efficiency (dry dead wood)
+            surface_area_geometry_factor: 0.09, // Compacted litter
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
@@ -491,9 +515,9 @@ impl Fuel {
             ember_production: 0.03, // Very low: 3% chance per second
             ember_receptivity: 0.2, // Resistant to spot fires
             max_spotting_distance: 200.0,
-            
+
             // Ember physics (minimal ember production from green fuel)
-            ember_mass_kg: 0.0003,            // 0.3g embers
+            ember_mass_kg: 0.0003,             // 0.3g embers
             ember_launch_velocity_factor: 0.2, // Minimal launch velocity
 
             // Rothermel parameters (live herbaceous/foliage)
@@ -510,6 +534,10 @@ impl Fuel {
             atmospheric_heat_efficiency: 0.90, // 90% heat to atmosphere (cooling)
             wind_sensitivity: 0.75,      // Moderate-high wind effect
             crown_fire_temp_multiplier: 0.80, // Cooler fires (moisture)
+
+            // Combustion and geometry
+            combustion_efficiency: 0.70, // Low efficiency (high moisture, incomplete)
+            surface_area_geometry_factor: 0.11, // Live foliage
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
@@ -596,7 +624,7 @@ impl Fuel {
             ember_production: 0.0,
             ember_receptivity: 0.0,
             max_spotting_distance: 0.0,
-            
+
             // Ember physics (non-burnable - no embers)
             ember_mass_kg: 0.0,
             ember_launch_velocity_factor: 0.0,
@@ -615,6 +643,8 @@ impl Fuel {
             atmospheric_heat_efficiency: 1.0,    // All heat absorbed
             wind_sensitivity: 0.0,               // No wind effect
             crown_fire_temp_multiplier: 0.0,
+            combustion_efficiency: 0.0,        // Non-burnable
+            surface_area_geometry_factor: 0.0, // N/A for water
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
@@ -658,14 +688,14 @@ impl Fuel {
             ember_production: 0.0,
             ember_receptivity: 0.0,
             max_spotting_distance: 0.0,
-            
+
             // Ember physics (non-burnable - no embers)
             ember_mass_kg: 0.0,
             ember_launch_velocity_factor: 0.0,
 
             // Rothermel parameters (non-burnable)
-            mineral_damping: 0.0, // Not applicable
-            particle_density: 2700.0, // Rock density
+            mineral_damping: 0.0,       // Not applicable
+            particle_density: 2700.0,   // Rock density
             effective_heating: 0.0,     // N/A
             packing_ratio: 1.0,         // N/A
             optimum_packing_ratio: 1.0, // N/A
@@ -677,6 +707,8 @@ impl Fuel {
             atmospheric_heat_efficiency: 0.30,  // Absorbs heat
             wind_sensitivity: 0.0,              // No wind effect
             crown_fire_temp_multiplier: 0.0,
+            combustion_efficiency: 0.0,        // Non-burnable
+            surface_area_geometry_factor: 0.0, // N/A for rock
 
             volatile_oil_content: 0.0,
             oil_vaporization_temp: 0.0,
