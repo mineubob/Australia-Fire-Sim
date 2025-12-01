@@ -81,6 +81,7 @@ CARGO_PROFILE_RELEASE_DEBUG=true CARGO_PROFILE_RELEASE_STRIP=false cargo build -
 p perth
 i 7
 s 100
+q
 HEREDOC
 ```
 
@@ -91,6 +92,7 @@ Annotated: what each line in the heredoc is doing
 - p perth — select a weather preset ("p" is the demo command to choose a preset, then the preset name). This line is optional — if omitted the demo will use its default preset.
 - i 7 — ignite element id 7 ("i" is the demo command to ignite the specified fuel element ID). The demo **expects** an ignite command when you want to start a fire.
 - s 100 — step the simulation 100 times ("s" steps forwards in time; each step is one internal physics timestep). The demo **expects** a step count to advance the simulation.
+- q - quit the demo ("q" is the demo command to quit). The demo **expects** a quit command when you want to stop the simulation.
 
 Notes:
 - You can change these numbers to other values or leave a prompt blank in the heredoc to accept demo defaults.
