@@ -222,7 +222,7 @@ fn main() {
                                     id, dist, z, ign_temp
                                 );
                                 // Ignite with a margin above ignition temperature
-                                sim.ignite_element(*id, ign_temp + 100.0);
+                                sim.ignite_element(*id, ign_temp + (ign_temp * 0.05));
                             }
                         }
                     }
@@ -791,7 +791,10 @@ fn show_nearby(sim: &FireSimulation, id: u32) {
 fn ignite_element(sim: &mut FireSimulation, id: u32) {
     if let Some(e) = sim.get_element(id) {
         let stats = e.get_stats();
-        sim.ignite_element(id, stats.ignition_temperature + 100.0);
+        sim.ignite_element(
+            id,
+            stats.ignition_temperature + (stats.ignition_temperature * 0.05),
+        );
         println!(
             "Ignited element {} at ({:.1}, {:.1}, {:.1})",
             id, stats.position.x, stats.position.y, stats.position.z
