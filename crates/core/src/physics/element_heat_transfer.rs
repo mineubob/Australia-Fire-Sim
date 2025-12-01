@@ -255,6 +255,7 @@ pub(crate) fn calculate_total_heat_transfer(
 
 /// OPTIMIZED: Calculate heat transfer using raw data instead of FuelElement structures
 /// Eliminates 500,000+ temporary structure allocations per frame at 12.5k burning elements
+/// Inline attribute ensures this hot function is optimized (called millions of times per frame)
 #[inline(always)]
 #[allow(clippy::too_many_arguments)] // Performance-critical: avoids 500k+ allocations/frame
 pub(crate) fn calculate_heat_transfer_raw(

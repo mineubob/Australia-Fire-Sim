@@ -174,12 +174,26 @@ impl FuelElement {
     }
 
     /// Apply heat to this fuel element (CRITICAL: moisture evaporation first)
+    ///
+    /// # Arguments
+    /// * `heat_kj` - Heat energy applied in kilojoules
+    /// * `dt` - Time step in seconds
+    /// * `ambient_temperature` - Ambient air temperature (°C)
+    /// * `ffdi_multiplier` - Fire danger index multiplier
+    /// * `has_pilot_flame` - Whether an adjacent burning element provides a pilot flame
+    ///
+    /// # Ignition Mode Selection (Janssens 1991, Dietenberger 2016)
+    /// - **Piloted ignition**: Used when `has_pilot_flame=true` (adjacent burning element)
+    ///   Lower threshold (~200-365°C for wood) because external flame ignites pyrolysis gases
+    /// - **Auto-ignition**: Used when `has_pilot_flame=false` (radiant heat only)
+    ///   Higher threshold (~300-500°C for wood) because gases must self-ignite
     pub(crate) fn apply_heat(
         &mut self,
         heat_kj: f32,
         dt: f32,
         ambient_temperature: f32,
         ffdi_multiplier: f32,
+        has_pilot_flame: bool,
     ) {
         if heat_kj <= 0.0 || self.fuel_remaining <= 0.0 {
             return;
@@ -220,26 +234,39 @@ impl FuelElement {
         // STEP 4: Clamp to ambient minimum (prevents negative heat)
         self.temperature = self.temperature.max(ambient_temperature);
 
-        // STEP 5: Check for ignition
-        if !self.ignited && self.temperature >= self.fuel.ignition_temperature {
-            self.check_ignition_probability(dt, ffdi_multiplier);
+        // STEP 5: Check for ignition using appropriate threshold
+        // Piloted ignition (with adjacent flame) uses lower threshold
+        // Auto-ignition (radiant heat only) uses higher threshold
+        let effective_ignition_temp = if has_pilot_flame {
+            self.fuel.ignition_temperature // Piloted: 228-378°C
+        } else {
+            self.fuel.auto_ignition_temperature // Auto: 338-498°C
+        };
+
+        if !self.ignited && self.temperature >= effective_ignition_temp {
+            self.check_ignition_probability(dt, ffdi_multiplier, effective_ignition_temp);
         }
     }
 
     /// Check if element should ignite (probabilistic)
-    fn check_ignition_probability(&mut self, dt: f32, ffdi_multiplier: f32) {
+    ///
+    /// # Arguments
+    /// * `dt` - Time step in seconds
+    /// * `ffdi_multiplier` - Fire danger index multiplier
+    /// * `ignition_temp` - Effective ignition temperature (piloted or auto-ignition)
+    fn check_ignition_probability(&mut self, dt: f32, ffdi_multiplier: f32, ignition_temp: f32) {
         // OPTIMIZATION: Early exit for saturated fuel (can't ignite)
         if self.moisture_fraction >= self.fuel.moisture_of_extinction {
             return;
         }
 
         // OPTIMIZATION: Early exit for cold fuel (far from ignition temp)
-        if self.temperature < self.fuel.ignition_temperature - 50.0 {
+        if self.temperature < ignition_temp - 50.0 {
             return;
         }
 
         // Track time above ignition temperature
-        if self.temperature > self.fuel.ignition_temperature {
+        if self.temperature > ignition_temp {
             self.time_above_ignition += dt;
         } else {
             // Reset timer if cooled below ignition
@@ -251,7 +278,7 @@ impl FuelElement {
             (1.0 - self.moisture_fraction / self.fuel.moisture_of_extinction).max(0.0);
 
         // Temperature above ignition increases probability (capped at 1.0)
-        let temp_excess = (self.temperature - self.fuel.ignition_temperature).max(0.0);
+        let temp_excess = (self.temperature - ignition_temp).max(0.0);
         let temp_factor = (temp_excess / 50.0).min(1.0);
 
         // Base coefficient for probabilistic ignition

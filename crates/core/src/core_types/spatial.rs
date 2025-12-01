@@ -40,6 +40,7 @@ impl SpatialIndex {
         let radius_sq = radius * radius;
 
         // OPTIMIZATION: Pre-allocate based on expected results to avoid reallocation
+        // Under catastrophic conditions (35m radius), expect ~100-200 results
         // Typical case: 20 elements per cell × cells_to_check, capped at 2000
         let expected_cells = match cells_needed {
             1 => 27,
@@ -48,7 +49,13 @@ impl SpatialIndex {
             4 => 729,
             _ => (2 * cells_needed + 1).pow(3) as usize,
         };
-        let mut results = Vec::with_capacity((expected_cells * 20).min(2000));
+        // Adjust capacity estimate: fewer elements at larger radii due to early exit
+        let capacity_estimate = if cells_needed <= 2 {
+            (expected_cells * 20).min(500)
+        } else {
+            (expected_cells * 10).min(1000)
+        };
+        let mut results = Vec::with_capacity(capacity_estimate);
 
         // CRITICAL OPTIMIZATION: Compute base cell coordinates ONCE
         let base_ix = ((pos.x - self.bounds.0.x) / self.cell_size).floor() as i32;

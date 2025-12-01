@@ -206,6 +206,9 @@ pub(crate) fn terrain_spread_multiplier(
 ///
 /// # Returns
 /// Combined multiplier for fire spread rate (0.2-10.0)
+/// OPTIMIZED: Inline this hot function to eliminate call overhead
+/// Called millions of times per frame when calculating heat transfer
+#[inline]
 pub(crate) fn terrain_spread_multiplier_cached(
     from: &Vec3,
     to: &Vec3,

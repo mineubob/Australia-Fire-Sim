@@ -93,8 +93,16 @@ pub struct Fuel {
     pub name: String,
 
     // Thermal properties
-    pub heat_content: f32,          // kJ/kg (18,000-22,000 typical)
-    pub ignition_temperature: f32,  // °C (250-400)
+    pub heat_content: f32, // kJ/kg (18,000-22,000 typical)
+    /// Piloted ignition temperature (°C) - with external flame/spark present
+    /// Reference: Janssens (1991) "Piloted ignition of wood: a review"
+    /// Typical range: 200-365°C for wood, lower for fine fuels
+    pub ignition_temperature: f32,
+    /// Auto-ignition temperature (°C) - spontaneous combustion from radiant heat only
+    /// Reference: Dietenberger (2016) "Wood Products: Thermal Degradation and Fire"
+    /// Typically 100-150°C higher than piloted ignition
+    /// Used when no adjacent burning element provides a pilot flame
+    pub auto_ignition_temperature: f32,
     pub max_flame_temperature: f32, // °C (800-1500 based on fuel)
     pub specific_heat: f32,         // kJ/(kg·K) - CRITICAL
 
@@ -173,7 +181,15 @@ impl Fuel {
             id: 1,
             name: "Eucalyptus Stringybark".to_string(),
             heat_content: 21000.0,
-            ignition_temperature: 280.0,
+            // Scientific basis: Stringybark has extremely fibrous, oil-impregnated bark
+            // Eucalyptus oils (eucalyptol) have flash point ~46°C and autoignition ~250°C
+            // Combined with low-density fibrous structure, piloted ignition occurs at 220-240°C
+            // Reference: CSIRO Bushfire CRC, Pausas et al. (2017) bark flammability studies
+            ignition_temperature: 228.0,
+            // Auto-ignition: ~110-120°C higher than piloted for oil-rich bark
+            // Radiant heat alone must pyrolyze fuel AND generate sufficient flammable gas concentration
+            // Reference: Dietenberger (2016), surface temps 300-400°C prior to auto-ignition
+            auto_ignition_temperature: 340.0,
             max_flame_temperature: 1400.0,
             specific_heat: 1.5,
             bulk_density: 550.0,
@@ -239,7 +255,13 @@ impl Fuel {
             id: 2,
             name: "Eucalyptus Smooth Bark".to_string(),
             heat_content: 20000.0,
-            ignition_temperature: 290.0,
+            // Scientific basis: Smooth bark eucalypts have less exposed surface area
+            // Still contain volatile oils but denser bark structure requires more heat
+            // Piloted ignition ~260-280°C (higher than stringybark)
+            // Reference: CSIRO fire behavior research, Australian bushfire literature
+            ignition_temperature: 268.0,
+            // Auto-ignition: ~120°C higher for denser smooth bark
+            auto_ignition_temperature: 388.0,
             max_flame_temperature: 1300.0,
             specific_heat: 1.5,
             bulk_density: 600.0,
@@ -305,7 +327,14 @@ impl Fuel {
             id: 3,
             name: "Dry Grass".to_string(),
             heat_content: 18500.0,
-            ignition_temperature: 250.0,
+            // Scientific basis: Cured/dry grass has very low moisture (<8%)
+            // Fine fuel structure with high surface-area-to-volume ratio
+            // Piloted ignition at 220-260°C depending on curing level
+            // Reference: Fons (1950), University of Canterbury grassland ignition studies
+            ignition_temperature: 232.0,
+            // Auto-ignition: Fine grass fuel auto-ignites ~100-110°C higher
+            // Fine structure means faster heating but still needs higher temp without pilot
+            auto_ignition_temperature: 338.0,
             max_flame_temperature: 900.0,
             specific_heat: 2.1, // Higher specific heat
             bulk_density: 200.0,
@@ -371,7 +400,13 @@ impl Fuel {
             id: 4,
             name: "Shrubland/Scrub".to_string(),
             heat_content: 19000.0,
-            ignition_temperature: 300.0,
+            // Scientific basis: Mixed live/dead woody fuels
+            // Live component has higher moisture, dead twigs ignite easier
+            // Piloted ignition 280-320°C for mixed shrub fuel beds
+            // Reference: Rothermel (1972) chaparral and shrub fuel models
+            ignition_temperature: 295.0,
+            // Auto-ignition: ~125°C higher for mixed woody shrub fuels
+            auto_ignition_temperature: 420.0,
             max_flame_temperature: 1000.0,
             specific_heat: 1.8,
             bulk_density: 350.0,
@@ -437,7 +472,13 @@ impl Fuel {
             id: 5,
             name: "Dead Wood/Litter".to_string(),
             heat_content: 19500.0,
-            ignition_temperature: 270.0,
+            // Scientific basis: Dead organic matter, very dry (<10% moisture)
+            // Decomposed material has lower ignition point than solid wood
+            // Piloted ignition 240-280°C for forest floor litter
+            // Reference: USDA Forest Service fuel moisture studies, Nelson (2000)
+            ignition_temperature: 258.0,
+            // Auto-ignition: ~115-120°C higher for dry decomposed litter
+            auto_ignition_temperature: 375.0,
             max_flame_temperature: 950.0,
             specific_heat: 1.3, // Heats faster
             bulk_density: 300.0,
@@ -503,7 +544,13 @@ impl Fuel {
             id: 6,
             name: "Green Vegetation".to_string(),
             heat_content: 18000.0,
-            ignition_temperature: 350.0, // Hard to ignite
+            // Scientific basis: Live vegetation with 60%+ moisture content
+            // Water must evaporate before pyrolysis can occur (2260 kJ/kg latent heat)
+            // Piloted ignition requires 350-400°C to overcome moisture barrier
+            // Reference: Xanthopoulos & Wakimoto (1993), live fuel ignition studies
+            ignition_temperature: 378.0, // Hard to ignite due to high moisture
+            // Auto-ignition: ~120°C higher, extremely resistant to radiant-only ignition
+            auto_ignition_temperature: 498.0,
             max_flame_temperature: 800.0,
             specific_heat: 2.2,
             bulk_density: 400.0,
@@ -613,6 +660,7 @@ impl Fuel {
             name: "Water".to_string(),
             heat_content: 0.0,
             ignition_temperature: 0.0,
+            auto_ignition_temperature: 0.0, // Non-burnable
             max_flame_temperature: 0.0,
             specific_heat: 4.18, // Water has very high specific heat
             bulk_density: 1000.0,
@@ -677,6 +725,7 @@ impl Fuel {
             name: "Rock".to_string(),
             heat_content: 0.0,
             ignition_temperature: 0.0,
+            auto_ignition_temperature: 0.0, // Non-burnable
             max_flame_temperature: 0.0,
             specific_heat: 0.84, // Rock specific heat
             bulk_density: 2700.0,
