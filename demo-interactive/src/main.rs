@@ -221,8 +221,9 @@ fn main() {
                                     "  ID {}: {:.2}m, z={:.2} — ignition temp {:.1}°C",
                                     id, dist, z, ign_temp
                                 );
-                                // Ignite with a margin above ignition temperature
-                                sim.ignite_element(*id, ign_temp + (ign_temp * 0.05));
+                                // Start at 600°C - realistic for piloted ignition
+                                let initial_temp = 600.0_f32.max(*ign_temp);
+                                sim.ignite_element(*id, initial_temp);
                             }
                         }
                     }
@@ -524,7 +525,11 @@ fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
 
     // Create a grid of fuel elements representing different vegetation
     // Ground layer: grass and shrubs
-    let step = 5;
+    // 
+    // SPACING: 1m simulates near-continuous fuel beds like real grasslands.
+    // Fire spreads through direct flame contact and short-range radiation.
+    // Smaller spacing = faster, more realistic spread patterns.
+    let step = 1;
     for x in (0..(width as i32)).step_by(step) {
         for y in (0..(height as i32)).step_by(step) {
             let fuel = if (x + y) % 20 == 0 {
@@ -541,7 +546,7 @@ fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
                 None,
             );
 
-            // Add some trees
+            // Add some trees (every 15m)
             if x % 15 == 0 && y % 15 == 0 {
                 create_tree(&mut sim, x as f32, y as f32, id);
             }
@@ -791,10 +796,11 @@ fn show_nearby(sim: &FireSimulation, id: u32) {
 fn ignite_element(sim: &mut FireSimulation, id: u32) {
     if let Some(e) = sim.get_element(id) {
         let stats = e.get_stats();
-        sim.ignite_element(
-            id,
-            stats.ignition_temperature + (stats.ignition_temperature * 0.05),
-        );
+        // Start at 600°C - realistic for piloted ignition (matches test values)
+        // This represents the rapid flashover when a fuel element catches fire
+        // Real fires don't slowly heat from ignition temp - they flash to high temperatures
+        let initial_temp = 600.0_f32.max(stats.ignition_temperature);
+        sim.ignite_element(id, initial_temp);
         println!(
             "Ignited element {} at ({:.1}, {:.1}, {:.1})",
             id, stats.position.x, stats.position.y, stats.position.z
@@ -898,8 +904,9 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
 
     let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
     let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
+    let mut burning_grid: Vec<Vec<bool>> = vec![vec![false; grid_size]; grid_size];
 
-    // Accumulate temperatures
+    // Accumulate temperatures and track burning state
     for e in sim.get_all_elements() {
         let stats = e.get_stats();
         let x = (stats.position.x / cell_width).floor() as i32;
@@ -910,6 +917,9 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
             let iy = y as usize;
             grid[iy][ix] += stats.temperature;
             counts[iy][ix] += 1;
+            if stats.ignited {
+                burning_grid[iy][ix] = true;
+            }
         }
     }
 
@@ -922,20 +932,44 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
         }
     }
 
-    // Find temperature range
+    // Find temperature range (excluding cells with no elements)
     let mut min_temp = f32::MAX;
     let mut max_temp = f32::MIN;
-    for row in &grid {
-        for &temp in row {
-            if temp > 0.0 {
+    for y in 0..grid_size {
+        for x in 0..grid_size {
+            if counts[y][x] > 0 {
+                let temp = grid[y][x];
                 min_temp = min_temp.min(temp);
                 max_temp = max_temp.max(temp);
             }
         }
     }
 
-    // Legend
-    println!("Legend: · = empty  ░ = cold  ▒ = warm  ▓ = hot  █ = burning");
+    // Handle edge case where no elements exist
+    if min_temp == f32::MAX {
+        min_temp = 0.0;
+        max_temp = 0.0;
+    }
+
+    // Minimum absolute temperatures for heat visualization
+    // These ensure we don't show "hot" indicators at ambient temperatures
+    const MIN_TEMP_COOL: f32 = 50.0;   // Must be above 50°C to show as warming
+    const MIN_TEMP_WARM: f32 = 100.0;  // Must be above 100°C to show as warm
+    const MIN_TEMP_HOT: f32 = 200.0;   // Must be above 200°C to show as hot
+    const MIN_TEMP_VERY_HOT: f32 = 350.0; // Must be above 350°C to show as very hot
+
+    // Calculate dynamic thresholds based on actual temperature range
+    // but enforce minimum absolute temperatures
+    let temp_range = max_temp - min_temp;
+    let threshold_very_hot = (min_temp + temp_range * 0.75).max(MIN_TEMP_VERY_HOT);
+    let threshold_hot = (min_temp + temp_range * 0.50).max(MIN_TEMP_HOT);
+    let threshold_warm = (min_temp + temp_range * 0.25).max(MIN_TEMP_WARM);
+    let threshold_cool = MIN_TEMP_COOL; // Fixed minimum for any heating indication
+
+    // Legend with dynamic values
+    println!("Legend: · = empty/ambient  🔥 = burning (ignited)");
+    println!("        ░ >{:.0}°C  ▒ >{:.0}°C  ▓ >{:.0}°C  █ >{:.0}°C",
+             threshold_cool, threshold_warm, threshold_hot, threshold_very_hot);
     println!("Temperature range: {:.0}°C - {:.0}°C\n", min_temp, max_temp);
 
     // Print heatmap (top-down view, Y increases downward)
@@ -944,18 +978,21 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
         for x in 0..grid_size {
             if counts[y][x] == 0 {
                 print!("· ");
+            } else if burning_grid[y][x] {
+                // Actual burning element - use fire emoji or asterisk
+                print!("🔥");
             } else {
                 let temp = grid[y][x];
-                let c = if temp > 400.0 {
-                    '█' // Burning
-                } else if temp > 200.0 {
-                    '▓' // Hot
-                } else if temp > 100.0 {
-                    '▒' // Warm
-                } else if temp > 50.0 {
-                    '░' // Cold/warming
+                let c = if temp >= threshold_very_hot {
+                    '█' // Very hot (>350°C or top 25%)
+                } else if temp >= threshold_hot {
+                    '▓' // Hot (>200°C or 50-75%)
+                } else if temp >= threshold_warm {
+                    '▒' // Warm (>100°C or 25-50%)
+                } else if temp >= threshold_cool {
+                    '░' // Warming (>50°C)
                 } else {
-                    '·' // Ambient
+                    '·' // At ambient
                 };
                 print!("{} ", c);
             }
@@ -974,6 +1011,12 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
         print!("{:<10}", (x as f32 * cell_width) as i32);
     }
     println!("\n");
+
+    // Summary stats
+    let burning_cells: usize = burning_grid.iter().flatten().filter(|&&b| b).count();
+    if burning_cells > 0 {
+        println!("Burning cells: {} / {}", burning_cells, grid_size * grid_size);
+    }
 
     println!("══════════════════════════════════════════════════\n");
 }

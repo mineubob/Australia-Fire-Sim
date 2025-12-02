@@ -69,6 +69,10 @@ pub struct FuelElement {
     /// for extended periods should ignite deterministically
     pub(crate) time_above_ignition: f32,
 
+    /// Flag indicating this element received heat this frame
+    /// Used to prevent Nelson moisture model from overwriting evaporated moisture
+    pub(crate) heat_received_this_frame: bool,
+
     // Suppression coverage (Phase 1)
     /// Active suppression agent coverage on this fuel element
     pub(crate) suppression_coverage: Option<SuppressionCoverage>,
@@ -117,6 +121,7 @@ impl FuelElement {
             smoldering_state,
             crown_fire_active: false,
             time_above_ignition: 0.0,
+            heat_received_this_frame: false,
             suppression_coverage: None,
         }
     }
@@ -199,6 +204,9 @@ impl FuelElement {
             return;
         }
 
+        // Mark that this element received heat - prevents moisture_state from overwriting evaporation
+        self.heat_received_this_frame = true;
+
         // STEP 1: Evaporate moisture (2260 kJ/kg latent heat of vaporization)
         let moisture_mass = self.fuel_remaining * self.moisture_fraction;
         if moisture_mass > 0.0 {
@@ -207,11 +215,21 @@ impl FuelElement {
             let moisture_evaporated = heat_for_evaporation / 2260.0;
 
             let new_moisture_mass = (moisture_mass - moisture_evaporated).max(0.0);
+            let old_moisture = self.moisture_fraction;
             self.moisture_fraction = if self.fuel_remaining > 0.0 {
                 new_moisture_mass / self.fuel_remaining
             } else {
                 0.0
             };
+
+            // DEBUG: Print evaporation calculation
+            #[cfg(debug_assertions)]
+            if std::env::var("DEBUG_EVAP").is_ok() && heat_kj > 1.0 {
+                eprintln!(
+                    "EVAP: heat={:.2} kJ, fuel={:.2} kg, moisture_mass={:.4} kg, evap_energy={:.2} kJ, evaporated={:.4} kg, moisture {:.4}->{:.4}",
+                    heat_kj, self.fuel_remaining, moisture_mass, evaporation_energy, moisture_evaporated, old_moisture, self.moisture_fraction
+                );
+            }
 
             // STEP 2: Remaining heat raises temperature
             let remaining_heat = heat_kj - heat_for_evaporation;
