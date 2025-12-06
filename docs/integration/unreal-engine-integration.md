@@ -40,13 +40,23 @@ cargo build --release -p fire-sim-ffi
 
 ### Generate C Header
 
-```bash
-# Install cbindgen if not already installed
-cargo install cbindgen
+The C header is **automatically generated** during the build process via `build.rs`. Simply building the FFI crate will generate `FireSimFFI.h` in the repository root:
 
-# Generate C header file
-cbindgen --config crates/ffi/cbindgen.toml --crate fire-sim-ffi --output FireSimFFI.h
+```bash
+# Build the FFI library - this automatically generates FireSimFFI.h
+cargo build --release -p fire-sim-ffi
+
+# The header is now available at: FireSimFFI.h (repo root)
 ```
+
+The generated header contains:
+- **Lifecycle functions**: `fire_sim_create()`, `fire_sim_destroy()`, `fire_sim_update()`
+- **Fuel element functions**: `fire_sim_add_fuel()`, `fire_sim_ignite()`, `fire_sim_get_element_state()`
+- **Query functions**: `fire_sim_get_burning_elements()`, `fire_sim_get_stats()`, `fire_sim_get_snapshot()`
+- **Suppression functions**: `fire_sim_apply_suppression_to_elements()`, `fire_sim_apply_water_direct()`
+- **Terrain functions**: `fire_sim_terrain_elevation()`, `fire_sim_terrain_slope()`, `fire_sim_terrain_aspect()`
+- **Weather functions**: `fire_sim_set_weather_from_live()`, `fire_sim_get_haines_index()`
+- **Multiplayer functions**: `fire_sim_submit_player_action()`, `fire_sim_get_frame_number()`
 
 ## Step 2: Project Setup in Unreal Engine
 
@@ -154,28 +164,49 @@ struct FBurningElement
     float Temperature;
     
     UPROPERTY(BlueprintReadOnly)
+    float FuelRemaining;
+    
+    UPROPERTY(BlueprintReadOnly)
+    float MoistureFraction;
+    
+    UPROPERTY(BlueprintReadOnly)
     float FlameHeight;
     
     UPROPERTY(BlueprintReadOnly)
-    float Intensity;
+    bool bIsCrownFire;
+    
+    UPROPERTY(BlueprintReadOnly)
+    bool bHasSuppression;
+    
+    UPROPERTY(BlueprintReadOnly)
+    float SuppressionEffectiveness;
 };
 
 USTRUCT(BlueprintType)
-struct FEmberData
+struct FSimulationSnapshot
 {
     GENERATED_BODY()
     
     UPROPERTY(BlueprintReadOnly)
-    int32 ID;
+    uint32 FrameNumber;
     
     UPROPERTY(BlueprintReadOnly)
-    FVector Position;
+    float SimulationTime;
     
     UPROPERTY(BlueprintReadOnly)
-    FVector Velocity;
+    uint32 BurningElementCount;
     
     UPROPERTY(BlueprintReadOnly)
-    float Temperature;
+    float TotalFuelConsumed;
+    
+    UPROPERTY(BlueprintReadOnly)
+    uint32 ActiveEmberCount;
+    
+    UPROPERTY(BlueprintReadOnly)
+    uint32 PyrocumulusCount;
+    
+    UPROPERTY(BlueprintReadOnly)
+    uint8 HainesIndex;
 };
 
 UCLASS()
@@ -191,65 +222,96 @@ public:
     virtual void Tick(float DeltaTime) override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     
-    // Configuration
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation")
+    // Simulation Configuration
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation|Setup")
     float MapWidth = 1000.0f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation|Setup")
     float MapHeight = 1000.0f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation")
-    float MapDepth = 100.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation|Setup", meta = (ClampMin = "1", ClampMax = "10"))
+    float GridCellSize = 2.0f;  // Resolution in meters (2-5m recommended)
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation|Setup")
+    uint8 TerrainType = 0;  // 0=flat, 1=single_hill, 2=valley
     
     // Weather
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather", meta = (ClampMin = "-20", ClampMax = "50"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation|Weather", meta = (ClampMin = "-20", ClampMax = "50"))
     float Temperature = 30.0f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather", meta = (ClampMin = "0", ClampMax = "100"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation|Weather", meta = (ClampMin = "0", ClampMax = "100"))
     float Humidity = 30.0f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather", meta = (ClampMin = "0", ClampMax = "100"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation|Weather", meta = (ClampMin = "0", ClampMax = "100"))
     float WindSpeed = 30.0f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather", meta = (ClampMin = "0", ClampMax = "360"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation|Weather", meta = (ClampMin = "0", ClampMax = "360"))
     float WindDirection = 0.0f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather", meta = (ClampMin = "0", ClampMax = "10"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fire Simulation|Weather", meta = (ClampMin = "0", ClampMax = "10"))
     float DroughtFactor = 5.0f;
     
-    // Functions
+    // Core Functions
     UFUNCTION(BlueprintCallable, Category = "Fire Simulation")
     void InitializeSimulation();
     
-    UFUNCTION(BlueprintCallable, Category = "Fire Simulation")
+    UFUNCTION(BlueprintCallable, Category = "Fire Simulation|Fuel")
     int32 AddFuelElement(FVector Position, uint8 FuelType, uint8 PartType, float Mass, int32 ParentID = -1);
     
-    UFUNCTION(BlueprintCallable, Category = "Fire Simulation")
+    UFUNCTION(BlueprintCallable, Category = "Fire Simulation|Fire")
     void IgniteElement(int32 ElementID, float InitialTemp = 600.0f);
     
-    UFUNCTION(BlueprintCallable, Category = "Fire Simulation")
+    UFUNCTION(BlueprintCallable, Category = "Fire Simulation|Weather")
     void UpdateWeather(float NewTemp, float NewHumidity, float NewWindSpeed, float NewWindDirection, float NewDrought);
     
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation")
+    // Query Functions
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Query")
     TArray<FBurningElement> GetBurningElements();
     
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation")
-    TArray<FEmberData> GetEmbers();
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Query")
+    FSimulationSnapshot GetSnapshot();
     
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation")
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Query")
     int32 GetBurningCount() const { return BurningCount; }
     
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation")
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Query")
     int32 GetEmberCount() const { return EmberCount; }
     
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation")
-    float GetFFDI() const { return CurrentFFDI; }
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Query")
+    uint8 GetHainesIndex() const { return HainesIndex; }
+    
+    // Suppression Functions
+    UFUNCTION(BlueprintCallable, Category = "Fire Simulation|Suppression")
+    int32 ApplySuppressionToElements(FVector Position, float Radius, float MassPerElement, uint8 AgentType);
+    
+    UFUNCTION(BlueprintCallable, Category = "Fire Simulation|Suppression")
+    void ApplyWaterDirect(FVector Position, float Mass);
+    
+    // Terrain Query Functions
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Terrain")
+    float GetElevation(FVector Position);
+    
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Terrain")
+    float GetSlope(FVector Position);
+    
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Terrain")
+    float GetAspect(FVector Position);
+    
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Terrain")
+    float GetSlopeSpreadMultiplier(FVector FromPos, FVector ToPos);
+    
+    // Multiplayer Functions
+    UFUNCTION(BlueprintCallable, Category = "Fire Simulation|Multiplayer")
+    bool SubmitPlayerAction(uint8 ActionType, uint32 PlayerID, FVector ActionPos, float Param1, uint32 Param2);
+    
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Fire Simulation|Multiplayer")
+    uint32 GetFrameNumber() const;
     
 private:
     uintptr_t SimulationID = 0;
     int32 BurningCount = 0;
     int32 EmberCount = 0;
-    float CurrentFFDI = 0.0f;
+    uint8 HainesIndex = 0;
 };
 ```
 
@@ -285,15 +347,19 @@ void AFireSimulationManager::Tick(float DeltaTime)
     
     if (SimulationID != 0)
     {
-        // Update simulation
+        // Update simulation with timestep
         fire_sim_update(SimulationID, DeltaTime);
         
         // Get current stats
-        BurningCount = fire_sim_burning_count(SimulationID);
-        EmberCount = fire_sim_ember_count(SimulationID);
+        uint32_t BurningOut = 0, TotalOut = 0, ActiveCellsOut = 0, TotalCellsOut = 0;
+        float FuelConsumedOut = 0.0f;
         
-        // Update FFDI (TODO: Add FFI function for this)
-        // CurrentFFDI = fire_sim_get_ffdi(SimulationID);
+        fire_sim_get_stats(SimulationID, &BurningOut, &TotalOut, &ActiveCellsOut, &TotalCellsOut, &FuelConsumedOut);
+        BurningCount = BurningOut;
+        EmberCount = 0; // Query separately if needed
+        
+        // Get Haines Index
+        HainesIndex = fire_sim_get_haines_index(SimulationID);
     }
 }
 
@@ -315,14 +381,18 @@ void AFireSimulationManager::InitializeSimulation()
         fire_sim_destroy(SimulationID);
     }
     
-    // Create simulation
-    SimulationID = fire_sim_create(MapWidth, MapHeight, MapDepth);
+    // Create simulation with new API
+    int32 CreateResult = fire_sim_create(MapWidth, MapHeight, GridCellSize, TerrainType, (uintptr_t*)&SimulationID);
+    
+    if (CreateResult != FIRE_SIM_SUCCESS)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to create fire simulation (error: %d)"), CreateResult);
+        return;
+    }
     
     // Set initial weather
-    fire_sim_update_weather(SimulationID, Temperature, Humidity, 
-                           WindSpeed * FMath::Sin(FMath::DegreesToRadians(WindDirection)),
-                           WindSpeed * FMath::Cos(FMath::DegreesToRadians(WindDirection)),
-                           0.0f, DroughtFactor);
+    fire_sim_set_weather_from_live(SimulationID, Temperature, Humidity, 
+                                  WindSpeed, WindDirection, 1013.25f, DroughtFactor, 0.0f);
     
     UE_LOG(LogTemp, Log, TEXT("Fire Simulation initialized (ID: %llu)"), SimulationID);
 }
@@ -340,11 +410,18 @@ int32 AFireSimulationManager::AddFuelElement(FVector Position, uint8 FuelType, u
     float Y = Position.Y / 100.0f;
     float Z = Position.Z / 100.0f;
     
-    uint32_t ParentU32 = (ParentID >= 0) ? static_cast<uint32_t>(ParentID) : UINT32_MAX;
+    int32_t ParentID_C = (ParentID >= 0) ? ParentID : -1;
+    uint32_t ElementID = 0;
     
-    uint32_t ElementID = fire_sim_add_fuel_element(SimulationID, X, Y, Z, FuelType, PartType, Mass, ParentU32);
+    int32 Result = fire_sim_add_fuel(SimulationID, X, Y, Z, FuelType, PartType, Mass, ParentID_C, &ElementID);
     
-    return static_cast<int32>(ElementID);
+    if (Result != FIRE_SIM_SUCCESS)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Failed to add fuel element (error: %d)"), Result);
+        return -1;
+    }
+    
+    return (int32)ElementID;
 }
 
 void AFireSimulationManager::IgniteElement(int32 ElementID, float InitialTemp)
@@ -354,7 +431,12 @@ void AFireSimulationManager::IgniteElement(int32 ElementID, float InitialTemp)
         return;
     }
     
-    fire_sim_ignite_element(SimulationID, static_cast<uint32_t>(ElementID), InitialTemp);
+    int32 Result = fire_sim_ignite(SimulationID, (uint32_t)ElementID, InitialTemp);
+    
+    if (Result != FIRE_SIM_SUCCESS)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Failed to ignite element %d (error: %d)"), ElementID, Result);
+    }
 }
 
 void AFireSimulationManager::UpdateWeather(float NewTemp, float NewHumidity, float NewWindSpeed, float NewWindDirection, float NewDrought)
@@ -367,10 +449,13 @@ void AFireSimulationManager::UpdateWeather(float NewTemp, float NewHumidity, flo
     
     if (SimulationID != 0)
     {
-        fire_sim_update_weather(SimulationID, Temperature, Humidity,
-                               WindSpeed * FMath::Sin(FMath::DegreesToRadians(WindDirection)),
-                               WindSpeed * FMath::Cos(FMath::DegreesToRadians(WindDirection)),
-                               0.0f, DroughtFactor);
+        int32 Result = fire_sim_set_weather_from_live(SimulationID, Temperature, Humidity,
+                                                      WindSpeed, WindDirection, 1013.25f, DroughtFactor, 0.0f);
+        
+        if (Result != FIRE_SIM_SUCCESS)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Failed to update weather (error: %d)"), Result);
+        }
     }
 }
 
@@ -383,74 +468,202 @@ TArray<FBurningElement> AFireSimulationManager::GetBurningElements()
         return Result;
     }
     
-    uint32_t Count = 0;
-    const FireElementVisual* Elements = fire_sim_get_burning_elements(SimulationID, &Count);
+    // Pre-allocate array for max expected elements
+    const uint32 MaxElements = 1000;
+    ElementFireState* States = new ElementFireState[MaxElements];
+    uint32 Count = 0;
     
-    if (Elements == nullptr || Count == 0)
+    int32 QueryResult = fire_sim_get_burning_elements(SimulationID, States, MaxElements, &Count);
+    
+    if (QueryResult != FIRE_SIM_SUCCESS)
     {
+        delete[] States;
         return Result;
     }
     
     Result.Reserve(Count);
     
-    for (uint32_t i = 0; i < Count; ++i)
+    for (uint32 i = 0; i < Count; ++i)
     {
         FBurningElement Elem;
-        Elem.ID = Elements[i].id;
-        // Convert simulation coordinates (meters) back to Unreal coordinates (cm, Z-up)
-        Elem.Position = FVector(Elements[i].position[0] * 100.0f,
-                               Elements[i].position[1] * 100.0f,
-                               Elements[i].position[2] * 100.0f);
-        Elem.Temperature = Elements[i].temperature;
-        Elem.FlameHeight = Elements[i].flame_height;
-        Elem.Intensity = Elements[i].intensity;
+        Elem.ID = States[i].element_id;
+        Elem.Temperature = States[i].temperature;
+        Elem.FuelRemaining = States[i].fuel_remaining;
+        Elem.MoistureFraction = States[i].moisture_fraction;
+        Elem.FlameHeight = States[i].flame_height;
+        Elem.bIsCrownFire = States[i].is_crown_fire;
+        Elem.bHasSuppression = States[i].has_suppression;
+        Elem.SuppressionEffectiveness = States[i].suppression_effectiveness;
         
         Result.Add(Elem);
     }
     
+    delete[] States;
     return Result;
 }
 
-TArray<FEmberData> AFireSimulationManager::GetEmbers()
+FSimulationSnapshot AFireSimulationManager::GetSnapshot()
 {
-    TArray<FEmberData> Result;
+    FSimulationSnapshot Snapshot;
+    FMemory::Memzero(&Snapshot, sizeof(FSimulationSnapshot));
     
+    if (SimulationID != 0)
+    {
+        SimulationSnapshot SnapC;
+        int32 Result = fire_sim_get_snapshot(SimulationID, &SnapC);
+        
+        if (Result == FIRE_SIM_SUCCESS)
+        {
+            Snapshot.FrameNumber = SnapC.frame_number;
+            Snapshot.SimulationTime = SnapC.simulation_time;
+            Snapshot.BurningElementCount = SnapC.burning_element_count;
+            Snapshot.TotalFuelConsumed = SnapC.total_fuel_consumed;
+            Snapshot.ActiveEmberCount = SnapC.active_ember_count;
+            Snapshot.PyrocumulusCount = SnapC.pyrocumulus_count;
+            Snapshot.HainesIndex = SnapC.haines_index;
+        }
+    }
+    
+    return Snapshot;
+}
+
+int32 AFireSimulationManager::ApplySuppressionToElements(FVector Position, float Radius, float MassPerElement, uint8 AgentType)
+{
     if (SimulationID == 0)
     {
-        return Result;
+        return -1;
     }
     
-    uint32_t Count = 0;
-    const EmberVisual* Embers = fire_sim_get_embers(SimulationID, &Count);
+    uint32 Count = 0;
+    int32 Result = fire_sim_apply_suppression_to_elements(SimulationID, 
+                                                         Position.X / 100.0f, Position.Y / 100.0f, Position.Z / 100.0f,
+                                                         Radius / 100.0f, MassPerElement, AgentType, &Count);
     
-    if (Embers == nullptr || Count == 0)
+    if (Result != FIRE_SIM_SUCCESS)
     {
-        return Result;
+        UE_LOG(LogTemp, Warning, TEXT("Failed to apply suppression (error: %d)"), Result);
+        return -1;
     }
     
-    Result.Reserve(Count);
-    
-    for (uint32_t i = 0; i < Count; ++i)
+    return (int32)Count;
+}
+
+void AFireSimulationManager::ApplyWaterDirect(FVector Position, float Mass)
+{
+    if (SimulationID == 0)
     {
-        FEmberData Ember;
-        Ember.ID = Embers[i].id;
-        // Convert to Unreal coordinates
-        Ember.Position = FVector(Embers[i].position[0] * 100.0f,
-                                Embers[i].position[1] * 100.0f,
-                                Embers[i].position[2] * 100.0f);
-        Ember.Velocity = FVector(Embers[i].velocity[0] * 100.0f,
-                                Embers[i].velocity[1] * 100.0f,
-                                Embers[i].velocity[2] * 100.0f);
-        Ember.Temperature = Embers[i].temperature;
-        
-        Result.Add(Ember);
+        return;
     }
     
-    return Result;
+    int32 Result = fire_sim_apply_water_direct(SimulationID, 
+                                              Position.X / 100.0f, Position.Y / 100.0f, Position.Z / 100.0f, 
+                                              Mass);
+    
+    if (Result != FIRE_SIM_SUCCESS)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Failed to apply water (error: %d)"), Result);
+    }
+}
+
+float AFireSimulationManager::GetElevation(FVector Position)
+{
+    if (SimulationID == 0) return 0.0f;
+    
+    float Elevation = 0.0f;
+    int32 Result = fire_sim_get_elevation(SimulationID, Position.X / 100.0f, Position.Y / 100.0f, &Elevation);
+    
+    return (Result == FIRE_SIM_SUCCESS) ? Elevation * 100.0f : 0.0f;  // Convert back to cm
+}
+
+float AFireSimulationManager::GetSlope(FVector Position)
+{
+    if (SimulationID == 0) return 0.0f;
+    
+    return fire_sim_terrain_slope(SimulationID, Position.X / 100.0f, Position.Y / 100.0f);
+}
+
+float AFireSimulationManager::GetAspect(FVector Position)
+{
+    if (SimulationID == 0) return 0.0f;
+    
+    return fire_sim_terrain_aspect(SimulationID, Position.X / 100.0f, Position.Y / 100.0f);
+}
+
+float AFireSimulationManager::GetSlopeSpreadMultiplier(FVector FromPos, FVector ToPos)
+{
+    if (SimulationID == 0) return 1.0f;
+    
+    return fire_sim_terrain_slope_multiplier(SimulationID, 
+                                            FromPos.X / 100.0f, FromPos.Y / 100.0f,
+                                            ToPos.X / 100.0f, ToPos.Y / 100.0f);
+}
+
+bool AFireSimulationManager::SubmitPlayerAction(uint8 ActionType, uint32 PlayerID, FVector ActionPos, float Param1, uint32 Param2)
+{
+    if (SimulationID == 0)
+    {
+        return false;
+    }
+    
+    CPlayerAction Action;
+    Action.action_type = ActionType;
+    Action.player_id = PlayerID;
+    Action.timestamp = GetWorld()->GetTimeSeconds();
+    Action.position_x = ActionPos.X / 100.0f;
+    Action.position_y = ActionPos.Y / 100.0f;
+    Action.position_z = ActionPos.Z / 100.0f;
+    Action.param1 = Param1;
+    Action.param2 = Param2;
+    
+    return fire_sim_submit_player_action(SimulationID, &Action);
+}
+
+uint32 AFireSimulationManager::GetFrameNumber() const
+{
+    if (SimulationID == 0) return 0;
+    
+    return fire_sim_get_frame_number(SimulationID);
 }
 ```
 
-## Step 4: Blueprint Integration
+## Step 4: Error Handling
+
+The FFI provides consistent error codes for all functions:
+
+```cpp
+// Error codes returned by FFI functions
+#define FIRE_SIM_SUCCESS           0     // Operation successful
+#define FIRE_SIM_INVALID_ID       -1     // Invalid simulation ID
+#define FIRE_SIM_NULL_POINTER     -2     // Null pointer passed
+#define FIRE_SIM_INVALID_FUEL     -3     // Invalid fuel/agent type
+#define FIRE_SIM_INVALID_TERRAIN  -4     // Invalid terrain type
+#define FIRE_SIM_LOCK_ERROR       -5     // Internal lock error
+```
+
+Always check return values from FFI calls:
+
+```cpp
+int32 Result = fire_sim_add_fuel(SimulationID, X, Y, Z, FuelType, PartType, Mass, ParentID, &ElementID);
+
+if (Result != FIRE_SIM_SUCCESS)
+{
+    switch (Result)
+    {
+        case FIRE_SIM_INVALID_ID:
+            UE_LOG(LogTemp, Error, TEXT("Invalid simulation ID"));
+            break;
+        case FIRE_SIM_INVALID_FUEL:
+            UE_LOG(LogTemp, Error, TEXT("Invalid fuel type: %d"), FuelType);
+            break;
+        case FIRE_SIM_NULL_POINTER:
+            UE_LOG(LogTemp, Error, TEXT("Null pointer error"));
+            break;
+        default:
+            UE_LOG(LogTemp, Error, TEXT("Unknown error: %d"), Result);
+    }
+    return -1;
+}
+```
 
 ### 1. Create Blueprint Actor
 
@@ -461,24 +674,49 @@ TArray<FEmberData> AFireSimulationManager::GetEmbers()
 ### 2. Visualization
 
 Create particle systems and materials for:
-- **Flames**: Use Niagara particle system with temperature-based color gradient
-- **Smoke**: Large particles with alpha fade and turbulence
-- **Embers**: Glowing particles with physics and wind response
-- **PyroCb Clouds**: Volumetric clouds with lightning effects
+- **Flames**: Use Niagara particle system with temperature-based color gradient (scale with FlameHeight)
+- **Smoke**: Large particles with alpha fade and turbulence (scale with fuel consumed)
+- **Embers**: Use high-quality particles for visible fire spots (deprecated: query burning elements for positions instead)
+- **PyroCb Clouds**: Volumetric clouds when PyrocumulusCount > 0
 
 ### 3. Example Blueprint Graph
 
 ```
 Event Tick
+  ├─> Get Snapshot
+  │     └─> Update HUD with FrameNumber, BurningCount, TotalFuelConsumed
+  │
   ├─> Get Burning Elements
   │     └─> For Each Element
-  │           └─> Spawn Flame Particle at Position (scaled by Intensity)
+  │           ├─> Spawn Flame Particle at Element Position (scaled by FlameHeight * Temperature)
+  │           ├─> If bIsCrownFire: Activate crown fire VFX
+  │           └─> If bHasSuppression: Overlay suppression coverage effect
   │
-  ├─> Get Embers
-  │     └─> For Each Ember
-  │           └─> Spawn Ember Particle at Position with Velocity
-  │
-  └─> Update UI with FFDI and Burning Count
+  └─> Update UI with Haines Index
+        └─> Display fire weather severity (2-6 scale)
+```
+
+### 4. Multiplayer Action Example
+
+```cpp
+// Helicopter water drop at position
+bool bSuccess = FireSimManager->ApplySuppressionToElements(
+    HelicopterPos,
+    500.0f,  // 500cm radius (5 meters)
+    50000.0f, // 50kg per element
+    0        // Water agent type
+);
+
+// Submit for network replication
+CPlayerAction DropAction;
+DropAction.action_type = 1; // Water drop
+DropAction.player_id = LocalPlayerID;
+DropAction.position_x = HelicopterPos.X / 100.0f;
+DropAction.position_y = HelicopterPos.Y / 100.0f;
+DropAction.position_z = HelicopterPos.Z / 100.0f;
+DropAction.param1 = 50000.0f; // Total mass
+
+fire_sim_submit_player_action(SimulationID, &DropAction);
 ```
 
 ## Step 5: Performance Optimization
@@ -560,31 +798,39 @@ for (int i = 0; i < 20; ++i)
 
 ## Fuel Type Reference
 
-| ID | Fuel Type | Description |
-|----|-----------|-------------|
-| 0 | Eucalyptus Stringybark | Extreme fire behavior, 25km spotting |
-| 1 | Eucalyptus Smooth Bark | Moderate behavior, 10km spotting |
-| 2 | Dry Grass | Fast ignition, rapid spread |
-| 3 | Shrubland | Medium ignition |
-| 4 | Dead Wood/Litter | High susceptibility |
-| 5 | Green Vegetation | Fire resistant |
-| 6 | Water | Non-burnable, blocks heat |
-| 7 | Rock | Non-burnable, reduces heat |
+| ID | Fuel Type | Description | Spread Rate | Crown Fire Threshold |
+|----|-----------|-------------|-------------|----------------------|
+| 0 | Eucalyptus Stringybark | Extreme fire behavior, 25km spotting | Very Fast | Low |
+| 1 | Eucalyptus Smooth Bark | Moderate behavior, 10km spotting | Fast | Medium |
+| 2 | Dry Grass | Fast ignition, rapid spread | Very Fast | High (no crown) |
+| 3 | Shrubland | Medium ignition, medium spread | Medium | Medium |
+| 4 | Dead Wood/Litter | High susceptibility to ignition | Slow | High (smoldering) |
+| 5 | Green Vegetation | Fire resistant | Very Slow | Very High |
+| 6 | Water | Non-burnable, blocks heat | None | None |
+| 7 | Rock | Non-burnable, reduces heat | None | None |
 
 ## Part Type Reference
 
-| ID | Part Type | Description |
-|----|-----------|-------------|
-| 0 | Root | Underground/base |
-| 1 | TrunkLower | Lower trunk |
-| 2 | TrunkMiddle | Middle trunk |
-| 3 | TrunkUpper | Upper trunk |
-| 4 | BarkLayer | Bark on trunk |
-| 5 | Branch | Branch with leaves |
-| 6 | Crown | Canopy foliage |
-| 10 | GroundLitter | Dead material on ground |
-| 11 | GroundVegetation | Living ground cover |
-| 20 | Surface | Non-flammable surface |
+| ID | Part Type | Description | Height Factor |
+|----|-----------|-------------|----------------|
+| 0 | Root | Underground/base, slowest burn | 0.0 |
+| 1 | TrunkLower | Lower 0-33% of trunk | 0.15 |
+| 2 | TrunkMiddle | Middle 33-67% of trunk | 0.50 |
+| 3 | TrunkUpper | Upper 67-100% of trunk | 0.85 |
+| 4 | BarkLayer | Bark on trunk | 0.40 |
+| 5 | Branch | Branch with leaves | 0.70 |
+| 6 | Crown | Canopy foliage (crown fire potential) | 1.0 |
+| 7 | GroundLitter | Dead material on ground | 0.05 |
+
+## Suppression Agent Type Reference
+
+| ID | Agent Type | Effect | Duration | Cost |
+|----|------------|--------|----------|------|
+| 0 | Water | Rapid cooling, no residue | Minutes | Low |
+| 1 | FoamClassA | Foam suppression, moderate cooling | Hours | Medium |
+| 2 | ShortTermRetardant | Fire retardant, residual protection | Hours | Medium |
+| 3 | LongTermRetardant | Enhanced retardant, stronger residue | Days | High |
+| 4 | WettingAgent | Reduces ignition threshold | Hours | Medium |
 
 ## Troubleshooting
 
