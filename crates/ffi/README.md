@@ -13,14 +13,17 @@ The C header file (`FireSimFFI.h`) is **automatically generated** during compila
 ### Building
 
 ```bash
-# Build the FFI library (automatically generates FireSimFFI.h in repo root)
+# Build the FFI library (automatically generates FireSimFFI.h in crate directory `crates/ffi`)
 cargo build --release -p fire-sim-ffi
 
 # Output files:
 # - Linux: target/release/libfire_sim_ffi.so
 # - Windows: target/release/fire_sim_ffi.dll
 # - macOS: target/release/libfire_sim_ffi.dylib
-# - Header: FireSimFFI.h (repo root)
+# - Header: FireSimFFI.h (crate root of this crate)
+```
+
+> Note: `FireSimFFI.h` is generated automatically by the build (via `cbindgen` + `build.rs`) and is ignored by git (see `.gitignore`). If you must ship the header to a consumer who cannot run cbindgen, add it explicitly with `git add -f crates/ffi/FireSimFFI.h`.
 ```
 
 ### Configuration
