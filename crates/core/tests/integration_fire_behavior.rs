@@ -569,7 +569,7 @@ fn test_weather_conditions_spread_rate() {
     println!("  Moderate (15 km/h wind): ~50 m/min = 0.83 m/s");
     println!("  Severe (35 km/h wind): ~117 m/min = 1.95 m/s");
     println!("  Catastrophic (60 km/h wind): ~200 m/min = 3.3 m/s");
-    println!("Grid: 5×5 elements, 5m spacing = 20m × 20m area\n");
+    println!("Grid: 5×5 elements, 2m spacing = 8m × 8m continuous fuel bed\n");
 
     // Test three conditions: Moderate, Severe, Catastrophic
     let conditions = vec![
@@ -591,12 +591,13 @@ fn test_weather_conditions_spread_rate() {
         let terrain = TerrainData::flat(100.0, 100.0, 3.0, 0.0);
         let mut sim = FireSimulation::new(5.0, terrain);
 
-        // Create simple grid of fuel elements (5x5 = 25 elements, 5m spacing)
+        // Create simple grid of fuel elements (5x5 = 25 elements, 2m spacing for continuous fuel)
+        // Real grass fires require continuous fuel; 2m spacing represents dense grass
         let mut element_ids = Vec::new();
         for x in 0..5 {
             for y in 0..5 {
                 let id = sim.add_fuel_element(
-                    Vec3::new(40.0 + x as f32 * 5.0, 40.0 + y as f32 * 5.0, 0.5),
+                    Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
                     Fuel::dry_grass(),
                     2.0,
                     FuelPart::GroundVegetation,
@@ -690,7 +691,7 @@ fn test_weather_conditions_spread_rate() {
     // Cruz et al. (2012): Black Saturday showed "profuse short range spotting"
     // with 3-8 firebrands/m² creating "pseudo flame fronts"
     // Expected behavior: Near-simultaneous ignition under extreme conditions
-    // 20% rule: 60 km/h → 200 m/min = 3.3 m/s → crosses 20m grid in ~6 seconds
+    // 20% rule: 60 km/h → 200 m/min = 3.3 m/s → crosses 8m grid in ~2.5 seconds
     //
     // REALISTIC EXPECTATION: Early transient phase (t<15s) can have complex dynamics
     // due to turbulent wind effects, heat distribution patterns, and fuel moisture.
@@ -702,9 +703,9 @@ fn test_weather_conditions_spread_rate() {
     );
 
     // Validate that catastrophic conditions show rapid spread
-    // Check at t=60s for more realistic comparison with 5m element spacing
-    // Realistic spread at 5m spacing takes ~30-60s per element under most conditions
-    let catastrophic_t31 = results[2].2[1].1; // Catastrophic at 31s  
+    // Check at t=60s for comparison with 2m element spacing
+    // Realistic spread at 2m spacing should be rapid under catastrophic conditions
+    let catastrophic_t31 = results[2].2[1].1; // Catastrophic at 31s
     let severe_t31 = results[1].2[1].1; // Severe at 31s
     let catastrophic_t60 = results[2].2[2].1; // Catastrophic at 60s
     let severe_t60 = results[1].2[2].1; // Severe at 60s

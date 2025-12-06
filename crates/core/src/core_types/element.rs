@@ -215,7 +215,10 @@ impl FuelElement {
             let moisture_evaporated = heat_for_evaporation / 2260.0;
 
             let new_moisture_mass = (moisture_mass - moisture_evaporated).max(0.0);
+
+            #[cfg(debug_assertions)]
             let old_moisture = self.moisture_fraction;
+
             self.moisture_fraction = if self.fuel_remaining > 0.0 {
                 new_moisture_mass / self.fuel_remaining
             } else {

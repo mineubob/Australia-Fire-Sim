@@ -34,6 +34,7 @@ pub use core_types::{ClimatePattern, WeatherPreset, WeatherSystem};
 
 // Re-export simulation types (public API)
 pub use grid::{GridCell, SimulationGrid, TerrainData};
+pub use grid::{PlameSource, StabilityClass, WindField, WindFieldConfig};
 pub use simulation::{FireSimulation, SimulationStats};
 
 // Re-export suppression types (for FFI)

@@ -651,13 +651,14 @@ fn test_full_simulation_moderate_conditions() {
     let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
     let mut sim = FireSimulation::new(5.0, terrain);
 
-    // Create 5x5 grid of grass (25 elements) - 5m spacing
-    // Grid spans (40,40) to (60,60)
+    // Create 5x5 grid of grass (25 elements) - 2m spacing for continuous fuel bed
+    // Real grass fires require continuous fuel; 2m spacing represents dense grass
+    // Grid spans (46,46) to (54,54) - 8m × 8m patch
     let mut element_ids = Vec::new();
     for x in 0..5 {
         for y in 0..5 {
             let id = sim.add_fuel_element(
-                Vec3::new(40.0 + x as f32 * 5.0, 40.0 + y as f32 * 5.0, 0.5),
+                Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
                 Fuel::dry_grass(),
                 2.0,
                 FuelPart::GroundVegetation,
@@ -676,8 +677,8 @@ fn test_full_simulation_moderate_conditions() {
     // Ignite center (element 12 at position x=2, y=2)
     sim.ignite_element(element_ids[12], 500.0);
 
-    // Run for 180 seconds (realistic spread time at 5m spacing)
-    for _ in 0..180 {
+    // Run for 60 seconds (grass fires spread quickly in continuous fuel at 2m spacing)
+    for _ in 0..60 {
         sim.update(1.0);
     }
 
@@ -703,12 +704,13 @@ fn test_full_simulation_catastrophic_conditions() {
     let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
     let mut sim = FireSimulation::new(5.0, terrain);
 
-    // Create 5x5 grid - 5m spacing
+    // Create 5x5 grid - 2m spacing for continuous fuel bed
+    // Continuous grass fuel allows realistic fire spread under catastrophic conditions
     let mut element_ids = Vec::new();
     for x in 0..5 {
         for y in 0..5 {
             let id = sim.add_fuel_element(
-                Vec3::new(40.0 + x as f32 * 5.0, 40.0 + y as f32 * 5.0, 0.5),
+                Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
                 Fuel::dry_grass(),
                 2.0,
                 FuelPart::GroundVegetation,
@@ -726,8 +728,8 @@ fn test_full_simulation_catastrophic_conditions() {
 
     sim.ignite_element(element_ids[12], 500.0);
 
-    // Run for 150 seconds (realistic spread time at 5m spacing under catastrophic conditions)
-    for _ in 0..150 {
+    // Run for 45 seconds (grass fires spread very quickly at 2m spacing under catastrophic wind)
+    for _ in 0..45 {
         sim.update(1.0);
     }
 
