@@ -250,6 +250,14 @@ impl Div<f32> for Meters {
     }
 }
 
+// Cross-type operation: distance / time = velocity
+impl Div<Seconds> for Meters {
+    type Output = MetersPerSecond;
+    fn div(self, rhs: Seconds) -> MetersPerSecond {
+        MetersPerSecond(self.0 / rhs.0)
+    }
+}
+
 /// Distance in kilometers
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -272,6 +280,42 @@ impl Kilometers {
 impl From<Kilometers> for Meters {
     fn from(k: Kilometers) -> Meters {
         k.to_meters()
+    }
+}
+
+impl Add for Kilometers {
+    type Output = Kilometers;
+    fn add(self, rhs: Kilometers) -> Kilometers {
+        Kilometers(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Kilometers {
+    type Output = Kilometers;
+    fn sub(self, rhs: Kilometers) -> Kilometers {
+        Kilometers(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for Kilometers {
+    type Output = Kilometers;
+    fn mul(self, rhs: f32) -> Kilometers {
+        Kilometers(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for Kilometers {
+    type Output = Kilometers;
+    fn div(self, rhs: f32) -> Kilometers {
+        Kilometers(self.0 / rhs)
+    }
+}
+
+// Cross-type operation: kilometers / hours = km/h
+impl Div<Hours> for Kilometers {
+    type Output = KilometersPerHour;
+    fn div(self, rhs: Hours) -> KilometersPerHour {
+        KilometersPerHour(self.0 / rhs.0)
     }
 }
 
@@ -537,6 +581,29 @@ impl Mul<f32> for MetersPerSecond {
     }
 }
 
+impl Div<f32> for MetersPerSecond {
+    type Output = MetersPerSecond;
+    fn div(self, rhs: f32) -> MetersPerSecond {
+        MetersPerSecond(self.0 / rhs)
+    }
+}
+
+// Cross-type operation: velocity × time = distance
+impl Mul<Seconds> for MetersPerSecond {
+    type Output = Meters;
+    fn mul(self, rhs: Seconds) -> Meters {
+        Meters(self.0 * rhs.0)
+    }
+}
+
+// Cross-type operation: time × velocity = distance
+impl Mul<MetersPerSecond> for Seconds {
+    type Output = Meters;
+    fn mul(self, rhs: MetersPerSecond) -> Meters {
+        Meters(self.0 * rhs.0)
+    }
+}
+
 /// Velocity in kilometers per hour
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -565,6 +632,50 @@ impl From<KilometersPerHour> for MetersPerSecond {
 impl From<f32> for KilometersPerHour {
     fn from(v: f32) -> Self {
         KilometersPerHour(v)
+    }
+}
+
+impl Add for KilometersPerHour {
+    type Output = KilometersPerHour;
+    fn add(self, rhs: KilometersPerHour) -> KilometersPerHour {
+        KilometersPerHour(self.0 + rhs.0)
+    }
+}
+
+impl Sub for KilometersPerHour {
+    type Output = KilometersPerHour;
+    fn sub(self, rhs: KilometersPerHour) -> KilometersPerHour {
+        KilometersPerHour(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for KilometersPerHour {
+    type Output = KilometersPerHour;
+    fn mul(self, rhs: f32) -> KilometersPerHour {
+        KilometersPerHour(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for KilometersPerHour {
+    type Output = KilometersPerHour;
+    fn div(self, rhs: f32) -> KilometersPerHour {
+        KilometersPerHour(self.0 / rhs)
+    }
+}
+
+// Cross-type operation: km/h × hours = kilometers
+impl Mul<Hours> for KilometersPerHour {
+    type Output = Kilometers;
+    fn mul(self, rhs: Hours) -> Kilometers {
+        Kilometers(self.0 * rhs.0)
+    }
+}
+
+// Cross-type operation: hours × km/h = kilometers
+impl Mul<KilometersPerHour> for Hours {
+    type Output = Kilometers;
+    fn mul(self, rhs: KilometersPerHour) -> Kilometers {
+        Kilometers(self.0 * rhs.0)
     }
 }
 
@@ -666,16 +777,32 @@ impl From<KjPerKg> for f32 {
 }
 
 impl Mul<f32> for KjPerKg {
-    type Output = f32;
-    fn mul(self, rhs: f32) -> f32 {
-        self.0 * rhs
+    type Output = KjPerKg;
+    fn mul(self, rhs: f32) -> KjPerKg {
+        KjPerKg(self.0 * rhs)
     }
 }
 
 impl Mul<KjPerKg> for f32 {
-    type Output = f32;
-    fn mul(self, rhs: KjPerKg) -> f32 {
-        self * rhs.0
+    type Output = KjPerKg;
+    fn mul(self, rhs: KjPerKg) -> KjPerKg {
+        KjPerKg(self * rhs.0)
+    }
+}
+
+// Cross-type operation: kJ/kg × kg = kJ
+impl Mul<Kilograms> for KjPerKg {
+    type Output = Kilojoules;
+    fn mul(self, rhs: Kilograms) -> Kilojoules {
+        Kilojoules(self.0 * rhs.0)
+    }
+}
+
+// Cross-type operation: kg × kJ/kg = kJ
+impl Mul<KjPerKg> for Kilograms {
+    type Output = Kilojoules;
+    fn mul(self, rhs: KjPerKg) -> Kilojoules {
+        Kilojoules(self.0 * rhs.0)
     }
 }
 
@@ -767,16 +894,16 @@ impl From<KjPerKgK> for f32 {
 }
 
 impl Mul<f32> for KjPerKgK {
-    type Output = f32;
-    fn mul(self, rhs: f32) -> f32 {
-        self.0 * rhs
+    type Output = KjPerKgK;
+    fn mul(self, rhs: f32) -> KjPerKgK {
+        KjPerKgK(self.0 * rhs)
     }
 }
 
 impl Mul<KjPerKgK> for f32 {
-    type Output = f32;
-    fn mul(self, rhs: KjPerKgK) -> f32 {
-        self * rhs.0
+    type Output = KjPerKgK;
+    fn mul(self, rhs: KjPerKgK) -> KjPerKgK {
+        KjPerKgK(self * rhs.0)
     }
 }
 
@@ -831,6 +958,34 @@ impl From<f32> for Fraction {
 impl From<Fraction> for f32 {
     fn from(f: Fraction) -> f32 {
         f.0
+    }
+}
+
+impl Add for Fraction {
+    type Output = Fraction;
+    fn add(self, rhs: Fraction) -> Fraction {
+        Fraction::new(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Fraction {
+    type Output = Fraction;
+    fn sub(self, rhs: Fraction) -> Fraction {
+        Fraction::new(self.0 - rhs.0)
+    }
+}
+
+impl Mul<Fraction> for Fraction {
+    type Output = Fraction;
+    fn mul(self, rhs: Fraction) -> Fraction {
+        Fraction::new(self.0 * rhs.0)
+    }
+}
+
+impl Div<Fraction> for Fraction {
+    type Output = f32;
+    fn div(self, rhs: Fraction) -> f32 {
+        self.0 / rhs.0
     }
 }
 
@@ -1130,5 +1285,68 @@ mod tests {
         let s = Seconds(3600.0);
         let h = s.to_hours();
         assert!((h.0 - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_velocity_times_time_equals_distance() {
+        let velocity = MetersPerSecond(10.0);
+        let time = Seconds(5.0);
+        let distance: Meters = velocity * time;
+        assert!((distance.0 - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_time_times_velocity_equals_distance() {
+        let time = Seconds(5.0);
+        let velocity = MetersPerSecond(10.0);
+        let distance: Meters = time * velocity;
+        assert!((distance.0 - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_distance_divided_by_time_equals_velocity() {
+        let distance = Meters(100.0);
+        let time = Seconds(10.0);
+        let velocity: MetersPerSecond = distance / time;
+        assert!((velocity.0 - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_kmh_times_hours_equals_km() {
+        let speed = KilometersPerHour(60.0);
+        let time = Hours(2.0);
+        let distance: Kilometers = speed * time;
+        assert!((distance.0 - 120.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_km_divided_by_hours_equals_kmh() {
+        let distance = Kilometers(120.0);
+        let time = Hours(2.0);
+        let speed: KilometersPerHour = distance / time;
+        assert!((speed.0 - 60.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_heat_content_times_mass_equals_energy() {
+        let heat = KjPerKg(2260.0);
+        let mass = Kilograms(0.5);
+        let energy: Kilojoules = heat * mass;
+        assert!((energy.0 - 1130.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_fraction_arithmetic() {
+        let a = Fraction::new(0.5);
+        let b = Fraction::new(0.3);
+        
+        let sum = a + b;
+        assert!((sum.0 - 0.8).abs() < 0.01);
+        
+        let diff = a - b;
+        assert!((diff.0 - 0.2).abs() < 0.01);
+        
+        let prod = a * b;
+        assert!((prod.0 - 0.15).abs() < 0.01);
     }
 }
