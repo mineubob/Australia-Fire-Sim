@@ -20,6 +20,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::ops::{Add, Div, Mul, Sub};
 
 // ============================================================================
@@ -103,6 +104,12 @@ impl Div<f32> for Celsius {
     type Output = Celsius;
     fn div(self, rhs: f32) -> Celsius {
         Celsius(self.0 / rhs)
+    }
+}
+
+impl fmt::Display for Celsius {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}°C", self.0)
     }
 }
 
@@ -658,6 +665,20 @@ impl From<KjPerKg> for f32 {
     }
 }
 
+impl Mul<f32> for KjPerKg {
+    type Output = f32;
+    fn mul(self, rhs: f32) -> f32 {
+        self.0 * rhs
+    }
+}
+
+impl Mul<KjPerKg> for f32 {
+    type Output = f32;
+    fn mul(self, rhs: KjPerKg) -> f32 {
+        self * rhs.0
+    }
+}
+
 /// Fire intensity in kW/m (Byram's fireline intensity)
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -742,6 +763,20 @@ impl From<f32> for KjPerKgK {
 impl From<KjPerKgK> for f32 {
     fn from(c: KjPerKgK) -> f32 {
         c.0
+    }
+}
+
+impl Mul<f32> for KjPerKgK {
+    type Output = f32;
+    fn mul(self, rhs: f32) -> f32 {
+        self.0 * rhs
+    }
+}
+
+impl Mul<KjPerKgK> for f32 {
+    type Output = f32;
+    fn mul(self, rhs: KjPerKgK) -> f32 {
+        self * rhs.0
     }
 }
 
@@ -1018,6 +1053,13 @@ impl From<f32> for SurfaceAreaToVolume {
 impl From<SurfaceAreaToVolume> for f32 {
     fn from(s: SurfaceAreaToVolume) -> f32 {
         s.0
+    }
+}
+
+impl Div<f32> for SurfaceAreaToVolume {
+    type Output = f32;
+    fn div(self, rhs: f32) -> f32 {
+        self.0 / rhs
     }
 }
 

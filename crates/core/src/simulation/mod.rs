@@ -299,7 +299,7 @@ impl FireSimulation {
     pub fn ignite_element(&mut self, element_id: u32, initial_temp: f32) {
         if let Some(Some(element)) = self.elements.get_mut(element_id as usize) {
             element.ignited = true;
-            element.temperature = initial_temp.max(element.fuel.ignition_temperature);
+            element.temperature = initial_temp.max(element.fuel.ignition_temperature.0);
             // Set smoldering state to FLAMING phase for direct ignition (Phase 3)
             // This overrides any existing state (e.g., Unignited with 0 burn rate)
             element.smoldering_state = Some(crate::physics::SmolderingState::new_flaming());
@@ -615,7 +615,7 @@ impl FireSimulation {
                 if !element.ignited && element.fuel_remaining > 0.1 {
                     // Start at 600°C - realistic for piloted ignition
                     // This represents rapid flashover when fuel catches fire
-                    let initial_temp = 600.0_f32.max(element.fuel.ignition_temperature);
+                    let initial_temp = 600.0_f32.max(element.fuel.ignition_temperature.0);
                     self.ignite_element(id, initial_temp);
                     break;
                 }
@@ -919,7 +919,7 @@ impl FireSimulation {
                     if grid_data.suppression_agent > 0.0 {
                         let cooling_rate = grid_data.suppression_agent * 1000.0;
                         let mass = element.fuel_remaining;
-                        let temp_drop = cooling_rate / (mass * element.fuel.specific_heat);
+                        let temp_drop = cooling_rate / (mass * element.fuel.specific_heat.0);
                         element.temperature =
                             (element.temperature - temp_drop).max(grid_data.temperature);
                     }
@@ -993,7 +993,7 @@ impl FireSimulation {
                         "COMBUST {}: temp={:.1} ignition={:.1} base_burn={:.6} oxygen_factor={:.4} smold_mult={:.4} dt={:.1} fuel_consumed={:.6}",
                         element_id,
                         el.temperature,
-                        el.fuel.ignition_temperature,
+                        el.fuel.ignition_temperature.0,
                         base_burn_rate,
                         oxygen_factor,
                         smoldering_burn_mult,
@@ -1015,13 +1015,13 @@ impl FireSimulation {
                 // Smoldering phase reduces heat release (Rein 2009)
                 if fuel_consumed > 0.0 && element.fuel_remaining > 0.1 {
                     let combustion_heat =
-                        fuel_consumed * element.fuel.heat_content * smoldering_heat_mult;
+                        fuel_consumed * element.fuel.heat_content.0 * smoldering_heat_mult;
                     // Fuel-specific fraction of heat retained (grass=0.25, forest=0.40)
-                    let self_heating = combustion_heat * element.fuel.self_heating_fraction;
+                    let self_heating = combustion_heat * element.fuel.self_heating_fraction.0;
                     let temp_rise =
-                        self_heating / (element.fuel_remaining * element.fuel.specific_heat);
+                        self_heating / (element.fuel_remaining * element.fuel.specific_heat.0);
                     element.temperature =
-                        (element.temperature + temp_rise).min(element.fuel.max_flame_temperature);
+                        (element.temperature + temp_rise).min(element.fuel.max_flame_temperature.0);
                 }
 
                 if element.fuel_remaining < 0.01 {
@@ -1057,9 +1057,9 @@ impl FireSimulation {
                     // Use fuel properties for crown fire calculation
                     let crown_behavior = crate::physics::calculate_crown_fire_behavior(
                         element,
-                        element.fuel.crown_bulk_density,
-                        element.fuel.crown_base_height,
-                        element.fuel.foliar_moisture_content,
+                        element.fuel.crown_bulk_density.0,
+                        element.fuel.crown_base_height.0,
+                        element.fuel.foliar_moisture_content.0,
                         actual_spread_rate,
                         wind_vector.norm(),
                     );
@@ -1111,8 +1111,8 @@ impl FireSimulation {
                         let ladder_boost = 1.0
                             + element.fuel.canopy_structure.ladder_fuel_factor()
                                 * LADDER_FUEL_TEMP_BOOST_FACTOR;
-                        let base_crown_temp = element.fuel.max_flame_temperature
-                            * element.fuel.crown_fire_temp_multiplier;
+                        let base_crown_temp = element.fuel.max_flame_temperature.0
+                            * element.fuel.crown_fire_temp_multiplier.0;
                         // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
                         let crown_temp =
                             base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
@@ -1129,10 +1129,10 @@ impl FireSimulation {
                         element.position,
                         element.temperature,
                         element.fuel_remaining,
-                        element.fuel.surface_area_to_volume,
-                        element.fuel.heat_content,
+                        element.fuel.surface_area_to_volume.0,
+                        element.fuel.heat_content.0,
                         element.fuel.convective_heat_coefficient,
-                        element.fuel.atmospheric_heat_efficiency,
+                        element.fuel.atmospheric_heat_efficiency.0,
                     ))
                 } else {
                     None
@@ -1251,10 +1251,10 @@ impl FireSimulation {
                                 source_pos,
                                 source_temp,
                                 source_fuel_remaining,
-                                source_surface_area_vol,
+                                source_surface_area_vol.0,
                                 target.position,
                                 target.temperature,
-                                target.fuel.surface_area_to_volume,
+                                target.fuel.surface_area_to_volume.0,
                                 wind_vector,
                                 dt,
                             );
@@ -1317,7 +1317,7 @@ impl FireSimulation {
                         target.temperature,
                         moisture_before,
                         target.moisture_fraction,
-                        target.fuel.ignition_temperature,
+                        target.fuel.ignition_temperature.0,
                         target.ignited
                     );
                 }
@@ -1577,7 +1577,7 @@ impl FireSimulation {
                     if ignition_prob > 0.0 && rand::random::<f32>() < ignition_prob {
                         // Ignite fuel element at ember temperature
                         let ignition_temp =
-                            temperature.min(fuel_element.fuel.ignition_temperature + 100.0);
+                            temperature.min(fuel_element.fuel.ignition_temperature.0 + 100.0);
                         self.ignite_element(fuel_id, ignition_temp);
                         ignition_occurred = true;
                         break; // Ember successfully ignited fuel, stop trying
@@ -1960,25 +1960,25 @@ mod tests {
 
         // Verify Australian-specific properties exist
         assert!(
-            eucalyptus.volatile_oil_content > 0.0,
+            eucalyptus.volatile_oil_content.0 > 0.0,
             "Eucalyptus should have volatile oils"
         );
         assert!(
-            eucalyptus.oil_vaporization_temp > 0.0,
+            eucalyptus.oil_vaporization_temp.0 > 0.0,
             "Should have oil vaporization temp"
         );
         assert!(
-            eucalyptus.oil_autoignition_temp > 0.0,
+            eucalyptus.oil_autoignition_temp.0 > 0.0,
             "Should have oil autoignition temp"
         );
         assert!(
-            eucalyptus.max_spotting_distance > 1000.0,
+            eucalyptus.max_spotting_distance.0 > 1000.0,
             "Eucalyptus should have long spotting distance"
         );
 
         // Stringybark should have high ladder fuel factor
         assert!(
-            eucalyptus.bark_properties.ladder_fuel_factor > 0.8,
+            eucalyptus.bark_properties.ladder_fuel_factor.0 > 0.8,
             "Stringybark should have high ladder fuel factor"
         );
 

@@ -1,75 +1,85 @@
+use super::units::{
+    Celsius, Fraction, Hours, KgPerCubicMeter, KjPerKg, KjPerKgK, Meters, Percent,
+    SurfaceAreaToVolume,
+};
 use serde::{Deserialize, Serialize};
 
 /// Bark properties that affect fire behavior
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct BarkProperties {
-    pub bark_type_id: u8,        // Numeric ID for the bark type
-    pub ladder_fuel_factor: f32, // 0-1 scale, how much it acts as ladder fuel
-    pub flammability: f32,       // 0-1 scale, ignition ease
-    pub shedding_rate: f32,      // 0-1 scale, how much bark sheds as embers
-    pub insulation_factor: f32,  // 0-1 scale, protection of inner wood
-    pub surface_roughness: f32,  // affects airflow and heat retention
+    /// Numeric ID for the bark type
+    pub bark_type_id: u8,
+    /// 0-1 scale, how much it acts as ladder fuel
+    pub ladder_fuel_factor: Fraction,
+    /// 0-1 scale, ignition ease
+    pub flammability: Fraction,
+    /// 0-1 scale, how much bark sheds as embers
+    pub shedding_rate: Fraction,
+    /// 0-1 scale, protection of inner wood
+    pub insulation_factor: Fraction,
+    /// Affects airflow and heat retention (0-1)
+    pub surface_roughness: Fraction,
 }
 
 impl BarkProperties {
     /// Smooth bark - minimal ladder fuel
     pub const SMOOTH: BarkProperties = BarkProperties {
         bark_type_id: 0,
-        ladder_fuel_factor: 0.1,
-        flammability: 0.3,
-        shedding_rate: 0.1,
-        insulation_factor: 0.2,
-        surface_roughness: 0.2,
+        ladder_fuel_factor: Fraction(0.1),
+        flammability: Fraction(0.3),
+        shedding_rate: Fraction(0.1),
+        insulation_factor: Fraction(0.2),
+        surface_roughness: Fraction(0.2),
     };
 
     /// Fibrous bark - moderate ladder fuel
     pub const FIBROUS: BarkProperties = BarkProperties {
         bark_type_id: 1,
-        ladder_fuel_factor: 0.5,
-        flammability: 0.6,
-        shedding_rate: 0.4,
-        insulation_factor: 0.5,
-        surface_roughness: 0.6,
+        ladder_fuel_factor: Fraction(0.5),
+        flammability: Fraction(0.6),
+        shedding_rate: Fraction(0.4),
+        insulation_factor: Fraction(0.5),
+        surface_roughness: Fraction(0.6),
     };
 
     /// Stringybark - EXTREME ladder fuel (causes crown fires)
     pub const STRINGYBARK: BarkProperties = BarkProperties {
         bark_type_id: 2,
-        ladder_fuel_factor: 1.0,
-        flammability: 0.9,
-        shedding_rate: 0.8,
-        insulation_factor: 0.4,
-        surface_roughness: 0.9,
+        ladder_fuel_factor: Fraction(1.0),
+        flammability: Fraction(0.9),
+        shedding_rate: Fraction(0.8),
+        insulation_factor: Fraction(0.4),
+        surface_roughness: Fraction(0.9),
     };
 
     /// Ironbark - dense, slow burning
     pub const IRONBARK: BarkProperties = BarkProperties {
         bark_type_id: 3,
-        ladder_fuel_factor: 0.2,
-        flammability: 0.4,
-        shedding_rate: 0.2,
-        insulation_factor: 0.8,
-        surface_roughness: 0.4,
+        ladder_fuel_factor: Fraction(0.2),
+        flammability: Fraction(0.4),
+        shedding_rate: Fraction(0.2),
+        insulation_factor: Fraction(0.8),
+        surface_roughness: Fraction(0.4),
     };
 
     /// Paperbark - highly flammable
     pub const PAPERBARK: BarkProperties = BarkProperties {
         bark_type_id: 4,
-        ladder_fuel_factor: 0.7,
-        flammability: 0.95,
-        shedding_rate: 0.9,
-        insulation_factor: 0.3,
-        surface_roughness: 0.5,
+        ladder_fuel_factor: Fraction(0.7),
+        flammability: Fraction(0.95),
+        shedding_rate: Fraction(0.9),
+        insulation_factor: Fraction(0.3),
+        surface_roughness: Fraction(0.5),
     };
 
     /// Non-bark (for non-tree fuels)
     pub const NONE: BarkProperties = BarkProperties {
         bark_type_id: 255,
-        ladder_fuel_factor: 0.0,
-        flammability: 0.0,
-        shedding_rate: 0.0,
-        insulation_factor: 0.0,
-        surface_roughness: 0.1,
+        ladder_fuel_factor: Fraction(0.0),
+        flammability: Fraction(0.0),
+        shedding_rate: Fraction(0.0),
+        insulation_factor: Fraction(0.0),
+        surface_roughness: Fraction(0.1),
     };
 
     /// Get bark type name
@@ -89,80 +99,123 @@ impl BarkProperties {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fuel {
     // Identification
+    /// Unique fuel type identifier
     pub id: u8,
+    /// Human-readable name
     pub name: String,
 
     // Thermal properties
-    pub heat_content: f32, // kJ/kg (18,000-22,000 typical)
+    /// Heat content (kJ/kg) - 18,000-22,000 typical for wood
+    pub heat_content: KjPerKg,
     /// Piloted ignition temperature (°C) - with external flame/spark present
     /// Reference: Janssens (1991) "Piloted ignition of wood: a review"
     /// Typical range: 200-365°C for wood, lower for fine fuels
-    pub ignition_temperature: f32,
+    pub ignition_temperature: Celsius,
     /// Auto-ignition temperature (°C) - spontaneous combustion from radiant heat only
     /// Reference: Dietenberger (2016) "Wood Products: Thermal Degradation and Fire"
     /// Typically 100-150°C higher than piloted ignition
     /// Used when no adjacent burning element provides a pilot flame
-    pub auto_ignition_temperature: f32,
-    pub max_flame_temperature: f32, // °C (800-1500 based on fuel)
-    pub specific_heat: f32,         // kJ/(kg·K) - CRITICAL
+    pub auto_ignition_temperature: Celsius,
+    /// Maximum flame temperature (°C) - 800-1500 based on fuel
+    pub max_flame_temperature: Celsius,
+    /// Specific heat capacity (kJ/(kg·K)) - CRITICAL for thermal calculations
+    pub specific_heat: KjPerKgK,
 
     // Physical properties
-    pub bulk_density: f32,           // kg/m³
-    pub surface_area_to_volume: f32, // m²/m³ for heat transfer
-    pub fuel_bed_depth: f32,         // meters
+    /// Bulk density (kg/m³)
+    pub bulk_density: KgPerCubicMeter,
+    /// Surface area to volume ratio (m²/m³) for heat transfer
+    pub surface_area_to_volume: SurfaceAreaToVolume,
+    /// Fuel bed depth (meters)
+    pub fuel_bed_depth: Meters,
 
     // Moisture properties
-    pub base_moisture: f32,          // Fraction (0-1)
-    pub moisture_of_extinction: f32, // Won't burn above this
+    /// Base moisture content (0-1 fraction)
+    pub base_moisture: Fraction,
+    /// Moisture of extinction - won't burn above this fraction
+    pub moisture_of_extinction: Fraction,
 
     // Fire behavior
+    /// Burn rate coefficient (unitless)
     pub burn_rate_coefficient: f32,
-    pub ember_production: f32, // Probability per second (stringybark=0.9, grass=0.1)
-    pub ember_receptivity: f32, // 0-1 (how easily spot fires ignite)
-    pub max_spotting_distance: f32, // meters
+    /// Ember production probability per second (stringybark=0.9, grass=0.1)
+    pub ember_production: Fraction,
+    /// Ember receptivity (0-1) - how easily spot fires ignite
+    pub ember_receptivity: Fraction,
+    /// Maximum spotting distance (meters)
+    pub max_spotting_distance: Meters,
 
     // Ember physics properties (fuel-specific)
-    pub ember_mass_kg: f32, // Typical ember mass in kg (stringybark=0.001, grass=0.0002)
-    pub ember_launch_velocity_factor: f32, // Horizontal velocity fraction (0-1, bark=0.5, grass=0.3)
+    /// Typical ember mass (kg) - stringybark=0.001, grass=0.0002
+    pub ember_mass_kg: f32,
+    /// Horizontal velocity fraction (0-1, bark=0.5, grass=0.3)
+    pub ember_launch_velocity_factor: Fraction,
 
     // Rothermel model parameters (fuel-specific)
-    pub mineral_damping: f32, // 0-1 (mineral/ash content effect, wood=0.41, grass=0.7-0.9)
-    pub particle_density: f32, // kg/m³ (ρ_p, softwood=450, hardwood=550, grass=300)
-    pub effective_heating: f32, // 0-1 (fine=0.5-0.6, medium=0.4-0.5, coarse=0.3-0.4)
-    pub packing_ratio: f32,   // 0-1 (β, actual/optimum, compacted=0.8, loose=0.5)
-    pub optimum_packing_ratio: f32, // β_op (optimal compaction, grass=0.35, shrub=0.30, forest=0.25)
+    /// Mineral damping (0-1) - mineral/ash content effect, wood=0.41, grass=0.7-0.9
+    pub mineral_damping: Fraction,
+    /// Particle density (kg/m³) - ρ_p, softwood=450, hardwood=550, grass=300
+    pub particle_density: KgPerCubicMeter,
+    /// Effective heating fraction (0-1) - fine=0.5-0.6, medium=0.4-0.5, coarse=0.3-0.4
+    pub effective_heating: Fraction,
+    /// Packing ratio (0-1) - β, actual/optimum, compacted=0.8, loose=0.5
+    pub packing_ratio: Fraction,
+    /// Optimum packing ratio - β_op, grass=0.35, shrub=0.30, forest=0.25
+    pub optimum_packing_ratio: Fraction,
 
     // Thermal behavior coefficients (fuel-specific, not hardcoded)
-    pub cooling_rate: f32, // Newton's cooling coefficient (per second, grass=0.15, forest=0.05)
-    pub self_heating_fraction: f32, // Fraction of combustion heat retained (0-1, grass=0.25, forest=0.40)
-    pub convective_heat_coefficient: f32, // h for heat transfer (W/(m²·K), grass=600, forest=400)
-    pub atmospheric_heat_efficiency: f32, // How much heat transfers to air (0-1, grass=0.85, forest=0.70)
-    pub wind_sensitivity: f32,            // Wind effect multiplier (grass=1.0, forest=0.6)
-    pub crown_fire_temp_multiplier: f32,  // Crown fire temperature boost (0-1, stringybark=0.95)
+    /// Newton's cooling coefficient (per second, grass=0.15, forest=0.05)
+    pub cooling_rate: f32,
+    /// Fraction of combustion heat retained (0-1, grass=0.25, forest=0.40)
+    pub self_heating_fraction: Fraction,
+    /// Convective heat transfer coefficient h (W/(m²·K), grass=600, forest=400)
+    pub convective_heat_coefficient: f32,
+    /// Atmospheric heat transfer efficiency (0-1, grass=0.85, forest=0.70)
+    pub atmospheric_heat_efficiency: Fraction,
+    /// Wind sensitivity multiplier (grass=1.0, forest=0.6)
+    pub wind_sensitivity: Fraction,
+    /// Crown fire temperature boost (0-1, stringybark=0.95)
+    pub crown_fire_temp_multiplier: Fraction,
 
     // Combustion and geometry properties (fuel-specific)
-    pub combustion_efficiency: f32, // Fraction of fuel fully combusted (0-1, dry_wood=0.95, green=0.70)
-    pub surface_area_geometry_factor: f32, // Geometry multiplier for surface area calc (wood=0.1, grass=0.15)
+    /// Combustion efficiency (0-1) - fraction of fuel fully combusted
+    pub combustion_efficiency: Fraction,
+    /// Geometry multiplier for surface area calculation (wood=0.1, grass=0.15)
+    pub surface_area_geometry_factor: f32,
 
     // Australian-specific
-    pub volatile_oil_content: f32,       // kg/kg (eucalypts: 0.02-0.05)
-    pub oil_vaporization_temp: f32,      // °C (170 for eucalyptus)
-    pub oil_autoignition_temp: f32,      // °C (232 for eucalyptus)
-    pub bark_properties: BarkProperties, // Bark characteristics for ladder fuels
-    pub bark_ladder_intensity: f32,      // kW/m for stringybark
-    pub crown_fire_threshold: f32,       // kW/m intensity needed
+    /// Volatile oil content (kg/kg) - eucalypts: 0.02-0.05
+    pub volatile_oil_content: Fraction,
+    /// Oil vaporization temperature (°C) - 170 for eucalyptus
+    pub oil_vaporization_temp: Celsius,
+    /// Oil auto-ignition temperature (°C) - 232 for eucalyptus
+    pub oil_autoignition_temp: Celsius,
+    /// Bark characteristics for ladder fuels
+    pub bark_properties: BarkProperties,
+    /// Bark ladder intensity (kW/m) for stringybark
+    pub bark_ladder_intensity: f32,
+    /// Crown fire threshold intensity (kW/m)
+    pub crown_fire_threshold: f32,
 
     // Van Wagner Crown Fire Model (1977, 1993)
-    pub crown_bulk_density: f32,      // kg/m³ (CBD, typical 0.05-0.3)
-    pub crown_base_height: f32,       // m (CBH, height to live crown base, typical 2-15)
-    pub foliar_moisture_content: f32, // % (FMC, typical 80-120 for live foliage)
+    /// Crown bulk density (kg/m³) - CBD, typical 0.05-0.3
+    pub crown_bulk_density: KgPerCubicMeter,
+    /// Crown base height (m) - CBH, height to live crown base, typical 2-15
+    pub crown_base_height: Meters,
+    /// Foliar moisture content (%) - FMC, typical 80-120 for live foliage
+    pub foliar_moisture_content: Percent,
 
     // Nelson Fuel Moisture Timelag System (2000)
-    pub timelag_1h: f32,    // hours (fine fuels <6mm, grass/leaves: 1h)
-    pub timelag_10h: f32,   // hours (medium fuels 6-25mm, twigs: 10h)
-    pub timelag_100h: f32,  // hours (coarse fuels 25-75mm, branches: 100h)
-    pub timelag_1000h: f32, // hours (very coarse fuels >75mm, logs: 1000h)
-    pub size_class_distribution: [f32; 4], // Fraction in each timelag class [1h, 10h, 100h, 1000h]
+    /// 1-hour timelag (fine fuels <6mm, grass/leaves)
+    pub timelag_1h: Hours,
+    /// 10-hour timelag (medium fuels 6-25mm, twigs)
+    pub timelag_10h: Hours,
+    /// 100-hour timelag (coarse fuels 25-75mm, branches)
+    pub timelag_100h: Hours,
+    /// 1000-hour timelag (very coarse fuels >75mm, logs)
+    pub timelag_1000h: Hours,
+    /// Fraction in each timelag class [1h, 10h, 100h, 1000h]
+    pub size_class_distribution: [Fraction; 4],
 
     // Canopy structure for fire transition modeling
     pub canopy_structure: crate::physics::CanopyStructure,
@@ -180,69 +233,69 @@ impl Fuel {
         Fuel {
             id: 1,
             name: "Eucalyptus Stringybark".to_string(),
-            heat_content: 21000.0,
+            heat_content: KjPerKg(21000.0),
             // Scientific basis: Stringybark has extremely fibrous, oil-impregnated bark
             // Eucalyptus oils (eucalyptol) have flash point ~46°C and autoignition ~250°C
             // Combined with low-density fibrous structure, piloted ignition occurs at 220-240°C
             // Reference: CSIRO Bushfire CRC, Pausas et al. (2017) bark flammability studies
-            ignition_temperature: 228.0,
+            ignition_temperature: Celsius(228.0),
             // Auto-ignition: ~110-120°C higher than piloted for oil-rich bark
             // Radiant heat alone must pyrolyze fuel AND generate sufficient flammable gas concentration
             // Reference: Dietenberger (2016), surface temps 300-400°C prior to auto-ignition
-            auto_ignition_temperature: 340.0,
-            max_flame_temperature: 1400.0,
-            specific_heat: 1.5,
-            bulk_density: 550.0,
-            surface_area_to_volume: 150.0, // Research: 50-200 m²/m³ for fibrous bark strips (CSIRO)
-            fuel_bed_depth: 0.5,
-            base_moisture: 0.10,
-            moisture_of_extinction: 0.35,
+            auto_ignition_temperature: Celsius(340.0),
+            max_flame_temperature: Celsius(1400.0),
+            specific_heat: KjPerKgK(1.5),
+            bulk_density: KgPerCubicMeter(550.0),
+            surface_area_to_volume: SurfaceAreaToVolume(150.0), // Research: 50-200 m²/m³ for fibrous bark strips (CSIRO)
+            fuel_bed_depth: Meters(0.5),
+            base_moisture: Fraction(0.10),
+            moisture_of_extinction: Fraction(0.35),
             burn_rate_coefficient: 0.08,
-            ember_production: 0.9, // EXTREME: 90% chance per second
-            ember_receptivity: 0.6,
-            max_spotting_distance: 25000.0, // 25km spotting!
+            ember_production: Fraction(0.9), // EXTREME: 90% chance per second
+            ember_receptivity: Fraction(0.6),
+            max_spotting_distance: Meters(25000.0), // 25km spotting!
 
             // Ember physics (stringybark produces large bark embers)
-            ember_mass_kg: 0.001,              // 1g embers (large bark pieces)
-            ember_launch_velocity_factor: 0.5, // Moderate horizontal launch
+            ember_mass_kg: 0.001,                           // 1g embers (large bark pieces)
+            ember_launch_velocity_factor: Fraction(0.5), // Moderate horizontal launch
 
             // Rothermel parameters (eucalyptus hardwood)
-            mineral_damping: 0.41,       // Moderate mineral content (wood)
-            particle_density: 550.0,     // kg/m³ (eucalyptus hardwood)
-            effective_heating: 0.45,     // Medium-coarse fuel
-            packing_ratio: 0.6,          // Fibrous bark, moderately packed
-            optimum_packing_ratio: 0.25, // Coarse fuel optimal compaction
+            mineral_damping: Fraction(0.41),       // Moderate mineral content (wood)
+            particle_density: KgPerCubicMeter(550.0),     // kg/m³ (eucalyptus hardwood)
+            effective_heating: Fraction(0.45),     // Medium-coarse fuel
+            packing_ratio: Fraction(0.6),          // Fibrous bark, moderately packed
+            optimum_packing_ratio: Fraction(0.25), // Coarse fuel optimal compaction
 
             // Thermal behavior (coarse fuel - retains heat well)
-            cooling_rate: 0.05,                 // Slow cooling (thick bark)
-            self_heating_fraction: 0.4,         // Retains 40% of combustion heat
-            convective_heat_coefficient: 400.0, // Moderate convection
-            atmospheric_heat_efficiency: 0.7,   // 70% heat to atmosphere
-            wind_sensitivity: 0.6,              // Moderate wind effect (sheltered by canopy)
-            crown_fire_temp_multiplier: 0.95,   // Very hot crown fires
+            cooling_rate: 0.05,                            // Slow cooling (thick bark)
+            self_heating_fraction: Fraction(0.4),          // Retains 40% of combustion heat
+            convective_heat_coefficient: 400.0,            // Moderate convection
+            atmospheric_heat_efficiency: Fraction(0.7),    // 70% heat to atmosphere
+            wind_sensitivity: Fraction(0.6),               // Moderate wind effect (sheltered by canopy)
+            crown_fire_temp_multiplier: Fraction(0.95),    // Very hot crown fires
 
             // Combustion and geometry
-            combustion_efficiency: 0.92, // High efficiency (dry hardwood)
+            combustion_efficiency: Fraction(0.92), // High efficiency (dry hardwood)
             surface_area_geometry_factor: 0.12, // Irregular bark strips increase area
 
-            volatile_oil_content: 0.04,
-            oil_vaporization_temp: 170.0,
-            oil_autoignition_temp: 232.0,
+            volatile_oil_content: Fraction(0.04),
+            oil_vaporization_temp: Celsius(170.0),
+            oil_autoignition_temp: Celsius(232.0),
             bark_properties: BarkProperties::STRINGYBARK,
             bark_ladder_intensity: 650.0, // Very high ladder fuel intensity
             crown_fire_threshold: 300.0,  // Low threshold (30% of normal)
 
             // Van Wagner Crown Fire Model parameters (stringybark eucalypt)
-            crown_bulk_density: 0.2, // kg/m³ (high for eucalypts with dense canopy)
-            crown_base_height: 3.0,  // m (low due to ladder fuels)
-            foliar_moisture_content: 90.0, // % (typical for eucalyptus foliage)
+            crown_bulk_density: KgPerCubicMeter(0.2), // kg/m³ (high for eucalypts with dense canopy)
+            crown_base_height: Meters(3.0),  // m (low due to ladder fuels)
+            foliar_moisture_content: Percent(90.0), // % (typical for eucalyptus foliage)
 
             // Nelson Timelag parameters (mixed size classes)
-            timelag_1h: 1.0,       // Fine bark strips and leaves
-            timelag_10h: 10.0,     // Small twigs
-            timelag_100h: 100.0,   // Medium branches
-            timelag_1000h: 1000.0, // Large branches and trunk
-            size_class_distribution: [0.15, 0.25, 0.35, 0.25], // Mixed with emphasis on 100h
+            timelag_1h: Hours(1.0),       // Fine bark strips and leaves
+            timelag_10h: Hours(10.0),     // Small twigs
+            timelag_100h: Hours(100.0),   // Medium branches
+            timelag_1000h: Hours(1000.0), // Large branches and trunk
+            size_class_distribution: [Fraction(0.15), Fraction(0.25), Fraction(0.35), Fraction(0.25)], // Mixed with emphasis on 100h
 
             // Canopy structure (high ladder fuel continuity)
             canopy_structure: crate::physics::CanopyStructure::eucalyptus_stringybark(),
@@ -254,67 +307,67 @@ impl Fuel {
         Fuel {
             id: 2,
             name: "Eucalyptus Smooth Bark".to_string(),
-            heat_content: 20000.0,
+            heat_content: KjPerKg(20000.0),
             // Scientific basis: Smooth bark eucalypts have less exposed surface area
             // Still contain volatile oils but denser bark structure requires more heat
             // Piloted ignition ~260-280°C (higher than stringybark)
             // Reference: CSIRO fire behavior research, Australian bushfire literature
-            ignition_temperature: 268.0,
+            ignition_temperature: Celsius(268.0),
             // Auto-ignition: ~120°C higher for denser smooth bark
-            auto_ignition_temperature: 388.0,
-            max_flame_temperature: 1300.0,
-            specific_heat: 1.5,
-            bulk_density: 600.0,
-            surface_area_to_volume: 80.0, // Research: 50-100 m²/m³ for smooth bark (CSIRO)
-            fuel_bed_depth: 0.3,
-            base_moisture: 0.12,
-            moisture_of_extinction: 0.35,
+            auto_ignition_temperature: Celsius(388.0),
+            max_flame_temperature: Celsius(1300.0),
+            specific_heat: KjPerKgK(1.5),
+            bulk_density: KgPerCubicMeter(600.0),
+            surface_area_to_volume: SurfaceAreaToVolume(80.0), // Research: 50-100 m²/m³ for smooth bark (CSIRO)
+            fuel_bed_depth: Meters(0.3),
+            base_moisture: Fraction(0.12),
+            moisture_of_extinction: Fraction(0.35),
             burn_rate_coefficient: 0.06,
-            ember_production: 0.35, // Moderate: 35% chance per second
-            ember_receptivity: 0.5,
-            max_spotting_distance: 10000.0, // 10km
+            ember_production: Fraction(0.35), // Moderate: 35% chance per second
+            ember_receptivity: Fraction(0.5),
+            max_spotting_distance: Meters(10000.0), // 10km
 
             // Ember physics (smooth bark produces fewer, smaller embers)
-            ember_mass_kg: 0.0007,             // 0.7g embers
-            ember_launch_velocity_factor: 0.4, // Lower launch velocity
+            ember_mass_kg: 0.0007,                          // 0.7g embers
+            ember_launch_velocity_factor: Fraction(0.4), // Lower launch velocity
 
             // Rothermel parameters (eucalyptus hardwood, denser)
-            mineral_damping: 0.41,       // Moderate mineral content
-            particle_density: 600.0,     // kg/m³ (dense eucalyptus)
-            effective_heating: 0.40,     // Coarse fuel
-            packing_ratio: 0.5,          // Smooth bark, loosely packed
-            optimum_packing_ratio: 0.28, // Medium fuel optimal compaction
+            mineral_damping: Fraction(0.41),       // Moderate mineral content
+            particle_density: KgPerCubicMeter(600.0),     // kg/m³ (dense eucalyptus)
+            effective_heating: Fraction(0.40),     // Coarse fuel
+            packing_ratio: Fraction(0.5),          // Smooth bark, loosely packed
+            optimum_packing_ratio: Fraction(0.28), // Medium fuel optimal compaction
 
             // Thermal behavior (medium fuel)
-            cooling_rate: 0.08,                 // Moderate cooling
-            self_heating_fraction: 0.35,        // Retains 35% of combustion heat
-            convective_heat_coefficient: 450.0, // Good convection
-            atmospheric_heat_efficiency: 0.75,  // 75% heat to atmosphere
-            wind_sensitivity: 0.7,              // Moderate-high wind effect
-            crown_fire_temp_multiplier: 0.90,   // Hot crown fires
+            cooling_rate: 0.08,                           // Moderate cooling
+            self_heating_fraction: Fraction(0.35),        // Retains 35% of combustion heat
+            convective_heat_coefficient: 450.0,           // Good convection
+            atmospheric_heat_efficiency: Fraction(0.75),  // 75% heat to atmosphere
+            wind_sensitivity: Fraction(0.7),              // Moderate-high wind effect
+            crown_fire_temp_multiplier: Fraction(0.90),   // Hot crown fires
 
             // Combustion and geometry
-            combustion_efficiency: 0.93, // High efficiency (dense hardwood)
-            surface_area_geometry_factor: 0.08, // Smooth bark, lower surface area
+            combustion_efficiency: Fraction(0.93), // High efficiency (dense hardwood)
+            surface_area_geometry_factor: 0.08,    // Smooth bark, lower surface area
 
-            volatile_oil_content: 0.02,
-            oil_vaporization_temp: 170.0,
-            oil_autoignition_temp: 232.0,
+            volatile_oil_content: Fraction(0.02),
+            oil_vaporization_temp: Celsius(170.0),
+            oil_autoignition_temp: Celsius(232.0),
             bark_properties: BarkProperties::SMOOTH,
             bark_ladder_intensity: 200.0,
             crown_fire_threshold: 1000.0, // Normal threshold
 
             // Van Wagner Crown Fire Model parameters (smooth bark eucalypt)
-            crown_bulk_density: 0.12,       // kg/m³ (moderate for eucalypts)
-            crown_base_height: 8.0,         // m (higher, less ladder fuel)
-            foliar_moisture_content: 100.0, // % (typical for eucalyptus)
+            crown_bulk_density: KgPerCubicMeter(0.12),       // kg/m³ (moderate for eucalypts)
+            crown_base_height: Meters(8.0),         // m (higher, less ladder fuel)
+            foliar_moisture_content: Percent(100.0), // % (typical for eucalyptus)
 
             // Nelson Timelag parameters (coarser fuels)
-            timelag_1h: 1.0,
-            timelag_10h: 10.0,
-            timelag_100h: 100.0,
-            timelag_1000h: 1000.0,
-            size_class_distribution: [0.10, 0.20, 0.40, 0.30], // Emphasis on larger fuels
+            timelag_1h: Hours(1.0),
+            timelag_10h: Hours(10.0),
+            timelag_100h: Hours(100.0),
+            timelag_1000h: Hours(1000.0),
+            size_class_distribution: [Fraction(0.10), Fraction(0.20), Fraction(0.40), Fraction(0.30)], // Emphasis on larger fuels
 
             // Canopy structure (low ladder fuel continuity)
             canopy_structure: crate::physics::CanopyStructure::eucalyptus_smooth_bark(),
@@ -326,68 +379,68 @@ impl Fuel {
         Fuel {
             id: 3,
             name: "Dry Grass".to_string(),
-            heat_content: 18500.0,
+            heat_content: KjPerKg(18500.0),
             // Scientific basis: Cured/dry grass has very low moisture (<8%)
             // Fine fuel structure with high surface-area-to-volume ratio
             // Piloted ignition at 220-260°C depending on curing level
             // Reference: Fons (1950), University of Canterbury grassland ignition studies
-            ignition_temperature: 232.0,
+            ignition_temperature: Celsius(232.0),
             // Auto-ignition: Fine grass fuel auto-ignites ~100-110°C higher
             // Fine structure means faster heating but still needs higher temp without pilot
-            auto_ignition_temperature: 338.0,
-            max_flame_temperature: 900.0,
-            specific_heat: 2.1, // Higher specific heat
-            bulk_density: 200.0,
-            surface_area_to_volume: 3500.0, // Fine grass - Rothermel typical value for herbaceous
-            fuel_bed_depth: 0.1,
-            base_moisture: 0.05, // Very dry
-            moisture_of_extinction: 0.25,
-            burn_rate_coefficient: 0.15,   // Burns fast
-            ember_production: 0.1,         // Low: 10% chance per second
-            ember_receptivity: 0.8,        // Easy to ignite
-            max_spotting_distance: 1000.0, // 1km
+            auto_ignition_temperature: Celsius(338.0),
+            max_flame_temperature: Celsius(900.0),
+            specific_heat: KjPerKgK(2.1), // Higher specific heat
+            bulk_density: KgPerCubicMeter(200.0),
+            surface_area_to_volume: SurfaceAreaToVolume(3500.0), // Fine grass - Rothermel typical value for herbaceous
+            fuel_bed_depth: Meters(0.1),
+            base_moisture: Fraction(0.05), // Very dry
+            moisture_of_extinction: Fraction(0.25),
+            burn_rate_coefficient: 0.15,          // Burns fast
+            ember_production: Fraction(0.1),      // Low: 10% chance per second
+            ember_receptivity: Fraction(0.8),     // Easy to ignite
+            max_spotting_distance: Meters(1000.0), // 1km
 
             // Ember physics (grass produces very light embers)
-            ember_mass_kg: 0.0002,             // 0.2g embers (light grass)
-            ember_launch_velocity_factor: 0.3, // Low horizontal component
+            ember_mass_kg: 0.0002,                          // 0.2g embers (light grass)
+            ember_launch_velocity_factor: Fraction(0.3), // Low horizontal component
 
             // Rothermel parameters (fine herbaceous fuel)
-            mineral_damping: 0.85,       // Low mineral content (grass)
-            particle_density: 300.0,     // kg/m³ (light herbaceous)
-            effective_heating: 0.55,     // Fine fuel heats quickly
-            packing_ratio: 0.8,          // Compacted grass bed
-            optimum_packing_ratio: 0.35, // Fine fuel optimal compaction
+            mineral_damping: Fraction(0.85),       // Low mineral content (grass)
+            particle_density: KgPerCubicMeter(300.0),     // kg/m³ (light herbaceous)
+            effective_heating: Fraction(0.55),     // Fine fuel heats quickly
+            packing_ratio: Fraction(0.8),          // Compacted grass bed
+            optimum_packing_ratio: Fraction(0.35), // Fine fuel optimal compaction
 
             // Thermal behavior (fine fuel - rapid heat exchange)
-            cooling_rate: 0.15,                 // Fast cooling (high surface area)
-            self_heating_fraction: 0.25,        // Radiates 75% away (fine)
-            convective_heat_coefficient: 600.0, // High convection (fine)
-            atmospheric_heat_efficiency: 0.85,  // 85% heat to atmosphere
-            wind_sensitivity: 1.0,              // Maximum wind effect (fine fuel)
-            crown_fire_temp_multiplier: 0.0,    // No crown fire (grass)
+            cooling_rate: 0.15,                          // Fast cooling (high surface area)
+            self_heating_fraction: Fraction(0.25),        // Radiates 75% away (fine)
+            convective_heat_coefficient: 600.0,          // High convection (fine)
+            atmospheric_heat_efficiency: Fraction(0.85),  // 85% heat to atmosphere
+            wind_sensitivity: Fraction(1.0),              // Maximum wind effect (fine fuel)
+            crown_fire_temp_multiplier: Fraction(0.0),    // No crown fire (grass)
 
             // Combustion and geometry
-            combustion_efficiency: 0.85, // Moderate efficiency (fast burn, incomplete)
-            surface_area_geometry_factor: 0.15, // Fine grass has high surface area
+            combustion_efficiency: Fraction(0.85), // Moderate efficiency (fast burn, incomplete)
+            surface_area_geometry_factor: 0.15,    // Fine grass has high surface area
 
-            volatile_oil_content: 0.0,
-            oil_vaporization_temp: 0.0,
-            oil_autoignition_temp: 0.0,
+            volatile_oil_content: Fraction(0.0),
+            oil_vaporization_temp: Celsius(0.0),
+            oil_autoignition_temp: Celsius(0.0),
             bark_properties: BarkProperties::NONE,
             bark_ladder_intensity: 0.0,
             crown_fire_threshold: 2000.0,
 
             // Van Wagner Crown Fire Model parameters (grass - no crown fire)
-            crown_bulk_density: 0.0,      // N/A for grass
-            crown_base_height: 0.0,       // N/A for grass
-            foliar_moisture_content: 0.0, // N/A for grass (base_moisture used instead)
+            crown_bulk_density: KgPerCubicMeter(0.0),      // N/A for grass
+            crown_base_height: Meters(0.0),       // N/A for grass
+            foliar_moisture_content: Percent(0.0), // N/A for grass (base_moisture used instead)
 
             // Nelson Timelag parameters (very fine fuels only)
-            timelag_1h: 1.0,
-            timelag_10h: 10.0,
-            timelag_100h: 100.0,
-            timelag_1000h: 1000.0,
-            size_class_distribution: [1.0, 0.0, 0.0, 0.0], // All 1-hour timelag
+            timelag_1h: Hours(1.0),
+            timelag_10h: Hours(10.0),
+            timelag_100h: Hours(100.0),
+            timelag_1000h: Hours(1000.0),
+            size_class_distribution: [Fraction(1.0), Fraction(0.0), Fraction(0.0), Fraction(0.0)], // All 1-hour timelag
 
             // Canopy structure (grassland - no vertical structure)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -399,67 +452,67 @@ impl Fuel {
         Fuel {
             id: 4,
             name: "Shrubland/Scrub".to_string(),
-            heat_content: 19000.0,
+            heat_content: KjPerKg(19000.0),
             // Scientific basis: Mixed live/dead woody fuels
             // Live component has higher moisture, dead twigs ignite easier
             // Piloted ignition 280-320°C for mixed shrub fuel beds
             // Reference: Rothermel (1972) chaparral and shrub fuel models
-            ignition_temperature: 295.0,
+            ignition_temperature: Celsius(295.0),
             // Auto-ignition: ~125°C higher for mixed woody shrub fuels
-            auto_ignition_temperature: 420.0,
-            max_flame_temperature: 1000.0,
-            specific_heat: 1.8,
-            bulk_density: 350.0,
-            surface_area_to_volume: 10.0,
-            fuel_bed_depth: 0.4,
-            base_moisture: 0.15,
-            moisture_of_extinction: 0.30,
+            auto_ignition_temperature: Celsius(420.0),
+            max_flame_temperature: Celsius(1000.0),
+            specific_heat: KjPerKgK(1.8),
+            bulk_density: KgPerCubicMeter(350.0),
+            surface_area_to_volume: SurfaceAreaToVolume(10.0),
+            fuel_bed_depth: Meters(0.4),
+            base_moisture: Fraction(0.15),
+            moisture_of_extinction: Fraction(0.30),
             burn_rate_coefficient: 0.10,
-            ember_production: 0.24, // Medium: 24% chance per second
-            ember_receptivity: 0.6,
-            max_spotting_distance: 3000.0, // 3km
+            ember_production: Fraction(0.24), // Medium: 24% chance per second
+            ember_receptivity: Fraction(0.6),
+            max_spotting_distance: Meters(3000.0), // 3km
 
             // Ember physics (medium-sized woody embers)
-            ember_mass_kg: 0.0004,              // 0.4g embers
-            ember_launch_velocity_factor: 0.35, // Medium launch velocity
+            ember_mass_kg: 0.0004,                           // 0.4g embers
+            ember_launch_velocity_factor: Fraction(0.35), // Medium launch velocity
 
             // Rothermel parameters (medium shrub fuel)
-            mineral_damping: 0.55,       // Moderate-low mineral content
-            particle_density: 450.0,     // kg/m³ (woody shrubs)
-            effective_heating: 0.48,     // Medium fuel
-            packing_ratio: 0.65,         // Moderately packed brush
-            optimum_packing_ratio: 0.30, // Shrub optimal compaction
+            mineral_damping: Fraction(0.55),       // Moderate-low mineral content
+            particle_density: KgPerCubicMeter(450.0),     // kg/m³ (woody shrubs)
+            effective_heating: Fraction(0.48),     // Medium fuel
+            packing_ratio: Fraction(0.65),         // Moderately packed brush
+            optimum_packing_ratio: Fraction(0.30), // Shrub optimal compaction
 
             // Thermal behavior (medium shrub fuel)
-            cooling_rate: 0.10,                 // Moderate cooling
-            self_heating_fraction: 0.32,        // Retains 32% of combustion heat
-            convective_heat_coefficient: 500.0, // Moderate convection
-            atmospheric_heat_efficiency: 0.80,  // 80% heat to atmosphere
-            wind_sensitivity: 0.85,             // High wind effect (exposed)
-            crown_fire_temp_multiplier: 0.85,   // Moderate crown fires
+            cooling_rate: 0.10,                          // Moderate cooling
+            self_heating_fraction: Fraction(0.32),        // Retains 32% of combustion heat
+            convective_heat_coefficient: 500.0,          // Moderate convection
+            atmospheric_heat_efficiency: Fraction(0.80),  // 80% heat to atmosphere
+            wind_sensitivity: Fraction(0.85),             // High wind effect (exposed)
+            crown_fire_temp_multiplier: Fraction(0.85),   // Moderate crown fires
 
             // Combustion and geometry
-            combustion_efficiency: 0.88, // Good efficiency (woody fuel)
-            surface_area_geometry_factor: 0.10, // Medium-sized branches
+            combustion_efficiency: Fraction(0.88), // Good efficiency (woody fuel)
+            surface_area_geometry_factor: 0.10,    // Medium-sized branches
 
-            volatile_oil_content: 0.01,
-            oil_vaporization_temp: 180.0,
-            oil_autoignition_temp: 250.0,
+            volatile_oil_content: Fraction(0.01),
+            oil_vaporization_temp: Celsius(180.0),
+            oil_autoignition_temp: Celsius(250.0),
             bark_properties: BarkProperties::FIBROUS,
             bark_ladder_intensity: 300.0,
             crown_fire_threshold: 1200.0,
 
             // Van Wagner Crown Fire Model parameters (shrubland)
-            crown_bulk_density: 0.08,       // kg/m³ (low for shrubs)
-            crown_base_height: 0.5,         // m (low shrub canopy)
-            foliar_moisture_content: 110.0, // % (higher for live shrubs)
+            crown_bulk_density: KgPerCubicMeter(0.08),       // kg/m³ (low for shrubs)
+            crown_base_height: Meters(0.5),         // m (low shrub canopy)
+            foliar_moisture_content: Percent(110.0), // % (higher for live shrubs)
 
             // Nelson Timelag parameters (fine to medium)
-            timelag_1h: 1.0,
-            timelag_10h: 10.0,
-            timelag_100h: 100.0,
-            timelag_1000h: 1000.0,
-            size_class_distribution: [0.40, 0.35, 0.20, 0.05], // Emphasis on finer fuels
+            timelag_1h: Hours(1.0),
+            timelag_10h: Hours(10.0),
+            timelag_100h: Hours(100.0),
+            timelag_1000h: Hours(1000.0),
+            size_class_distribution: [Fraction(0.40), Fraction(0.35), Fraction(0.20), Fraction(0.05)], // Emphasis on finer fuels
 
             // Canopy structure (grassland - shrubs don't have tree canopy)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -471,67 +524,67 @@ impl Fuel {
         Fuel {
             id: 5,
             name: "Dead Wood/Litter".to_string(),
-            heat_content: 19500.0,
+            heat_content: KjPerKg(19500.0),
             // Scientific basis: Dead organic matter, very dry (<10% moisture)
             // Decomposed material has lower ignition point than solid wood
             // Piloted ignition 240-280°C for forest floor litter
             // Reference: USDA Forest Service fuel moisture studies, Nelson (2000)
-            ignition_temperature: 258.0,
+            ignition_temperature: Celsius(258.0),
             // Auto-ignition: ~115-120°C higher for dry decomposed litter
-            auto_ignition_temperature: 375.0,
-            max_flame_temperature: 950.0,
-            specific_heat: 1.3, // Heats faster
-            bulk_density: 300.0,
-            surface_area_to_volume: 9.0,
-            fuel_bed_depth: 0.2,
-            base_moisture: 0.05, // Very dry
-            moisture_of_extinction: 0.25,
+            auto_ignition_temperature: Celsius(375.0),
+            max_flame_temperature: Celsius(950.0),
+            specific_heat: KjPerKgK(1.3), // Heats faster
+            bulk_density: KgPerCubicMeter(300.0),
+            surface_area_to_volume: SurfaceAreaToVolume(9.0),
+            fuel_bed_depth: Meters(0.2),
+            base_moisture: Fraction(0.05), // Very dry
+            moisture_of_extinction: Fraction(0.25),
             burn_rate_coefficient: 0.12,
-            ember_production: 0.35,        // Moderate: 35% chance per second
-            ember_receptivity: 0.9,        // Highly susceptible
-            max_spotting_distance: 5000.0, // 5km
+            ember_production: Fraction(0.35),        // Moderate: 35% chance per second
+            ember_receptivity: Fraction(0.9),        // Highly susceptible
+            max_spotting_distance: Meters(5000.0), // 5km
 
             // Ember physics (wood produces typical-sized embers)
-            ember_mass_kg: 0.0005,             // 0.5g embers (typical)
-            ember_launch_velocity_factor: 0.4, // Moderate launch velocity
+            ember_mass_kg: 0.0005,                          // 0.5g embers (typical)
+            ember_launch_velocity_factor: Fraction(0.4), // Moderate launch velocity
 
             // Rothermel parameters (medium-coarse dead fuel)
-            mineral_damping: 0.45, // Higher mineral/ash content (dead material)
-            particle_density: 400.0, // kg/m³ (decomposed wood)
-            effective_heating: 0.42, // Medium-coarse fuel
-            packing_ratio: 0.55,   // Loose litter bed
-            optimum_packing_ratio: 0.22, // Dead fuel optimal compaction
+            mineral_damping: Fraction(0.45), // Higher mineral/ash content (dead material)
+            particle_density: KgPerCubicMeter(400.0), // kg/m³ (decomposed wood)
+            effective_heating: Fraction(0.42), // Medium-coarse fuel
+            packing_ratio: Fraction(0.55),   // Loose litter bed
+            optimum_packing_ratio: Fraction(0.22), // Dead fuel optimal compaction
 
             // Thermal behavior (dead coarse fuel)
-            cooling_rate: 0.06,          // Slow cooling (insulated by litter)
-            self_heating_fraction: 0.38, // Retains 38% of combustion heat
-            convective_heat_coefficient: 350.0, // Low convection (ground)
-            atmospheric_heat_efficiency: 0.65, // 65% heat to atmosphere
-            wind_sensitivity: 0.50,      // Low wind effect (ground level)
-            crown_fire_temp_multiplier: 0.0, // No crown fire (ground litter)
+            cooling_rate: 0.06,                   // Slow cooling (insulated by litter)
+            self_heating_fraction: Fraction(0.38), // Retains 38% of combustion heat
+            convective_heat_coefficient: 350.0,   // Low convection (ground)
+            atmospheric_heat_efficiency: Fraction(0.65), // 65% heat to atmosphere
+            wind_sensitivity: Fraction(0.50),      // Low wind effect (ground level)
+            crown_fire_temp_multiplier: Fraction(0.0), // No crown fire (ground litter)
 
             // Combustion and geometry
-            combustion_efficiency: 0.90, // High efficiency (dry dead wood)
-            surface_area_geometry_factor: 0.09, // Compacted litter
+            combustion_efficiency: Fraction(0.90), // High efficiency (dry dead wood)
+            surface_area_geometry_factor: 0.09,    // Compacted litter
 
-            volatile_oil_content: 0.0,
-            oil_vaporization_temp: 0.0,
-            oil_autoignition_temp: 0.0,
+            volatile_oil_content: Fraction(0.0),
+            oil_vaporization_temp: Celsius(0.0),
+            oil_autoignition_temp: Celsius(0.0),
             bark_properties: BarkProperties::NONE,
             bark_ladder_intensity: 0.0,
             crown_fire_threshold: 1500.0,
 
             // Van Wagner Crown Fire Model parameters (ground litter - no crown)
-            crown_bulk_density: 0.0,
-            crown_base_height: 0.0,
-            foliar_moisture_content: 0.0,
+            crown_bulk_density: KgPerCubicMeter(0.0),
+            crown_base_height: Meters(0.0),
+            foliar_moisture_content: Percent(0.0),
 
             // Nelson Timelag parameters (mixed dead fuels)
-            timelag_1h: 1.0,
-            timelag_10h: 10.0,
-            timelag_100h: 100.0,
-            timelag_1000h: 1000.0,
-            size_class_distribution: [0.20, 0.35, 0.35, 0.10], // Varied size classes
+            timelag_1h: Hours(1.0),
+            timelag_10h: Hours(10.0),
+            timelag_100h: Hours(100.0),
+            timelag_1000h: Hours(1000.0),
+            size_class_distribution: [Fraction(0.20), Fraction(0.35), Fraction(0.35), Fraction(0.10)], // Varied size classes
 
             // Canopy structure (grassland - ground litter)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -543,67 +596,67 @@ impl Fuel {
         Fuel {
             id: 6,
             name: "Green Vegetation".to_string(),
-            heat_content: 18000.0,
+            heat_content: KjPerKg(18000.0),
             // Scientific basis: Live vegetation with 60%+ moisture content
             // Water must evaporate before pyrolysis can occur (2260 kJ/kg latent heat)
             // Piloted ignition requires 350-400°C to overcome moisture barrier
             // Reference: Xanthopoulos & Wakimoto (1993), live fuel ignition studies
-            ignition_temperature: 378.0, // Hard to ignite due to high moisture
+            ignition_temperature: Celsius(378.0), // Hard to ignite due to high moisture
             // Auto-ignition: ~120°C higher, extremely resistant to radiant-only ignition
-            auto_ignition_temperature: 498.0,
-            max_flame_temperature: 800.0,
-            specific_heat: 2.2,
-            bulk_density: 400.0,
-            surface_area_to_volume: 8.0,
-            fuel_bed_depth: 0.3,
-            base_moisture: 0.60, // Very high moisture
-            moisture_of_extinction: 0.40,
+            auto_ignition_temperature: Celsius(498.0),
+            max_flame_temperature: Celsius(800.0),
+            specific_heat: KjPerKgK(2.2),
+            bulk_density: KgPerCubicMeter(400.0),
+            surface_area_to_volume: SurfaceAreaToVolume(8.0),
+            fuel_bed_depth: Meters(0.3),
+            base_moisture: Fraction(0.60), // Very high moisture
+            moisture_of_extinction: Fraction(0.40),
             burn_rate_coefficient: 0.04,
-            ember_production: 0.03, // Very low: 3% chance per second
-            ember_receptivity: 0.2, // Resistant to spot fires
-            max_spotting_distance: 200.0,
+            ember_production: Fraction(0.03), // Very low: 3% chance per second
+            ember_receptivity: Fraction(0.2), // Resistant to spot fires
+            max_spotting_distance: Meters(200.0),
 
             // Ember physics (minimal ember production from green fuel)
-            ember_mass_kg: 0.0003,             // 0.3g embers
-            ember_launch_velocity_factor: 0.2, // Minimal launch velocity
+            ember_mass_kg: 0.0003,                          // 0.3g embers
+            ember_launch_velocity_factor: Fraction(0.2), // Minimal launch velocity
 
             // Rothermel parameters (live herbaceous/foliage)
-            mineral_damping: 0.75,       // Low mineral content (living tissue)
-            particle_density: 350.0,     // kg/m³ (living plant tissue)
-            effective_heating: 0.50,     // Fine to medium fuel
-            packing_ratio: 0.70,         // Moderately dense vegetation
-            optimum_packing_ratio: 0.32, // Live fuel optimal compaction
+            mineral_damping: Fraction(0.75),       // Low mineral content (living tissue)
+            particle_density: KgPerCubicMeter(350.0),     // kg/m³ (living plant tissue)
+            effective_heating: Fraction(0.50),     // Fine to medium fuel
+            packing_ratio: Fraction(0.70),         // Moderately dense vegetation
+            optimum_packing_ratio: Fraction(0.32), // Live fuel optimal compaction
 
             // Thermal behavior (live fuel - moisture dominated)
-            cooling_rate: 0.12,          // Fast cooling (moisture evaporation)
-            self_heating_fraction: 0.20, // Low retention (moisture absorbs heat)
-            convective_heat_coefficient: 550.0, // High convection (moisture)
-            atmospheric_heat_efficiency: 0.90, // 90% heat to atmosphere (cooling)
-            wind_sensitivity: 0.75,      // Moderate-high wind effect
-            crown_fire_temp_multiplier: 0.80, // Cooler fires (moisture)
+            cooling_rate: 0.12,                   // Fast cooling (moisture evaporation)
+            self_heating_fraction: Fraction(0.20), // Low retention (moisture absorbs heat)
+            convective_heat_coefficient: 550.0,   // High convection (moisture)
+            atmospheric_heat_efficiency: Fraction(0.90), // 90% heat to atmosphere (cooling)
+            wind_sensitivity: Fraction(0.75),      // Moderate-high wind effect
+            crown_fire_temp_multiplier: Fraction(0.80), // Cooler fires (moisture)
 
             // Combustion and geometry
-            combustion_efficiency: 0.70, // Low efficiency (high moisture, incomplete)
-            surface_area_geometry_factor: 0.11, // Live foliage
+            combustion_efficiency: Fraction(0.70), // Low efficiency (high moisture, incomplete)
+            surface_area_geometry_factor: 0.11,    // Live foliage
 
-            volatile_oil_content: 0.0,
-            oil_vaporization_temp: 0.0,
-            oil_autoignition_temp: 0.0,
+            volatile_oil_content: Fraction(0.0),
+            oil_vaporization_temp: Celsius(0.0),
+            oil_autoignition_temp: Celsius(0.0),
             bark_properties: BarkProperties::NONE,
             bark_ladder_intensity: 0.0,
             crown_fire_threshold: 2500.0,
 
             // Van Wagner Crown Fire Model parameters (green vegetation)
-            crown_bulk_density: 0.05,       // kg/m³ (very low, mostly water)
-            crown_base_height: 0.2,         // m (low ground vegetation)
-            foliar_moisture_content: 150.0, // % (very high, green foliage)
+            crown_bulk_density: KgPerCubicMeter(0.05),       // kg/m³ (very low, mostly water)
+            crown_base_height: Meters(0.2),         // m (low ground vegetation)
+            foliar_moisture_content: Percent(150.0), // % (very high, green foliage)
 
             // Nelson Timelag parameters (fine live fuels)
-            timelag_1h: 1.0,
-            timelag_10h: 10.0,
-            timelag_100h: 100.0,
-            timelag_1000h: 1000.0,
-            size_class_distribution: [0.80, 0.15, 0.05, 0.0], // Mostly fine live fuels
+            timelag_1h: Hours(1.0),
+            timelag_10h: Hours(10.0),
+            timelag_100h: Hours(100.0),
+            timelag_1000h: Hours(1000.0),
+            size_class_distribution: [Fraction(0.80), Fraction(0.15), Fraction(0.05), Fraction(0.0)], // Mostly fine live fuels
 
             // Canopy structure (grassland - low vegetation)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -625,15 +678,15 @@ impl Fuel {
 
     /// Calculate actual max flame temperature based on current conditions
     pub fn calculate_max_flame_temperature(&self, moisture_fraction: f32) -> f32 {
-        let base_temp = 800.0 + (self.heat_content - 18000.0) / 10.0;
-        let oil_bonus = self.volatile_oil_content * 3000.0;
+        let base_temp = 800.0 + (self.heat_content.0 - 18000.0) / 10.0;
+        let oil_bonus = self.volatile_oil_content.0 * 3000.0;
         let moisture_penalty = moisture_fraction * 400.0;
         (base_temp + oil_bonus - moisture_penalty).clamp(600.0, 1500.0)
     }
 
     /// Check if this fuel can burn
     pub fn is_burnable(&self) -> bool {
-        self.heat_content > 0.0 && self.ignition_temperature > 0.0
+        self.heat_content.0 > 0.0 && self.ignition_temperature.0 > 0.0
     }
 
     /// Get thermal transmissivity (0-1, how much heat passes through)
@@ -658,60 +711,60 @@ impl Fuel {
         Fuel {
             id: 10,
             name: "Water".to_string(),
-            heat_content: 0.0,
-            ignition_temperature: 0.0,
-            auto_ignition_temperature: 0.0, // Non-burnable
-            max_flame_temperature: 0.0,
-            specific_heat: 4.18, // Water has very high specific heat
-            bulk_density: 1000.0,
-            surface_area_to_volume: 0.0,
-            fuel_bed_depth: 0.0,
-            base_moisture: 1.0,
-            moisture_of_extinction: 1.0,
+            heat_content: KjPerKg(0.0),
+            ignition_temperature: Celsius(0.0),
+            auto_ignition_temperature: Celsius(0.0), // Non-burnable
+            max_flame_temperature: Celsius(0.0),
+            specific_heat: KjPerKgK(4.18), // Water has very high specific heat
+            bulk_density: KgPerCubicMeter(1000.0),
+            surface_area_to_volume: SurfaceAreaToVolume(0.0),
+            fuel_bed_depth: Meters(0.0),
+            base_moisture: Fraction(1.0),
+            moisture_of_extinction: Fraction(1.0),
             burn_rate_coefficient: 0.0,
-            ember_production: 0.0,
-            ember_receptivity: 0.0,
-            max_spotting_distance: 0.0,
+            ember_production: Fraction(0.0),
+            ember_receptivity: Fraction(0.0),
+            max_spotting_distance: Meters(0.0),
 
             // Ember physics (non-burnable - no embers)
             ember_mass_kg: 0.0,
-            ember_launch_velocity_factor: 0.0,
+            ember_launch_velocity_factor: Fraction(0.0),
 
             // Rothermel parameters (non-burnable)
-            mineral_damping: 1.0,       // N/A for non-burnable
-            particle_density: 1000.0,   // Water density
-            effective_heating: 0.0,     // N/A
-            packing_ratio: 1.0,         // N/A
-            optimum_packing_ratio: 1.0, // N/A
+            mineral_damping: Fraction(1.0),       // N/A for non-burnable
+            particle_density: KgPerCubicMeter(1000.0),   // Water density
+            effective_heating: Fraction(0.0),     // N/A
+            packing_ratio: Fraction(1.0),         // N/A
+            optimum_packing_ratio: Fraction(1.0), // N/A
 
             // Thermal behavior (water - cooling only)
             cooling_rate: 0.20, // Fast cooling (evaporation)
-            self_heating_fraction: 0.0,
+            self_heating_fraction: Fraction(0.0),
             convective_heat_coefficient: 1000.0, // High cooling
-            atmospheric_heat_efficiency: 1.0,    // All heat absorbed
-            wind_sensitivity: 0.0,               // No wind effect
-            crown_fire_temp_multiplier: 0.0,
-            combustion_efficiency: 0.0,        // Non-burnable
+            atmospheric_heat_efficiency: Fraction(1.0),    // All heat absorbed
+            wind_sensitivity: Fraction(0.0),               // No wind effect
+            crown_fire_temp_multiplier: Fraction(0.0),
+            combustion_efficiency: Fraction(0.0),        // Non-burnable
             surface_area_geometry_factor: 0.0, // N/A for water
 
-            volatile_oil_content: 0.0,
-            oil_vaporization_temp: 0.0,
-            oil_autoignition_temp: 0.0,
+            volatile_oil_content: Fraction(0.0),
+            oil_vaporization_temp: Celsius(0.0),
+            oil_autoignition_temp: Celsius(0.0),
             bark_properties: BarkProperties::NONE,
             bark_ladder_intensity: 0.0,
             crown_fire_threshold: 9999.0,
 
             // Van Wagner Crown Fire Model parameters (non-burnable)
-            crown_bulk_density: 0.0,
-            crown_base_height: 0.0,
-            foliar_moisture_content: 0.0,
+            crown_bulk_density: KgPerCubicMeter(0.0),
+            crown_base_height: Meters(0.0),
+            foliar_moisture_content: Percent(0.0),
 
             // Nelson Timelag parameters (N/A - non-burnable)
-            timelag_1h: 1.0,
-            timelag_10h: 10.0,
-            timelag_100h: 100.0,
-            timelag_1000h: 1000.0,
-            size_class_distribution: [0.0, 0.0, 0.0, 0.0],
+            timelag_1h: Hours(1.0),
+            timelag_10h: Hours(10.0),
+            timelag_100h: Hours(100.0),
+            timelag_1000h: Hours(1000.0),
+            size_class_distribution: [Fraction(0.0), Fraction(0.0), Fraction(0.0), Fraction(0.0)],
 
             // Canopy structure (grassland - water has no structure)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -723,60 +776,60 @@ impl Fuel {
         Fuel {
             id: 11,
             name: "Rock".to_string(),
-            heat_content: 0.0,
-            ignition_temperature: 0.0,
-            auto_ignition_temperature: 0.0, // Non-burnable
-            max_flame_temperature: 0.0,
-            specific_heat: 0.84, // Rock specific heat
-            bulk_density: 2700.0,
-            surface_area_to_volume: 0.0,
-            fuel_bed_depth: 0.0,
-            base_moisture: 0.0,
-            moisture_of_extinction: 1.0,
+            heat_content: KjPerKg(0.0),
+            ignition_temperature: Celsius(0.0),
+            auto_ignition_temperature: Celsius(0.0), // Non-burnable
+            max_flame_temperature: Celsius(0.0),
+            specific_heat: KjPerKgK(0.84), // Rock specific heat
+            bulk_density: KgPerCubicMeter(2700.0),
+            surface_area_to_volume: SurfaceAreaToVolume(0.0),
+            fuel_bed_depth: Meters(0.0),
+            base_moisture: Fraction(0.0),
+            moisture_of_extinction: Fraction(1.0),
             burn_rate_coefficient: 0.0,
-            ember_production: 0.0,
-            ember_receptivity: 0.0,
-            max_spotting_distance: 0.0,
+            ember_production: Fraction(0.0),
+            ember_receptivity: Fraction(0.0),
+            max_spotting_distance: Meters(0.0),
 
             // Ember physics (non-burnable - no embers)
             ember_mass_kg: 0.0,
-            ember_launch_velocity_factor: 0.0,
+            ember_launch_velocity_factor: Fraction(0.0),
 
             // Rothermel parameters (non-burnable)
-            mineral_damping: 0.0,       // Not applicable
-            particle_density: 2700.0,   // Rock density
-            effective_heating: 0.0,     // N/A
-            packing_ratio: 1.0,         // N/A
-            optimum_packing_ratio: 1.0, // N/A
+            mineral_damping: Fraction(0.0),       // Not applicable
+            particle_density: KgPerCubicMeter(2700.0),   // Rock density
+            effective_heating: Fraction(0.0),     // N/A
+            packing_ratio: Fraction(1.0),         // N/A
+            optimum_packing_ratio: Fraction(1.0), // N/A
 
             // Thermal behavior (rock - heat sink)
             cooling_rate: 0.03, // Very slow cooling (thermal mass)
-            self_heating_fraction: 0.0,
+            self_heating_fraction: Fraction(0.0),
             convective_heat_coefficient: 200.0, // Low convection (smooth)
-            atmospheric_heat_efficiency: 0.30,  // Absorbs heat
-            wind_sensitivity: 0.0,              // No wind effect
-            crown_fire_temp_multiplier: 0.0,
-            combustion_efficiency: 0.0,        // Non-burnable
+            atmospheric_heat_efficiency: Fraction(0.30),  // Absorbs heat
+            wind_sensitivity: Fraction(0.0),              // No wind effect
+            crown_fire_temp_multiplier: Fraction(0.0),
+            combustion_efficiency: Fraction(0.0),        // Non-burnable
             surface_area_geometry_factor: 0.0, // N/A for rock
 
-            volatile_oil_content: 0.0,
-            oil_vaporization_temp: 0.0,
-            oil_autoignition_temp: 0.0,
+            volatile_oil_content: Fraction(0.0),
+            oil_vaporization_temp: Celsius(0.0),
+            oil_autoignition_temp: Celsius(0.0),
             bark_properties: BarkProperties::NONE,
             bark_ladder_intensity: 0.0,
             crown_fire_threshold: 9999.0,
 
             // Van Wagner Crown Fire Model parameters (non-burnable)
-            crown_bulk_density: 0.0,
-            crown_base_height: 0.0,
-            foliar_moisture_content: 0.0,
+            crown_bulk_density: KgPerCubicMeter(0.0),
+            crown_base_height: Meters(0.0),
+            foliar_moisture_content: Percent(0.0),
 
             // Nelson Timelag parameters (N/A for rock)
-            timelag_1h: 1.0,
-            timelag_10h: 10.0,
-            timelag_100h: 100.0,
-            timelag_1000h: 1000.0,
-            size_class_distribution: [0.0, 0.0, 0.0, 0.0],
+            timelag_1h: Hours(1.0),
+            timelag_10h: Hours(10.0),
+            timelag_100h: Hours(100.0),
+            timelag_1000h: Hours(1000.0),
+            size_class_distribution: [Fraction(0.0), Fraction(0.0), Fraction(0.0), Fraction(0.0)],
 
             // Canopy structure (grassland - rock has no structure)
             canopy_structure: crate::physics::CanopyStructure::grassland(),

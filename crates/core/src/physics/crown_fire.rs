@@ -180,7 +180,7 @@ pub(crate) fn calculate_crown_fire_behavior(
     // Calculate critical surface intensity (Van Wagner 1977)
     let van_wagner_threshold = calculate_critical_surface_intensity(
         crown_bulk_density,
-        element.fuel.heat_content,
+        element.fuel.heat_content.0,
         foliar_moisture_content,
         crown_base_height,
     );

@@ -630,7 +630,7 @@ mod tests {
         let src_pos = source.position;
         let src_temp = source.temperature;
         let src_remain = source.fuel_remaining;
-        let src_sav = source.fuel.surface_area_to_volume;
+        let src_sav = source.fuel.surface_area_to_volume.0;
 
         let horiz = calculate_heat_transfer_raw(
             src_pos,
@@ -639,7 +639,7 @@ mod tests {
             src_sav,
             target_h.position,
             target_h.temperature,
-            target_h.fuel.surface_area_to_volume,
+            target_h.fuel.surface_area_to_volume.0,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -651,7 +651,7 @@ mod tests {
             src_sav,
             target_v.position,
             target_v.temperature,
-            target_v.fuel.surface_area_to_volume,
+            target_v.fuel.surface_area_to_volume.0,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -766,7 +766,7 @@ mod tests {
         let src_pos = ground.position;
         let src_temp = ground.temperature;
         let src_remain = ground.fuel_remaining;
-        let src_sav = ground.fuel.surface_area_to_volume;
+        let src_sav = ground.fuel.surface_area_to_volume.0;
 
         // Calculate heat transfer from ground fire to each tree part (1 second dt)
         let heat_to_trunk = calculate_heat_transfer_raw(
@@ -776,7 +776,7 @@ mod tests {
             src_sav,
             trunk_lower.position,
             trunk_lower.temperature,
-            trunk_lower.fuel.surface_area_to_volume,
+            trunk_lower.fuel.surface_area_to_volume.0,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -787,7 +787,7 @@ mod tests {
             src_sav,
             branch.position,
             branch.temperature,
-            branch.fuel.surface_area_to_volume,
+            branch.fuel.surface_area_to_volume.0,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -798,7 +798,7 @@ mod tests {
             src_sav,
             crown.position,
             crown.temperature,
-            crown.fuel.surface_area_to_volume,
+            crown.fuel.surface_area_to_volume.0,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -816,9 +816,9 @@ mod tests {
         );
         eprintln!(
             "Trunk SAV={}, Branch SAV={}, Crown SAV={}",
-            trunk_lower.fuel.surface_area_to_volume,
-            branch.fuel.surface_area_to_volume,
-            crown.fuel.surface_area_to_volume
+            trunk_lower.fuel.surface_area_to_volume.0,
+            branch.fuel.surface_area_to_volume.0,
+            crown.fuel.surface_area_to_volume.0
         );
         eprintln!("Heat to trunk (2m):    {:.2} kJ/s", heat_to_trunk);
         eprintln!("Heat to branch (4m):   {:.2} kJ/s", heat_to_branch);
@@ -866,9 +866,9 @@ mod tests {
         // Estimate time to raise crown temperature to ignition (~228°C for stringybark)
         // Using stringybark specific heat ~1.5 kJ/(kg·K), mass ~5kg, ΔT needed ~208K
         // Energy needed = 1.5 * 5 * 208 = 1560 kJ
-        let specific_heat = crown.fuel.specific_heat;
+        let specific_heat = crown.fuel.specific_heat.0;
         let crown_mass = crown.fuel_remaining;
-        let delta_t = crown.fuel.ignition_temperature - crown.temperature;
+        let delta_t = crown.fuel.ignition_temperature.0 - crown.temperature;
         let energy_to_ignite_kj = specific_heat * crown_mass * delta_t;
         let estimated_time_to_crown_ignition = energy_to_ignite_kj / heat_to_crown;
 
@@ -912,9 +912,9 @@ mod tests {
         );
         eprintln!(
             "Trunk SAV={}, Branch SAV={}, Crown SAV={}",
-            trunk_lower.fuel.surface_area_to_volume,
-            branch.fuel.surface_area_to_volume,
-            crown.fuel.surface_area_to_volume
+            trunk_lower.fuel.surface_area_to_volume.0,
+            branch.fuel.surface_area_to_volume.0,
+            crown.fuel.surface_area_to_volume.0
         );
         eprintln!("Heat to trunk (2m):    {:.2} kJ/s", heat_to_trunk);
         eprintln!("Heat to branch (4m):   {:.2} kJ/s", heat_to_branch);
