@@ -207,12 +207,7 @@ impl FuelMoistureState {
             self.moisture_10h,
             self.moisture_100h,
             self.moisture_1000h,
-            [
-                fuel.size_class_distribution[0].0,
-                fuel.size_class_distribution[1].0,
-                fuel.size_class_distribution[2].0,
-                fuel.size_class_distribution[3].0,
-            ],
+            fuel.size_class_distribution.map(|f| f.0),
         );
     }
 }
