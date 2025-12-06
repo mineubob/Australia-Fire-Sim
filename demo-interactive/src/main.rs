@@ -31,6 +31,7 @@
 //!   - amount: optional, number of elements to heat (from ground-up). Use -1 for all (default -1)
 //!   - filters: optional tokens to further limit selection: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>
 //! - `preset <name>` - Switch weather preset (perth, catastrophic, etc.)
+//! - `windfield [on|off]` - Toggle advanced 3D wind field (mass-consistent model)
 //! - `reset` - Reset simulation with new terrain dimensions
 //! - `heatmap [size]` - Generate a heatmap of the simulation
 //! - `help` - Show available commands
@@ -38,7 +39,7 @@
 
 use fire_sim_core::{
     ClimatePattern, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherPreset, WeatherSystem,
-};
+};   
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::{
@@ -59,16 +60,21 @@ fn main() {
     // Ask for terrain dimensions
     let (width, height) = prompt_terrain_dimensions();
 
+    // Ask if user wants advanced wind field
+    let enable_wind_field = prompt_wind_field();
+
     // Create simulation with user-specified dimensions
-    let mut sim = create_test_simulation(width, height);
+    let mut sim = create_test_simulation(width, height, enable_wind_field);
     let mut current_width = width;
     let mut current_height = height;
+    let mut wind_field_enabled = enable_wind_field;
 
     println!(
-        "Created simulation with {} elements on {}x{} terrain",
+        "Created simulation with {} elements on {}x{} terrain (wind field: {})",
         sim.get_all_elements().len(),
         width,
-        height
+        height,
+        wind_field_enabled
     );
     println!("No elements are ignited. Use 'ignite <id>' to start a fire.");
 
@@ -322,6 +328,43 @@ fn main() {
                             println!("Usage: preset <perth|catastrophic|goldfields|wheatbelt>");
                         }
                     }
+                    "windfield" | "wf" => {
+                        match parts.get(1).map(|s| s.to_lowercase()).as_deref() {
+                            Some("on") | Some("true") | Some("1") => {
+                                if !sim.has_wind_field() {
+                                    sim.enable_wind_field_default();
+                                    wind_field_enabled = true;
+                                    println!(
+                                        "Advanced wind field ENABLED (mass-consistent 3D model)"
+                                    );
+                                } else {
+                                    println!("Wind field is already enabled.");
+                                }
+                            }
+                            Some("off") | Some("false") | Some("0") => {
+                                if wind_field_enabled {
+                                    sim.disable_wind_field();
+                                    wind_field_enabled = false;
+                                    println!("Advanced wind field DISABLED (using simple terrain-modulated wind)");
+                                } else {
+                                    println!("Wind field is already disabled.");
+                                }
+                            }
+                            _ => {
+                                println!(
+                                    "Wind field: {}",
+                                    if wind_field_enabled {
+                                        "ENABLED"
+                                    } else {
+                                        "disabled"
+                                    }
+                                );
+                                println!("Usage: windfield [on|off]");
+                                println!("  on  - Enable advanced 3D mass-consistent wind model");
+                                println!("  off - Disable and use simple terrain-modulated wind");
+                            }
+                        }
+                    }
                     "reset" | "r" => {
                         // Parse optional dimensions from command or use current
                         let new_width = parts
@@ -332,16 +375,25 @@ fn main() {
                             .get(2)
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(current_height);
+                        // Check for wind field toggle in reset args
+                        let new_wind_field = parts.iter().any(|&s| s == "windfield" || s == "wf");
+                        let use_wind_field = if new_wind_field {
+                            !wind_field_enabled
+                        } else {
+                            wind_field_enabled
+                        };
 
-                        sim = create_test_simulation(new_width, new_height);
+                        sim = create_test_simulation(new_width, new_height, use_wind_field);
                         current_width = new_width;
                         current_height = new_height;
+                        wind_field_enabled = use_wind_field;
 
                         println!(
-                            "Simulation reset! Created {} elements on {}x{} terrain",
+                            "Simulation reset! Created {} elements on {}x{} terrain (wind field: {})",
                             sim.get_all_elements().len(),
                             new_width,
-                            new_height
+                            new_height,
+                            if wind_field_enabled { "enabled" } else { "disabled" }
                         );
                     }
                     "help" | "?" => show_help(),
@@ -374,6 +426,16 @@ fn main() {
             }
         }
     }
+}
+
+/// Prompt user whether to enable advanced wind field
+fn prompt_wind_field() -> bool {
+    print!("Enable advanced 3D wind field? (y/N)[no]: ");
+    io::stdout().flush().unwrap();
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+    let input = input.trim().to_lowercase();
+    matches!(input.as_str(), "y" | "yes" | "true" | "1")
 }
 
 /// Prompt user for terrain dimensions at startup
@@ -520,12 +582,17 @@ fn filter_elements_in_circle(
         .collect()
 }
 
-fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
+fn create_test_simulation(width: f32, height: f32, enable_wind_field: bool) -> FireSimulation {
     let mut sim = FireSimulation::new(5.0, TerrainData::flat(width, height, 5.0, 0.0));
+
+    // Enable advanced wind field if requested
+    if enable_wind_field {
+        sim.enable_wind_field_default();
+    }
 
     // Create a grid of fuel elements representing different vegetation
     // Ground layer: grass and shrubs
-    // 
+    //
     // SPACING: 1m simulates near-continuous fuel beds like real grasslands.
     // Fire spreads through direct flame contact and short-range radiation.
     // Smaller spacing = faster, more realistic spread patterns.
@@ -953,9 +1020,9 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
 
     // Minimum absolute temperatures for heat visualization
     // These ensure we don't show "hot" indicators at ambient temperatures
-    const MIN_TEMP_COOL: f32 = 50.0;   // Must be above 50°C to show as warming
-    const MIN_TEMP_WARM: f32 = 100.0;  // Must be above 100°C to show as warm
-    const MIN_TEMP_HOT: f32 = 200.0;   // Must be above 200°C to show as hot
+    const MIN_TEMP_COOL: f32 = 50.0; // Must be above 50°C to show as warming
+    const MIN_TEMP_WARM: f32 = 100.0; // Must be above 100°C to show as warm
+    const MIN_TEMP_HOT: f32 = 200.0; // Must be above 200°C to show as hot
     const MIN_TEMP_VERY_HOT: f32 = 350.0; // Must be above 350°C to show as very hot
 
     // Calculate dynamic thresholds based on actual temperature range
@@ -968,8 +1035,10 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
 
     // Legend with dynamic values
     println!("Legend: · = empty/ambient  🔥 = burning (ignited)");
-    println!("        ░ >{:.0}°C  ▒ >{:.0}°C  ▓ >{:.0}°C  █ >{:.0}°C",
-             threshold_cool, threshold_warm, threshold_hot, threshold_very_hot);
+    println!(
+        "        ░ >{:.0}°C  ▒ >{:.0}°C  ▓ >{:.0}°C  █ >{:.0}°C",
+        threshold_cool, threshold_warm, threshold_hot, threshold_very_hot
+    );
     println!("Temperature range: {:.0}°C - {:.0}°C\n", min_temp, max_temp);
 
     // Print heatmap (top-down view, Y increases downward)
@@ -1015,7 +1084,11 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
     // Summary stats
     let burning_cells: usize = burning_grid.iter().flatten().filter(|&&b| b).count();
     if burning_cells > 0 {
-        println!("Burning cells: {} / {}", burning_cells, grid_size * grid_size);
+        println!(
+            "Burning cells: {} / {}",
+            burning_cells,
+            grid_size * grid_size
+        );
     }
 
     println!("══════════════════════════════════════════════════\n");
@@ -1043,7 +1116,9 @@ fn show_help() {
     println!("  heatmap, hm [size]   - Show temperature heatmap");
     println!("  preset <name>, p     - Change weather preset");
     println!("                         (perth, catastrophic, goldfields, wheatbelt, hot)");
+    println!("  windfield [on|off]   - Toggle advanced 3D wind field");
     println!("  reset [w] [h], r     - Reset simulation (optional: new width/height)");
+    println!("                         Add 'windfield' to toggle wind field on reset");
     println!("  help, ?              - Show this help");
     println!("  quit, q              - Exit");
     println!("══════════════════════════════════════════════════\n");
