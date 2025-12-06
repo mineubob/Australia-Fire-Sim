@@ -458,7 +458,7 @@ impl WindField {
 
             // Check intensity change (>20% affects plume dynamics)
             let intensity_ratio = plume.intensity / self.last_plume_intensities[i].max(1.0);
-            if intensity_ratio < 0.8 || intensity_ratio > 1.2 {
+            if !(0.8..=1.2).contains(&intensity_ratio) {
                 return true;
             }
         }
