@@ -5,6 +5,7 @@
 
 use fire_sim_core::{
     CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem,
+    core_types::{Meters, Degrees},
 };
 
 /// Helper to create a simple eucalyptus tree with realistic structure
@@ -82,8 +83,8 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
             Fuel::eucalyptus_stringybark(),
             2.0,
             FuelPart::Branch {
-                height: 0.0,
-                angle: 0.0,
+                height: Meters(0.0),
+                angle: Degrees(0.0),
             },
             Some(base_id),
         );
@@ -143,10 +144,10 @@ fn test_single_tree_complete_burnout() {
 
         for elem_id in &tree_elements {
             if let Some(elem) = sim.get_element(*elem_id) {
-                total_fuel_remaining += elem.fuel_remaining();
+                total_fuel_remaining += elem.fuel_remaining().0;
                 if elem.is_ignited() {
                     burning_count += 1;
-                    max_temp = max_temp.max(elem.temperature());
+                    max_temp = max_temp.max(elem.temperature().0);
 
                     // Check if in smoldering phase
                     if let Some(smolder_state) = &elem.smoldering_state() {
@@ -305,10 +306,10 @@ fn test_multiple_trees_fire_spread() {
 
                 for elem_id in tree_elements {
                     if let Some(elem) = sim.get_element(*elem_id) {
-                        fuel_remaining += elem.fuel_remaining();
+                        fuel_remaining += elem.fuel_remaining().0;
                         if elem.is_ignited() {
                             burning += 1;
-                            max_temp = max_temp.max(elem.temperature());
+                            max_temp = max_temp.max(elem.temperature().0);
 
                             if elem.is_crown_fire_active() {
                                 crown_fire = true;

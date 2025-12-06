@@ -1,4 +1,5 @@
 use crate::core_types::fuel::Fuel;
+use crate::core_types::units::{Celsius, Degrees, Fraction, Kilograms, Meters};
 use crate::suppression::SuppressionCoverage;
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
@@ -13,8 +14,8 @@ pub enum FuelPart {
     TrunkLower,
     TrunkMiddle,
     TrunkUpper,
-    BarkLayer(f32), // Height along trunk (meters)
-    Branch { height: f32, angle: f32 },
+    BarkLayer(Meters), // Height along trunk (meters)
+    Branch { height: Meters, angle: Degrees },
     Crown, // Foliage canopy
 
     // Ground layer
@@ -39,20 +40,20 @@ pub struct FuelElement {
     pub(crate) fuel: Fuel,     // Comprehensive fuel type with all properties
 
     // Thermal state (accessible within crate only)
-    pub(crate) temperature: f32,       // Current temperature (°C)
-    pub(crate) moisture_fraction: f32, // 0-1, calculated from weather
-    pub(crate) fuel_remaining: f32,    // kg
+    pub(crate) temperature: Celsius,       // Current temperature
+    pub(crate) moisture_fraction: Fraction, // 0-1, calculated from weather
+    pub(crate) fuel_remaining: Kilograms,    // Mass remaining
     pub(crate) ignited: bool,
-    pub(crate) flame_height: f32, // meters (Byram's formula)
+    pub(crate) flame_height: Meters, // meters (Byram's formula)
 
     // Structural relationships
     pub(crate) parent_id: Option<u32>, // Parent structure/tree ID
     pub(crate) part_type: FuelPart,    // What kind of fuel part
 
     // Spatial context
-    pub(crate) elevation: f32,      // Height above ground
-    pub(crate) slope_angle: f32,    // Local terrain slope (degrees) - CACHED from terrain
-    pub(crate) aspect_angle: f32,   // Local terrain aspect (degrees 0-360) - CACHED from terrain
+    pub(crate) elevation: Meters,      // Height above ground
+    pub(crate) slope_angle: Degrees,    // Local terrain slope
+    pub(crate) aspect_angle: Degrees,   // Local terrain aspect (0-360)
     pub(crate) neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
 
     // Advanced physics state (Phase 1-3 enhancements)
@@ -84,19 +85,19 @@ impl FuelElement {
         id: u32,
         position: Vec3,
         fuel: Fuel,
-        mass: f32,
+        mass: Kilograms,
         part_type: FuelPart,
         parent_id: Option<u32>,
     ) -> Self {
-        let moisture_fraction = fuel.base_moisture.0;
-        let elevation = position.z;
+        let moisture_fraction = fuel.base_moisture;
+        let elevation = Meters(position.z);
 
         // Initialize fuel moisture timelag state
         let moisture_state = Some(crate::physics::FuelMoistureState::new(
-            moisture_fraction,
-            moisture_fraction,
-            moisture_fraction,
-            moisture_fraction,
+            moisture_fraction.0,
+            moisture_fraction.0,
+            moisture_fraction.0,
+            moisture_fraction.0,
         ));
 
         // Initialize smoldering state
@@ -105,16 +106,16 @@ impl FuelElement {
         FuelElement {
             id,
             position,
-            temperature: 20.0, // Ambient temperature
+            temperature: Celsius(20.0), // Ambient temperature
             moisture_fraction,
             fuel_remaining: mass,
             ignited: false,
-            flame_height: 0.0,
+            flame_height: Meters(0.0),
             parent_id,
             part_type,
             elevation,
-            slope_angle: 0.0,
-            aspect_angle: 0.0, // Will be set by simulation when terrain is available
+            slope_angle: Degrees(0.0),
+            aspect_angle: Degrees(0.0), // Will be set by simulation when terrain is available
             neighbors: Vec::new(),
             fuel,
             moisture_state,
@@ -152,17 +153,17 @@ impl FuelElement {
     }
 
     /// Get elevation (height above ground)
-    pub fn elevation(&self) -> f32 {
+    pub fn elevation(&self) -> Meters {
         self.elevation
     }
 
     /// Get local terrain slope angle in degrees
-    pub fn slope_angle(&self) -> f32 {
+    pub fn slope_angle(&self) -> Degrees {
         self.slope_angle
     }
 
     /// Get local terrain aspect angle in degrees (0-360)
-    pub fn aspect_angle(&self) -> f32 {
+    pub fn aspect_angle(&self) -> Degrees {
         self.aspect_angle
     }
 
@@ -173,7 +174,7 @@ impl FuelElement {
 
     /// Set temperature (for testing)
     #[cfg(test)]
-    pub(crate) fn with_temperature(mut self, temperature: f32) -> Self {
+    pub(crate) fn with_temperature(mut self, temperature: Celsius) -> Self {
         self.temperature = temperature;
         self
     }
@@ -183,7 +184,7 @@ impl FuelElement {
     /// # Arguments
     /// * `heat_kj` - Heat energy applied in kilojoules
     /// * `dt` - Time step in seconds
-    /// * `ambient_temperature` - Ambient air temperature (°C)
+    /// * `ambient_temperature` - Ambient air temperature
     /// * `ffdi_multiplier` - Fire danger index multiplier
     /// * `has_pilot_flame` - Whether an adjacent burning element provides a pilot flame
     ///
@@ -196,11 +197,11 @@ impl FuelElement {
         &mut self,
         heat_kj: f32,
         dt: f32,
-        ambient_temperature: f32,
+        ambient_temperature: Celsius,
         ffdi_multiplier: f32,
         has_pilot_flame: bool,
     ) {
-        if heat_kj <= 0.0 || self.fuel_remaining <= 0.0 {
+        if heat_kj <= 0.0 || self.fuel_remaining.0 <= 0.0 {
             return;
         }
 
@@ -208,7 +209,7 @@ impl FuelElement {
         self.heat_received_this_frame = true;
 
         // STEP 1: Evaporate moisture (2260 kJ/kg latent heat of vaporization)
-        let moisture_mass = self.fuel_remaining * self.moisture_fraction;
+        let moisture_mass = self.fuel_remaining.0 * self.moisture_fraction.0;
         if moisture_mass > 0.0 {
             let evaporation_energy = moisture_mass * 2260.0;
             let heat_for_evaporation = heat_kj.min(evaporation_energy);
@@ -219,10 +220,10 @@ impl FuelElement {
             #[cfg(debug_assertions)]
             let old_moisture = self.moisture_fraction;
 
-            self.moisture_fraction = if self.fuel_remaining > 0.0 {
-                new_moisture_mass / self.fuel_remaining
+            self.moisture_fraction = if self.fuel_remaining.0 > 0.0 {
+                Fraction::new(new_moisture_mass / self.fuel_remaining.0)
             } else {
-                0.0
+                Fraction::ZERO
             };
 
             // DEBUG: Print evaporation calculation
@@ -230,41 +231,41 @@ impl FuelElement {
             if std::env::var("DEBUG_EVAP").is_ok() && heat_kj > 1.0 {
                 eprintln!(
                     "EVAP: heat={:.2} kJ, fuel={:.2} kg, moisture_mass={:.4} kg, evap_energy={:.2} kJ, evaporated={:.4} kg, moisture {:.4}->{:.4}",
-                    heat_kj, self.fuel_remaining, moisture_mass, evaporation_energy, moisture_evaporated, old_moisture, self.moisture_fraction
+                    heat_kj, self.fuel_remaining.0, moisture_mass, evaporation_energy, moisture_evaporated, old_moisture.0, self.moisture_fraction.0
                 );
             }
 
             // STEP 2: Remaining heat raises temperature
             let remaining_heat = heat_kj - heat_for_evaporation;
-            if remaining_heat > 0.0 && self.fuel_remaining > 0.0 {
-                let temp_rise = remaining_heat / (self.fuel_remaining * self.fuel.specific_heat.0);
-                self.temperature += temp_rise;
+            if remaining_heat > 0.0 && self.fuel_remaining.0 > 0.0 {
+                let temp_rise = remaining_heat / (self.fuel_remaining.0 * self.fuel.specific_heat.0);
+                self.temperature = Celsius(self.temperature.0 + temp_rise);
             }
         } else {
             // No moisture, all heat goes to temperature rise
-            let temp_rise = heat_kj / (self.fuel_remaining * self.fuel.specific_heat.0);
-            self.temperature += temp_rise;
+            let temp_rise = heat_kj / (self.fuel_remaining.0 * self.fuel.specific_heat.0);
+            self.temperature = Celsius(self.temperature.0 + temp_rise);
         }
 
         // STEP 3: Cap at fuel-specific maximum (prevents thermal runaway)
         let max_temp = self
             .fuel
-            .calculate_max_flame_temperature(self.moisture_fraction);
-        self.temperature = self.temperature.min(max_temp);
+            .calculate_max_flame_temperature(self.moisture_fraction.0);
+        self.temperature = Celsius(self.temperature.0.min(max_temp));
 
         // STEP 4: Clamp to ambient minimum (prevents negative heat)
-        self.temperature = self.temperature.max(ambient_temperature);
+        self.temperature = Celsius(self.temperature.0.max(ambient_temperature.0));
 
         // STEP 5: Check for ignition using appropriate threshold
         // Piloted ignition (with adjacent flame) uses lower threshold
         // Auto-ignition (radiant heat only) uses higher threshold
         let effective_ignition_temp = if has_pilot_flame {
-            self.fuel.ignition_temperature.0 // Piloted: 228-378°C
+            self.fuel.ignition_temperature // Piloted: 228-378°C
         } else {
-            self.fuel.auto_ignition_temperature.0 // Auto: 338-498°C
+            self.fuel.auto_ignition_temperature // Auto: 338-498°C
         };
 
-        if !self.ignited && self.temperature >= effective_ignition_temp {
+        if !self.ignited && self.temperature.0 >= effective_ignition_temp.0 {
             self.check_ignition_probability(dt, ffdi_multiplier, effective_ignition_temp);
         }
     }
@@ -275,19 +276,19 @@ impl FuelElement {
     /// * `dt` - Time step in seconds
     /// * `ffdi_multiplier` - Fire danger index multiplier
     /// * `ignition_temp` - Effective ignition temperature (piloted or auto-ignition)
-    fn check_ignition_probability(&mut self, dt: f32, ffdi_multiplier: f32, ignition_temp: f32) {
+    fn check_ignition_probability(&mut self, dt: f32, ffdi_multiplier: f32, ignition_temp: Celsius) {
         // OPTIMIZATION: Early exit for saturated fuel (can't ignite)
-        if self.moisture_fraction >= self.fuel.moisture_of_extinction.0 {
+        if self.moisture_fraction.0 >= self.fuel.moisture_of_extinction.0 {
             return;
         }
 
         // OPTIMIZATION: Early exit for cold fuel (far from ignition temp)
-        if self.temperature < ignition_temp - 50.0 {
+        if self.temperature.0 < ignition_temp.0 - 50.0 {
             return;
         }
 
         // Track time above ignition temperature
-        if self.temperature > ignition_temp {
+        if self.temperature.0 > ignition_temp.0 {
             self.time_above_ignition += dt;
         } else {
             // Reset timer if cooled below ignition
@@ -296,10 +297,10 @@ impl FuelElement {
 
         // Moisture reduces ignition probability
         let moisture_factor =
-            (1.0 - self.moisture_fraction / self.fuel.moisture_of_extinction.0).max(0.0);
+            (1.0 - self.moisture_fraction.0 / self.fuel.moisture_of_extinction.0).max(0.0);
 
         // Temperature above ignition increases probability (capped at 1.0)
-        let temp_excess = (self.temperature - ignition_temp).max(0.0);
+        let temp_excess = (self.temperature.0 - ignition_temp.0).max(0.0);
         let temp_factor = (temp_excess / 50.0).min(1.0);
 
         // Base coefficient for probabilistic ignition
@@ -331,26 +332,26 @@ impl FuelElement {
             return 0.0;
         }
 
-        if self.fuel_remaining <= 0.0 {
+        if self.fuel_remaining.0 <= 0.0 {
             return 0.0;
         }
 
         // OPTIMIZATION: Early exit for cold fuel (not hot enough to burn)
-        if self.temperature < self.fuel.ignition_temperature.0 {
+        if self.temperature.0 < self.fuel.ignition_temperature.0 {
             return 0.0;
         }
 
         // Realistic burn rate - slower burning for sustained fires
         let moisture_factor =
-            (1.0 - self.moisture_fraction / self.fuel.moisture_of_extinction.0).max(0.0);
+            (1.0 - self.moisture_fraction.0 / self.fuel.moisture_of_extinction.0).max(0.0);
         let temp_factor =
-            ((self.temperature - self.fuel.ignition_temperature.0) / 200.0).clamp(0.0, 1.0);
+            ((self.temperature.0 - self.fuel.ignition_temperature.0) / 200.0).clamp(0.0, 1.0);
 
         // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
         self.fuel.burn_rate_coefficient
             * moisture_factor
             * temp_factor
-            * self.fuel_remaining.sqrt()
+            * self.fuel_remaining.0.sqrt()
             * 0.1
     }
 
@@ -378,12 +379,12 @@ impl FuelElement {
             return 0.0;
         }
 
-        if self.fuel_remaining <= 0.0 {
+        if self.fuel_remaining.0 <= 0.0 {
             return 0.0;
         }
 
         // OPTIMIZATION: Early exit for cold fuel
-        if self.temperature < self.fuel.ignition_temperature.0 {
+        if self.temperature.0 < self.fuel.ignition_temperature.0 {
             return 0.0;
         }
 
@@ -391,9 +392,9 @@ impl FuelElement {
         // Use standard ambient temperature of 20°C for Byram intensity calculation
         let spread_rate_m_per_min = crate::physics::rothermel::rothermel_spread_rate(
             &self.fuel,
-            self.moisture_fraction,
+            self.moisture_fraction.0,
             wind_speed_ms,
-            self.slope_angle,
+            self.slope_angle.0,
             20.0, // Standard ambient temperature for intensity calculation
         );
 
@@ -410,18 +411,18 @@ impl FuelElement {
 
     // Public accessor methods for visualization/external use
 
-    /// Get current temperature in Celsius
-    pub fn temperature(&self) -> f32 {
+    /// Get current temperature
+    pub fn temperature(&self) -> Celsius {
         self.temperature
     }
 
     /// Get current moisture fraction (0-1)
-    pub fn moisture_fraction(&self) -> f32 {
+    pub fn moisture_fraction(&self) -> Fraction {
         self.moisture_fraction
     }
 
-    /// Get remaining fuel mass in kg
-    pub fn fuel_remaining(&self) -> f32 {
+    /// Get remaining fuel mass
+    pub fn fuel_remaining(&self) -> Kilograms {
         self.fuel_remaining
     }
 
@@ -430,8 +431,8 @@ impl FuelElement {
         self.ignited
     }
 
-    /// Get current flame height in meters
-    pub fn flame_height(&self) -> f32 {
+    /// Get current flame height
+    pub fn flame_height(&self) -> Meters {
         self.flame_height
     }
 
@@ -480,7 +481,7 @@ impl FuelElement {
         // Calculate approximate surface area based on fuel properties
         // Uses fuel-specific geometry factor (bark=0.12, grass=0.15, wood=0.1)
         let surface_area = self.fuel.surface_area_to_volume.0
-            * self.fuel_remaining.sqrt()
+            * self.fuel_remaining.0.sqrt()
             * self.fuel.surface_area_geometry_factor;
         let surface_area = surface_area.max(0.1); // Minimum 0.1 m²
 
@@ -507,8 +508,9 @@ impl FuelElement {
 
         // Suppression adds moisture to fuel
         if let Some(ref coverage) = self.suppression_coverage {
-            self.moisture_fraction =
-                (self.moisture_fraction + coverage.moisture_contribution()).min(1.0);
+            self.moisture_fraction = Fraction::new(
+                self.moisture_fraction.0 + coverage.moisture_contribution()
+            );
         }
     }
 
@@ -536,14 +538,14 @@ impl FuelElement {
         FuelElementStats {
             id: self.id,
             position: self.position,
-            temperature: self.temperature,
-            moisture_fraction: self.moisture_fraction,
-            fuel_remaining: self.fuel_remaining,
+            temperature: self.temperature.0,
+            moisture_fraction: self.moisture_fraction.0,
+            fuel_remaining: self.fuel_remaining.0,
             ignited: self.ignited,
-            flame_height: self.flame_height,
+            flame_height: self.flame_height.0,
             part_type: self.part_type,
-            elevation: self.elevation,
-            slope_angle: self.slope_angle,
+            elevation: self.elevation.0,
+            slope_angle: self.slope_angle.0,
             crown_fire_active: self.crown_fire_active,
             fuel_type_name: self.fuel.name.clone(),
             ignition_temperature: self.fuel.ignition_temperature.0,

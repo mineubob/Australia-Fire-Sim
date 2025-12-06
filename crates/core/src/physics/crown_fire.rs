@@ -320,15 +320,17 @@ mod tests {
 
     #[test]
     fn test_crown_fire_behavior_integration() {
+        use crate::core_types::units::{Celsius, Kilograms};
+        
         let mut element = FuelElement::new(
             0,
             Vec3::new(0.0, 0.0, 0.0),
             Fuel::eucalyptus_stringybark(),
-            5.0,
+            Kilograms(5.0),
             FuelPart::TrunkUpper,
             None,
         );
-        element.temperature = 800.0;
+        element.temperature = Celsius(800.0);
         element.ignited = true;
 
         let behavior = calculate_crown_fire_behavior(

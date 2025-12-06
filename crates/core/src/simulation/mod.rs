@@ -236,16 +236,18 @@ impl FireSimulation {
         part_type: FuelPart,
         parent_id: Option<u32>,
     ) -> u32 {
+        use crate::core_types::units::{Degrees, Kilograms};
+        
         let id = self.next_element_id;
         self.next_element_id += 1;
 
-        let mut element = FuelElement::new(id, position, fuel, mass, part_type, parent_id);
+        let mut element = FuelElement::new(id, position, fuel, Kilograms(mass), part_type, parent_id);
 
         // OPTIMIZATION: Cache terrain properties once at creation
         // Uses Horn's method (3x3 kernel) for accurate slope/aspect
         // Eliminates 10,000-20,000 terrain lookups per frame during heat transfer
-        element.slope_angle = self.grid.terrain.slope_at_horn(position.x, position.y);
-        element.aspect_angle = self.grid.terrain.aspect_at_horn(position.x, position.y);
+        element.slope_angle = Degrees(self.grid.terrain.slope_at_horn(position.x, position.y));
+        element.aspect_angle = Degrees(self.grid.terrain.aspect_at_horn(position.x, position.y));
 
         // Add to spatial index
         self.spatial_index.insert(id, position);
@@ -297,9 +299,11 @@ impl FireSimulation {
     /// - `initial_temp`: Initial burning temperature (°C). Will be clamped to at least
     ///   the fuel's ignition temperature.
     pub fn ignite_element(&mut self, element_id: u32, initial_temp: f32) {
+        use crate::core_types::units::Celsius;
+        
         if let Some(Some(element)) = self.elements.get_mut(element_id as usize) {
             element.ignited = true;
-            element.temperature = initial_temp.max(element.fuel.ignition_temperature.0);
+            element.temperature = Celsius(initial_temp.max(element.fuel.ignition_temperature.0));
             // Set smoldering state to FLAMING phase for direct ignition (Phase 3)
             // This overrides any existing state (e.g., Unignited with 0 burn rate)
             element.smoldering_state = Some(crate::physics::SmolderingState::new_flaming());
@@ -334,7 +338,9 @@ impl FireSimulation {
         dt: f32,
         has_pilot_flame: bool,
     ) {
-        let ambient_temp = self.grid.ambient_temperature;
+        use crate::core_types::units::Celsius;
+        
+        let ambient_temp = Celsius(self.grid.ambient_temperature);
         let ffdi_multiplier = self.weather.spread_rate_multiplier();
         if let Some(element) = self.get_element_mut(element_id) {
             let was_ignited = element.ignited;
@@ -608,11 +614,13 @@ impl FireSimulation {
 
     /// Ignite at position (convenience method for multiplayer)
     pub fn ignite_at_position(&mut self, position: Vec3) {
+        use crate::core_types::units::Kilograms;
+        
         // Find nearest fuel element within 5m
         let nearby_ids = self.spatial_index.query_radius(position, 5.0);
         for id in nearby_ids {
             if let Some(element) = self.get_element(id) {
-                if !element.ignited && element.fuel_remaining > 0.1 {
+                if !element.ignited && element.fuel_remaining > Kilograms(0.1) {
                     // Start at 600°C - realistic for piloted ignition
                     // This represents rapid flashover when fuel catches fire
                     let initial_temp = 600.0_f32.max(element.fuel.ignition_temperature.0);
@@ -726,15 +734,17 @@ impl FireSimulation {
         self.elements
             .par_chunks_mut(ELEMENT_CHUNK_SIZE)
             .for_each(|chunk| {
+                use crate::core_types::units::{Celsius, Fraction};
+                
                 for element in chunk.iter_mut().flatten() {
                     // Apply ambient temperature cooling for non-burning elements
                     if !element.ignited {
                         // Newton's law of cooling: dT/dt = -k(T - T_ambient)
                         let cooling_rate = element.fuel.cooling_rate; // Fuel-specific (grass=0.15, forest=0.05)
-                        let temp_diff = element.temperature - ambient_temp;
+                        let temp_diff = element.temperature.0 - ambient_temp;
                         let temp_change = temp_diff * cooling_rate * dt;
-                        element.temperature -= temp_change;
-                        element.temperature = element.temperature.max(ambient_temp);
+                        element.temperature = Celsius(element.temperature.0 - temp_change);
+                        element.temperature = Celsius(element.temperature.0.max(ambient_temp));
                     }
 
                     // Update fuel moisture (Nelson timelag system - Phase 1)
@@ -758,7 +768,7 @@ impl FireSimulation {
                             );
 
                             // Update the element's overall moisture fraction
-                            element.moisture_fraction = moisture_state.average_moisture();
+                            element.moisture_fraction = Fraction::new(moisture_state.average_moisture());
                         }
                     }
 
@@ -906,22 +916,24 @@ impl FireSimulation {
                 );
 
                 if let Some(element) = self.get_element_mut(element_id) {
+                    use crate::core_types::units::{Celsius, Fraction};
+                    
                     // Apply humidity changes
-                    if grid_data.humidity > element.moisture_fraction {
+                    if grid_data.humidity > element.moisture_fraction.0 {
                         let moisture_uptake_rate = 0.0001;
                         let moisture_increase =
-                            (grid_data.humidity - element.moisture_fraction) * moisture_uptake_rate;
-                        element.moisture_fraction = (element.moisture_fraction + moisture_increase)
-                            .min(element.fuel.base_moisture * 1.5);
+                            (grid_data.humidity - element.moisture_fraction.0) * moisture_uptake_rate;
+                        element.moisture_fraction = Fraction::new(element.moisture_fraction.0 + moisture_increase)
+                            .min(Fraction::new(element.fuel.base_moisture.0 * 1.5));
                     }
 
                     // Apply suppression cooling
                     if grid_data.suppression_agent > 0.0 {
                         let cooling_rate = grid_data.suppression_agent * 1000.0;
-                        let mass = element.fuel_remaining;
+                        let mass = element.fuel_remaining.0;
                         let temp_drop = cooling_rate / (mass * element.fuel.specific_heat.0);
                         element.temperature =
-                            (element.temperature - temp_drop).max(grid_data.temperature);
+                            Celsius(element.temperature.0 - temp_drop).max(Celsius(grid_data.temperature));
                     }
                 }
             }
@@ -930,7 +942,7 @@ impl FireSimulation {
             let smold_update_data = if let Some(element) = self.get_element(element_id) {
                 if let Some(smold_state) = element.smoldering_state {
                     let grid_data = self.grid.interpolate_at_position(element.position);
-                    Some((smold_state, element.temperature, grid_data.oxygen))
+                    Some((smold_state, element.temperature.0, grid_data.oxygen))
                 } else {
                     None
                 }
@@ -1007,24 +1019,26 @@ impl FireSimulation {
             let mut should_extinguish = false;
             let mut fuel_consumed_actual = 0.0;
             if let Some(element) = self.get_element_mut(element_id) {
+                use crate::core_types::units::{Celsius, Kilograms};
+                
                 element.fuel_remaining -= fuel_consumed;
                 fuel_consumed_actual = fuel_consumed;
 
                 // CRITICAL: Burning elements continue to heat up from their own combustion
                 // Heat released = fuel consumed × heat content (kJ/kg) × smoldering heat multiplier
                 // Smoldering phase reduces heat release (Rein 2009)
-                if fuel_consumed > 0.0 && element.fuel_remaining > 0.1 {
+                if fuel_consumed > 0.0 && element.fuel_remaining > Kilograms(0.1) {
                     let combustion_heat =
                         fuel_consumed * element.fuel.heat_content.0 * smoldering_heat_mult;
                     // Fuel-specific fraction of heat retained (grass=0.25, forest=0.40)
                     let self_heating = combustion_heat * element.fuel.self_heating_fraction.0;
                     let temp_rise =
-                        self_heating / (element.fuel_remaining * element.fuel.specific_heat.0);
+                        self_heating / (element.fuel_remaining.0 * element.fuel.specific_heat.0);
                     element.temperature =
-                        (element.temperature + temp_rise).min(element.fuel.max_flame_temperature.0);
+                        Celsius(element.temperature.0 + temp_rise).min(element.fuel.max_flame_temperature);
                 }
 
-                if element.fuel_remaining < 0.01 {
+                if element.fuel_remaining < Kilograms(0.01) {
                     element.ignited = false;
                     should_extinguish = true;
                 }
@@ -1048,9 +1062,9 @@ impl FireSimulation {
                     // Calculate actual spread rate using Rothermel model
                     let actual_spread_rate = crate::physics::rothermel::rothermel_spread_rate(
                         &element.fuel,
-                        element.moisture_fraction,
+                        element.moisture_fraction.0,
                         wind_vector.norm(),
-                        element.slope_angle,
+                        element.slope_angle.0,
                         ambient_temperature,
                     );
 
@@ -1116,7 +1130,7 @@ impl FireSimulation {
                         // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
                         let crown_temp =
                             base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
-                        element.temperature = element.temperature.max(crown_temp);
+                        element.temperature = element.temperature.max(crate::core_types::units::Celsius(crown_temp));
                     }
                 }
             }
@@ -1127,8 +1141,8 @@ impl FireSimulation {
                 if element.ignited {
                     Some((
                         element.position,
-                        element.temperature,
-                        element.fuel_remaining,
+                        element.temperature.0,
+                        element.fuel_remaining.0,
                         element.fuel.surface_area_to_volume.0,
                         element.fuel.heat_content.0,
                         element.fuel.convective_heat_coefficient,
@@ -1219,8 +1233,8 @@ impl FireSimulation {
             let source_data = self.get_element(*element_id).map(|source| {
                 (
                     source.position,
-                    source.temperature,
-                    source.fuel_remaining,
+                    source.temperature.0,
+                    source.fuel_remaining.0,
                     source.fuel.clone(),
                 )
             });
@@ -1240,7 +1254,9 @@ impl FireSimulation {
                     // Heat transfer to BOTH ignited and non-ignited elements
                     // Ignited elements need continuous heating to maintain/increase temperature
                     if let Some(target) = self.get_element(target_id) {
-                        if target.fuel_remaining < 0.01 {
+                        use crate::core_types::units::Kilograms;
+                        
+                        if target.fuel_remaining < Kilograms(0.01) {
                             continue;
                         }
 
@@ -1253,7 +1269,7 @@ impl FireSimulation {
                                 source_fuel_remaining,
                                 source_surface_area_vol.0,
                                 target.position,
-                                target.temperature,
+                                target.temperature.0,
                                 target.fuel.surface_area_to_volume.0,
                                 wind_vector,
                                 dt,
@@ -1269,8 +1285,8 @@ impl FireSimulation {
                         let terrain_multiplier = crate::physics::terrain_spread_multiplier_cached(
                             &source_pos,
                             &target.position,
-                            target.slope_angle,
-                            target.aspect_angle,
+                            target.slope_angle.0,
+                            target.aspect_angle.0,
                             &wind_vector,
                         );
                         heat *= terrain_multiplier;
@@ -1300,12 +1316,14 @@ impl FireSimulation {
         // PILOTED IGNITION: Heat is coming from adjacent burning elements, so has_pilot_flame=true
         // This uses the lower ignition_temperature threshold (Janssens 1991)
         for (target_id, total_heat) in heat_map {
+            use crate::core_types::units::Celsius;
+            
             if let Some(target) = self.get_element_mut(target_id) {
                 let was_ignited = target.ignited;
-                let temp_before = target.temperature;
-                let moisture_before = target.moisture_fraction;
+                let temp_before = target.temperature.0;
+                let moisture_before = target.moisture_fraction.0;
                 // Piloted ignition: heat from burning neighbors provides pilot flame
-                target.apply_heat(total_heat, dt, ambient_temp, ffdi_multiplier, true);
+                target.apply_heat(total_heat, dt, Celsius(ambient_temp), ffdi_multiplier, true);
 
                 // DEBUG: Print target element updates
                 if std::env::var("DEBUG_TARGET").is_ok() && total_heat > 0.5 {
@@ -1314,9 +1332,9 @@ impl FireSimulation {
                         target_id,
                         total_heat,
                         temp_before,
-                        target.temperature,
+                        target.temperature.0,
                         moisture_before,
-                        target.moisture_fraction,
+                        target.moisture_fraction.0,
                         target.fuel.ignition_temperature.0,
                         target.ignited
                     );
@@ -1446,7 +1464,7 @@ impl FireSimulation {
                                 wind_vector.y * element.fuel.ember_launch_velocity_factor,
                                 lofting_height.min(100.0) * 0.1, // Initial upward velocity (universal)
                             ),
-                            element.temperature,
+                            element.temperature.0,
                             element.fuel.id,
                         ))
                     } else {
@@ -1507,6 +1525,8 @@ impl FireSimulation {
 
         let mut ignited_ember_indices = Vec::new();
         for (idx, position, temperature, _source_fuel) in ember_ignition_attempts {
+            use crate::core_types::units::Kilograms;
+            
             // Find nearby fuel elements within 1.5m radius (embers need close contact)
             // Reduced from 2.0m to minimize query overhead while maintaining ignition realism
             let nearby_fuel_ids: Vec<u32> = self.spatial_index.query_radius(position, 1.5);
@@ -1516,7 +1536,7 @@ impl FireSimulation {
             for fuel_id in nearby_fuel_ids {
                 if let Some(fuel_element) = self.get_element(fuel_id) {
                     // Skip already ignited elements
-                    if fuel_element.ignited || fuel_element.fuel_remaining < 0.1 {
+                    if fuel_element.ignited || fuel_element.fuel_remaining < Kilograms(0.1) {
                         continue;
                     }
 
@@ -1537,14 +1557,15 @@ impl FireSimulation {
                     };
 
                     // 2. Fuel receptivity (fuel-specific property)
-                    let receptivity = fuel_element.fuel.ember_receptivity;
+                    let receptivity = fuel_element.fuel.ember_receptivity.0;
 
                     // 3. Moisture factor (wet fuel resists ignition)
-                    let moisture_factor = if fuel_element.moisture_fraction < 0.1 {
+                    let moisture_frac = fuel_element.moisture_fraction.0;
+                    let moisture_factor = if moisture_frac < 0.1 {
                         1.0 // Dry
-                    } else if fuel_element.moisture_fraction < 0.2 {
+                    } else if moisture_frac < 0.2 {
                         0.6 // Slightly moist
-                    } else if fuel_element.moisture_fraction < 0.3 {
+                    } else if moisture_frac < 0.3 {
                         0.3 // Moist
                     } else {
                         0.0 // Too wet (approaching moisture of extinction)
@@ -1627,8 +1648,10 @@ impl FireSimulation {
 
                     // Check for any unburned neighbor (early exit optimization)
                     let has_unburned_neighbor = nearby.iter().any(|&id| {
+                        use crate::core_types::units::Kilograms;
+                        
                         if let Some(neighbor) = self.get_element(id) {
-                            !neighbor.ignited && neighbor.fuel_remaining > 0.01
+                            !neighbor.ignited && neighbor.fuel_remaining > Kilograms(0.01)
                         } else {
                             false
                         }

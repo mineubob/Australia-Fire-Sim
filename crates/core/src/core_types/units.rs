@@ -21,7 +21,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 // ============================================================================
 // TEMPERATURE TYPES
@@ -58,6 +58,18 @@ impl Celsius {
     #[inline]
     pub fn to_kelvin(self) -> Kelvin {
         Kelvin(self.0 + 273.15)
+    }
+    
+    /// Returns the maximum of two temperatures
+    #[inline]
+    pub fn max(self, other: Celsius) -> Celsius {
+        Celsius(self.0.max(other.0))
+    }
+    
+    /// Returns the minimum of two temperatures
+    #[inline]
+    pub fn min(self, other: Celsius) -> Celsius {
+        Celsius(self.0.min(other.0))
     }
 }
 
@@ -348,6 +360,12 @@ impl From<f32> for Kilograms {
     }
 }
 
+impl fmt::Display for Kilograms {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} kg", self.0)
+    }
+}
+
 impl From<Kilograms> for f32 {
     fn from(k: Kilograms) -> f32 {
         k.0
@@ -368,10 +386,29 @@ impl Sub for Kilograms {
     }
 }
 
+impl SubAssign<f32> for Kilograms {
+    fn sub_assign(&mut self, rhs: f32) {
+        self.0 -= rhs;
+    }
+}
+
+impl AddAssign<f32> for Kilograms {
+    fn add_assign(&mut self, rhs: f32) {
+        self.0 += rhs;
+    }
+}
+
 impl Mul<f32> for Kilograms {
     type Output = Kilograms;
     fn mul(self, rhs: f32) -> Kilograms {
         Kilograms(self.0 * rhs)
+    }
+}
+
+impl Mul<Kilograms> for f32 {
+    type Output = Kilograms;
+    fn mul(self, rhs: Kilograms) -> Kilograms {
+        Kilograms(self * rhs.0)
     }
 }
 
@@ -946,6 +983,24 @@ impl Fraction {
     #[inline]
     pub fn to_percent(self) -> Percent {
         Percent(self.0 * 100.0)
+    }
+    
+    /// Returns the minimum of two fractions
+    #[inline]
+    pub fn min(self, other: Fraction) -> Fraction {
+        Fraction(self.0.min(other.0))
+    }
+    
+    /// Returns the maximum of two fractions
+    #[inline]
+    pub fn max(self, other: Fraction) -> Fraction {
+        Fraction(self.0.max(other.0))
+    }
+}
+
+impl fmt::Display for Fraction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.4}", self.0)
     }
 }
 
