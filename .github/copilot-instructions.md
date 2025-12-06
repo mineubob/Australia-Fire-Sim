@@ -78,6 +78,7 @@ CARGO_PROFILE_RELEASE_DEBUG=true CARGO_PROFILE_RELEASE_STRIP=false cargo build -
 ./target/release/demo-interactive <<'HEREDOC'
 1000
 1000
+n
 p perth
 i 7
 s 100
@@ -89,10 +90,24 @@ Annotated: what each line in the heredoc is doing
 
 - 1000 — terrain width (meters). The demo **expects** a width value — provide a number here.
 - 1000 — terrain height (meters). The demo **expects** a height value — provide a number here.
+- n — disable advanced 3D wind field (answer to "Enable advanced 3D wind field? (y/N)"). Use `y` to enable.
 - p perth — select a weather preset ("p" is the demo command to choose a preset, then the preset name). This line is optional — if omitted the demo will use its default preset.
 - i 7 — ignite element id 7 ("i" is the demo command to ignite the specified fuel element ID). The demo **expects** an ignite command when you want to start a fire.
 - s 100 — step the simulation 100 times ("s" steps forwards in time; each step is one internal physics timestep). The demo **expects** a step count to advance the simulation.
 - q - quit the demo ("q" is the demo command to quit). The demo **expects** a quit command when you want to stop the simulation.
+
+### Wind Field Option
+
+The demo now supports an advanced 3D mass-consistent wind field (Sherman 1978 model):
+
+- **At startup:** You'll be prompted "Enable advanced 3D wind field? (y/N)". Enter `y` to enable.
+- **Runtime command:** `windfield on` or `wf on` to enable (cannot disable without reset)
+- **Reset with toggle:** `reset [width] [height] windfield` to reset and toggle wind field state
+
+When enabled, the wind field provides:
+- Spatially-varying wind based on terrain (logarithmic profile, slope effects)
+- Fire-atmosphere coupling (plume updrafts, entrainment)
+- Mass conservation via Poisson solver (∇·u = 0)
 
 Notes:
 - You can change these numbers to other values or leave a prompt blank in the heredoc to accept demo defaults.
