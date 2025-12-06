@@ -47,7 +47,7 @@ pub enum Terrain {
 /// The main fire simulation context.
 /// Holds the internal simulation state and manages fire behavior calculations.
 pub struct FireSim {
-    sim: FireSimulation,
+    _sim: FireSimulation,
 }
 
 impl FireSim {
@@ -103,7 +103,7 @@ impl FireSim {
 
         let sim = FireSimulation::new(5.0, terrain);
 
-        Box::new(Self { sim })
+        Box::new(Self { _sim: sim })
     }
 }
 
