@@ -1,0 +1,1092 @@
+//! Semantic unit types for type-safe physical quantity handling
+//!
+//! This module provides newtype wrappers for physical quantities to prevent
+//! accidental mixing of incompatible units (e.g., Celsius with Kelvin, or
+//! meters with kilograms).
+//!
+//! # Design Philosophy
+//! - Each type wraps f32 for performance
+//! - Implements common traits (Add, Sub, Mul, Div, PartialOrd, etc.)
+//! - Provides explicit conversion methods between related types
+//! - Serde support for serialization
+//!
+//! # Usage
+//! ```
+//! use fire_sim_core::core_types::units::{Celsius, Kelvin, Meters};
+//!
+//! let temp = Celsius(25.0);
+//! let kelvin: Kelvin = temp.into();
+//! assert!((kelvin.0 - 298.15).abs() < 0.01);
+//! ```
+
+use serde::{Deserialize, Serialize};
+use std::ops::{Add, Div, Mul, Sub};
+
+// ============================================================================
+// TEMPERATURE TYPES
+// ============================================================================
+
+/// Temperature in degrees Celsius
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Celsius(pub f32);
+
+impl Celsius {
+    /// Absolute zero in Celsius
+    pub const ABSOLUTE_ZERO: Celsius = Celsius(-273.15);
+
+    /// Water freezing point
+    pub const FREEZING: Celsius = Celsius(0.0);
+
+    /// Water boiling point at 1 atm
+    pub const BOILING: Celsius = Celsius(100.0);
+
+    /// Create a new Celsius temperature
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Celsius(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to Kelvin
+    #[inline]
+    pub fn to_kelvin(self) -> Kelvin {
+        Kelvin(self.0 + 273.15)
+    }
+}
+
+impl From<Celsius> for Kelvin {
+    fn from(c: Celsius) -> Kelvin {
+        c.to_kelvin()
+    }
+}
+
+impl From<f32> for Celsius {
+    fn from(v: f32) -> Self {
+        Celsius(v)
+    }
+}
+
+impl From<Celsius> for f32 {
+    fn from(c: Celsius) -> f32 {
+        c.0
+    }
+}
+
+impl Add for Celsius {
+    type Output = Celsius;
+    fn add(self, rhs: Celsius) -> Celsius {
+        Celsius(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Celsius {
+    type Output = Celsius;
+    fn sub(self, rhs: Celsius) -> Celsius {
+        Celsius(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for Celsius {
+    type Output = Celsius;
+    fn mul(self, rhs: f32) -> Celsius {
+        Celsius(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for Celsius {
+    type Output = Celsius;
+    fn div(self, rhs: f32) -> Celsius {
+        Celsius(self.0 / rhs)
+    }
+}
+
+/// Temperature in Kelvin (absolute scale)
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Kelvin(pub f32);
+
+impl Kelvin {
+    /// Absolute zero
+    pub const ABSOLUTE_ZERO: Kelvin = Kelvin(0.0);
+
+    /// Convert to Celsius
+    #[inline]
+    pub fn to_celsius(self) -> Celsius {
+        Celsius(self.0 - 273.15)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<Kelvin> for Celsius {
+    fn from(k: Kelvin) -> Celsius {
+        k.to_celsius()
+    }
+}
+
+impl From<f32> for Kelvin {
+    fn from(v: f32) -> Self {
+        Kelvin(v)
+    }
+}
+
+impl From<Kelvin> for f32 {
+    fn from(k: Kelvin) -> f32 {
+        k.0
+    }
+}
+
+impl Add for Kelvin {
+    type Output = Kelvin;
+    fn add(self, rhs: Kelvin) -> Kelvin {
+        Kelvin(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Kelvin {
+    type Output = Kelvin;
+    fn sub(self, rhs: Kelvin) -> Kelvin {
+        Kelvin(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for Kelvin {
+    type Output = Kelvin;
+    fn mul(self, rhs: f32) -> Kelvin {
+        Kelvin(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for Kelvin {
+    type Output = Kelvin;
+    fn div(self, rhs: f32) -> Kelvin {
+        Kelvin(self.0 / rhs)
+    }
+}
+
+// ============================================================================
+// DISTANCE/LENGTH TYPES
+// ============================================================================
+
+/// Distance in meters
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Meters(pub f32);
+
+impl Meters {
+    /// Create a new distance in meters
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Meters(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to kilometers
+    #[inline]
+    pub fn to_kilometers(self) -> Kilometers {
+        Kilometers(self.0 / 1000.0)
+    }
+}
+
+impl From<f32> for Meters {
+    fn from(v: f32) -> Self {
+        Meters(v)
+    }
+}
+
+impl From<Meters> for f32 {
+    fn from(m: Meters) -> f32 {
+        m.0
+    }
+}
+
+impl Add for Meters {
+    type Output = Meters;
+    fn add(self, rhs: Meters) -> Meters {
+        Meters(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Meters {
+    type Output = Meters;
+    fn sub(self, rhs: Meters) -> Meters {
+        Meters(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for Meters {
+    type Output = Meters;
+    fn mul(self, rhs: f32) -> Meters {
+        Meters(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for Meters {
+    type Output = Meters;
+    fn div(self, rhs: f32) -> Meters {
+        Meters(self.0 / rhs)
+    }
+}
+
+/// Distance in kilometers
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Kilometers(pub f32);
+
+impl Kilometers {
+    /// Convert to meters
+    #[inline]
+    pub fn to_meters(self) -> Meters {
+        Meters(self.0 * 1000.0)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<Kilometers> for Meters {
+    fn from(k: Kilometers) -> Meters {
+        k.to_meters()
+    }
+}
+
+// ============================================================================
+// MASS/DENSITY TYPES
+// ============================================================================
+
+/// Mass in kilograms
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Kilograms(pub f32);
+
+impl Kilograms {
+    /// Create a new mass in kilograms
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Kilograms(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for Kilograms {
+    fn from(v: f32) -> Self {
+        Kilograms(v)
+    }
+}
+
+impl From<Kilograms> for f32 {
+    fn from(k: Kilograms) -> f32 {
+        k.0
+    }
+}
+
+impl Add for Kilograms {
+    type Output = Kilograms;
+    fn add(self, rhs: Kilograms) -> Kilograms {
+        Kilograms(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Kilograms {
+    type Output = Kilograms;
+    fn sub(self, rhs: Kilograms) -> Kilograms {
+        Kilograms(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for Kilograms {
+    type Output = Kilograms;
+    fn mul(self, rhs: f32) -> Kilograms {
+        Kilograms(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for Kilograms {
+    type Output = Kilograms;
+    fn div(self, rhs: f32) -> Kilograms {
+        Kilograms(self.0 / rhs)
+    }
+}
+
+/// Density in kg/m³
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct KgPerCubicMeter(pub f32);
+
+impl KgPerCubicMeter {
+    /// Density of water at 4°C
+    pub const WATER: KgPerCubicMeter = KgPerCubicMeter(1000.0);
+
+    /// Density of air at sea level, 15°C
+    pub const AIR_SEA_LEVEL: KgPerCubicMeter = KgPerCubicMeter(1.225);
+
+    /// Create a new density
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        KgPerCubicMeter(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for KgPerCubicMeter {
+    fn from(v: f32) -> Self {
+        KgPerCubicMeter(v)
+    }
+}
+
+impl From<KgPerCubicMeter> for f32 {
+    fn from(d: KgPerCubicMeter) -> f32 {
+        d.0
+    }
+}
+
+// ============================================================================
+// TIME TYPES
+// ============================================================================
+
+/// Time duration in seconds
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Seconds(pub f32);
+
+impl Seconds {
+    /// Create a new duration in seconds
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Seconds(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to hours
+    #[inline]
+    pub fn to_hours(self) -> Hours {
+        Hours(self.0 / 3600.0)
+    }
+}
+
+impl From<f32> for Seconds {
+    fn from(v: f32) -> Self {
+        Seconds(v)
+    }
+}
+
+impl From<Seconds> for f32 {
+    fn from(s: Seconds) -> f32 {
+        s.0
+    }
+}
+
+impl Add for Seconds {
+    type Output = Seconds;
+    fn add(self, rhs: Seconds) -> Seconds {
+        Seconds(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Seconds {
+    type Output = Seconds;
+    fn sub(self, rhs: Seconds) -> Seconds {
+        Seconds(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for Seconds {
+    type Output = Seconds;
+    fn mul(self, rhs: f32) -> Seconds {
+        Seconds(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for Seconds {
+    type Output = Seconds;
+    fn div(self, rhs: f32) -> Seconds {
+        Seconds(self.0 / rhs)
+    }
+}
+
+/// Time duration in hours
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Hours(pub f32);
+
+impl Hours {
+    /// Convert to seconds
+    #[inline]
+    pub fn to_seconds(self) -> Seconds {
+        Seconds(self.0 * 3600.0)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<Hours> for Seconds {
+    fn from(h: Hours) -> Seconds {
+        h.to_seconds()
+    }
+}
+
+impl From<f32> for Hours {
+    fn from(v: f32) -> Self {
+        Hours(v)
+    }
+}
+
+// ============================================================================
+// VELOCITY TYPES
+// ============================================================================
+
+/// Velocity in meters per second
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct MetersPerSecond(pub f32);
+
+impl MetersPerSecond {
+    /// Create a new velocity
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        MetersPerSecond(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to km/h
+    #[inline]
+    pub fn to_kmh(self) -> KilometersPerHour {
+        KilometersPerHour(self.0 * 3.6)
+    }
+}
+
+impl From<f32> for MetersPerSecond {
+    fn from(v: f32) -> Self {
+        MetersPerSecond(v)
+    }
+}
+
+impl From<MetersPerSecond> for f32 {
+    fn from(v: MetersPerSecond) -> f32 {
+        v.0
+    }
+}
+
+impl Add for MetersPerSecond {
+    type Output = MetersPerSecond;
+    fn add(self, rhs: MetersPerSecond) -> MetersPerSecond {
+        MetersPerSecond(self.0 + rhs.0)
+    }
+}
+
+impl Sub for MetersPerSecond {
+    type Output = MetersPerSecond;
+    fn sub(self, rhs: MetersPerSecond) -> MetersPerSecond {
+        MetersPerSecond(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for MetersPerSecond {
+    type Output = MetersPerSecond;
+    fn mul(self, rhs: f32) -> MetersPerSecond {
+        MetersPerSecond(self.0 * rhs)
+    }
+}
+
+/// Velocity in kilometers per hour
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct KilometersPerHour(pub f32);
+
+impl KilometersPerHour {
+    /// Convert to m/s
+    #[inline]
+    pub fn to_mps(self) -> MetersPerSecond {
+        MetersPerSecond(self.0 / 3.6)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<KilometersPerHour> for MetersPerSecond {
+    fn from(k: KilometersPerHour) -> MetersPerSecond {
+        k.to_mps()
+    }
+}
+
+impl From<f32> for KilometersPerHour {
+    fn from(v: f32) -> Self {
+        KilometersPerHour(v)
+    }
+}
+
+// ============================================================================
+// ENERGY/POWER TYPES
+// ============================================================================
+
+/// Energy in kilojoules
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Kilojoules(pub f32);
+
+impl Kilojoules {
+    /// Create a new energy value
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Kilojoules(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for Kilojoules {
+    fn from(v: f32) -> Self {
+        Kilojoules(v)
+    }
+}
+
+impl From<Kilojoules> for f32 {
+    fn from(kj: Kilojoules) -> f32 {
+        kj.0
+    }
+}
+
+impl Add for Kilojoules {
+    type Output = Kilojoules;
+    fn add(self, rhs: Kilojoules) -> Kilojoules {
+        Kilojoules(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Kilojoules {
+    type Output = Kilojoules;
+    fn sub(self, rhs: Kilojoules) -> Kilojoules {
+        Kilojoules(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for Kilojoules {
+    type Output = Kilojoules;
+    fn mul(self, rhs: f32) -> Kilojoules {
+        Kilojoules(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for Kilojoules {
+    type Output = Kilojoules;
+    fn div(self, rhs: f32) -> Kilojoules {
+        Kilojoules(self.0 / rhs)
+    }
+}
+
+/// Heat content in kJ/kg
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct KjPerKg(pub f32);
+
+impl KjPerKg {
+    /// Latent heat of vaporization for water (2260 kJ/kg)
+    pub const WATER_LATENT_HEAT: KjPerKg = KjPerKg(2260.0);
+
+    /// Create a new heat content value
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        KjPerKg(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for KjPerKg {
+    fn from(v: f32) -> Self {
+        KjPerKg(v)
+    }
+}
+
+impl From<KjPerKg> for f32 {
+    fn from(h: KjPerKg) -> f32 {
+        h.0
+    }
+}
+
+/// Fire intensity in kW/m (Byram's fireline intensity)
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct KwPerMeter(pub f32);
+
+impl KwPerMeter {
+    /// Create a new fire intensity value
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        KwPerMeter(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Low intensity fire threshold (< 350 kW/m)
+    pub const LOW_INTENSITY_THRESHOLD: KwPerMeter = KwPerMeter(350.0);
+
+    /// Moderate intensity threshold (350-2000 kW/m)
+    pub const MODERATE_INTENSITY_THRESHOLD: KwPerMeter = KwPerMeter(2000.0);
+
+    /// High intensity threshold (2000-4000 kW/m)
+    pub const HIGH_INTENSITY_THRESHOLD: KwPerMeter = KwPerMeter(4000.0);
+
+    /// Extreme intensity (> 10000 kW/m, crown fire conditions)
+    pub const EXTREME_INTENSITY_THRESHOLD: KwPerMeter = KwPerMeter(10000.0);
+}
+
+impl From<f32> for KwPerMeter {
+    fn from(v: f32) -> Self {
+        KwPerMeter(v)
+    }
+}
+
+impl From<KwPerMeter> for f32 {
+    fn from(i: KwPerMeter) -> f32 {
+        i.0
+    }
+}
+
+// ============================================================================
+// SPECIFIC HEAT TYPE
+// ============================================================================
+
+/// Specific heat capacity in kJ/(kg·K)
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct KjPerKgK(pub f32);
+
+impl KjPerKgK {
+    /// Specific heat of water (4.18 kJ/(kg·K))
+    pub const WATER: KjPerKgK = KjPerKgK(4.18);
+
+    /// Specific heat of dry wood (approximately 1.5 kJ/(kg·K))
+    pub const DRY_WOOD: KjPerKgK = KjPerKgK(1.5);
+
+    /// Specific heat of air at constant pressure (1.005 kJ/(kg·K))
+    pub const AIR: KjPerKgK = KjPerKgK(1.005);
+
+    /// Create a new specific heat value
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        KjPerKgK(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for KjPerKgK {
+    fn from(v: f32) -> Self {
+        KjPerKgK(v)
+    }
+}
+
+impl From<KjPerKgK> for f32 {
+    fn from(c: KjPerKgK) -> f32 {
+        c.0
+    }
+}
+
+// ============================================================================
+// FRACTION/RATIO TYPES
+// ============================================================================
+
+/// A fraction in the range [0, 1]
+/// Represents moisture content, efficiency ratios, damping coefficients, etc.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Fraction(pub f32);
+
+impl Fraction {
+    /// Zero fraction
+    pub const ZERO: Fraction = Fraction(0.0);
+
+    /// Full/complete (1.0)
+    pub const ONE: Fraction = Fraction(1.0);
+
+    /// Create a new fraction, clamping to [0, 1]
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Fraction(value.clamp(0.0, 1.0))
+    }
+
+    /// Create a fraction without clamping (for performance when value is known valid)
+    #[inline]
+    pub fn new_unchecked(value: f32) -> Self {
+        Fraction(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to percentage (0-100)
+    #[inline]
+    pub fn to_percent(self) -> Percent {
+        Percent(self.0 * 100.0)
+    }
+}
+
+impl From<f32> for Fraction {
+    fn from(v: f32) -> Self {
+        Fraction::new(v)
+    }
+}
+
+impl From<Fraction> for f32 {
+    fn from(f: Fraction) -> f32 {
+        f.0
+    }
+}
+
+impl Mul<f32> for Fraction {
+    type Output = f32;
+    fn mul(self, rhs: f32) -> f32 {
+        self.0 * rhs
+    }
+}
+
+impl Mul<Fraction> for f32 {
+    type Output = f32;
+    fn mul(self, rhs: Fraction) -> f32 {
+        self * rhs.0
+    }
+}
+
+/// A percentage (0-100)
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Percent(pub f32);
+
+impl Percent {
+    /// Create a new percentage
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Percent(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to fraction (0-1)
+    #[inline]
+    pub fn to_fraction(self) -> Fraction {
+        Fraction(self.0 / 100.0)
+    }
+}
+
+impl From<f32> for Percent {
+    fn from(v: f32) -> Self {
+        Percent(v)
+    }
+}
+
+impl From<Percent> for f32 {
+    fn from(p: Percent) -> f32 {
+        p.0
+    }
+}
+
+impl From<Percent> for Fraction {
+    fn from(p: Percent) -> Fraction {
+        p.to_fraction()
+    }
+}
+
+impl From<Fraction> for Percent {
+    fn from(f: Fraction) -> Percent {
+        f.to_percent()
+    }
+}
+
+// ============================================================================
+// ANGLE TYPES
+// ============================================================================
+
+/// Angle in degrees
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Degrees(pub f32);
+
+impl Degrees {
+    /// Create a new angle in degrees
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Degrees(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to radians
+    #[inline]
+    pub fn to_radians(self) -> Radians {
+        Radians(self.0.to_radians())
+    }
+}
+
+impl From<f32> for Degrees {
+    fn from(v: f32) -> Self {
+        Degrees(v)
+    }
+}
+
+impl From<Degrees> for f32 {
+    fn from(d: Degrees) -> f32 {
+        d.0
+    }
+}
+
+impl From<Degrees> for Radians {
+    fn from(d: Degrees) -> Radians {
+        d.to_radians()
+    }
+}
+
+/// Angle in radians
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Radians(pub f32);
+
+impl Radians {
+    /// Create a new angle in radians
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Radians(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to degrees
+    #[inline]
+    pub fn to_degrees(self) -> Degrees {
+        Degrees(self.0.to_degrees())
+    }
+
+    /// Compute sine
+    #[inline]
+    pub fn sin(self) -> f32 {
+        self.0.sin()
+    }
+
+    /// Compute cosine
+    #[inline]
+    pub fn cos(self) -> f32 {
+        self.0.cos()
+    }
+
+    /// Compute tangent
+    #[inline]
+    pub fn tan(self) -> f32 {
+        self.0.tan()
+    }
+}
+
+impl From<f32> for Radians {
+    fn from(v: f32) -> Self {
+        Radians(v)
+    }
+}
+
+impl From<Radians> for f32 {
+    fn from(r: Radians) -> f32 {
+        r.0
+    }
+}
+
+impl From<Radians> for Degrees {
+    fn from(r: Radians) -> Degrees {
+        r.to_degrees()
+    }
+}
+
+// ============================================================================
+// SURFACE AREA TO VOLUME RATIO
+// ============================================================================
+
+/// Surface area to volume ratio in m²/m³
+/// Critical for fire spread calculations (Rothermel model)
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct SurfaceAreaToVolume(pub f32);
+
+impl SurfaceAreaToVolume {
+    /// Fine fuels (grass, leaves): 3000-4000 m²/m³
+    pub const FINE_FUELS: SurfaceAreaToVolume = SurfaceAreaToVolume(3500.0);
+
+    /// Medium fuels (twigs): 500-1000 m²/m³
+    pub const MEDIUM_FUELS: SurfaceAreaToVolume = SurfaceAreaToVolume(750.0);
+
+    /// Coarse fuels (branches): 100-300 m²/m³
+    pub const COARSE_FUELS: SurfaceAreaToVolume = SurfaceAreaToVolume(200.0);
+
+    /// Stringybark (fibrous bark strips): 50-200 m²/m³
+    pub const STRINGYBARK: SurfaceAreaToVolume = SurfaceAreaToVolume(150.0);
+
+    /// Smooth bark: 50-100 m²/m³
+    pub const SMOOTH_BARK: SurfaceAreaToVolume = SurfaceAreaToVolume(80.0);
+
+    /// Create a new surface area to volume ratio
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        SurfaceAreaToVolume(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for SurfaceAreaToVolume {
+    fn from(v: f32) -> Self {
+        SurfaceAreaToVolume(v)
+    }
+}
+
+impl From<SurfaceAreaToVolume> for f32 {
+    fn from(s: SurfaceAreaToVolume) -> f32 {
+        s.0
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_celsius_to_kelvin() {
+        let c = Celsius(25.0);
+        let k = c.to_kelvin();
+        assert!((k.0 - 298.15).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_kelvin_to_celsius() {
+        let k = Kelvin(273.15);
+        let c = k.to_celsius();
+        assert!((c.0 - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_meters_to_kilometers() {
+        let m = Meters(5000.0);
+        let km = m.to_kilometers();
+        assert!((km.0 - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_mps_to_kmh() {
+        let mps = MetersPerSecond(10.0);
+        let kmh = mps.to_kmh();
+        assert!((kmh.0 - 36.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_fraction_clamping() {
+        let f1 = Fraction::new(1.5);
+        assert_eq!(f1.0, 1.0);
+
+        let f2 = Fraction::new(-0.5);
+        assert_eq!(f2.0, 0.0);
+
+        let f3 = Fraction::new(0.5);
+        assert_eq!(f3.0, 0.5);
+    }
+
+    #[test]
+    fn test_fraction_to_percent() {
+        let f = Fraction(0.75);
+        let p = f.to_percent();
+        assert!((p.0 - 75.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_degrees_to_radians() {
+        let d = Degrees(180.0);
+        let r = d.to_radians();
+        assert!((r.0 - std::f32::consts::PI).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_seconds_to_hours() {
+        let s = Seconds(3600.0);
+        let h = s.to_hours();
+        assert!((h.0 - 1.0).abs() < 0.01);
+    }
+}
