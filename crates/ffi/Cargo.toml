@@ -9,7 +9,7 @@ license.workspace = true
 fire-sim-core = { path = "../core" }
 
 [build-dependencies]
-cbindgen = "0.27"
+cbindgen = "0.29"
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
