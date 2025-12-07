@@ -98,7 +98,7 @@ pub(crate) fn apply_suppression_direct(
         const SPECIFIC_HEAT_AIR: f32 = 1.005; // kJ/(kg·K) - physical constant
         let temp_drop = cooling_kj / (air_mass * SPECIFIC_HEAT_AIR);
 
-        cell.temperature = (cell.temperature - temp_drop).max(ambient_temp);
+        cell.temperature = (cell.temperature - temp_drop).max(*ambient_temp);
 
         // Increase humidity (water vapor)
         if matches!(agent_type, SuppressionAgent::Water | SuppressionAgent::Foam) {
