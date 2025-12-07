@@ -1257,7 +1257,7 @@ impl Fraction {
 
     /// Create a fraction without clamping (for performance when value is known valid)
     #[inline]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub fn new_unchecked(value: f32) -> Self {
         Fraction(value)
     }
 

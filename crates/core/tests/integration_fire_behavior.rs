@@ -4,8 +4,7 @@
 //! spotting, smoldering) work correctly in real fire scenarios.
 
 use fire_sim_core::{
-    core_types::{Degrees, Meters},
-    CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem,
+    CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem, core_types::{Celsius, Degrees, Meters}
 };
 
 /// Helper to create a simple eucalyptus tree with realistic structure
@@ -125,7 +124,7 @@ fn test_single_tree_complete_burnout() {
     println!("Created tree with {} fuel elements", tree_elements.len());
 
     // Ignite the tree base
-    sim.ignite_element(tree_elements[0], 650.0);
+    sim.ignite_element(tree_elements[0], Celsius::new(650.0));
     println!("Ignited tree base at 650°C");
 
     // Track fire behavior over time
@@ -283,7 +282,7 @@ fn test_multiple_trees_fire_spread() {
 
     // Ignite first tree (eastern-most, upwind)
     let first_tree_base = tree_sets[0].2[0];
-    sim.ignite_element(first_tree_base, 700.0);
+    sim.ignite_element(first_tree_base, Celsius::new(700.0));
     println!("Ignited tree 0 (eastern tree) at 700°C\n");
 
     // Track each tree's fire progression
@@ -457,7 +456,7 @@ fn test_ember_spotting_between_trees() {
     println!("Gap: 50m (beyond wind-extended search, requires ember transport)\n");
 
     // Ignite first tree
-    sim.ignite_element(tree1_elements[0], 800.0);
+    sim.ignite_element(tree1_elements[0], Celsius::new(800.0));
     println!("Ignited tree 1 at 800°C (very hot start)");
 
     let max_steps = 500;
@@ -614,7 +613,7 @@ fn test_weather_conditions_spread_rate() {
 
         // Ignite center element
         let center_id = element_ids[12]; // Center of 5x5 grid
-        sim.ignite_element(center_id, 400.0);
+        sim.ignite_element(center_id, Celsius::new(400.0));
 
         // Track spread over 60 seconds
         let mut ignited_count_at_times = Vec::new();

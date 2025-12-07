@@ -38,7 +38,9 @@
 //! - `quit` - Exit the simulation
 
 use fire_sim_core::{
-    ClimatePattern, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherPreset, WeatherSystem,
+    core_types::{Celsius, Degrees, Meters},
+    ClimatePattern, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherPreset,
+    WeatherSystem,
 };
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -60,22 +62,16 @@ fn main() {
     // Ask for terrain dimensions
     let (width, height) = prompt_terrain_dimensions();
 
-    // Advanced 3D wind field is always enabled
-    let enable_wind_field = true;
-
     // Create simulation with user-specified dimensions
     let mut sim = create_test_simulation(width, height);
     let mut current_width = width;
     let mut current_height = height;
-    // Wind field is always enabled in this build
-    let mut wind_field_enabled = true;
 
     println!(
-        "Created simulation with {} elements on {}x{} terrain (wind field: {})",
+        "Created simulation with {} elements on {}x{} terrain",
         sim.get_all_elements().len(),
         width,
-        height,
-        "enabled"
+        height
     );
     println!("No elements are ignited. Use 'ignite <id>' to start a fire.");
 
@@ -183,7 +179,7 @@ fn main() {
                             max_z,
                         );
 
-                        let mut id_dist_ign: Vec<(u32, f32, f32, f32)> = filtered
+                        let mut id_dist_ign: Vec<(u32, f32, Celsius, f32)> = filtered
                             .into_iter()
                             .filter_map(|(id, dist, z)| {
                                 sim.get_element(id)
@@ -209,7 +205,7 @@ fn main() {
                             });
 
                             let total = id_dist_ign.len();
-                            let to_ignite: Vec<(u32, f32, f32, f32)> = if amount < 0 {
+                            let to_ignite: Vec<(u32, f32, Celsius, f32)> = if amount < 0 {
                                 id_dist_ign.clone()
                             } else {
                                 let amt = amount as usize;
@@ -229,7 +225,7 @@ fn main() {
                                     id, dist, z, ign_temp
                                 );
                                 // Start at 600°C - realistic for piloted ignition
-                                let initial_temp = 600.0_f32.max(*ign_temp);
+                                let initial_temp = Celsius::new(600.0).max(*ign_temp);
                                 sim.ignite_element(*id, initial_temp);
                             }
                         }
@@ -340,20 +336,16 @@ fn main() {
                             .get(2)
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(current_height);
-                        // Wind field is always enabled; keep it enabled after reset
-                        let use_wind_field = true;
 
                         sim = create_test_simulation(new_width, new_height);
                         current_width = new_width;
                         current_height = new_height;
-                        wind_field_enabled = use_wind_field;
 
                         println!(
-                            "Simulation reset! Created {} elements on {}x{} terrain (wind field: {})",
+                            "Simulation reset! Created {} elements on {}x{} terrain",
                             sim.get_all_elements().len(),
                             new_width,
-                            new_height,
-                            "enabled"
+                            new_height
                         );
                     }
                     "help" | "?" => show_help(),
@@ -597,8 +589,8 @@ fn create_tree(sim: &mut FireSimulation, x: f32, y: f32, _ground_id: u32) {
         Fuel::eucalyptus_stringybark(),
         3.0,
         FuelPart::Branch {
-            height: 4.0,
-            angle: 0.0,
+            height: Meters::new(4.0),
+            angle: Degrees::new(0.0),
         },
         Some(trunk_id),
     );
@@ -607,8 +599,8 @@ fn create_tree(sim: &mut FireSimulation, x: f32, y: f32, _ground_id: u32) {
         Fuel::eucalyptus_stringybark(),
         3.0,
         FuelPart::Branch {
-            height: 4.0,
-            angle: 180.0,
+            height: Meters::new(4.0),
+            angle: Degrees::new(180.0),
         },
         Some(trunk_id),
     );
@@ -815,7 +807,7 @@ fn ignite_element(sim: &mut FireSimulation, id: u32) {
         // Start at 600°C - realistic for piloted ignition (matches test values)
         // This represents the rapid flashover when a fuel element catches fire
         // Real fires don't slowly heat from ignition temp - they flash to high temperatures
-        let initial_temp = 600.0_f32.max(stats.ignition_temperature);
+        let initial_temp = Celsius::new(600.0).max(Celsius::from(stats.ignition_temperature));
         sim.ignite_element(id, initial_temp);
         println!(
             "Ignited element {} at ({:.1}, {:.1}, {:.1})",
@@ -855,7 +847,8 @@ fn heat_element_to_temp(sim: &mut FireSimulation, id: u32, target_temp: f32) {
         if target_temp > current_temp {
             // Calculate heat needed: Q = m × c × ΔT
             let temp_rise = target_temp - current_temp;
-            let heat_kj = fuel_mass * specific_heat * temp_rise;
+            let specific_heat_val: f32 = specific_heat.into();
+            let heat_kj = fuel_mass * specific_heat_val * temp_rise;
 
             // Apply heat over 1 second timestep (no pilot flame - external heat source)
             sim.apply_heat_to_element(id, heat_kj, 1.0, false);

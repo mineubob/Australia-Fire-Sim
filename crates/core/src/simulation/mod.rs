@@ -172,6 +172,14 @@ impl FireSimulation {
     // Wind field is always present and initialized during construction.
     // Reconfiguration may be done by directly accessing the `wind_field` field.
 
+    /// Reconfigure the always-present mass-consistent wind field with a new config.
+    ///
+    /// This allows callers to change resolution, solver settings and behaviour at runtime
+    /// without removing the wind field entirely.
+    pub fn reconfigure_wind_field(&mut self, config: WindFieldConfig) {
+        self.wind_field = WindField::new(config, &self.grid.terrain);
+    }
+
     // The simulation always contains a configured, active mass-consistent wind field.
 
     /// Get wind at a specific world position
@@ -265,12 +273,10 @@ impl FireSimulation {
     /// - `element_id`: ID of fuel element to ignite
     /// - `initial_temp`: Initial burning temperature (°C). Will be clamped to at least
     ///   the fuel's ignition temperature.
-    pub fn ignite_element(&mut self, element_id: u32, initial_temp: f32) {
-        use crate::core_types::units::Celsius;
-
+    pub fn ignite_element(&mut self, element_id: u32, initial_temp: Celsius) {
         if let Some(Some(element)) = self.elements.get_mut(element_id as usize) {
             element.ignited = true;
-            element.temperature = Celsius(initial_temp.max(element.fuel.ignition_temperature.0));
+            element.temperature = initial_temp.max(element.fuel.ignition_temperature);
             // Set smoldering state to FLAMING phase for direct ignition (Phase 3)
             // This overrides any existing state (e.g., Unignited with 0 burn rate)
             element.smoldering_state = Some(crate::physics::SmolderingState::new_flaming());
@@ -590,7 +596,7 @@ impl FireSimulation {
                 if !element.ignited && element.fuel_remaining > Kilograms(0.1) {
                     // Start at 600°C - realistic for piloted ignition
                     // This represents rapid flashover when fuel catches fire
-                    let initial_temp = 600.0_f32.max(element.fuel.ignition_temperature.0);
+                    let initial_temp = Celsius::new(600.0).max(element.fuel.ignition_temperature);
                     self.ignite_element(id, initial_temp);
                     break;
                 }
@@ -753,27 +759,28 @@ impl FireSimulation {
 
         // 2. Update mass-consistent wind field based on terrain and fire plumes
         // The mass-consistent solver is always present and active in this build
-            // Collect plume sources from burning elements BEFORE borrowing wind_field
-            let plumes: Vec<PlameSource> = self
-                .burning_elements
-                .iter()
-                .filter_map(|&id| {
-                    self.get_element(id).map(|e| {
-                        let intensity = e.byram_fireline_intensity(wind_vector.magnitude());
-                        // Byram's flame height: L = 0.0775 * I^0.46
-                        let flame_height = 0.0775 * intensity.powf(0.46);
-                        PlameSource {
-                            position: e.position,
-                            intensity,
-                            flame_height,
-                            front_width: 5.0, // Approximate front width
-                        }
-                    })
+        // Collect plume sources from burning elements BEFORE borrowing wind_field
+        let plumes: Vec<PlameSource> = self
+            .burning_elements
+            .iter()
+            .filter_map(|&id| {
+                self.get_element(id).map(|e| {
+                    let intensity = e.byram_fireline_intensity(wind_vector.magnitude());
+                    // Byram's flame height: L = 0.0775 * I^0.46
+                    let flame_height = 0.0775 * intensity.powf(0.46);
+                    PlameSource {
+                        position: e.position,
+                        intensity,
+                        flame_height,
+                        front_width: 5.0, // Approximate front width
+                    }
                 })
-                .collect();
+            })
+            .collect();
 
-            // Update the always-enabled mass-consistent wind field
-            self.wind_field.update(wind_vector, &self.grid.terrain, &plumes, dt);
+        // Update the always-enabled mass-consistent wind field
+        self.wind_field
+            .update(wind_vector, &self.grid.terrain, &plumes, dt);
 
         // 3. Collect burning positions (used for mark_active_cells and plume rise)
         // OPTIMIZATION: Sequential is faster due to par_extend overhead (was 13% at 12k elements)
@@ -1559,8 +1566,7 @@ impl FireSimulation {
                     if ignition_prob > 0.0 && rand::random::<f32>() < ignition_prob {
                         // Ignite fuel element at ember temperature
                         let ignition_temp = temperature
-                            .0
-                            .min(fuel_element.fuel.ignition_temperature.0 + 100.0);
+                            .min(fuel_element.fuel.ignition_temperature + Celsius::new(100.0));
                         self.ignite_element(fuel_id, ignition_temp);
                         ignition_occurred = true;
                         break; // Ember successfully ignited fuel, stop trying
@@ -1712,7 +1718,7 @@ mod tests {
             None,
         );
 
-        sim.ignite_element(id, 600.0);
+        sim.ignite_element(id, Celsius::new(600.0));
 
         assert_eq!(sim.burning_elements.len(), 1);
         assert!(sim.get_element(id).unwrap().ignited);
@@ -1732,7 +1738,7 @@ mod tests {
             None,
         );
 
-        sim.ignite_element(id, 600.0);
+        sim.ignite_element(id, Celsius::new(600.0));
 
         // Update for 1 second
         sim.update(1.0);
@@ -1783,7 +1789,7 @@ mod tests {
         }
 
         // Ignite center element
-        sim.ignite_element(fuel_ids[12], 600.0);
+        sim.ignite_element(fuel_ids[12], Celsius::new(600.0));
 
         // Run for 20 seconds (shorter time for low conditions)
         for _ in 0..20 {
@@ -1845,7 +1851,7 @@ mod tests {
             }
         }
 
-        sim.ignite_element(fuel_ids[12], 600.0);
+        sim.ignite_element(fuel_ids[12], Celsius::new(600.0));
 
         // Run for 25 seconds
         for _ in 0..25 {
@@ -1911,7 +1917,7 @@ mod tests {
 
         // Ignite the western end (element 0)
         // Wind blows +X, so fire should spread rapidly to elements 1, 2, 3... (downwind)
-        sim.ignite_element(fuel_ids[0], 600.0);
+        sim.ignite_element(fuel_ids[0], Celsius::new(600.0));
 
         // Run for 60 seconds - downwind spread is fast under extreme conditions
         for _ in 0..60 {
@@ -2033,7 +2039,7 @@ mod tests {
 
         // Ignite western end (fuel_ids[0] at x=20)
         // Wind is traveling +X, so fire should spread to elements 1, 2, 3... (downwind)
-        sim.ignite_element(fuel_ids[0], 600.0);
+        sim.ignite_element(fuel_ids[0], Celsius::new(600.0));
 
         // Run simulation - realistic fire spread takes time
         // With high FFDI, spread to adjacent elements takes ~30-60 seconds

@@ -3,6 +3,7 @@
 A scientifically accurate wildfire simulation system built in Rust, based on Australian bushfire research.
 
 Note: the simulation now always uses the advanced 3D mass-consistent wind field (Sherman 1978) — there is no runtime toggle to disable it.
+The core API exposes `FireSimulation::reconfigure_wind_field(WindFieldConfig)` if you need to change solver configuration at runtime.
 
 ## Overview
 
