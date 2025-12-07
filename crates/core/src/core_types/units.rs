@@ -90,10 +90,15 @@ impl Celsius {
     /// Water boiling point at 1 atm
     pub const BOILING: Celsius = Celsius(100.0);
 
-    /// Create a new Celsius temperature
+    /// Create a new Celsius temperature. Asserts value >= absolute zero (-273.15°C).
     #[inline]
     pub fn new(value: f32) -> Self {
-        Celsius(value.max(-273.15))
+        assert!(
+            value >= -273.15,
+            "Celsius::new: value {} is below absolute zero (-273.15°C)",
+            value
+        );
+        Celsius(value)
     }
 
     /// Create without validation.
@@ -207,11 +212,15 @@ impl Kelvin {
     /// Absolute zero
     pub const ABSOLUTE_ZERO: Kelvin = Kelvin(0.0);
 
-    /// Create a new Kelvin temperature.
-    /// Clamps to absolute zero if value is below.
+    /// Create a new Kelvin temperature. Asserts value >= absolute zero (0 K).
     #[inline]
     pub fn new(value: f32) -> Self {
-        Kelvin(value.max(0.0))
+        assert!(
+            value >= 0.0,
+            "Kelvin::new: value {} is below absolute zero (0 K)",
+            value
+        );
+        Kelvin(value)
     }
 
     /// Create without validation.
@@ -329,12 +338,13 @@ impl Meters {
     /// Create a new distance in meters
     #[inline]
     pub fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Meters::new: negative distance {} is invalid", value);
         Meters(value)
     }
 
     /// Create without validation.
     /// # Safety
-    /// No validation required for distance.
+    /// Caller must ensure value >= 0 (non-negative distance).
     #[inline]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Meters(value)
@@ -445,12 +455,13 @@ impl Kilometers {
     /// Create a new Kilometers value.
     #[inline]
     pub fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Kilometers::new: negative distance {} is invalid", value);
         Kilometers(value)
     }
 
     /// Create without validation.
     /// # Safety
-    /// No validation required for distance.
+    /// Caller must ensure value >= 0 (non-negative distance).
     #[inline]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Kilometers(value)
@@ -556,10 +567,15 @@ impl DerefMut for Kilograms {
 }
 
 impl Kilograms {
-    /// Create a new mass in kilograms
+    /// Create a new mass in kilograms. Asserts value >= 0 (non-negative mass).
     #[inline]
     pub fn new(value: f32) -> Self {
-        Kilograms(value.max(0.0))
+        assert!(
+            value >= 0.0,
+            "Kilograms::new: negative mass {} is invalid",
+            value
+        );
+        Kilograms(value)
     }
 
     /// Create without validation.
@@ -683,10 +699,15 @@ impl KgPerCubicMeter {
     /// Density of air at sea level, 15°C
     pub const AIR_SEA_LEVEL: KgPerCubicMeter = KgPerCubicMeter(1.225);
 
-    /// Create a new density
+    /// Create a new density. Asserts value >= 0 (non-negative density).
     #[inline]
     pub fn new(value: f32) -> Self {
-        KgPerCubicMeter(value.max(0.0))
+        assert!(
+            value >= 0.0,
+            "KgPerCubicMeter::new: negative density {} is invalid",
+            value
+        );
+        KgPerCubicMeter(value)
     }
 
     /// Create without validation.
@@ -764,12 +785,13 @@ impl Seconds {
     /// Create a new duration in seconds
     #[inline]
     pub fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Seconds::new: negative duration {} is invalid", value);
         Seconds(value)
     }
 
     /// Create without validation.
     /// # Safety
-    /// No validation required for time.
+    /// Caller must ensure value >= 0 (non-negative duration).
     #[inline]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Seconds(value)
@@ -872,6 +894,7 @@ impl Hours {
     /// Create a new Hours value.
     #[inline]
     pub fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Hours::new: negative duration {} is invalid", value);
         Hours(value)
     }
 
@@ -959,13 +982,7 @@ impl MetersPerSecond {
         MetersPerSecond(value)
     }
 
-    /// Create without validation.
-    /// # Safety
-    /// No validation required for velocity.
-    #[inline]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
-        MetersPerSecond(value)
-    }
+    
 
     /// Get the raw f32 value
     #[inline]
@@ -1083,13 +1100,7 @@ impl KilometersPerHour {
         KilometersPerHour(value)
     }
 
-    /// Create without validation.
-    /// # Safety
-    /// No validation required for velocity.
-    #[inline]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
-        KilometersPerHour(value)
-    }
+    
 
     /// Convert to m/s
     #[inline]
@@ -1208,6 +1219,7 @@ impl Kilojoules {
     /// Create a new energy value
     #[inline]
     pub fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Kilojoules::new: negative energy {} is invalid", value);
         Kilojoules(value)
     }
 
@@ -1313,6 +1325,7 @@ impl KjPerKg {
     /// Create a new heat content value
     #[inline]
     pub fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "KjPerKg::new: negative heat content {} is invalid", value);
         KjPerKg(value)
     }
 
@@ -1414,10 +1427,15 @@ impl DerefMut for KwPerMeter {
 }
 
 impl KwPerMeter {
-    /// Create a new fire intensity value
+    /// Create a new fire intensity value. Asserts value >= 0 (non-negative intensity).
     #[inline]
     pub fn new(value: f32) -> Self {
-        KwPerMeter(value.max(0.0))
+        assert!(
+            value >= 0.0,
+            "KwPerMeter::new: negative intensity {} is invalid",
+            value
+        );
+        KwPerMeter(value)
     }
 
     /// Create without validation.
@@ -1513,10 +1531,15 @@ impl KjPerKgK {
     /// Specific heat of air at constant pressure (1.005 kJ/(kg·K))
     pub const AIR: KjPerKgK = KjPerKgK(1.005);
 
-    /// Create a new specific heat value
+    /// Create a new specific heat value. Asserts value >= 0 (non-negative specific heat).
     #[inline]
     pub fn new(value: f32) -> Self {
-        KjPerKgK(value.max(0.0))
+        assert!(
+            value >= 0.0,
+            "KjPerKgK::new: negative specific heat {} is invalid",
+            value
+        );
+        KjPerKgK(value)
     }
 
     /// Create without validation.
@@ -1612,10 +1635,15 @@ impl Fraction {
     /// Full/complete (1.0)
     pub const ONE: Fraction = Fraction(1.0);
 
-    /// Create a new fraction, clamping to [0, 1]
+    /// Create a new fraction. Asserts value is within [0, 1].
     #[inline]
     pub fn new(value: f32) -> Self {
-        Fraction(value.clamp(0.0, 1.0))
+        assert!(
+            (0.0..=1.0).contains(&value),
+            "Fraction::new: value {} not in [0, 1]",
+            value
+        );
+        Fraction(value)
     }
 
     /// Create a fraction at compile time (const context).
@@ -1747,13 +1775,7 @@ impl Percent {
         Percent(value)
     }
 
-    /// Create without validation.
-    /// # Safety
-    /// No validation required for percentage.
-    #[inline]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
-        Percent(value)
-    }
+    
 
     /// Get the raw f32 value
     #[inline]
@@ -1871,13 +1893,7 @@ impl Degrees {
         Degrees(value)
     }
 
-    /// Create without validation.
-    /// # Safety
-    /// No validation required for angles.
-    #[inline]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
-        Degrees(value)
-    }
+    
 
     /// Get the raw f32 value
     #[inline]
@@ -1957,13 +1973,7 @@ impl Radians {
         Radians(value)
     }
 
-    /// Create without validation.
-    /// # Safety
-    /// No validation required for angles.
-    #[inline]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
-        Radians(value)
-    }
+    
 
     /// Get the raw f32 value
     #[inline]
@@ -2075,10 +2085,15 @@ impl SurfaceAreaToVolume {
     /// Smooth bark: 50-100 m²/m³
     pub const SMOOTH_BARK: SurfaceAreaToVolume = SurfaceAreaToVolume(80.0);
 
-    /// Create a new surface area to volume ratio
+    /// Create a new surface area to volume ratio. Asserts value >= 0 (non-negative SAV).
     #[inline]
     pub fn new(value: f32) -> Self {
-        SurfaceAreaToVolume(value.max(0.0))
+        assert!(
+            value >= 0.0,
+            "SurfaceAreaToVolume::new: negative SAV {} is invalid",
+            value
+        );
+        SurfaceAreaToVolume(value)
     }
 
     /// Create without validation.
@@ -2158,13 +2173,19 @@ mod tests {
     }
 
     #[test]
-    fn test_fraction_clamping() {
-        let f1 = Fraction::new(1.5);
-        assert_eq!(f1.0, 1.0);
+    #[should_panic(expected = "Fraction::new: value 1.5 not in [0, 1]")]
+    fn test_fraction_new_panics_on_too_large() {
+        Fraction::new(1.5);
+    }
 
-        let f2 = Fraction::new(-0.5);
-        assert_eq!(f2.0, 0.0);
+    #[test]
+    #[should_panic(expected = "Fraction::new: value -0.5 not in [0, 1]")]
+    fn test_fraction_new_panics_on_negative() {
+        Fraction::new(-0.5);
+    }
 
+    #[test]
+    fn test_fraction_new_valid() {
         let f3 = Fraction::new(0.5);
         assert_eq!(f3.0, 0.5);
     }
