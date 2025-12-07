@@ -32,6 +32,10 @@ Values that vary by context MUST come from the appropriate struct:
 - Stringybark ladder fuels dramatically lower crown fire thresholds
 - Ember spotting up to 25km (validated against Black Saturday data)
 
+### 4. PUBLIC CODE SHOULD BE COMMENTED
+- Public-facing APIs (public crates, modules, types, and functions) MUST include at least minimal documentation/comments explaining purpose and expected usage.
+- Keep comments concise and factual: a one-line summary for each public item plus any important invariants, side-effects, or usage notes is sufficient.
+
 ---
 
 ## IMPLEMENTED PHYSICS MODELS
