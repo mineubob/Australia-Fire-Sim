@@ -201,6 +201,23 @@ pub unsafe extern "C" fn fire_sim_destroy(ptr: *mut FireSimState) {
     }
 }
 
+/// If `ptr` is non-null, call `f` with a shared `&FireSim` and return `Some` with the closure result.
+/// Returns `None` when `ptr` is null.
+///
+/// Safety note: the caller must ensure the pointer originates from `fire_sim_new` and is not dangling.
+#[inline]
+fn with_fire_sim<R, F>(ptr: *const FireSimState, f: F) -> Option<R>
+where
+    F: FnOnce(&FireSimState) -> R,
+{
+    if ptr.is_null() {
+        return None;
+    }
+
+    // SAFETY: caller contract guarantees pointer validity.
+    unsafe { Some(f(&*ptr)) }
+}
+
 /// If `ptr` is non-null, call `f` with a `&mut FireSim` and return `Some` with the closure result.
 /// Returns `None` when `ptr` is null.
 ///
@@ -217,23 +234,6 @@ where
 
     // SAFETY: caller contract guarantees pointer validity.
     unsafe { Some(f(&mut *ptr)) }
-}
-
-/// If `ptr` is non-null, call `f` with a shared `&FireSim` and return `Some` with the closure result.
-/// Returns `None` when `ptr` is null.
-///
-/// Safety note: the caller must ensure the pointer originates from `fire_sim_new` and is not dangling.
-#[inline]
-fn with_fire_sim<R, F>(ptr: *const FireSimState, f: F) -> Option<R>
-where
-    F: FnOnce(&FireSimState) -> R,
-{
-    if ptr.is_null() {
-        return None;
-    }
-
-    // SAFETY: caller contract guarantees pointer validity.
-    unsafe { Some(f(&*ptr)) }
 }
 
 /// Advance the simulation by `dt` seconds.
