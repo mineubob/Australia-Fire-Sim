@@ -1107,6 +1107,34 @@ impl From<Fraction> for Percent {
     }
 }
 
+impl Div<f32> for Percent {
+    type Output = Percent;
+    fn div(self, rhs: f32) -> Percent {
+        Percent(self.0 / rhs)
+    }
+}
+
+impl Mul<f32> for Percent {
+    type Output = Percent;
+    fn mul(self, rhs: f32) -> Percent {
+        Percent(self.0 * rhs)
+    }
+}
+
+impl Add for Percent {
+    type Output = Percent;
+    fn add(self, rhs: Percent) -> Percent {
+        Percent(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Percent {
+    type Output = Percent;
+    fn sub(self, rhs: Percent) -> Percent {
+        Percent(self.0 - rhs.0)
+    }
+}
+
 // ============================================================================
 // ANGLE TYPES
 // ============================================================================

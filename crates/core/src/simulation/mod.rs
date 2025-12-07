@@ -21,6 +21,7 @@ use crate::core_types::element::{FuelElement, FuelPart, Vec3};
 use crate::core_types::ember::Ember;
 use crate::core_types::fuel::Fuel;
 use crate::core_types::spatial::SpatialIndex;
+use crate::core_types::units::{Celsius, Kilograms};
 use crate::core_types::weather::WeatherSystem;
 use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise, update_wind_field};
 use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField, WindFieldConfig};
@@ -383,8 +384,8 @@ impl FireSimulation {
     /// Set weather conditions
     pub fn set_weather(&mut self, weather: WeatherSystem) {
         // Update grid ambient conditions before moving weather
-        self.grid.ambient_temperature = weather.temperature;
-        self.grid.ambient_humidity = weather.humidity;
+        self.grid.ambient_temperature = weather.temperature.0;
+        self.grid.ambient_humidity = weather.humidity.0;
         self.grid.ambient_wind = weather.wind_vector();
 
         // Now move weather
@@ -714,16 +715,16 @@ impl FireSimulation {
         // Previously: two separate iterations over ALL elements (~600k+ elements each)
         // Now: one iteration with both operations (50% reduction in memory scans)
         let _equilibrium_moisture = crate::physics::calculate_equilibrium_moisture(
-            self.weather.temperature,
-            self.weather.humidity,
+            self.weather.temperature.0,
+            self.weather.humidity.0,
             false, // is_adsorbing - false for typical drying conditions
         );
         let ambient_temp = self.grid.ambient_temperature;
         let dt_hours = dt / 3600.0; // Convert seconds to hours
 
         // Weather data for suppression evaporation (Phase 1)
-        let weather_temp = self.weather.temperature;
-        let weather_humidity = self.weather.humidity;
+        let weather_temp = self.weather.temperature.0;
+        let weather_humidity = self.weather.humidity.0;
         let weather_wind = wind_vector.magnitude();
         // Get solar radiation from weather system (accounts for time of day, season, regional presets)
         let solar_radiation = self.weather.solar_radiation();
@@ -1378,8 +1379,8 @@ impl FireSimulation {
         // Atmospheric stability changes over minutes, not seconds
         if self.current_frame.is_multiple_of(5) {
             self.atmospheric_profile = AtmosphericProfile::from_surface_conditions(
-                self.weather.temperature,
-                self.weather.humidity,
+                self.weather.temperature.0,
+                self.weather.humidity.0,
                 wind_vector.magnitude(),
                 self.weather.is_daytime(),
             );
@@ -1398,7 +1399,7 @@ impl FireSimulation {
                             element.position,
                             intensity,
                             &self.atmospheric_profile,
-                            self.weather.humidity,
+                            self.weather.humidity.0,
                         ) {
                             self.pyrocumulus_clouds.push(cloud);
                         }
@@ -1488,8 +1489,8 @@ impl FireSimulation {
                 new_ember_id,
                 position,
                 velocity,
-                temperature,
-                ember_mass,
+                Celsius(temperature),
+                Kilograms(ember_mass),
                 fuel_id,
             );
             self.embers.push(ember);
@@ -1499,13 +1500,13 @@ impl FireSimulation {
 
         // 7. Update embers
         self.embers.par_iter_mut().for_each(|ember| {
-            ember.update_physics(wind_vector, self.grid.ambient_temperature, dt);
+            ember.update_physics(wind_vector, Celsius(self.grid.ambient_temperature), dt);
         });
 
         // 7a. Attempt ember spot fire ignition (Phase 2 - Albini spotting with Koo et al. ignition)
         // Collect ember data first to avoid borrow checker issues
         // Only hot, landed embers can ignite fuel
-        let ember_ignition_attempts: Vec<(usize, Vec3, f32, u8)> = self
+        let ember_ignition_attempts: Vec<(usize, Vec3, Celsius, u8)> = self
             .embers
             .par_iter()
             .enumerate()
@@ -1525,8 +1526,6 @@ impl FireSimulation {
 
         let mut ignited_ember_indices = Vec::new();
         for (idx, position, temperature, _source_fuel) in ember_ignition_attempts {
-            use crate::core_types::units::Kilograms;
-            
             // Find nearby fuel elements within 1.5m radius (embers need close contact)
             // Reduced from 2.0m to minimize query overhead while maintaining ignition realism
             let nearby_fuel_ids: Vec<u32> = self.spatial_index.query_radius(position, 1.5);
@@ -1544,13 +1543,13 @@ impl FireSimulation {
                     let distance = (fuel_element.position - position).magnitude();
 
                     // 1. Ember temperature factor (Koo et al. 2010)
-                    let temp_factor = if temperature >= 600.0 {
+                    let temp_factor = if temperature.0 >= 600.0 {
                         0.9 // Very hot ember
-                    } else if temperature >= 400.0 {
+                    } else if temperature.0 >= 400.0 {
                         0.6 // Hot ember
-                    } else if temperature >= 300.0 {
+                    } else if temperature.0 >= 300.0 {
                         0.3 // Warm ember
-                    } else if temperature >= 250.0 {
+                    } else if temperature.0 >= 250.0 {
                         0.1 // Cool ember (near threshold)
                     } else {
                         0.0 // Too cold
@@ -1598,7 +1597,7 @@ impl FireSimulation {
                     if ignition_prob > 0.0 && rand::random::<f32>() < ignition_prob {
                         // Ignite fuel element at ember temperature
                         let ignition_temp =
-                            temperature.min(fuel_element.fuel.ignition_temperature.0 + 100.0);
+                            temperature.0.min(fuel_element.fuel.ignition_temperature.0 + 100.0);
                         self.ignite_element(fuel_id, ignition_temp);
                         ignition_occurred = true;
                         break; // Ember successfully ignited fuel, stop trying
@@ -1618,7 +1617,7 @@ impl FireSimulation {
 
         // Remove inactive embers (cooled below 200°C or fallen below ground)
         self.embers
-            .retain(|e| e.temperature > 200.0 && e.position.z > 0.0);
+            .retain(|e| e.temperature.0 > 200.0 && e.position.z > 0.0);
 
         // OPTIMIZATION: Update active_spreading_elements by removing interior elements
         // An element becomes 'interior' when all its neighbors are already burning or depleted
