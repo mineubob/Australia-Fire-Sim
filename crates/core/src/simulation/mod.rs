@@ -311,9 +311,7 @@ impl FireSimulation {
         dt: f32,
         has_pilot_flame: bool,
     ) {
-        use crate::core_types::units::Celsius;
-
-        let ambient_temp = Celsius::new(self.grid.ambient_temperature);
+        let ambient_temp = self.grid.ambient_temperature;
         let ffdi_multiplier = self.weather.spread_rate_multiplier();
         if let Some(element) = self.get_element_mut(element_id) {
             let was_ignited = element.ignited;
@@ -356,7 +354,7 @@ impl FireSimulation {
     /// Set weather conditions
     pub fn set_weather(&mut self, weather: WeatherSystem) {
         // Update grid ambient conditions before moving weather
-        self.grid.ambient_temperature = *weather.temperature;
+        self.grid.ambient_temperature = weather.temperature;
         self.grid.ambient_humidity = *weather.humidity;
         self.grid.ambient_wind = weather.wind_vector();
 
@@ -714,7 +712,7 @@ impl FireSimulation {
                     if !element.ignited {
                         // Newton's law of cooling: dT/dt = -k(T - T_ambient)
                         let cooling_rate = element.fuel.cooling_rate; // Fuel-specific (grass=0.15, forest=0.05)
-                        let temp_diff = *element.temperature - ambient_temp;
+                        let temp_diff = *element.temperature - *ambient_temp;
                         let temp_change = temp_diff * cooling_rate * dt;
                         element.temperature = Celsius::new(*element.temperature - temp_change);
                         element.temperature = element.temperature.max(ambient_temp);
@@ -1033,7 +1031,7 @@ impl FireSimulation {
                         *element.moisture_fraction,
                         wind_vector.norm(),
                         *element.slope_angle,
-                        ambient_temperature,
+                        *ambient_temperature,
                     );
 
                     // Use fuel properties for crown fire calculation
@@ -1286,14 +1284,12 @@ impl FireSimulation {
         // PILOTED IGNITION: Heat is coming from adjacent burning elements, so has_pilot_flame=true
         // This uses the lower ignition_temperature threshold (Janssens 1991)
         for (target_id, total_heat) in heat_map {
-            use crate::core_types::units::Celsius;
-
             if let Some(target) = self.get_element_mut(target_id) {
                 let was_ignited = target.ignited;
                 let temp_before = *target.temperature;
                 let moisture_before = *target.moisture_fraction;
                 // Piloted ignition: heat from burning neighbors provides pilot flame
-                target.apply_heat(total_heat, dt, Celsius::new(ambient_temp), ffdi_multiplier, true);
+                target.apply_heat(total_heat, dt, ambient_temp, ffdi_multiplier, true);
 
                 // DEBUG: Print target element updates
                 if std::env::var("DEBUG_TARGET").is_ok() && total_heat > 0.5 {
@@ -1469,7 +1465,7 @@ impl FireSimulation {
 
         // 7. Update embers
         self.embers.par_iter_mut().for_each(|ember| {
-            ember.update_physics(wind_vector, Celsius::new(self.grid.ambient_temperature), dt);
+            ember.update_physics(wind_vector, self.grid.ambient_temperature, dt);
         });
 
         // 7a. Attempt ember spot fire ignition (Phase 2 - Albini spotting with Koo et al. ignition)
@@ -1955,11 +1951,11 @@ mod tests {
             "Eucalyptus should have volatile oils"
         );
         assert!(
-            eucalyptus.oil_vaporization_temp.0 > 0.0,
+            *eucalyptus.oil_vaporization_temp > 0.0,
             "Should have oil vaporization temp"
         );
         assert!(
-            eucalyptus.oil_autoignition_temp.0 > 0.0,
+            *eucalyptus.oil_autoignition_temp > 0.0,
             "Should have oil autoignition temp"
         );
         assert!(

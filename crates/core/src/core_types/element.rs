@@ -249,9 +249,9 @@ impl FuelElement {
         }
 
         // STEP 3: Cap at fuel-specific maximum (prevents thermal runaway)
-        let max_temp = self
+        let max_temp = Celsius::new(self
             .fuel
-            .calculate_max_flame_temperature(*self.moisture_fraction);
+            .calculate_max_flame_temperature(*self.moisture_fraction));
         self.temperature = self.temperature.min(max_temp);
 
         // STEP 4: Clamp to ambient minimum (prevents negative heat)

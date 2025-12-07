@@ -5,6 +5,7 @@
 //! elements interact with cells for extreme realism.
 
 use crate::core_types::element::Vec3;
+use crate::core_types::units::Celsius;
 use crate::grid::{TerrainCache, TerrainData};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -95,10 +96,10 @@ impl GridCell {
 
     /// Calculate buoyancy force per unit volume (N/m³)
     /// Based on temperature difference from ambient
-    pub fn buoyancy_force(&self, ambient_temp: f32) -> f32 {
+    pub fn buoyancy_force(&self, ambient_temp: Celsius) -> f32 {
         // Calculate ambient air density from temperature using ideal gas law
         const R_SPECIFIC_AIR: f32 = 287.05; // J/(kg·K)
-        let ambient_temp_k = ambient_temp + 273.15;
+        let ambient_temp_k = *ambient_temp + 273.15;
         let ambient_density = self.pressure / (R_SPECIFIC_AIR * ambient_temp_k);
 
         let current_density = self.air_density();
@@ -224,7 +225,7 @@ pub struct SimulationGrid {
     cell_marked_buffer: Vec<bool>,
 
     /// Ambient conditions
-    pub(crate) ambient_temperature: f32,
+    pub(crate) ambient_temperature: Celsius,
     pub(crate) ambient_wind: Vec3,
     pub(crate) ambient_humidity: f32,
 }
@@ -269,7 +270,7 @@ impl SimulationGrid {
             last_base_wind: Vec3::zeros(),
             active_cell_indices: Vec::new(),
             cell_marked_buffer: Vec::new(),
-            ambient_temperature: 20.0,
+            ambient_temperature: Celsius::new(20.0),
             ambient_wind: Vec3::zeros(),
             ambient_humidity: 0.4,
         }
@@ -574,7 +575,7 @@ impl SimulationGrid {
         let cells_vec = cells_to_process;
 
         // Cache ambient temperature
-        let ambient_temp = self.ambient_temperature;
+        let ambient_temp = *self.ambient_temperature;
         let grid_dims = (nx, ny, nz, ny_nx);
         let params = (ambient_temp, diffusion_factor, dt);
 
@@ -928,10 +929,12 @@ mod tests {
 
     #[test]
     fn test_buoyancy() {
+        use crate::core_types::units::Celsius;
+        
         let mut cell_hot = GridCell::new(0.0);
         cell_hot.temperature = 300.0;
 
-        let buoyancy = cell_hot.buoyancy_force(20.0);
+        let buoyancy = cell_hot.buoyancy_force(Celsius::new(20.0));
 
         // Hot air creates upward force
         assert!(buoyancy > 0.0);

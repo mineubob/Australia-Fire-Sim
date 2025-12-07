@@ -35,10 +35,10 @@ pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &
             let source_temp = source_cell.temperature;
             let source_smoke = source_cell.smoke_particles;
 
-            if source_temp > grid.ambient_temperature + 50.0 {
+            if source_temp > *grid.ambient_temperature + 50.0 {
                 // Calculate plume rise velocity
-                let temp_excess = source_temp - grid.ambient_temperature;
-                let buoyancy_vel = (2.0 * 9.81 * temp_excess / grid.ambient_temperature).sqrt();
+                let temp_excess = source_temp - *grid.ambient_temperature;
+                let buoyancy_vel = (2.0 * 9.81 * temp_excess / *grid.ambient_temperature).sqrt();
 
                 // Transport to cells above
                 let rise_distance = buoyancy_vel * dt;

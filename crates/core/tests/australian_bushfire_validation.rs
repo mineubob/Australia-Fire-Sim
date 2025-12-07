@@ -421,16 +421,16 @@ fn test_eucalyptus_oil_properties_stringybark() {
 
     // Oil vaporization temperature (research: 174-176°C boiling point)
     assert!(
-        (fuel.oil_vaporization_temp.0 - 170.0).abs() <= 10.0,
+        (*fuel.oil_vaporization_temp - 170.0).abs() <= 10.0,
         "Stringybark oil vaporization: expected ~170-176°C, got {:.0}°C",
-        fuel.oil_vaporization_temp.0
+        *fuel.oil_vaporization_temp
     );
 
     // Oil autoignition temperature (research: 232-269°C, most sources ~232°C)
     assert!(
-        (fuel.oil_autoignition_temp.0 - 232.0).abs() <= 5.0,
+        (*fuel.oil_autoignition_temp - 232.0).abs() <= 5.0,
         "Stringybark oil autoignition: expected ~232°C, got {:.0}°C",
-        fuel.oil_autoignition_temp.0
+        *fuel.oil_autoignition_temp
     );
 
     // Oil content (research: 2-5% by mass)
@@ -447,7 +447,7 @@ fn test_eucalyptus_oil_properties_smooth_bark() {
 
     // Smooth bark should have less oil than stringybark
     assert!(
-        *fuel.volatile_oil_content < Fuel::eucalyptus_stringybark().volatile_oil_content.0,
+        *fuel.volatile_oil_content < *Fuel::eucalyptus_stringybark().volatile_oil_content,
         "Smooth bark should have less oil than stringybark"
     );
 

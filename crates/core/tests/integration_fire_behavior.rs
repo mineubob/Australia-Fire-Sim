@@ -144,10 +144,10 @@ fn test_single_tree_complete_burnout() {
 
         for elem_id in &tree_elements {
             if let Some(elem) = sim.get_element(*elem_id) {
-                total_fuel_remaining += elem.fuel_remaining().0;
+                total_fuel_remaining += *elem.fuel_remaining();
                 if elem.is_ignited() {
                     burning_count += 1;
-                    max_temp = max_temp.max(elem.temperature().0);
+                    max_temp = max_temp.max(*elem.temperature());
 
                     // Check if in smoldering phase
                     if let Some(smolder_state) = &elem.smoldering_state() {
@@ -306,10 +306,10 @@ fn test_multiple_trees_fire_spread() {
 
                 for elem_id in tree_elements {
                     if let Some(elem) = sim.get_element(*elem_id) {
-                        fuel_remaining += elem.fuel_remaining().0;
+                        fuel_remaining += *elem.fuel_remaining();
                         if elem.is_ignited() {
                             burning += 1;
-                            max_temp = max_temp.max(elem.temperature().0);
+                            max_temp = max_temp.max(*elem.temperature());
 
                             if elem.is_crown_fire_active() {
                                 crown_fire = true;

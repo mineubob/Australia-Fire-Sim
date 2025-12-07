@@ -10,19 +10,20 @@
 //! - Provides explicit conversion methods between related types
 //! - Serde support for serialization
 //! - Total ordering via Ord trait (NaN handled as greater than all values)
+//! - Private inner fields with validated constructors
 //!
 //! # Usage
 //! ```
 //! use fire_sim_core::core_types::units::{Celsius, Kelvin, Meters};
 //!
-//! let temp = Celsius(25.0);
+//! let temp = Celsius::new(25.0);
 //! let kelvin: Kelvin = temp.into();
-//! assert!((kelvin.0 - 298.15).abs() < 0.01);
+//! assert!((*kelvin - 298.15).abs() < 0.01);
 //!
 //! // Use standard min/max from Ord trait
-//! let t1 = Celsius(100.0);
-//! let t2 = Celsius(200.0);
-//! assert_eq!(t1.min(t2), Celsius(100.0));
+//! let t1 = Celsius::new(100.0);
+//! let t2 = Celsius::new(200.0);
+//! assert_eq!(t1.min(t2), Celsius::new(100.0));
 //! ```
 
 use serde::{Deserialize, Serialize};
