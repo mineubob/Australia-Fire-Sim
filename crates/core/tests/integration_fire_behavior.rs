@@ -83,8 +83,8 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
             Fuel::eucalyptus_stringybark(),
             2.0,
             FuelPart::Branch {
-                height: Meters(0.0),
-                angle: Degrees(0.0),
+                height: Meters::new(0.0),
+                angle: Degrees::new(0.0),
             },
             Some(base_id),
         );

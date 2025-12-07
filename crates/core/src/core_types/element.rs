@@ -90,14 +90,14 @@ impl FuelElement {
         parent_id: Option<u32>,
     ) -> Self {
         let moisture_fraction = fuel.base_moisture;
-        let elevation = Meters(position.z);
+        let elevation = Meters::new(position.z);
 
         // Initialize fuel moisture timelag state
         let moisture_state = Some(crate::physics::FuelMoistureState::new(
-            moisture_fraction.0,
-            moisture_fraction.0,
-            moisture_fraction.0,
-            moisture_fraction.0,
+            *moisture_fraction,
+            *moisture_fraction,
+            *moisture_fraction,
+            *moisture_fraction,
         ));
 
         // Initialize smoldering state
@@ -106,16 +106,16 @@ impl FuelElement {
         FuelElement {
             id,
             position,
-            temperature: Celsius(20.0), // Ambient temperature
+            temperature: Celsius::new(20.0), // Ambient temperature
             moisture_fraction,
             fuel_remaining: mass,
             ignited: false,
-            flame_height: Meters(0.0),
+            flame_height: Meters::new(0.0),
             parent_id,
             part_type,
             elevation,
-            slope_angle: Degrees(0.0),
-            aspect_angle: Degrees(0.0), // Will be set by simulation when terrain is available
+            slope_angle: Degrees::new(0.0),
+            aspect_angle: Degrees::new(0.0), // Will be set by simulation when terrain is available
             neighbors: Vec::new(),
             fuel,
             moisture_state,
@@ -201,7 +201,7 @@ impl FuelElement {
         ffdi_multiplier: f32,
         has_pilot_flame: bool,
     ) {
-        if heat_kj <= 0.0 || self.fuel_remaining.0 <= 0.0 {
+        if heat_kj <= 0.0 || *self.fuel_remaining <= 0.0 {
             return;
         }
 
@@ -209,7 +209,7 @@ impl FuelElement {
         self.heat_received_this_frame = true;
 
         // STEP 1: Evaporate moisture (2260 kJ/kg latent heat of vaporization)
-        let moisture_mass = self.fuel_remaining.0 * self.moisture_fraction.0;
+        let moisture_mass = *self.fuel_remaining * *self.moisture_fraction;
         if moisture_mass > 0.0 {
             let evaporation_energy = moisture_mass * 2260.0;
             let heat_for_evaporation = heat_kj.min(evaporation_energy);
@@ -220,8 +220,8 @@ impl FuelElement {
             #[cfg(debug_assertions)]
             let old_moisture = self.moisture_fraction;
 
-            self.moisture_fraction = if self.fuel_remaining.0 > 0.0 {
-                Fraction::new(new_moisture_mass / self.fuel_remaining.0)
+            self.moisture_fraction = if *self.fuel_remaining > 0.0 {
+                Fraction::new(new_moisture_mass / *self.fuel_remaining)
             } else {
                 Fraction::ZERO
             };
@@ -231,31 +231,31 @@ impl FuelElement {
             if std::env::var("DEBUG_EVAP").is_ok() && heat_kj > 1.0 {
                 eprintln!(
                     "EVAP: heat={:.2} kJ, fuel={:.2} kg, moisture_mass={:.4} kg, evap_energy={:.2} kJ, evaporated={:.4} kg, moisture {:.4}->{:.4}",
-                    heat_kj, self.fuel_remaining.0, moisture_mass, evaporation_energy, moisture_evaporated, old_moisture.0, self.moisture_fraction.0
+                    heat_kj, *self.fuel_remaining, moisture_mass, evaporation_energy, moisture_evaporated, *old_moisture, *self.moisture_fraction
                 );
             }
 
             // STEP 2: Remaining heat raises temperature
             let remaining_heat = heat_kj - heat_for_evaporation;
-            if remaining_heat > 0.0 && self.fuel_remaining.0 > 0.0 {
+            if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
                 let temp_rise =
-                    remaining_heat / (self.fuel_remaining.0 * self.fuel.specific_heat.0);
-                self.temperature = Celsius(self.temperature.0 + temp_rise);
+                    remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
+                self.temperature = Celsius::new(*self.temperature + temp_rise);
             }
         } else {
             // No moisture, all heat goes to temperature rise
-            let temp_rise = heat_kj / (self.fuel_remaining.0 * self.fuel.specific_heat.0);
-            self.temperature = Celsius(self.temperature.0 + temp_rise);
+            let temp_rise = heat_kj / (*self.fuel_remaining * *self.fuel.specific_heat);
+            self.temperature = Celsius::new(*self.temperature + temp_rise);
         }
 
         // STEP 3: Cap at fuel-specific maximum (prevents thermal runaway)
         let max_temp = self
             .fuel
-            .calculate_max_flame_temperature(self.moisture_fraction.0);
-        self.temperature = Celsius(self.temperature.0.min(max_temp));
+            .calculate_max_flame_temperature(*self.moisture_fraction);
+        self.temperature = self.temperature.min(max_temp);
 
         // STEP 4: Clamp to ambient minimum (prevents negative heat)
-        self.temperature = Celsius(self.temperature.0.max(ambient_temperature.0));
+        self.temperature = self.temperature.max(ambient_temperature);
 
         // STEP 5: Check for ignition using appropriate threshold
         // Piloted ignition (with adjacent flame) uses lower threshold
@@ -266,7 +266,7 @@ impl FuelElement {
             self.fuel.auto_ignition_temperature // Auto: 338-498°C
         };
 
-        if !self.ignited && self.temperature.0 >= effective_ignition_temp.0 {
+        if !self.ignited && *self.temperature >= *effective_ignition_temp {
             self.check_ignition_probability(dt, ffdi_multiplier, effective_ignition_temp);
         }
     }
@@ -284,17 +284,17 @@ impl FuelElement {
         ignition_temp: Celsius,
     ) {
         // OPTIMIZATION: Early exit for saturated fuel (can't ignite)
-        if self.moisture_fraction.0 >= self.fuel.moisture_of_extinction.0 {
+        if *self.moisture_fraction >= *self.fuel.moisture_of_extinction {
             return;
         }
 
         // OPTIMIZATION: Early exit for cold fuel (far from ignition temp)
-        if self.temperature.0 < ignition_temp.0 - 50.0 {
+        if *self.temperature < *ignition_temp - 50.0 {
             return;
         }
 
         // Track time above ignition temperature
-        if self.temperature.0 > ignition_temp.0 {
+        if *self.temperature > *ignition_temp {
             self.time_above_ignition += dt;
         } else {
             // Reset timer if cooled below ignition
@@ -303,10 +303,10 @@ impl FuelElement {
 
         // Moisture reduces ignition probability
         let moisture_factor =
-            (1.0 - self.moisture_fraction.0 / self.fuel.moisture_of_extinction.0).max(0.0);
+            (1.0 - *self.moisture_fraction / *self.fuel.moisture_of_extinction).max(0.0);
 
         // Temperature above ignition increases probability (capped at 1.0)
-        let temp_excess = (self.temperature.0 - ignition_temp.0).max(0.0);
+        let temp_excess = (*self.temperature - *ignition_temp).max(0.0);
         let temp_factor = (temp_excess / 50.0).min(1.0);
 
         // Base coefficient for probabilistic ignition
@@ -338,26 +338,26 @@ impl FuelElement {
             return 0.0;
         }
 
-        if self.fuel_remaining.0 <= 0.0 {
+        if *self.fuel_remaining <= 0.0 {
             return 0.0;
         }
 
         // OPTIMIZATION: Early exit for cold fuel (not hot enough to burn)
-        if self.temperature.0 < self.fuel.ignition_temperature.0 {
+        if *self.temperature < *self.fuel.ignition_temperature {
             return 0.0;
         }
 
         // Realistic burn rate - slower burning for sustained fires
         let moisture_factor =
-            (1.0 - self.moisture_fraction.0 / self.fuel.moisture_of_extinction.0).max(0.0);
+            (1.0 - *self.moisture_fraction / *self.fuel.moisture_of_extinction).max(0.0);
         let temp_factor =
-            ((self.temperature.0 - self.fuel.ignition_temperature.0) / 200.0).clamp(0.0, 1.0);
+            ((*self.temperature - *self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
 
         // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
         self.fuel.burn_rate_coefficient
             * moisture_factor
             * temp_factor
-            * self.fuel_remaining.0.sqrt()
+            * (*self.fuel_remaining).sqrt()
             * 0.1
     }
 
@@ -385,12 +385,12 @@ impl FuelElement {
             return 0.0;
         }
 
-        if self.fuel_remaining.0 <= 0.0 {
+        if *self.fuel_remaining <= 0.0 {
             return 0.0;
         }
 
         // OPTIMIZATION: Early exit for cold fuel
-        if self.temperature.0 < self.fuel.ignition_temperature.0 {
+        if *self.temperature < *self.fuel.ignition_temperature {
             return 0.0;
         }
 
@@ -398,18 +398,18 @@ impl FuelElement {
         // Use standard ambient temperature of 20°C for Byram intensity calculation
         let spread_rate_m_per_min = crate::physics::rothermel::rothermel_spread_rate(
             &self.fuel,
-            self.moisture_fraction.0,
+            *self.moisture_fraction,
             wind_speed_ms,
-            self.slope_angle.0,
+            *self.slope_angle,
             20.0, // Standard ambient temperature for intensity calculation
         );
 
         // Fuel loading (kg/m²) - mass per unit area
-        let fuel_loading = self.fuel.bulk_density.0 * self.fuel.fuel_bed_depth.0;
+        let fuel_loading = *self.fuel.bulk_density * *self.fuel.fuel_bed_depth;
 
         // Heat release with fuel-specific combustion efficiency
         let heat_per_area =
-            self.fuel.heat_content.0 * fuel_loading * self.fuel.combustion_efficiency.0;
+            *self.fuel.heat_content * fuel_loading * *self.fuel.combustion_efficiency;
 
         // Byram's formula: I = (H × w × r) / 60
         // Units: (kJ/kg × kg/m² × m/min) / 60 = kW/m
@@ -487,8 +487,8 @@ impl FuelElement {
     ) {
         // Calculate approximate surface area based on fuel properties
         // Uses fuel-specific geometry factor (bark=0.12, grass=0.15, wood=0.1)
-        let surface_area = self.fuel.surface_area_to_volume.0
-            * self.fuel_remaining.0.sqrt()
+        let surface_area = *self.fuel.surface_area_to_volume
+            * (*self.fuel_remaining).sqrt()
             * self.fuel.surface_area_geometry_factor;
         let surface_area = surface_area.max(0.1); // Minimum 0.1 m²
 
@@ -516,7 +516,7 @@ impl FuelElement {
         // Suppression adds moisture to fuel
         if let Some(ref coverage) = self.suppression_coverage {
             self.moisture_fraction =
-                Fraction::new(self.moisture_fraction.0 + coverage.moisture_contribution());
+                Fraction::new(*self.moisture_fraction + coverage.moisture_contribution());
         }
     }
 
@@ -544,18 +544,18 @@ impl FuelElement {
         FuelElementStats {
             id: self.id,
             position: self.position,
-            temperature: self.temperature.0,
-            moisture_fraction: self.moisture_fraction.0,
-            fuel_remaining: self.fuel_remaining.0,
+            temperature: *self.temperature,
+            moisture_fraction: *self.moisture_fraction,
+            fuel_remaining: *self.fuel_remaining,
             ignited: self.ignited,
-            flame_height: self.flame_height.0,
+            flame_height: *self.flame_height,
             part_type: self.part_type,
-            elevation: self.elevation.0,
-            slope_angle: self.slope_angle.0,
+            elevation: *self.elevation,
+            slope_angle: *self.slope_angle,
             crown_fire_active: self.crown_fire_active,
             fuel_type_name: self.fuel.name.clone(),
-            ignition_temperature: self.fuel.ignition_temperature.0,
-            heat_content: self.fuel.heat_content.0,
+            ignition_temperature: *self.fuel.ignition_temperature,
+            heat_content: *self.fuel.heat_content,
         }
     }
 }

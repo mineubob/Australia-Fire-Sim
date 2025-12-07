@@ -180,7 +180,7 @@ pub(crate) fn calculate_crown_fire_behavior(
     // Calculate critical surface intensity (Van Wagner 1977)
     let van_wagner_threshold = calculate_critical_surface_intensity(
         crown_bulk_density,
-        element.fuel.heat_content.0,
+        *element.fuel.heat_content,
         foliar_moisture_content,
         crown_base_height,
     );
@@ -326,11 +326,11 @@ mod tests {
             0,
             Vec3::new(0.0, 0.0, 0.0),
             Fuel::eucalyptus_stringybark(),
-            Kilograms(5.0),
+            Kilograms::new(5.0),
             FuelPart::TrunkUpper,
             None,
         );
-        element.temperature = Celsius(800.0);
+        element.temperature = Celsius::new(800.0);
         element.ignited = true;
 
         let behavior = calculate_crown_fire_behavior(
