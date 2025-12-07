@@ -5,10 +5,11 @@
 //! meters with kilograms).
 //!
 //! # Design Philosophy
-//! - Each type wraps f32 for performance
-//! - Implements common traits (Add, Sub, Mul, Div, PartialOrd, etc.)
+//! - Each type wraps f32 for performance (sufficient for fire simulation precision)
+//! - Implements common traits (Add, Sub, Mul, Div, Ord, Display, etc.)
 //! - Provides explicit conversion methods between related types
 //! - Serde support for serialization
+//! - Total ordering via Ord trait (NaN handled as greater than all values)
 //!
 //! # Usage
 //! ```
@@ -17,20 +18,58 @@
 //! let temp = Celsius(25.0);
 //! let kelvin: Kelvin = temp.into();
 //! assert!((kelvin.0 - 298.15).abs() < 0.01);
+//!
+//! // Use standard min/max from Ord trait
+//! let t1 = Celsius(100.0);
+//! let t2 = Celsius(200.0);
+//! assert_eq!(t1.min(t2), Celsius(100.0));
 //! ```
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+
+// ============================================================================
+// HELPER FUNCTION FOR TOTAL ORDERING OF F32
+// ============================================================================
+
+/// Compare f32 values with total ordering (NaN considered greater than all values)
+#[inline]
+fn f32_total_cmp(a: f32, b: f32) -> Ordering {
+    a.partial_cmp(&b).unwrap_or_else(|| {
+        // Handle NaN cases: treat NaN as greater than any value
+        match (a.is_nan(), b.is_nan()) {
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+            _ => unreachable!(),
+        }
+    })
+}
 
 // ============================================================================
 // TEMPERATURE TYPES
 // ============================================================================
 
 /// Temperature in degrees Celsius
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Celsius(pub f32);
+
+impl Eq for Celsius {}
+
+impl PartialOrd for Celsius {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Celsius {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Celsius {
     /// Absolute zero in Celsius
@@ -58,18 +97,6 @@ impl Celsius {
     #[inline]
     pub fn to_kelvin(self) -> Kelvin {
         Kelvin(self.0 + 273.15)
-    }
-    
-    /// Returns the maximum of two temperatures
-    #[inline]
-    pub fn max(self, other: Celsius) -> Celsius {
-        Celsius(self.0.max(other.0))
-    }
-    
-    /// Returns the minimum of two temperatures
-    #[inline]
-    pub fn min(self, other: Celsius) -> Celsius {
-        Celsius(self.0.min(other.0))
     }
 }
 
@@ -121,14 +148,28 @@ impl Div<f32> for Celsius {
 
 impl fmt::Display for Celsius {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}°C", self.0)
+        write!(f, "{:.1}°C", self.0)
     }
 }
 
 /// Temperature in Kelvin (absolute scale)
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Kelvin(pub f32);
+
+impl Eq for Kelvin {}
+
+impl PartialOrd for Kelvin {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Kelvin {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Kelvin {
     /// Absolute zero
@@ -193,14 +234,34 @@ impl Div<f32> for Kelvin {
     }
 }
 
+impl fmt::Display for Kelvin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.1} K", self.0)
+    }
+}
+
 // ============================================================================
 // DISTANCE/LENGTH TYPES
 // ============================================================================
 
 /// Distance in meters
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Meters(pub f32);
+
+impl Eq for Meters {}
+
+impl PartialOrd for Meters {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Meters {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Meters {
     /// Create a new distance in meters
@@ -270,10 +331,30 @@ impl Div<Seconds> for Meters {
     }
 }
 
+impl fmt::Display for Meters {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} m", self.0)
+    }
+}
+
 /// Distance in kilometers
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Kilometers(pub f32);
+
+impl Eq for Kilometers {}
+
+impl PartialOrd for Kilometers {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Kilometers {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Kilometers {
     /// Convert to meters
@@ -331,14 +412,34 @@ impl Div<Hours> for Kilometers {
     }
 }
 
+impl fmt::Display for Kilometers {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} km", self.0)
+    }
+}
+
 // ============================================================================
 // MASS/DENSITY TYPES
 // ============================================================================
 
 /// Mass in kilograms
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Kilograms(pub f32);
+
+impl Eq for Kilograms {}
+
+impl PartialOrd for Kilograms {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Kilograms {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Kilograms {
     /// Create a new mass in kilograms
@@ -420,9 +521,23 @@ impl Div<f32> for Kilograms {
 }
 
 /// Density in kg/m³
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct KgPerCubicMeter(pub f32);
+
+impl Eq for KgPerCubicMeter {}
+
+impl PartialOrd for KgPerCubicMeter {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KgPerCubicMeter {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl KgPerCubicMeter {
     /// Density of water at 4°C
@@ -456,14 +571,34 @@ impl From<KgPerCubicMeter> for f32 {
     }
 }
 
+impl fmt::Display for KgPerCubicMeter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} kg/m³", self.0)
+    }
+}
+
 // ============================================================================
 // TIME TYPES
 // ============================================================================
 
 /// Time duration in seconds
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Seconds(pub f32);
+
+impl Eq for Seconds {}
+
+impl PartialOrd for Seconds {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Seconds {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Seconds {
     /// Create a new duration in seconds
@@ -525,10 +660,30 @@ impl Div<f32> for Seconds {
     }
 }
 
+impl fmt::Display for Seconds {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} s", self.0)
+    }
+}
+
 /// Time duration in hours
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Hours(pub f32);
+
+impl Eq for Hours {}
+
+impl PartialOrd for Hours {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Hours {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Hours {
     /// Convert to seconds
@@ -556,14 +711,34 @@ impl From<f32> for Hours {
     }
 }
 
+impl fmt::Display for Hours {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} h", self.0)
+    }
+}
+
 // ============================================================================
 // VELOCITY TYPES
 // ============================================================================
 
 /// Velocity in meters per second
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct MetersPerSecond(pub f32);
+
+impl Eq for MetersPerSecond {}
+
+impl PartialOrd for MetersPerSecond {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MetersPerSecond {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl MetersPerSecond {
     /// Create a new velocity
@@ -641,10 +816,30 @@ impl Mul<MetersPerSecond> for Seconds {
     }
 }
 
+impl fmt::Display for MetersPerSecond {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} m/s", self.0)
+    }
+}
+
 /// Velocity in kilometers per hour
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct KilometersPerHour(pub f32);
+
+impl Eq for KilometersPerHour {}
+
+impl PartialOrd for KilometersPerHour {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KilometersPerHour {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl KilometersPerHour {
     /// Convert to m/s
@@ -716,14 +911,34 @@ impl Mul<KilometersPerHour> for Hours {
     }
 }
 
+impl fmt::Display for KilometersPerHour {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.1} km/h", self.0)
+    }
+}
+
 // ============================================================================
 // ENERGY/POWER TYPES
 // ============================================================================
 
 /// Energy in kilojoules
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Kilojoules(pub f32);
+
+impl Eq for Kilojoules {}
+
+impl PartialOrd for Kilojoules {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Kilojoules {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Kilojoules {
     /// Create a new energy value
@@ -779,10 +994,30 @@ impl Div<f32> for Kilojoules {
     }
 }
 
+impl fmt::Display for Kilojoules {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} kJ", self.0)
+    }
+}
+
 /// Heat content in kJ/kg
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct KjPerKg(pub f32);
+
+impl Eq for KjPerKg {}
+
+impl PartialOrd for KjPerKg {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KjPerKg {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl KjPerKg {
     /// Latent heat of vaporization for water (2260 kJ/kg)
@@ -843,10 +1078,30 @@ impl Mul<KjPerKg> for Kilograms {
     }
 }
 
+impl fmt::Display for KjPerKg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.0} kJ/kg", self.0)
+    }
+}
+
 /// Fire intensity in kW/m (Byram's fireline intensity)
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct KwPerMeter(pub f32);
+
+impl Eq for KwPerMeter {}
+
+impl PartialOrd for KwPerMeter {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KwPerMeter {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl KwPerMeter {
     /// Create a new fire intensity value
@@ -886,14 +1141,34 @@ impl From<KwPerMeter> for f32 {
     }
 }
 
+impl fmt::Display for KwPerMeter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.0} kW/m", self.0)
+    }
+}
+
 // ============================================================================
 // SPECIFIC HEAT TYPE
 // ============================================================================
 
 /// Specific heat capacity in kJ/(kg·K)
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct KjPerKgK(pub f32);
+
+impl Eq for KjPerKgK {}
+
+impl PartialOrd for KjPerKgK {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KjPerKgK {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl KjPerKgK {
     /// Specific heat of water (4.18 kJ/(kg·K))
@@ -944,15 +1219,35 @@ impl Mul<KjPerKgK> for f32 {
     }
 }
 
+impl fmt::Display for KjPerKgK {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.3} kJ/(kg·K)", self.0)
+    }
+}
+
 // ============================================================================
 // FRACTION/RATIO TYPES
 // ============================================================================
 
 /// A fraction in the range [0, 1]
 /// Represents moisture content, efficiency ratios, damping coefficients, etc.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Fraction(pub f32);
+
+impl Eq for Fraction {}
+
+impl PartialOrd for Fraction {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Fraction {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Fraction {
     /// Zero fraction
@@ -983,18 +1278,6 @@ impl Fraction {
     #[inline]
     pub fn to_percent(self) -> Percent {
         Percent(self.0 * 100.0)
-    }
-    
-    /// Returns the minimum of two fractions
-    #[inline]
-    pub fn min(self, other: Fraction) -> Fraction {
-        Fraction(self.0.min(other.0))
-    }
-    
-    /// Returns the maximum of two fractions
-    #[inline]
-    pub fn max(self, other: Fraction) -> Fraction {
-        Fraction(self.0.max(other.0))
     }
 }
 
@@ -1059,9 +1342,23 @@ impl Mul<Fraction> for f32 {
 }
 
 /// A percentage (0-100)
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Percent(pub f32);
+
+impl Eq for Percent {}
+
+impl PartialOrd for Percent {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Percent {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Percent {
     /// Create a new percentage
@@ -1135,14 +1432,34 @@ impl Sub for Percent {
     }
 }
 
+impl fmt::Display for Percent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.1}%", self.0)
+    }
+}
+
 // ============================================================================
 // ANGLE TYPES
 // ============================================================================
 
 /// Angle in degrees
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Degrees(pub f32);
+
+impl Eq for Degrees {}
+
+impl PartialOrd for Degrees {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Degrees {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Degrees {
     /// Create a new angle in degrees
@@ -1182,10 +1499,30 @@ impl From<Degrees> for Radians {
     }
 }
 
+impl fmt::Display for Degrees {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.1}°", self.0)
+    }
+}
+
 /// Angle in radians
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Radians(pub f32);
+
+impl Eq for Radians {}
+
+impl PartialOrd for Radians {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Radians {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl Radians {
     /// Create a new angle in radians
@@ -1243,15 +1580,35 @@ impl From<Radians> for Degrees {
     }
 }
 
+impl fmt::Display for Radians {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.4} rad", self.0)
+    }
+}
+
 // ============================================================================
 // SURFACE AREA TO VOLUME RATIO
 // ============================================================================
 
 /// Surface area to volume ratio in m²/m³
 /// Critical for fire spread calculations (Rothermel model)
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct SurfaceAreaToVolume(pub f32);
+
+impl Eq for SurfaceAreaToVolume {}
+
+impl PartialOrd for SurfaceAreaToVolume {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SurfaceAreaToVolume {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
 
 impl SurfaceAreaToVolume {
     /// Fine fuels (grass, leaves): 3000-4000 m²/m³
@@ -1298,6 +1655,12 @@ impl Div<f32> for SurfaceAreaToVolume {
     type Output = f32;
     fn div(self, rhs: f32) -> f32 {
         self.0 / rhs
+    }
+}
+
+impl fmt::Display for SurfaceAreaToVolume {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.0} m²/m³", self.0)
     }
 }
 
