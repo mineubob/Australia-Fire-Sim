@@ -78,7 +78,13 @@ impl FireSim {
                 resolution,
                 base_elevation,
                 hill_height,
-            } => TerrainData::valley_between_hills(width, height, resolution, base_elevation, hill_height),
+            } => TerrainData::valley_between_hills(
+                width,
+                height,
+                resolution,
+                base_elevation,
+                hill_height,
+            ),
 
             Terrain::FromHeightmap {
                 width,
@@ -96,7 +102,15 @@ impl FireSim {
                     TerrainData::flat(width, height, 1.0, base_elevation)
                 } else {
                     let slice = unsafe { std::slice::from_raw_parts(heightmap_ptr, len) };
-                    TerrainData::from_heightmap(width, height, slice.to_vec(), nx, ny, elevation_scale, base_elevation)
+                    TerrainData::from_heightmap(
+                        width,
+                        height,
+                        slice.to_vec(),
+                        nx,
+                        ny,
+                        elevation_scale,
+                        base_elevation,
+                    )
                 }
             }
         };

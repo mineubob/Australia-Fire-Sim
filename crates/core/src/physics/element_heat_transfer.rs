@@ -718,7 +718,7 @@ mod tests {
     #[test]
     fn test_multipart_tree_vertical_heat_transfer() {
         use crate::core_types::units::{Celsius, Degrees, Kilograms, Meters};
-        
+
         // Ground fire: dry grass burning at 600°C
         let ground = FuelElement::new(
             0,

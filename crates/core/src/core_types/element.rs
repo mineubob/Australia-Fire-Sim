@@ -40,9 +40,9 @@ pub struct FuelElement {
     pub(crate) fuel: Fuel,     // Comprehensive fuel type with all properties
 
     // Thermal state (accessible within crate only)
-    pub(crate) temperature: Celsius,       // Current temperature
+    pub(crate) temperature: Celsius,        // Current temperature
     pub(crate) moisture_fraction: Fraction, // 0-1, calculated from weather
-    pub(crate) fuel_remaining: Kilograms,    // Mass remaining
+    pub(crate) fuel_remaining: Kilograms,   // Mass remaining
     pub(crate) ignited: bool,
     pub(crate) flame_height: Meters, // meters (Byram's formula)
 
@@ -51,10 +51,10 @@ pub struct FuelElement {
     pub(crate) part_type: FuelPart,    // What kind of fuel part
 
     // Spatial context
-    pub(crate) elevation: Meters,      // Height above ground
-    pub(crate) slope_angle: Degrees,    // Local terrain slope
-    pub(crate) aspect_angle: Degrees,   // Local terrain aspect (0-360)
-    pub(crate) neighbors: Vec<u32>, // Cached nearby fuel IDs (within 15m)
+    pub(crate) elevation: Meters,     // Height above ground
+    pub(crate) slope_angle: Degrees,  // Local terrain slope
+    pub(crate) aspect_angle: Degrees, // Local terrain aspect (0-360)
+    pub(crate) neighbors: Vec<u32>,   // Cached nearby fuel IDs (within 15m)
 
     // Advanced physics state (Phase 1-3 enhancements)
     /// Fuel moisture state by timelag class (Nelson 2000)
@@ -238,7 +238,8 @@ impl FuelElement {
             // STEP 2: Remaining heat raises temperature
             let remaining_heat = heat_kj - heat_for_evaporation;
             if remaining_heat > 0.0 && self.fuel_remaining.0 > 0.0 {
-                let temp_rise = remaining_heat / (self.fuel_remaining.0 * self.fuel.specific_heat.0);
+                let temp_rise =
+                    remaining_heat / (self.fuel_remaining.0 * self.fuel.specific_heat.0);
                 self.temperature = Celsius(self.temperature.0 + temp_rise);
             }
         } else {
@@ -276,7 +277,12 @@ impl FuelElement {
     /// * `dt` - Time step in seconds
     /// * `ffdi_multiplier` - Fire danger index multiplier
     /// * `ignition_temp` - Effective ignition temperature (piloted or auto-ignition)
-    fn check_ignition_probability(&mut self, dt: f32, ffdi_multiplier: f32, ignition_temp: Celsius) {
+    fn check_ignition_probability(
+        &mut self,
+        dt: f32,
+        ffdi_multiplier: f32,
+        ignition_temp: Celsius,
+    ) {
         // OPTIMIZATION: Early exit for saturated fuel (can't ignite)
         if self.moisture_fraction.0 >= self.fuel.moisture_of_extinction.0 {
             return;
@@ -402,7 +408,8 @@ impl FuelElement {
         let fuel_loading = self.fuel.bulk_density.0 * self.fuel.fuel_bed_depth.0;
 
         // Heat release with fuel-specific combustion efficiency
-        let heat_per_area = self.fuel.heat_content.0 * fuel_loading * self.fuel.combustion_efficiency.0;
+        let heat_per_area =
+            self.fuel.heat_content.0 * fuel_loading * self.fuel.combustion_efficiency.0;
 
         // Byram's formula: I = (H × w × r) / 60
         // Units: (kJ/kg × kg/m² × m/min) / 60 = kW/m
@@ -508,9 +515,8 @@ impl FuelElement {
 
         // Suppression adds moisture to fuel
         if let Some(ref coverage) = self.suppression_coverage {
-            self.moisture_fraction = Fraction::new(
-                self.moisture_fraction.0 + coverage.moisture_contribution()
-            );
+            self.moisture_fraction =
+                Fraction::new(self.moisture_fraction.0 + coverage.moisture_contribution());
         }
     }
 

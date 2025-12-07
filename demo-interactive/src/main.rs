@@ -39,7 +39,7 @@
 
 use fire_sim_core::{
     ClimatePattern, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherPreset, WeatherSystem,
-};   
+};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::{
@@ -328,43 +328,39 @@ fn main() {
                             println!("Usage: preset <perth|catastrophic|goldfields|wheatbelt>");
                         }
                     }
-                    "windfield" | "wf" => {
-                        match parts.get(1).map(|s| s.to_lowercase()).as_deref() {
-                            Some("on") | Some("true") | Some("1") => {
-                                if !sim.has_wind_field() {
-                                    sim.enable_wind_field_default();
-                                    wind_field_enabled = true;
-                                    println!(
-                                        "Advanced wind field ENABLED (mass-consistent 3D model)"
-                                    );
-                                } else {
-                                    println!("Wind field is already enabled.");
-                                }
-                            }
-                            Some("off") | Some("false") | Some("0") => {
-                                if wind_field_enabled {
-                                    sim.disable_wind_field();
-                                    wind_field_enabled = false;
-                                    println!("Advanced wind field DISABLED (using simple terrain-modulated wind)");
-                                } else {
-                                    println!("Wind field is already disabled.");
-                                }
-                            }
-                            _ => {
-                                println!(
-                                    "Wind field: {}",
-                                    if wind_field_enabled {
-                                        "ENABLED"
-                                    } else {
-                                        "disabled"
-                                    }
-                                );
-                                println!("Usage: windfield [on|off]");
-                                println!("  on  - Enable advanced 3D mass-consistent wind model");
-                                println!("  off - Disable and use simple terrain-modulated wind");
+                    "windfield" | "wf" => match parts.get(1).map(|s| s.to_lowercase()).as_deref() {
+                        Some("on") | Some("true") | Some("1") => {
+                            if !sim.has_wind_field() {
+                                sim.enable_wind_field_default();
+                                wind_field_enabled = true;
+                                println!("Advanced wind field ENABLED (mass-consistent 3D model)");
+                            } else {
+                                println!("Wind field is already enabled.");
                             }
                         }
-                    }
+                        Some("off") | Some("false") | Some("0") => {
+                            if wind_field_enabled {
+                                sim.disable_wind_field();
+                                wind_field_enabled = false;
+                                println!("Advanced wind field DISABLED (using simple terrain-modulated wind)");
+                            } else {
+                                println!("Wind field is already disabled.");
+                            }
+                        }
+                        _ => {
+                            println!(
+                                "Wind field: {}",
+                                if wind_field_enabled {
+                                    "ENABLED"
+                                } else {
+                                    "disabled"
+                                }
+                            );
+                            println!("Usage: windfield [on|off]");
+                            println!("  on  - Enable advanced 3D mass-consistent wind model");
+                            println!("  off - Disable and use simple terrain-modulated wind");
+                        }
+                    },
                     "reset" | "r" => {
                         // Parse optional dimensions from command or use current
                         let new_width = parts

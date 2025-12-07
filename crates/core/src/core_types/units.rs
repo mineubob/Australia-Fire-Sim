@@ -1778,13 +1778,13 @@ mod tests {
     fn test_fraction_arithmetic() {
         let a = Fraction::new(0.5);
         let b = Fraction::new(0.3);
-        
+
         let sum = a + b;
         assert!((sum.0 - 0.8).abs() < 0.01);
-        
+
         let diff = a - b;
         assert!((diff.0 - 0.2).abs() < 0.01);
-        
+
         let prod = a * b;
         assert!((prod.0 - 0.15).abs() < 0.01);
     }

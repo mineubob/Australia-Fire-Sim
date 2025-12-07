@@ -256,27 +256,27 @@ impl Fuel {
             max_spotting_distance: Meters(25000.0), // 25km spotting!
 
             // Ember physics (stringybark produces large bark embers)
-            ember_mass_kg: 0.001,                           // 1g embers (large bark pieces)
+            ember_mass_kg: 0.001, // 1g embers (large bark pieces)
             ember_launch_velocity_factor: Fraction(0.5), // Moderate horizontal launch
 
             // Rothermel parameters (eucalyptus hardwood)
-            mineral_damping: Fraction(0.41),       // Moderate mineral content (wood)
-            particle_density: KgPerCubicMeter(550.0),     // kg/m³ (eucalyptus hardwood)
-            effective_heating: Fraction(0.45),     // Medium-coarse fuel
-            packing_ratio: Fraction(0.6),          // Fibrous bark, moderately packed
+            mineral_damping: Fraction(0.41), // Moderate mineral content (wood)
+            particle_density: KgPerCubicMeter(550.0), // kg/m³ (eucalyptus hardwood)
+            effective_heating: Fraction(0.45), // Medium-coarse fuel
+            packing_ratio: Fraction(0.6),    // Fibrous bark, moderately packed
             optimum_packing_ratio: Fraction(0.25), // Coarse fuel optimal compaction
 
             // Thermal behavior (coarse fuel - retains heat well)
-            cooling_rate: 0.05,                            // Slow cooling (thick bark)
-            self_heating_fraction: Fraction(0.4),          // Retains 40% of combustion heat
-            convective_heat_coefficient: 400.0,            // Moderate convection
-            atmospheric_heat_efficiency: Fraction(0.7),    // 70% heat to atmosphere
-            wind_sensitivity: Fraction(0.6),               // Moderate wind effect (sheltered by canopy)
-            crown_fire_temp_multiplier: Fraction(0.95),    // Very hot crown fires
+            cooling_rate: 0.05,                   // Slow cooling (thick bark)
+            self_heating_fraction: Fraction(0.4), // Retains 40% of combustion heat
+            convective_heat_coefficient: 400.0,   // Moderate convection
+            atmospheric_heat_efficiency: Fraction(0.7), // 70% heat to atmosphere
+            wind_sensitivity: Fraction(0.6),      // Moderate wind effect (sheltered by canopy)
+            crown_fire_temp_multiplier: Fraction(0.95), // Very hot crown fires
 
             // Combustion and geometry
             combustion_efficiency: Fraction(0.92), // High efficiency (dry hardwood)
-            surface_area_geometry_factor: 0.12, // Irregular bark strips increase area
+            surface_area_geometry_factor: 0.12,    // Irregular bark strips increase area
 
             volatile_oil_content: Fraction(0.04),
             oil_vaporization_temp: Celsius(170.0),
@@ -287,15 +287,20 @@ impl Fuel {
 
             // Van Wagner Crown Fire Model parameters (stringybark eucalypt)
             crown_bulk_density: KgPerCubicMeter(0.2), // kg/m³ (high for eucalypts with dense canopy)
-            crown_base_height: Meters(3.0),  // m (low due to ladder fuels)
-            foliar_moisture_content: Percent(90.0), // % (typical for eucalyptus foliage)
+            crown_base_height: Meters(3.0),           // m (low due to ladder fuels)
+            foliar_moisture_content: Percent(90.0),   // % (typical for eucalyptus foliage)
 
             // Nelson Timelag parameters (mixed size classes)
             timelag_1h: Hours(1.0),       // Fine bark strips and leaves
             timelag_10h: Hours(10.0),     // Small twigs
             timelag_100h: Hours(100.0),   // Medium branches
             timelag_1000h: Hours(1000.0), // Large branches and trunk
-            size_class_distribution: [Fraction(0.15), Fraction(0.25), Fraction(0.35), Fraction(0.25)], // Mixed with emphasis on 100h
+            size_class_distribution: [
+                Fraction(0.15),
+                Fraction(0.25),
+                Fraction(0.35),
+                Fraction(0.25),
+            ], // Mixed with emphasis on 100h
 
             // Canopy structure (high ladder fuel continuity)
             canopy_structure: crate::physics::CanopyStructure::eucalyptus_stringybark(),
@@ -328,23 +333,23 @@ impl Fuel {
             max_spotting_distance: Meters(10000.0), // 10km
 
             // Ember physics (smooth bark produces fewer, smaller embers)
-            ember_mass_kg: 0.0007,                          // 0.7g embers
+            ember_mass_kg: 0.0007,                       // 0.7g embers
             ember_launch_velocity_factor: Fraction(0.4), // Lower launch velocity
 
             // Rothermel parameters (eucalyptus hardwood, denser)
-            mineral_damping: Fraction(0.41),       // Moderate mineral content
-            particle_density: KgPerCubicMeter(600.0),     // kg/m³ (dense eucalyptus)
-            effective_heating: Fraction(0.40),     // Coarse fuel
-            packing_ratio: Fraction(0.5),          // Smooth bark, loosely packed
+            mineral_damping: Fraction(0.41), // Moderate mineral content
+            particle_density: KgPerCubicMeter(600.0), // kg/m³ (dense eucalyptus)
+            effective_heating: Fraction(0.40), // Coarse fuel
+            packing_ratio: Fraction(0.5),    // Smooth bark, loosely packed
             optimum_packing_ratio: Fraction(0.28), // Medium fuel optimal compaction
 
             // Thermal behavior (medium fuel)
-            cooling_rate: 0.08,                           // Moderate cooling
-            self_heating_fraction: Fraction(0.35),        // Retains 35% of combustion heat
-            convective_heat_coefficient: 450.0,           // Good convection
-            atmospheric_heat_efficiency: Fraction(0.75),  // 75% heat to atmosphere
-            wind_sensitivity: Fraction(0.7),              // Moderate-high wind effect
-            crown_fire_temp_multiplier: Fraction(0.90),   // Hot crown fires
+            cooling_rate: 0.08,                          // Moderate cooling
+            self_heating_fraction: Fraction(0.35),       // Retains 35% of combustion heat
+            convective_heat_coefficient: 450.0,          // Good convection
+            atmospheric_heat_efficiency: Fraction(0.75), // 75% heat to atmosphere
+            wind_sensitivity: Fraction(0.7),             // Moderate-high wind effect
+            crown_fire_temp_multiplier: Fraction(0.90),  // Hot crown fires
 
             // Combustion and geometry
             combustion_efficiency: Fraction(0.93), // High efficiency (dense hardwood)
@@ -358,16 +363,21 @@ impl Fuel {
             crown_fire_threshold: 1000.0, // Normal threshold
 
             // Van Wagner Crown Fire Model parameters (smooth bark eucalypt)
-            crown_bulk_density: KgPerCubicMeter(0.12),       // kg/m³ (moderate for eucalypts)
-            crown_base_height: Meters(8.0),         // m (higher, less ladder fuel)
-            foliar_moisture_content: Percent(100.0), // % (typical for eucalyptus)
+            crown_bulk_density: KgPerCubicMeter(0.12), // kg/m³ (moderate for eucalypts)
+            crown_base_height: Meters(8.0),            // m (higher, less ladder fuel)
+            foliar_moisture_content: Percent(100.0),   // % (typical for eucalyptus)
 
             // Nelson Timelag parameters (coarser fuels)
             timelag_1h: Hours(1.0),
             timelag_10h: Hours(10.0),
             timelag_100h: Hours(100.0),
             timelag_1000h: Hours(1000.0),
-            size_class_distribution: [Fraction(0.10), Fraction(0.20), Fraction(0.40), Fraction(0.30)], // Emphasis on larger fuels
+            size_class_distribution: [
+                Fraction(0.10),
+                Fraction(0.20),
+                Fraction(0.40),
+                Fraction(0.30),
+            ], // Emphasis on larger fuels
 
             // Canopy structure (low ladder fuel continuity)
             canopy_structure: crate::physics::CanopyStructure::eucalyptus_smooth_bark(),
@@ -395,29 +405,29 @@ impl Fuel {
             fuel_bed_depth: Meters(0.1),
             base_moisture: Fraction(0.05), // Very dry
             moisture_of_extinction: Fraction(0.25),
-            burn_rate_coefficient: 0.15,          // Burns fast
-            ember_production: Fraction(0.1),      // Low: 10% chance per second
-            ember_receptivity: Fraction(0.8),     // Easy to ignite
+            burn_rate_coefficient: 0.15,           // Burns fast
+            ember_production: Fraction(0.1),       // Low: 10% chance per second
+            ember_receptivity: Fraction(0.8),      // Easy to ignite
             max_spotting_distance: Meters(1000.0), // 1km
 
             // Ember physics (grass produces very light embers)
-            ember_mass_kg: 0.0002,                          // 0.2g embers (light grass)
+            ember_mass_kg: 0.0002, // 0.2g embers (light grass)
             ember_launch_velocity_factor: Fraction(0.3), // Low horizontal component
 
             // Rothermel parameters (fine herbaceous fuel)
-            mineral_damping: Fraction(0.85),       // Low mineral content (grass)
-            particle_density: KgPerCubicMeter(300.0),     // kg/m³ (light herbaceous)
-            effective_heating: Fraction(0.55),     // Fine fuel heats quickly
-            packing_ratio: Fraction(0.8),          // Compacted grass bed
+            mineral_damping: Fraction(0.85), // Low mineral content (grass)
+            particle_density: KgPerCubicMeter(300.0), // kg/m³ (light herbaceous)
+            effective_heating: Fraction(0.55), // Fine fuel heats quickly
+            packing_ratio: Fraction(0.8),    // Compacted grass bed
             optimum_packing_ratio: Fraction(0.35), // Fine fuel optimal compaction
 
             // Thermal behavior (fine fuel - rapid heat exchange)
-            cooling_rate: 0.15,                          // Fast cooling (high surface area)
-            self_heating_fraction: Fraction(0.25),        // Radiates 75% away (fine)
-            convective_heat_coefficient: 600.0,          // High convection (fine)
-            atmospheric_heat_efficiency: Fraction(0.85),  // 85% heat to atmosphere
-            wind_sensitivity: Fraction(1.0),              // Maximum wind effect (fine fuel)
-            crown_fire_temp_multiplier: Fraction(0.0),    // No crown fire (grass)
+            cooling_rate: 0.15, // Fast cooling (high surface area)
+            self_heating_fraction: Fraction(0.25), // Radiates 75% away (fine)
+            convective_heat_coefficient: 600.0, // High convection (fine)
+            atmospheric_heat_efficiency: Fraction(0.85), // 85% heat to atmosphere
+            wind_sensitivity: Fraction(1.0), // Maximum wind effect (fine fuel)
+            crown_fire_temp_multiplier: Fraction(0.0), // No crown fire (grass)
 
             // Combustion and geometry
             combustion_efficiency: Fraction(0.85), // Moderate efficiency (fast burn, incomplete)
@@ -431,9 +441,9 @@ impl Fuel {
             crown_fire_threshold: 2000.0,
 
             // Van Wagner Crown Fire Model parameters (grass - no crown fire)
-            crown_bulk_density: KgPerCubicMeter(0.0),      // N/A for grass
-            crown_base_height: Meters(0.0),       // N/A for grass
-            foliar_moisture_content: Percent(0.0), // N/A for grass (base_moisture used instead)
+            crown_bulk_density: KgPerCubicMeter(0.0), // N/A for grass
+            crown_base_height: Meters(0.0),           // N/A for grass
+            foliar_moisture_content: Percent(0.0),    // N/A for grass (base_moisture used instead)
 
             // Nelson Timelag parameters (very fine fuels only)
             timelag_1h: Hours(1.0),
@@ -473,23 +483,23 @@ impl Fuel {
             max_spotting_distance: Meters(3000.0), // 3km
 
             // Ember physics (medium-sized woody embers)
-            ember_mass_kg: 0.0004,                           // 0.4g embers
+            ember_mass_kg: 0.0004,                        // 0.4g embers
             ember_launch_velocity_factor: Fraction(0.35), // Medium launch velocity
 
             // Rothermel parameters (medium shrub fuel)
-            mineral_damping: Fraction(0.55),       // Moderate-low mineral content
-            particle_density: KgPerCubicMeter(450.0),     // kg/m³ (woody shrubs)
-            effective_heating: Fraction(0.48),     // Medium fuel
-            packing_ratio: Fraction(0.65),         // Moderately packed brush
+            mineral_damping: Fraction(0.55), // Moderate-low mineral content
+            particle_density: KgPerCubicMeter(450.0), // kg/m³ (woody shrubs)
+            effective_heating: Fraction(0.48), // Medium fuel
+            packing_ratio: Fraction(0.65),   // Moderately packed brush
             optimum_packing_ratio: Fraction(0.30), // Shrub optimal compaction
 
             // Thermal behavior (medium shrub fuel)
             cooling_rate: 0.10,                          // Moderate cooling
-            self_heating_fraction: Fraction(0.32),        // Retains 32% of combustion heat
+            self_heating_fraction: Fraction(0.32),       // Retains 32% of combustion heat
             convective_heat_coefficient: 500.0,          // Moderate convection
-            atmospheric_heat_efficiency: Fraction(0.80),  // 80% heat to atmosphere
-            wind_sensitivity: Fraction(0.85),             // High wind effect (exposed)
-            crown_fire_temp_multiplier: Fraction(0.85),   // Moderate crown fires
+            atmospheric_heat_efficiency: Fraction(0.80), // 80% heat to atmosphere
+            wind_sensitivity: Fraction(0.85),            // High wind effect (exposed)
+            crown_fire_temp_multiplier: Fraction(0.85),  // Moderate crown fires
 
             // Combustion and geometry
             combustion_efficiency: Fraction(0.88), // Good efficiency (woody fuel)
@@ -503,16 +513,21 @@ impl Fuel {
             crown_fire_threshold: 1200.0,
 
             // Van Wagner Crown Fire Model parameters (shrubland)
-            crown_bulk_density: KgPerCubicMeter(0.08),       // kg/m³ (low for shrubs)
-            crown_base_height: Meters(0.5),         // m (low shrub canopy)
-            foliar_moisture_content: Percent(110.0), // % (higher for live shrubs)
+            crown_bulk_density: KgPerCubicMeter(0.08), // kg/m³ (low for shrubs)
+            crown_base_height: Meters(0.5),            // m (low shrub canopy)
+            foliar_moisture_content: Percent(110.0),   // % (higher for live shrubs)
 
             // Nelson Timelag parameters (fine to medium)
             timelag_1h: Hours(1.0),
             timelag_10h: Hours(10.0),
             timelag_100h: Hours(100.0),
             timelag_1000h: Hours(1000.0),
-            size_class_distribution: [Fraction(0.40), Fraction(0.35), Fraction(0.20), Fraction(0.05)], // Emphasis on finer fuels
+            size_class_distribution: [
+                Fraction(0.40),
+                Fraction(0.35),
+                Fraction(0.20),
+                Fraction(0.05),
+            ], // Emphasis on finer fuels
 
             // Canopy structure (grassland - shrubs don't have tree canopy)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -540,12 +555,12 @@ impl Fuel {
             base_moisture: Fraction(0.05), // Very dry
             moisture_of_extinction: Fraction(0.25),
             burn_rate_coefficient: 0.12,
-            ember_production: Fraction(0.35),        // Moderate: 35% chance per second
-            ember_receptivity: Fraction(0.9),        // Highly susceptible
+            ember_production: Fraction(0.35), // Moderate: 35% chance per second
+            ember_receptivity: Fraction(0.9), // Highly susceptible
             max_spotting_distance: Meters(5000.0), // 5km
 
             // Ember physics (wood produces typical-sized embers)
-            ember_mass_kg: 0.0005,                          // 0.5g embers (typical)
+            ember_mass_kg: 0.0005, // 0.5g embers (typical)
             ember_launch_velocity_factor: Fraction(0.4), // Moderate launch velocity
 
             // Rothermel parameters (medium-coarse dead fuel)
@@ -556,11 +571,11 @@ impl Fuel {
             optimum_packing_ratio: Fraction(0.22), // Dead fuel optimal compaction
 
             // Thermal behavior (dead coarse fuel)
-            cooling_rate: 0.06,                   // Slow cooling (insulated by litter)
+            cooling_rate: 0.06, // Slow cooling (insulated by litter)
             self_heating_fraction: Fraction(0.38), // Retains 38% of combustion heat
-            convective_heat_coefficient: 350.0,   // Low convection (ground)
+            convective_heat_coefficient: 350.0, // Low convection (ground)
             atmospheric_heat_efficiency: Fraction(0.65), // 65% heat to atmosphere
-            wind_sensitivity: Fraction(0.50),      // Low wind effect (ground level)
+            wind_sensitivity: Fraction(0.50), // Low wind effect (ground level)
             crown_fire_temp_multiplier: Fraction(0.0), // No crown fire (ground litter)
 
             // Combustion and geometry
@@ -584,7 +599,12 @@ impl Fuel {
             timelag_10h: Hours(10.0),
             timelag_100h: Hours(100.0),
             timelag_1000h: Hours(1000.0),
-            size_class_distribution: [Fraction(0.20), Fraction(0.35), Fraction(0.35), Fraction(0.10)], // Varied size classes
+            size_class_distribution: [
+                Fraction(0.20),
+                Fraction(0.35),
+                Fraction(0.35),
+                Fraction(0.10),
+            ], // Varied size classes
 
             // Canopy structure (grassland - ground litter)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -617,22 +637,22 @@ impl Fuel {
             max_spotting_distance: Meters(200.0),
 
             // Ember physics (minimal ember production from green fuel)
-            ember_mass_kg: 0.0003,                          // 0.3g embers
+            ember_mass_kg: 0.0003,                       // 0.3g embers
             ember_launch_velocity_factor: Fraction(0.2), // Minimal launch velocity
 
             // Rothermel parameters (live herbaceous/foliage)
-            mineral_damping: Fraction(0.75),       // Low mineral content (living tissue)
-            particle_density: KgPerCubicMeter(350.0),     // kg/m³ (living plant tissue)
-            effective_heating: Fraction(0.50),     // Fine to medium fuel
-            packing_ratio: Fraction(0.70),         // Moderately dense vegetation
+            mineral_damping: Fraction(0.75), // Low mineral content (living tissue)
+            particle_density: KgPerCubicMeter(350.0), // kg/m³ (living plant tissue)
+            effective_heating: Fraction(0.50), // Fine to medium fuel
+            packing_ratio: Fraction(0.70),   // Moderately dense vegetation
             optimum_packing_ratio: Fraction(0.32), // Live fuel optimal compaction
 
             // Thermal behavior (live fuel - moisture dominated)
-            cooling_rate: 0.12,                   // Fast cooling (moisture evaporation)
+            cooling_rate: 0.12, // Fast cooling (moisture evaporation)
             self_heating_fraction: Fraction(0.20), // Low retention (moisture absorbs heat)
-            convective_heat_coefficient: 550.0,   // High convection (moisture)
+            convective_heat_coefficient: 550.0, // High convection (moisture)
             atmospheric_heat_efficiency: Fraction(0.90), // 90% heat to atmosphere (cooling)
-            wind_sensitivity: Fraction(0.75),      // Moderate-high wind effect
+            wind_sensitivity: Fraction(0.75), // Moderate-high wind effect
             crown_fire_temp_multiplier: Fraction(0.80), // Cooler fires (moisture)
 
             // Combustion and geometry
@@ -647,16 +667,21 @@ impl Fuel {
             crown_fire_threshold: 2500.0,
 
             // Van Wagner Crown Fire Model parameters (green vegetation)
-            crown_bulk_density: KgPerCubicMeter(0.05),       // kg/m³ (very low, mostly water)
-            crown_base_height: Meters(0.2),         // m (low ground vegetation)
-            foliar_moisture_content: Percent(150.0), // % (very high, green foliage)
+            crown_bulk_density: KgPerCubicMeter(0.05), // kg/m³ (very low, mostly water)
+            crown_base_height: Meters(0.2),            // m (low ground vegetation)
+            foliar_moisture_content: Percent(150.0),   // % (very high, green foliage)
 
             // Nelson Timelag parameters (fine live fuels)
             timelag_1h: Hours(1.0),
             timelag_10h: Hours(10.0),
             timelag_100h: Hours(100.0),
             timelag_1000h: Hours(1000.0),
-            size_class_distribution: [Fraction(0.80), Fraction(0.15), Fraction(0.05), Fraction(0.0)], // Mostly fine live fuels
+            size_class_distribution: [
+                Fraction(0.80),
+                Fraction(0.15),
+                Fraction(0.05),
+                Fraction(0.0),
+            ], // Mostly fine live fuels
 
             // Canopy structure (grassland - low vegetation)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -731,21 +756,21 @@ impl Fuel {
             ember_launch_velocity_factor: Fraction(0.0),
 
             // Rothermel parameters (non-burnable)
-            mineral_damping: Fraction(1.0),       // N/A for non-burnable
-            particle_density: KgPerCubicMeter(1000.0),   // Water density
-            effective_heating: Fraction(0.0),     // N/A
-            packing_ratio: Fraction(1.0),         // N/A
+            mineral_damping: Fraction(1.0), // N/A for non-burnable
+            particle_density: KgPerCubicMeter(1000.0), // Water density
+            effective_heating: Fraction(0.0), // N/A
+            packing_ratio: Fraction(1.0),   // N/A
             optimum_packing_ratio: Fraction(1.0), // N/A
 
             // Thermal behavior (water - cooling only)
             cooling_rate: 0.20, // Fast cooling (evaporation)
             self_heating_fraction: Fraction(0.0),
             convective_heat_coefficient: 1000.0, // High cooling
-            atmospheric_heat_efficiency: Fraction(1.0),    // All heat absorbed
-            wind_sensitivity: Fraction(0.0),               // No wind effect
+            atmospheric_heat_efficiency: Fraction(1.0), // All heat absorbed
+            wind_sensitivity: Fraction(0.0),     // No wind effect
             crown_fire_temp_multiplier: Fraction(0.0),
-            combustion_efficiency: Fraction(0.0),        // Non-burnable
-            surface_area_geometry_factor: 0.0, // N/A for water
+            combustion_efficiency: Fraction(0.0), // Non-burnable
+            surface_area_geometry_factor: 0.0,    // N/A for water
 
             volatile_oil_content: Fraction(0.0),
             oil_vaporization_temp: Celsius(0.0),
@@ -796,21 +821,21 @@ impl Fuel {
             ember_launch_velocity_factor: Fraction(0.0),
 
             // Rothermel parameters (non-burnable)
-            mineral_damping: Fraction(0.0),       // Not applicable
-            particle_density: KgPerCubicMeter(2700.0),   // Rock density
-            effective_heating: Fraction(0.0),     // N/A
-            packing_ratio: Fraction(1.0),         // N/A
+            mineral_damping: Fraction(0.0), // Not applicable
+            particle_density: KgPerCubicMeter(2700.0), // Rock density
+            effective_heating: Fraction(0.0), // N/A
+            packing_ratio: Fraction(1.0),   // N/A
             optimum_packing_ratio: Fraction(1.0), // N/A
 
             // Thermal behavior (rock - heat sink)
             cooling_rate: 0.03, // Very slow cooling (thermal mass)
             self_heating_fraction: Fraction(0.0),
             convective_heat_coefficient: 200.0, // Low convection (smooth)
-            atmospheric_heat_efficiency: Fraction(0.30),  // Absorbs heat
-            wind_sensitivity: Fraction(0.0),              // No wind effect
+            atmospheric_heat_efficiency: Fraction(0.30), // Absorbs heat
+            wind_sensitivity: Fraction(0.0),    // No wind effect
             crown_fire_temp_multiplier: Fraction(0.0),
-            combustion_efficiency: Fraction(0.0),        // Non-burnable
-            surface_area_geometry_factor: 0.0, // N/A for rock
+            combustion_efficiency: Fraction(0.0), // Non-burnable
+            surface_area_geometry_factor: 0.0,    // N/A for rock
 
             volatile_oil_content: Fraction(0.0),
             oil_vaporization_temp: Celsius(0.0),

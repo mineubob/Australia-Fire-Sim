@@ -325,8 +325,14 @@ impl WindField {
     /// Get wind at any world position using trilinear interpolation
     pub fn wind_at_position(&self, pos: Vec3) -> Vec3 {
         // Clamp position to grid bounds
-        let x = pos.x.max(0.0).min((self.config.nx - 1) as f32 * self.config.cell_size);
-        let y = pos.y.max(0.0).min((self.config.ny - 1) as f32 * self.config.cell_size);
+        let x = pos
+            .x
+            .max(0.0)
+            .min((self.config.nx - 1) as f32 * self.config.cell_size);
+        let y = pos
+            .y
+            .max(0.0)
+            .min((self.config.ny - 1) as f32 * self.config.cell_size);
 
         // Get grid indices
         let gx = x / self.config.cell_size;
@@ -399,14 +405,18 @@ impl WindField {
         // Wind-terrain interactions are quasi-static on fire timescales (seconds to minutes)
         // Plume effects vary faster but still much slower than combustion (0.1-1 second scale)
         // This maintains full physical realism while reducing unnecessary recalculation
-        
-        let needs_full_update = wind_changed 
-            || self.frame_counter.is_multiple_of(self.config.terrain_update_interval);
-        
-        let needs_plume_update = self.config.enable_plume_coupling 
+
+        let needs_full_update = wind_changed
+            || self
+                .frame_counter
+                .is_multiple_of(self.config.terrain_update_interval);
+
+        let needs_plume_update = self.config.enable_plume_coupling
             && (!plumes.is_empty() || plume_count_changed)
-            && (plume_significantly_changed 
-                || self.frame_counter.is_multiple_of(self.config.plume_update_interval));
+            && (plume_significantly_changed
+                || self
+                    .frame_counter
+                    .is_multiple_of(self.config.plume_update_interval));
 
         if needs_full_update {
             // Step 1: Initialize wind field with terrain effects
@@ -470,7 +480,7 @@ impl WindField {
     fn cache_plume_state(&mut self, plumes: &[PlameSource]) {
         self.last_plume_positions.clear();
         self.last_plume_intensities.clear();
-        
+
         for plume in plumes {
             self.last_plume_positions.push(plume.position);
             self.last_plume_intensities.push(plume.intensity);
@@ -653,8 +663,9 @@ impl WindField {
                             // Core updraft
                             if horizontal_dist < plume_radius {
                                 // Byram's updraft velocity
-                                let z_factor =
-                                    (z_above_fire / plume.flame_height).max(0.1).powf(-1.0 / 3.0);
+                                let z_factor = (z_above_fire / plume.flame_height)
+                                    .max(0.1)
+                                    .powf(-1.0 / 3.0);
                                 let radial_factor = (1.0 - (normalized_dist).powi(2)).max(0.0);
                                 let updraft_speed =
                                     2.25 * intensity_factor * z_factor * radial_factor;
@@ -769,9 +780,9 @@ impl WindField {
         let ny = self.config.ny;
         let nz = self.config.nz;
         let layer_size = nx * ny;
-        
+
         // Process interior Z layers in parallel
-        divergence[layer_size..(nz-1)*layer_size]
+        divergence[layer_size..(nz - 1) * layer_size]
             .par_chunks_mut(layer_size)
             .enumerate()
             .for_each(|(layer_idx, div_layer)| {
@@ -816,7 +827,7 @@ impl WindField {
                                     + self.lambda[self.index(ix, iy - 1, iz)])
                                     * inv_dy2
                                 + (self.lambda[self.index(ix, iy, iz + 1)]
-                                        + self.lambda[self.index(ix, iy, iz - 1)])
+                                    + self.lambda[self.index(ix, iy, iz - 1)])
                                     * sigma2_inv_dz2
                                 - divergence[idx];
 
@@ -842,7 +853,7 @@ impl WindField {
                                     + self.lambda[self.index(ix, iy - 1, iz)])
                                     * inv_dy2
                                 + (self.lambda[self.index(ix, iy, iz + 1)]
-                                        + self.lambda[self.index(ix, iy, iz - 1)])
+                                    + self.lambda[self.index(ix, iy, iz - 1)])
                                     * sigma2_inv_dz2
                                 - divergence[idx];
 
@@ -1149,10 +1160,6 @@ mod tests {
         }
 
         // Divergence should be small after mass-consistent adjustment
-        assert!(
-            max_div < 0.5,
-            "Max divergence should be small: {}",
-            max_div
-        );
+        assert!(max_div < 0.5, "Max divergence should be small: {}", max_div);
     }
 }

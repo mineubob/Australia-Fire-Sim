@@ -4,8 +4,8 @@
 //! spotting, smoldering) work correctly in real fire scenarios.
 
 use fire_sim_core::{
+    core_types::{Degrees, Meters},
     CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem,
-    core_types::{Meters, Degrees},
 };
 
 /// Helper to create a simple eucalyptus tree with realistic structure
