@@ -174,7 +174,7 @@ pub extern "C" fn fire_sim_new(terrain: Terrain) -> *mut FireSimState {
 /// - If `ptr` points to a `FireSim` allocated by `fire_sim_new` and has not been freed,
 ///   this function will free it and drop its resources.
 ///
-/// Safety:
+/// # Safety
 /// - The pointer MUST have been created by `fire_sim_new`.
 /// - The pointer MUST NOT have been freed already, moved, or otherwise invalidated.
 /// - Passing an invalid pointer (e.g., not originating from `fire_sim_new`, a stale pointer,
@@ -186,7 +186,7 @@ pub extern "C" fn fire_sim_new(terrain: Terrain) -> *mut FireSimState {
 /// - This is an `extern "C"` (no_mangle) function intended for use across language boundaries.
 /// - It is safe to call from C/C++/other languages provided the pointer contract above is respected.
 #[no_mangle]
-pub extern "C" fn fire_sim_destroy(ptr: *mut FireSimState) {
+pub unsafe extern "C" fn fire_sim_destroy(ptr: *mut FireSimState) {
     if ptr.is_null() {
         return;
     }
