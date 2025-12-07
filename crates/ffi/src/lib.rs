@@ -122,8 +122,81 @@ impl FireSim {
 }
 
 #[no_mangle]
-/// Creates a new fire simulation instance and returns a pointer to it.
-/// Returns a null pointer if allocation fails.
+/// Create a new FireSim instance and return a raw pointer to it for use across FFI.
+///
+/// This function allocates a new FireSim on the heap and transfers ownership of the
+/// pointer to the caller. The returned pointer must eventually be released by calling
+/// `fire_sim_destroy`.
+///
+/// Parameters
+/// - `terrain`: A `Terrain` value describing the desired terrain configuration.
+///   - For `Terrain::FromHeightmap`, if `heightmap_ptr` is non-null and `nx * ny > 0`,
+///     the heightmap data is read (using `from_raw_parts`) and copied into a Rust-owned
+///     Vec. After this call the caller remains free to deallocate the original heightmap
+///     memory. If the pointer is null or the size is zero, a flat terrain with the provided
+///     base elevation will be used as a fallback.
+///
+/// Returns
+/// - `*mut FireSim` — a raw, heap-allocated pointer owning the newly created FireSim.
+///   The pointer is non-null on success (Rust heap allocation failures will abort or panic
+///   according to the global allocator behavior).
+///
+/// Ownership & Safety
+/// - The caller takes ownership of the returned pointer and MUST call `fire_sim_destroy`
+///   exactly once to avoid a memory leak or a double-free.
+/// - The `terrain` value is moved into the Rust function by value; any raw pointers
+///   contained in `Terrain::FromHeightmap` are only read and copied if valid. The function
+///   does not retain references into caller-owned memory — it owns its data after return.
+/// - This function is exposed as `extern "C"` and `#[no_mangle]` for FFI usage. The C-side
+///   representation of `Terrain` must match the Rust `#[repr(C)]` layout used here — ensure
+///   your foreign-language bindings use a compatible representation when constructing
+///   `Terrain` values to pass to this function.
+///
+/// Example (C-like pseudocode)
+/// ```c
+/// // Construct a Terrain value in a way compatible with the Rust #[repr(C)] enum,
+/// // call `fire_sim_new`, then later call `fire_sim_destroy` to free it.
+/// FireSim* sim = fire_sim_new(terrain);
+/// // ... use sim via the rest of the FFI API ...
+/// fire_sim_destroy(sim);
+/// ```
 pub extern "C" fn fire_sim_new(terrain: Terrain) -> *mut FireSim {
     Box::into_raw(FireSim::new(terrain))
+}
+
+#[no_mangle]
+/// Destroys a FireSim instance previously created by `fire_sim_new`.
+///
+/// This function takes a raw pointer returned by `fire_sim_new` and reclaims ownership
+/// using `Box::from_raw`, which runs the `FireSim` destructor and frees the allocation.
+///
+/// Behavior:
+/// - If `ptr` is null, this function is a no-op.
+/// - If `ptr` points to a `FireSim` allocated by `fire_sim_new` and has not been freed,
+///   this function will free it and drop its resources.
+///
+/// Safety:
+/// - The pointer MUST have been created by `fire_sim_new`.
+/// - The pointer MUST NOT have been freed already, moved, or otherwise invalidated.
+/// - Passing an invalid pointer (e.g., not originating from `fire_sim_new`, a stale pointer,
+///   or a pointer into stack memory) is undefined behavior and can cause memory corruption
+///   or crashes.
+/// - After calling this function, the caller must not use the pointer again (double-free or use-after-free).
+///
+/// FFI notes:
+/// - This is an `extern "C"` (no_mangle) function intended for use across language boundaries.
+/// - It is safe to call from C/C++/other languages provided the pointer contract above is respected.
+pub extern "C" fn fire_sim_destroy(ptr: *mut FireSim) {
+    if ptr.is_null() {
+        return;
+    }
+
+    // SAFETY: The pointer must have been created by `Box::into_raw` in `fire_sim_new`
+    // and not freed or moved elsewhere. We check for null above to avoid UB from
+    // dereferencing a null pointer. Converting back with `Box::from_raw` reclaims
+    // ownership and will run the destructor for `FireSim` when the Box is dropped.
+    unsafe {
+        // Recreate the Box and immediately drop it to free the allocation.
+        drop(Box::from_raw(ptr));
+    }
 }
