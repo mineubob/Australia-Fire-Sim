@@ -6,7 +6,7 @@
 use crate::core_types::element::{FuelElement, Vec3};
 use crate::grid::SimulationGrid;
 use crate::physics::combustion_physics::oxygen_limited_burn_rate;
-use rayon::prelude::*;
+// no parallel helper required (previously used by update_wind_field)
 
 /// Calculate oxygen-limited burn rate for element based on cell oxygen
 pub(crate) fn get_oxygen_limited_burn_rate(
@@ -22,64 +22,10 @@ pub(crate) fn get_oxygen_limited_burn_rate(
     }
 }
 
-/// Update grid wind field based on terrain and base wind
-/// Uses precomputed terrain cache for performance
-/// Parallelized for multi-core systems
-pub(crate) fn update_wind_field(grid: &mut SimulationGrid, base_wind: Vec3, _dt: f32) {
-    // Skip update if wind hasn't changed significantly
-    let wind_delta = (base_wind - grid.last_base_wind).norm();
-    if wind_delta < 0.1 {
-        return; // Wind barely changed, skip expensive update
-    }
-    grid.last_base_wind = base_wind;
-
-    // Wind modification by terrain (channeling, blocking, acceleration)
-    // Process in parallel for performance on large grids
-    let nx = grid.nx;
-    let ny = grid.ny;
-    let _nz = grid.nz;
-    let cell_size = grid.cell_size;
-    let _ambient_temp = grid.ambient_temperature;
-    let terrain_cache = &grid.terrain_cache;
-
-    // Parallel processing of grid cells
-    grid.cells
-        .par_chunks_mut(nx)
-        .enumerate()
-        .for_each(|(chunk_idx, chunk)| {
-            let iz = chunk_idx / ny;
-            let iy = chunk_idx % ny;
-
-            for (ix, cell) in chunk.iter_mut().enumerate() {
-                // Use cached terrain properties - eliminates expensive slope_at/aspect_at calls
-                let terrain_slope = terrain_cache.slope_at_grid(ix, iy);
-                let terrain_aspect = terrain_cache.aspect_at_grid(ix, iy);
-
-                // Wind speed increases with height above terrain
-                let height_above_terrain = (iz as f32 * cell_size) - cell.elevation;
-                let height_factor = if height_above_terrain > 0.0 {
-                    1.0 + (height_above_terrain / 10.0).min(0.5)
-                } else {
-                    0.5 // Below terrain, reduced wind
-                };
-
-                // Terrain channeling effect
-                let wind_direction = base_wind.xy().normalize();
-                let terrain_aspect_rad = terrain_aspect.to_radians();
-                let aspect_vec = Vec3::new(terrain_aspect_rad.sin(), terrain_aspect_rad.cos(), 0.0);
-
-                let alignment = wind_direction.dot(&aspect_vec.xy());
-                let channeling_factor = if terrain_slope > 15.0 {
-                    1.0 + alignment.abs() * 0.3 // Channeling in valleys
-                } else {
-                    1.0
-                };
-
-                // Apply factors
-                cell.wind = base_wind * height_factor * channeling_factor;
-            }
-        });
-}
+// NOTE: previously we provided a simple terrain-modulated update helper (`update_wind_field`) used
+// as a fallback when an advanced mass-consistent wind field was disabled. The simulation now
+// always contains an active mass-consistent `WindField`, so this helper is no longer needed and
+// has been removed.
 
 /// Simulate smoke/heat plume rising from fire
 pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &[Vec3], dt: f32) {

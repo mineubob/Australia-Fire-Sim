@@ -2,6 +2,8 @@
 
 A scientifically accurate wildfire simulation system built in Rust, based on Australian bushfire research.
 
+Note: the simulation now always uses the advanced 3D mass-consistent wind field (Sherman 1978) — there is no runtime toggle to disable it.
+
 ## Overview
 
 This is NOT a game - it's a physics-based simulation implementing real-world fire behavior including:

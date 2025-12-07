@@ -23,7 +23,7 @@ use crate::core_types::fuel::Fuel;
 use crate::core_types::spatial::SpatialIndex;
 use crate::core_types::units::{Celsius, Kilograms};
 use crate::core_types::weather::WeatherSystem;
-use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise, update_wind_field};
+use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise};
 use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField, WindFieldConfig};
 use crate::physics::{calculate_layer_transition_probability, CanopyLayer};
 use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
@@ -94,11 +94,11 @@ pub struct FireSimulation {
     /// Action queue for deterministic multiplayer replay
     action_queue: ActionQueue,
 
-    // Phase 6: Mass-Consistent Wind Field (optional)
+    // Phase 6: Mass-Consistent Wind Field (always enabled)
     /// Advanced 3D wind field with fire-atmosphere coupling
-    /// When enabled, provides spatially-varying wind based on terrain and fire plumes
+    /// Always present: provides spatially-varying wind based on terrain and fire plumes
     /// Uses Sherman (1978) mass-consistent model with Gauss-Seidel Poisson solver
-    wind_field: Option<WindField>,
+    wind_field: WindField,
 }
 
 impl FireSimulation {
@@ -118,7 +118,7 @@ impl FireSimulation {
         // Spatial index cell size should be ~2x search radius for optimal query performance
         // With max_search_radius=5m, cell_size=10m gives good balance
         let spatial_index = SpatialIndex::new(bounds, 10.0);
-        let grid = SimulationGrid::new(width, height, depth, grid_cell_size, terrain);
+        let grid = SimulationGrid::new(width, height, depth, grid_cell_size, terrain.clone());
 
         // Initialize atmospheric profile with default conditions
         let atmospheric_profile = AtmosphericProfile::from_surface_conditions(
@@ -147,75 +147,40 @@ impl FireSimulation {
             atmospheric_profile,
             pyrocumulus_clouds: Vec::new(),
             action_queue: ActionQueue::default(),
-            wind_field: None, // Phase 6: disabled by default
+            // Phase 6: mass-consistent wind field is enabled by default
+            wind_field: {
+                // Use the same defaults as enable_wind_field_default
+                let config = WindFieldConfig {
+                    nx: ((terrain.width / 25.0) as usize).max(10),
+                    ny: ((terrain.height / 25.0) as usize).max(10),
+                    nz: 15,
+                    cell_size: 25.0,
+                    cell_size_z: 10.0,
+                    solver_iterations: 20,
+                    solver_tolerance: 1e-3,
+                    enable_plume_coupling: true,
+                    enable_terrain_blocking: true,
+                    plume_update_interval: 3,
+                    terrain_update_interval: 10,
+                    ..Default::default()
+                };
+                WindField::new(config, &terrain)
+            },
         }
     }
 
-    /// Enable advanced mass-consistent wind field (Phase 6)
-    ///
-    /// This activates the Sherman (1978) mass-consistent wind model with:
-    /// - 3D spatially-varying wind field
-    /// - Terrain channeling and blocking effects
-    /// - Fire plume buoyancy coupling (optional)
-    /// - Logarithmic wind profile with height
-    ///
-    /// The wind field is solved using a Gauss-Seidel Poisson solver to ensure
-    /// mass conservation (∇·u = 0).
-    ///
-    /// # Parameters
-    /// * `config` - Configuration for the wind field solver (grid resolution, solver params)
-    pub fn enable_wind_field(&mut self, config: WindFieldConfig) {
-        self.wind_field = Some(WindField::new(config, &self.grid.terrain));
-    }
+    // Wind field is always present and initialized during construction.
+    // Reconfiguration may be done by directly accessing the `wind_field` field.
 
-    /// Enable advanced wind field with default configuration
-    ///
-    /// Uses sensible defaults based on terrain dimensions:
-    /// - Cell size: 25m horizontal, 10m vertical
-    /// - 20 solver iterations (sufficient with warm start)
-    /// - Plume coupling and terrain blocking enabled
-    /// - Adaptive update intervals for performance
-    pub fn enable_wind_field_default(&mut self) {
-        let terrain = &self.grid.terrain;
-        let config = WindFieldConfig {
-            nx: ((terrain.width / 25.0) as usize).max(10),
-            ny: ((terrain.height / 25.0) as usize).max(10),
-            nz: 15, // 150m vertical extent
-            cell_size: 25.0,
-            cell_size_z: 10.0,
-            solver_iterations: 20, // Reduced from 50 - sufficient for convergence
-            solver_tolerance: 1e-3, // Relaxed tolerance for faster convergence
-            enable_plume_coupling: true,
-            enable_terrain_blocking: true,
-            plume_update_interval: 3,    // Update plumes every 3 frames
-            terrain_update_interval: 10, // Full terrain update every 10 frames
-            ..Default::default()
-        };
-        self.wind_field = Some(WindField::new(config, terrain));
-    }
-
-    /// Check if advanced wind field is enabled
-    pub fn has_wind_field(&self) -> bool {
-        self.wind_field.is_some()
-    }
-
-    /// Disable the advanced wind field
-    ///
-    /// Returns to using the simple terrain-modulated wind from the weather system.
-    pub fn disable_wind_field(&mut self) {
-        self.wind_field = None;
-    }
+    // The simulation always contains a configured, active mass-consistent wind field.
 
     /// Get wind at a specific world position
     ///
     /// If advanced wind field is enabled, returns the mass-consistent wind at that position.
     /// Otherwise, returns the global weather wind vector.
     pub fn wind_at_position(&self, pos: Vec3) -> Vec3 {
-        if let Some(ref wind_field) = self.wind_field {
-            wind_field.wind_at_position(pos)
-        } else {
-            self.weather.wind_vector()
-        }
+        // Always use the mass-consistent wind field which is now always present
+        self.wind_field.wind_at_position(pos)
     }
 
     /// Get the grid's terrain.
@@ -786,10 +751,8 @@ impl FireSimulation {
                 }
             });
 
-        // 2. Update wind field based on terrain and fire plumes
-        // If advanced wind field is enabled, use mass-consistent solver
-        // Otherwise, use simple terrain-modulated wind
-        if self.wind_field.is_some() {
+        // 2. Update mass-consistent wind field based on terrain and fire plumes
+        // The mass-consistent solver is always present and active in this build
             // Collect plume sources from burning elements BEFORE borrowing wind_field
             let plumes: Vec<PlameSource> = self
                 .burning_elements
@@ -809,14 +772,8 @@ impl FireSimulation {
                 })
                 .collect();
 
-            // Now borrow wind_field mutably
-            if let Some(ref mut wind_field) = self.wind_field {
-                wind_field.update(wind_vector, &self.grid.terrain, &plumes, dt);
-            }
-        } else {
-            // Fallback to simple terrain-aware wind
-            update_wind_field(&mut self.grid, wind_vector, dt);
-        }
+            // Update the always-enabled mass-consistent wind field
+            self.wind_field.update(wind_vector, &self.grid.terrain, &plumes, dt);
 
         // 3. Collect burning positions (used for mark_active_cells and plume rise)
         // OPTIMIZATION: Sequential is faster due to par_extend overhead (was 13% at 12k elements)
