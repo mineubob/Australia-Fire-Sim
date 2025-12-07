@@ -28,7 +28,7 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
 
 // ============================================================================
 // HELPER FUNCTION FOR TOTAL ORDERING OF F32
@@ -48,7 +48,7 @@ fn f32_total_cmp(a: f32, b: f32) -> Ordering {
 /// Temperature in degrees Celsius
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Celsius(pub f32);
+pub struct Celsius(f32);
 
 impl Eq for Celsius {}
 
@@ -61,6 +61,21 @@ impl PartialOrd for Celsius {
 impl Ord for Celsius {
     fn cmp(&self, other: &Self) -> Ordering {
         f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for Celsius {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Celsius {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
     }
 }
 
@@ -77,6 +92,14 @@ impl Celsius {
     /// Create a new Celsius temperature
     #[inline]
     pub fn new(value: f32) -> Self {
+        Celsius(value.max(-273.15))
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= -273.15 (absolute zero).
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         Celsius(value)
     }
 
@@ -148,7 +171,7 @@ impl fmt::Display for Celsius {
 /// Temperature in Kelvin (absolute scale)
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Kelvin(pub f32);
+pub struct Kelvin(f32);
 
 impl Eq for Kelvin {}
 
@@ -164,14 +187,44 @@ impl Ord for Kelvin {
     }
 }
 
+impl Deref for Kelvin {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Kelvin {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Kelvin {
     /// Absolute zero
     pub const ABSOLUTE_ZERO: Kelvin = Kelvin(0.0);
 
+    /// Create a new Kelvin temperature.
+    /// Clamps to absolute zero if value is below.
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Kelvin(value.max(0.0))
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0 (absolute zero).
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
+        Kelvin(value)
+    }
+
     /// Convert to Celsius
     #[inline]
     pub fn to_celsius(self) -> Celsius {
-        Celsius(self.0 - 273.15)
+        Celsius::new(self.0 - 273.15)
     }
 
     /// Get the raw f32 value
@@ -189,7 +242,7 @@ impl From<Kelvin> for Celsius {
 
 impl From<f32> for Kelvin {
     fn from(v: f32) -> Self {
-        Kelvin(v)
+        Kelvin::new(v)
     }
 }
 
@@ -240,7 +293,7 @@ impl fmt::Display for Kelvin {
 /// Distance in meters
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Meters(pub f32);
+pub struct Meters(f32);
 
 impl Eq for Meters {}
 
@@ -256,10 +309,33 @@ impl Ord for Meters {
     }
 }
 
+impl Deref for Meters {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Meters {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Meters {
     /// Create a new distance in meters
     #[inline]
     pub fn new(value: f32) -> Self {
+        Meters(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for distance.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         Meters(value)
     }
 
@@ -333,7 +409,7 @@ impl fmt::Display for Meters {
 /// Distance in kilometers
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Kilometers(pub f32);
+pub struct Kilometers(f32);
 
 impl Eq for Kilometers {}
 
@@ -349,11 +425,40 @@ impl Ord for Kilometers {
     }
 }
 
+impl Deref for Kilometers {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Kilometers {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Kilometers {
+    /// Create a new Kilometers value.
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Kilometers(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for distance.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
+        Kilometers(value)
+    }
+
     /// Convert to meters
     #[inline]
     pub fn to_meters(self) -> Meters {
-        Meters(self.0 * 1000.0)
+        Meters::new(self.0 * 1000.0)
     }
 
     /// Get the raw f32 value
@@ -418,7 +523,7 @@ impl fmt::Display for Kilometers {
 /// Mass in kilograms
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Kilograms(pub f32);
+pub struct Kilograms(f32);
 
 impl Eq for Kilograms {}
 
@@ -434,10 +539,33 @@ impl Ord for Kilograms {
     }
 }
 
+impl Deref for Kilograms {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Kilograms {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Kilograms {
     /// Create a new mass in kilograms
     #[inline]
     pub fn new(value: f32) -> Self {
+        Kilograms(value.max(0.0))
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0 (non-negative mass).
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         Kilograms(value)
     }
 
@@ -516,7 +644,7 @@ impl Div<f32> for Kilograms {
 /// Density in kg/m³
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct KgPerCubicMeter(pub f32);
+pub struct KgPerCubicMeter(f32);
 
 impl Eq for KgPerCubicMeter {}
 
@@ -532,6 +660,21 @@ impl Ord for KgPerCubicMeter {
     }
 }
 
+impl Deref for KgPerCubicMeter {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for KgPerCubicMeter {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl KgPerCubicMeter {
     /// Density of water at 4°C
     pub const WATER: KgPerCubicMeter = KgPerCubicMeter(1000.0);
@@ -542,6 +685,14 @@ impl KgPerCubicMeter {
     /// Create a new density
     #[inline]
     pub fn new(value: f32) -> Self {
+        KgPerCubicMeter(value.max(0.0))
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0 (non-negative density).
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         KgPerCubicMeter(value)
     }
 
@@ -577,7 +728,7 @@ impl fmt::Display for KgPerCubicMeter {
 /// Time duration in seconds
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Seconds(pub f32);
+pub struct Seconds(f32);
 
 impl Eq for Seconds {}
 
@@ -593,10 +744,33 @@ impl Ord for Seconds {
     }
 }
 
+impl Deref for Seconds {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Seconds {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Seconds {
     /// Create a new duration in seconds
     #[inline]
     pub fn new(value: f32) -> Self {
+        Seconds(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for time.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         Seconds(value)
     }
 
@@ -662,7 +836,7 @@ impl fmt::Display for Seconds {
 /// Time duration in hours
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Hours(pub f32);
+pub struct Hours(f32);
 
 impl Eq for Hours {}
 
@@ -678,11 +852,40 @@ impl Ord for Hours {
     }
 }
 
+impl Deref for Hours {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Hours {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Hours {
+    /// Create a new Hours value.
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        Hours(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for time.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
+        Hours(value)
+    }
+
     /// Convert to seconds
     #[inline]
     pub fn to_seconds(self) -> Seconds {
-        Seconds(self.0 * 3600.0)
+        Seconds::new(self.0 * 3600.0)
     }
 
     /// Get the raw f32 value
@@ -700,7 +903,7 @@ impl From<Hours> for Seconds {
 
 impl From<f32> for Hours {
     fn from(v: f32) -> Self {
-        Hours(v)
+        Hours::new(v)
     }
 }
 
@@ -717,7 +920,7 @@ impl fmt::Display for Hours {
 /// Velocity in meters per second
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct MetersPerSecond(pub f32);
+pub struct MetersPerSecond(f32);
 
 impl Eq for MetersPerSecond {}
 
@@ -733,10 +936,33 @@ impl Ord for MetersPerSecond {
     }
 }
 
+impl Deref for MetersPerSecond {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for MetersPerSecond {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl MetersPerSecond {
     /// Create a new velocity
     #[inline]
     pub fn new(value: f32) -> Self {
+        MetersPerSecond(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for velocity.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         MetersPerSecond(value)
     }
 
@@ -818,7 +1044,7 @@ impl fmt::Display for MetersPerSecond {
 /// Velocity in kilometers per hour
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct KilometersPerHour(pub f32);
+pub struct KilometersPerHour(f32);
 
 impl Eq for KilometersPerHour {}
 
@@ -834,11 +1060,40 @@ impl Ord for KilometersPerHour {
     }
 }
 
+impl Deref for KilometersPerHour {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for KilometersPerHour {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl KilometersPerHour {
+    /// Create a new KilometersPerHour value.
+    #[inline]
+    pub fn new(value: f32) -> Self {
+        KilometersPerHour(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for velocity.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
+        KilometersPerHour(value)
+    }
+
     /// Convert to m/s
     #[inline]
     pub fn to_mps(self) -> MetersPerSecond {
-        MetersPerSecond(self.0 / 3.6)
+        MetersPerSecond::new(self.0 / 3.6)
     }
 
     /// Get the raw f32 value
@@ -856,7 +1111,7 @@ impl From<KilometersPerHour> for MetersPerSecond {
 
 impl From<f32> for KilometersPerHour {
     fn from(v: f32) -> Self {
-        KilometersPerHour(v)
+        KilometersPerHour::new(v)
     }
 }
 
@@ -917,7 +1172,7 @@ impl fmt::Display for KilometersPerHour {
 /// Energy in kilojoules
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Kilojoules(pub f32);
+pub struct Kilojoules(f32);
 
 impl Eq for Kilojoules {}
 
@@ -933,10 +1188,33 @@ impl Ord for Kilojoules {
     }
 }
 
+impl Deref for Kilojoules {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Kilojoules {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Kilojoules {
     /// Create a new energy value
     #[inline]
     pub fn new(value: f32) -> Self {
+        Kilojoules(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for energy.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         Kilojoules(value)
     }
 
@@ -996,7 +1274,7 @@ impl fmt::Display for Kilojoules {
 /// Heat content in kJ/kg
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct KjPerKg(pub f32);
+pub struct KjPerKg(f32);
 
 impl Eq for KjPerKg {}
 
@@ -1012,6 +1290,21 @@ impl Ord for KjPerKg {
     }
 }
 
+impl Deref for KjPerKg {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for KjPerKg {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl KjPerKg {
     /// Latent heat of vaporization for water (2260 kJ/kg)
     pub const WATER_LATENT_HEAT: KjPerKg = KjPerKg(2260.0);
@@ -1019,6 +1312,14 @@ impl KjPerKg {
     /// Create a new heat content value
     #[inline]
     pub fn new(value: f32) -> Self {
+        KjPerKg(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for specific energy.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         KjPerKg(value)
     }
 
@@ -1080,7 +1381,7 @@ impl fmt::Display for KjPerKg {
 /// Fire intensity in kW/m (Byram's fireline intensity)
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct KwPerMeter(pub f32);
+pub struct KwPerMeter(f32);
 
 impl Eq for KwPerMeter {}
 
@@ -1096,10 +1397,33 @@ impl Ord for KwPerMeter {
     }
 }
 
+impl Deref for KwPerMeter {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for KwPerMeter {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl KwPerMeter {
     /// Create a new fire intensity value
     #[inline]
     pub fn new(value: f32) -> Self {
+        KwPerMeter(value.max(0.0))
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0 (non-negative intensity).
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         KwPerMeter(value)
     }
 
@@ -1147,7 +1471,7 @@ impl fmt::Display for KwPerMeter {
 /// Specific heat capacity in kJ/(kg·K)
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct KjPerKgK(pub f32);
+pub struct KjPerKgK(f32);
 
 impl Eq for KjPerKgK {}
 
@@ -1160,6 +1484,21 @@ impl PartialOrd for KjPerKgK {
 impl Ord for KjPerKgK {
     fn cmp(&self, other: &Self) -> Ordering {
         f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for KjPerKgK {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for KjPerKgK {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
     }
 }
 
@@ -1176,6 +1515,14 @@ impl KjPerKgK {
     /// Create a new specific heat value
     #[inline]
     pub fn new(value: f32) -> Self {
+        KjPerKgK(value.max(0.0))
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0 (non-negative specific heat).
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         KjPerKgK(value)
     }
 
@@ -1226,7 +1573,7 @@ impl fmt::Display for KjPerKgK {
 /// Represents moisture content, efficiency ratios, damping coefficients, etc.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Fraction(pub f32);
+pub struct Fraction(f32);
 
 impl Eq for Fraction {}
 
@@ -1239,6 +1586,21 @@ impl PartialOrd for Fraction {
 impl Ord for Fraction {
     fn cmp(&self, other: &Self) -> Ordering {
         f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for Fraction {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Fraction {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
     }
 }
 
@@ -1255,9 +1617,18 @@ impl Fraction {
         Fraction(value.clamp(0.0, 1.0))
     }
 
-    /// Create a fraction without clamping (for performance when value is known valid)
+    /// Create a fraction at compile time (const context).
+    /// Value must be in [0, 1] - not validated at compile time.
     #[inline]
-    pub fn new_unchecked(value: f32) -> Self {
+    pub const fn new_const(value: f32) -> Self {
+        Fraction(value)
+    }
+
+    /// Create a fraction without clamping (for performance when value is known valid)
+    /// # Safety
+    /// Caller must ensure value is in [0, 1].
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         Fraction(value)
     }
 
@@ -1270,7 +1641,7 @@ impl Fraction {
     /// Convert to percentage (0-100)
     #[inline]
     pub fn to_percent(self) -> Percent {
-        Percent(self.0 * 100.0)
+        Percent::new(self.0 * 100.0)
     }
 }
 
@@ -1337,7 +1708,7 @@ impl Mul<Fraction> for f32 {
 /// A percentage (0-100)
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Percent(pub f32);
+pub struct Percent(f32);
 
 impl Eq for Percent {}
 
@@ -1353,10 +1724,33 @@ impl Ord for Percent {
     }
 }
 
+impl Deref for Percent {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Percent {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Percent {
     /// Create a new percentage
     #[inline]
     pub fn new(value: f32) -> Self {
+        Percent(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for percentage.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         Percent(value)
     }
 
@@ -1438,7 +1832,7 @@ impl fmt::Display for Percent {
 /// Angle in degrees
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Degrees(pub f32);
+pub struct Degrees(f32);
 
 impl Eq for Degrees {}
 
@@ -1454,10 +1848,33 @@ impl Ord for Degrees {
     }
 }
 
+impl Deref for Degrees {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Degrees {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Degrees {
     /// Create a new angle in degrees
     #[inline]
     pub fn new(value: f32) -> Self {
+        Degrees(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for angles.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         Degrees(value)
     }
 
@@ -1501,7 +1918,7 @@ impl fmt::Display for Degrees {
 /// Angle in radians
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Radians(pub f32);
+pub struct Radians(f32);
 
 impl Eq for Radians {}
 
@@ -1517,10 +1934,33 @@ impl Ord for Radians {
     }
 }
 
+impl Deref for Radians {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Radians {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
 impl Radians {
     /// Create a new angle in radians
     #[inline]
     pub fn new(value: f32) -> Self {
+        Radians(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// No validation required for angles.
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         Radians(value)
     }
 
@@ -1587,7 +2027,7 @@ impl fmt::Display for Radians {
 /// Critical for fire spread calculations (Rothermel model)
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct SurfaceAreaToVolume(pub f32);
+pub struct SurfaceAreaToVolume(f32);
 
 impl Eq for SurfaceAreaToVolume {}
 
@@ -1600,6 +2040,21 @@ impl PartialOrd for SurfaceAreaToVolume {
 impl Ord for SurfaceAreaToVolume {
     fn cmp(&self, other: &Self) -> Ordering {
         f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for SurfaceAreaToVolume {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for SurfaceAreaToVolume {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
     }
 }
 
@@ -1622,6 +2077,14 @@ impl SurfaceAreaToVolume {
     /// Create a new surface area to volume ratio
     #[inline]
     pub fn new(value: f32) -> Self {
+        SurfaceAreaToVolume(value.max(0.0))
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0 (non-negative SAV).
+    #[inline]
+    pub unsafe fn new_unchecked(value: f32) -> Self {
         SurfaceAreaToVolume(value)
     }
 

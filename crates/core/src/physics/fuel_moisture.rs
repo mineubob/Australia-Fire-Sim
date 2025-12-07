@@ -190,16 +190,16 @@ impl FuelMoistureState {
 
         // Update each size class with its specific timelag
         self.moisture_1h =
-            update_moisture_timelag(self.moisture_1h, emc, fuel.timelag_1h.0, dt_hours);
+            update_moisture_timelag(self.moisture_1h, emc, *fuel.timelag_1h, dt_hours);
 
         self.moisture_10h =
-            update_moisture_timelag(self.moisture_10h, emc, fuel.timelag_10h.0, dt_hours);
+            update_moisture_timelag(self.moisture_10h, emc, *fuel.timelag_10h, dt_hours);
 
         self.moisture_100h =
-            update_moisture_timelag(self.moisture_100h, emc, fuel.timelag_100h.0, dt_hours);
+            update_moisture_timelag(self.moisture_100h, emc, *fuel.timelag_100h, dt_hours);
 
         self.moisture_1000h =
-            update_moisture_timelag(self.moisture_1000h, emc, fuel.timelag_1000h.0, dt_hours);
+            update_moisture_timelag(self.moisture_1000h, emc, *fuel.timelag_1000h, dt_hours);
 
         // Calculate weighted average
         self.average_moisture = calculate_weighted_moisture(
@@ -207,7 +207,7 @@ impl FuelMoistureState {
             self.moisture_10h,
             self.moisture_100h,
             self.moisture_1000h,
-            fuel.size_class_distribution.map(|f| f.0),
+            fuel.size_class_distribution.map(|f| *f),
         );
     }
 }

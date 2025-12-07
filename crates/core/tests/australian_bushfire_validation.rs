@@ -435,9 +435,9 @@ fn test_eucalyptus_oil_properties_stringybark() {
 
     // Oil content (research: 2-5% by mass)
     assert!(
-        fuel.volatile_oil_content.0 >= 0.02 && fuel.volatile_oil_content.0 <= 0.05,
+        *fuel.volatile_oil_content >= 0.02 && *fuel.volatile_oil_content <= 0.05,
         "Stringybark oil content: expected 2-5%, got {:.1}%",
-        fuel.volatile_oil_content.0 * 100.0
+        *fuel.volatile_oil_content * 100.0
     );
 }
 
@@ -447,15 +447,15 @@ fn test_eucalyptus_oil_properties_smooth_bark() {
 
     // Smooth bark should have less oil than stringybark
     assert!(
-        fuel.volatile_oil_content.0 < Fuel::eucalyptus_stringybark().volatile_oil_content.0,
+        *fuel.volatile_oil_content < Fuel::eucalyptus_stringybark().volatile_oil_content.0,
         "Smooth bark should have less oil than stringybark"
     );
 
     // But still within eucalyptus range
     assert!(
-        fuel.volatile_oil_content.0 >= 0.01 && fuel.volatile_oil_content.0 <= 0.04,
+        *fuel.volatile_oil_content >= 0.01 && *fuel.volatile_oil_content <= 0.04,
         "Smooth bark oil content: expected 1-4%, got {:.1}%",
-        fuel.volatile_oil_content.0 * 100.0
+        *fuel.volatile_oil_content * 100.0
     );
 }
 
@@ -473,15 +473,15 @@ fn test_stringybark_ladder_fuel_properties() {
 
     // Stringybark should have maximum ladder fuel factor
     assert!(
-        (stringybark.bark_properties.ladder_fuel_factor.0 - 1.0).abs() < 0.001,
+        (*stringybark.bark_properties.ladder_fuel_factor - 1.0).abs() < 0.001,
         "Stringybark should have maximum ladder fuel factor (1.0)"
     );
 
     // Stringybark should have extreme ember shedding
     assert!(
-        stringybark.bark_properties.shedding_rate.0 >= 0.7,
+        *stringybark.bark_properties.shedding_rate >= 0.7,
         "Stringybark should have high ember shedding rate (≥0.7), got {}",
-        stringybark.bark_properties.shedding_rate.0
+        *stringybark.bark_properties.shedding_rate
     );
 
     // Stringybark should have much lower crown fire threshold
@@ -500,15 +500,15 @@ fn test_stringybark_extreme_spotting_distance() {
     // CSIRO (2017): Ribbon bark can travel 37 km
     // Simulation implements 25 km standard
     assert!(
-        stringybark.max_spotting_distance.0 >= 25000.0,
+        *stringybark.max_spotting_distance >= 25000.0,
         "Stringybark max spotting distance should be ≥25km, got {:.1}km",
-        stringybark.max_spotting_distance.0 / 1000.0
+        *stringybark.max_spotting_distance / 1000.0
     );
 
     // Should be highest of all fuel types
     let grass = Fuel::dry_grass();
     assert!(
-        stringybark.max_spotting_distance.0 > grass.max_spotting_distance.0 * 3.0,
+        *stringybark.max_spotting_distance > *grass.max_spotting_distance * 3.0,
         "Stringybark spotting distance should be >3x grass"
     );
 }

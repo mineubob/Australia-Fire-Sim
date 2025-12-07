@@ -37,13 +37,13 @@ pub(crate) fn calculate_radiation_flux(
     target: &FuelElement,
     distance: f32,
 ) -> f32 {
-    if distance <= 0.0 || source.fuel_remaining <= Kilograms(0.0) {
+    if distance <= 0.0 || source.fuel_remaining <= Kilograms::new(0.0) {
         return 0.0;
     }
 
     // Convert to Kelvin for Stefan-Boltzmann
-    let temp_source_k = source.temperature.0 + 273.15;
-    let temp_target_k = target.temperature.0 + 273.15;
+    let temp_source_k = *source.temperature + 273.15;
+    let temp_target_k = *target.temperature + 273.15;
 
     // FULL FORMULA: σ * ε * (T_source^4 - T_target^4)
     // NO SIMPLIFICATIONS per repository guidelines
@@ -62,7 +62,7 @@ pub(crate) fn calculate_radiation_flux(
     //
     // Effective flame area scales with fuel mass (Byram's flame height model)
     // Coefficient 6.0 calibrated to match Rothermel spread rate predictions
-    let effective_flame_area = (source.fuel_remaining.0 * 6.0).max(0.5);
+    let effective_flame_area = (*source.fuel_remaining * 6.0).max(0.5);
     let view_factor = effective_flame_area / (std::f32::consts::PI * distance * distance);
     let view_factor = view_factor.clamp(0.001, 1.0);
 
@@ -72,7 +72,7 @@ pub(crate) fn calculate_radiation_flux(
     // Target absorption based on fuel characteristics
     // Fine fuels (high SAV) have more surface area to absorb heat
     // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (target.fuel.surface_area_to_volume.0 / 3500.0)
+    let absorption_efficiency = (*target.fuel.surface_area_to_volume / 3500.0)
         .sqrt()
         .clamp(0.2, 1.5);
 
@@ -96,7 +96,7 @@ pub(crate) fn calculate_convection_heat(
         return 0.0;
     }
 
-    let temp_diff = source.temperature.0 - target.temperature.0;
+    let temp_diff = *source.temperature - *target.temperature;
     if temp_diff <= 0.0 {
         return 0.0;
     }
@@ -114,7 +114,7 @@ pub(crate) fn calculate_convection_heat(
     // Target absorption based on fuel characteristics (matches radiation)
     // Fine fuels (high SAV) have more surface area to absorb heat
     // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (target.fuel.surface_area_to_volume.0 / 3500.0)
+    let absorption_efficiency = (*target.fuel.surface_area_to_volume / 3500.0)
         .sqrt()
         .clamp(0.2, 1.5);
 
@@ -504,17 +504,17 @@ mod tests {
             0,
             Vec3::new(x, y, z),
             Fuel::dry_grass(),
-            Kilograms(5.0),
+            Kilograms::new(5.0),
             FuelPart::GroundVegetation,
             None,
         )
-        .with_temperature(Celsius(temp))
+        .with_temperature(Celsius::new(temp))
     }
 
     #[test]
     fn test_radiation_flux() {
         let mut source = create_test_element(0.0, 0.0, 0.0, 600.0);
-        source.fuel_remaining = Kilograms(5.0);
+        source.fuel_remaining = Kilograms::new(5.0);
         let target = create_test_element(5.0, 0.0, 0.0, 20.0);
 
         let flux = calculate_radiation_flux(&source, &target, 5.0);
@@ -630,9 +630,9 @@ mod tests {
         let target_v = create_test_element(0.0, 0.0, 5.0, 20.0);
 
         let src_pos = source.position;
-        let src_temp = source.temperature.0;
-        let src_remain = source.fuel_remaining.0;
-        let src_sav = source.fuel.surface_area_to_volume.0;
+        let src_temp = *source.temperature;
+        let src_remain = *source.fuel_remaining;
+        let src_sav = *source.fuel.surface_area_to_volume;
 
         let horiz = calculate_heat_transfer_raw(
             src_pos,
@@ -640,8 +640,8 @@ mod tests {
             src_remain,
             src_sav,
             target_h.position,
-            target_h.temperature.0,
-            target_h.fuel.surface_area_to_volume.0,
+            *target_h.temperature,
+            *target_h.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -652,8 +652,8 @@ mod tests {
             src_remain,
             src_sav,
             target_v.position,
-            target_v.temperature.0,
-            target_v.fuel.surface_area_to_volume.0,
+            *target_v.temperature,
+            *target_v.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -684,7 +684,7 @@ mod tests {
     #[test]
     fn test_convection_is_not_dominant() {
         let mut source = create_test_element(0.0, 0.0, 0.0, 600.0);
-        source.fuel_remaining = Kilograms(5.0);
+        source.fuel_remaining = Kilograms::new(5.0);
         let target = create_test_element(0.0, 0.0, 5.0, 20.0);
 
         let distance = 5.0;
@@ -724,11 +724,11 @@ mod tests {
             0,
             Vec3::new(0.0, 0.0, 0.0),
             Fuel::dry_grass(),
-            Kilograms(3.0), // 3kg grass load
+            Kilograms::new(3.0), // 3kg grass load
             FuelPart::GroundVegetation,
             None,
         )
-        .with_temperature(Celsius(600.0));
+        .with_temperature(Celsius::new(600.0));
 
         // Tree structure matching demo-interactive create_tree():
         // Lower trunk at z=2m (stringybark, 10kg)
@@ -736,41 +736,41 @@ mod tests {
             1,
             Vec3::new(0.0, 0.0, 2.0),
             Fuel::eucalyptus_stringybark(),
-            Kilograms(10.0),
+            Kilograms::new(10.0),
             FuelPart::TrunkLower,
             None,
         )
-        .with_temperature(Celsius(20.0));
+        .with_temperature(Celsius::new(20.0));
 
         // Branch at z=4m (stringybark, 3kg)
         let branch = FuelElement::new(
             2,
             Vec3::new(-1.0, 0.0, 4.0),
             Fuel::eucalyptus_stringybark(),
-            Kilograms(3.0),
+            Kilograms::new(3.0),
             FuelPart::Branch {
-                height: Meters(4.0),
-                angle: Degrees(0.0),
+                height: Meters::new(4.0),
+                angle: Degrees::new(0.0),
             },
             Some(1),
         )
-        .with_temperature(Celsius(20.0));
+        .with_temperature(Celsius::new(20.0));
 
         // Crown at z=8m (stringybark, 5kg)
         let crown = FuelElement::new(
             3,
             Vec3::new(0.0, 0.0, 8.0),
             Fuel::eucalyptus_stringybark(),
-            Kilograms(5.0),
+            Kilograms::new(5.0),
             FuelPart::Crown,
             Some(1),
         )
-        .with_temperature(Celsius(20.0));
+        .with_temperature(Celsius::new(20.0));
 
         let src_pos = ground.position;
-        let src_temp = ground.temperature.0;
-        let src_remain = ground.fuel_remaining.0;
-        let src_sav = ground.fuel.surface_area_to_volume.0;
+        let src_temp = *ground.temperature;
+        let src_remain = *ground.fuel_remaining;
+        let src_sav = *ground.fuel.surface_area_to_volume;
 
         // Calculate heat transfer from ground fire to each tree part (1 second dt)
         let heat_to_trunk = calculate_heat_transfer_raw(
@@ -779,8 +779,8 @@ mod tests {
             src_remain,
             src_sav,
             trunk_lower.position,
-            trunk_lower.temperature.0,
-            trunk_lower.fuel.surface_area_to_volume.0,
+            *trunk_lower.temperature,
+            *trunk_lower.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -790,8 +790,8 @@ mod tests {
             src_remain,
             src_sav,
             branch.position,
-            branch.temperature.0,
-            branch.fuel.surface_area_to_volume.0,
+            *branch.temperature,
+            *branch.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -801,8 +801,8 @@ mod tests {
             src_remain,
             src_sav,
             crown.position,
-            crown.temperature.0,
-            crown.fuel.surface_area_to_volume.0,
+            *crown.temperature,
+            *crown.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -820,9 +820,9 @@ mod tests {
         );
         eprintln!(
             "Trunk SAV={}, Branch SAV={}, Crown SAV={}",
-            trunk_lower.fuel.surface_area_to_volume.0,
-            branch.fuel.surface_area_to_volume.0,
-            crown.fuel.surface_area_to_volume.0
+            *trunk_lower.fuel.surface_area_to_volume,
+            *branch.fuel.surface_area_to_volume,
+            *crown.fuel.surface_area_to_volume
         );
         eprintln!("Heat to trunk (2m):    {:.2} kJ/s", heat_to_trunk);
         eprintln!("Heat to branch (4m):   {:.2} kJ/s", heat_to_branch);
@@ -870,9 +870,9 @@ mod tests {
         // Estimate time to raise crown temperature to ignition (~228°C for stringybark)
         // Using stringybark specific heat ~1.5 kJ/(kg·K), mass ~5kg, ΔT needed ~208K
         // Energy needed = 1.5 * 5 * 208 = 1560 kJ
-        let specific_heat = crown.fuel.specific_heat.0;
-        let crown_mass = crown.fuel_remaining.0;
-        let delta_t = crown.fuel.ignition_temperature.0 - crown.temperature.0;
+        let specific_heat = *crown.fuel.specific_heat;
+        let crown_mass = *crown.fuel_remaining;
+        let delta_t = *crown.fuel.ignition_temperature - *crown.temperature;
         let energy_to_ignite_kj = specific_heat * crown_mass * delta_t;
         let estimated_time_to_crown_ignition = energy_to_ignite_kj / heat_to_crown;
 
@@ -916,9 +916,9 @@ mod tests {
         );
         eprintln!(
             "Trunk SAV={}, Branch SAV={}, Crown SAV={}",
-            trunk_lower.fuel.surface_area_to_volume.0,
-            branch.fuel.surface_area_to_volume.0,
-            crown.fuel.surface_area_to_volume.0
+            *trunk_lower.fuel.surface_area_to_volume,
+            *branch.fuel.surface_area_to_volume,
+            *crown.fuel.surface_area_to_volume
         );
         eprintln!("Heat to trunk (2m):    {:.2} kJ/s", heat_to_trunk);
         eprintln!("Heat to branch (4m):   {:.2} kJ/s", heat_to_branch);
