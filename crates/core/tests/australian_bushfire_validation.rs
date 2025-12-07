@@ -675,7 +675,10 @@ fn test_full_simulation_moderate_conditions() {
     sim.set_weather(weather);
 
     // Ignite center (element 12 at position x=2, y=2)
-    sim.ignite_element(element_ids[12], fire_sim_core::core_types::Celsius::new(500.0));
+    sim.ignite_element(
+        element_ids[12],
+        fire_sim_core::core_types::Celsius::new(500.0),
+    );
 
     // Run for 60 seconds (grass fires spread quickly in continuous fuel at 2m spacing)
     for _ in 0..60 {
@@ -726,7 +729,10 @@ fn test_full_simulation_catastrophic_conditions() {
     let weather = WeatherSystem::new(45.0, 8.0, 80.0, 90.0, 10.0);
     sim.set_weather(weather);
 
-    sim.ignite_element(element_ids[12], fire_sim_core::core_types::Celsius::new(500.0));
+    sim.ignite_element(
+        element_ids[12],
+        fire_sim_core::core_types::Celsius::new(500.0),
+    );
 
     // Run for 45 seconds (grass fires spread very quickly at 2m spacing under catastrophic wind)
     for _ in 0..45 {
