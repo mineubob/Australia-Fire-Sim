@@ -34,18 +34,11 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 // HELPER FUNCTION FOR TOTAL ORDERING OF F32
 // ============================================================================
 
-/// Compare f32 values with total ordering (NaN considered greater than all values)
+/// Compare f32 values with total ordering using Rust's built-in total_cmp
+/// This is available since Rust 1.62 and handles NaN correctly
 #[inline]
 fn f32_total_cmp(a: f32, b: f32) -> Ordering {
-    a.partial_cmp(&b).unwrap_or_else(|| {
-        // Handle NaN cases: treat NaN as greater than any value
-        match (a.is_nan(), b.is_nan()) {
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-            _ => unreachable!(),
-        }
-    })
+    a.total_cmp(&b)
 }
 
 // ============================================================================
@@ -1080,7 +1073,7 @@ impl Mul<KjPerKg> for Kilograms {
 
 impl fmt::Display for KjPerKg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.0} kJ/kg", self.0)
+        write!(f, "{:.1} kJ/kg", self.0)
     }
 }
 
@@ -1143,7 +1136,7 @@ impl From<KwPerMeter> for f32 {
 
 impl fmt::Display for KwPerMeter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.0} kW/m", self.0)
+        write!(f, "{:.1} kW/m", self.0)
     }
 }
 
