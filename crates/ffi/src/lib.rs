@@ -46,11 +46,11 @@ pub enum Terrain {
 
 /// The main fire simulation context.
 /// Holds the internal simulation state and manages fire behavior calculations.
-pub struct FireSim {
-    _sim: FireSimulation,
+pub struct FireSimState {
+    sim: FireSimulation,
 }
 
-impl FireSim {
+impl FireSimState {
     /// Creates a new FireSim instance with the specified terrain.
     pub fn new(terrain: Terrain) -> Box<Self> {
         let terrain = match terrain {
@@ -117,11 +117,10 @@ impl FireSim {
 
         let sim = FireSimulation::new(5.0, terrain);
 
-        Box::new(Self { _sim: sim })
+        Box::new(Self { sim })
     }
 }
 
-#[no_mangle]
 /// Create a new FireSim instance and return a raw pointer to it for use across FFI.
 ///
 /// This function allocates a new FireSim on the heap and transfers ownership of the
@@ -160,11 +159,11 @@ impl FireSim {
 /// // ... use sim via the rest of the FFI API ...
 /// fire_sim_destroy(sim);
 /// ```
-pub extern "C" fn fire_sim_new(terrain: Terrain) -> *mut FireSim {
-    Box::into_raw(FireSim::new(terrain))
+#[no_mangle]
+pub extern "C" fn fire_sim_new(terrain: Terrain) -> *mut FireSimState {
+    Box::into_raw(FireSimState::new(terrain))
 }
 
-#[no_mangle]
 /// Destroys a FireSim instance previously created by `fire_sim_new`.
 ///
 /// This function takes a raw pointer returned by `fire_sim_new` and reclaims ownership
@@ -186,7 +185,8 @@ pub extern "C" fn fire_sim_new(terrain: Terrain) -> *mut FireSim {
 /// FFI notes:
 /// - This is an `extern "C"` (no_mangle) function intended for use across language boundaries.
 /// - It is safe to call from C/C++/other languages provided the pointer contract above is respected.
-pub extern "C" fn fire_sim_destroy(ptr: *mut FireSim) {
+#[no_mangle]
+pub extern "C" fn fire_sim_destroy(ptr: *mut FireSimState) {
     if ptr.is_null() {
         return;
     }
@@ -199,4 +199,56 @@ pub extern "C" fn fire_sim_destroy(ptr: *mut FireSim) {
         // Recreate the Box and immediately drop it to free the allocation.
         drop(Box::from_raw(ptr));
     }
+}
+
+/// If `ptr` is non-null, call `f` with a `&mut FireSim` and return `Some` with the closure result.
+/// Returns `None` when `ptr` is null.
+///
+/// Safety note: the caller must ensure the pointer originates from `fire_sim_new` and is not dangling
+/// or concurrently aliased mutably elsewhere.
+#[inline]
+fn with_fire_sim_mut<R, F>(ptr: *mut FireSimState, f: F) -> Option<R>
+where
+    F: FnOnce(&mut FireSimState) -> R,
+{
+    if ptr.is_null() {
+        return None;
+    }
+
+    // SAFETY: caller contract guarantees pointer validity.
+    unsafe { Some(f(&mut *ptr)) }
+}
+
+/// If `ptr` is non-null, call `f` with a shared `&FireSim` and return `Some` with the closure result.
+/// Returns `None` when `ptr` is null.
+///
+/// Safety note: the caller must ensure the pointer originates from `fire_sim_new` and is not dangling.
+#[inline]
+fn with_fire_sim<R, F>(ptr: *const FireSimState, f: F) -> Option<R>
+where
+    F: FnOnce(&FireSimState) -> R,
+{
+    if ptr.is_null() {
+        return None;
+    }
+
+    // SAFETY: caller contract guarantees pointer validity.
+    unsafe { Some(f(&*ptr)) }
+}
+
+/// Advance the simulation by `dt` seconds.
+///
+/// Safety:
+/// - `ptr` must be a valid pointer returned by `fire_sim_new`.
+/// - Calling with an invalid pointer is undefined behavior.
+/// - If `ptr` is null or `dt` is non-finite or non-positive this function is a no-op.
+#[no_mangle]
+pub extern "C" fn fire_sim_update(ptr: *mut FireSimState, dt: f32) {
+    if !dt.is_finite() || dt <= 0.0 {
+        return;
+    }
+
+    with_fire_sim_mut(ptr, |state| {
+        state.sim.update(dt);
+    });
 }
