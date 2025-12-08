@@ -60,7 +60,7 @@ impl CrownFireBehavior {
 /// Calculate critical surface fire intensity for crown fire initiation
 ///
 /// Van Wagner (1977) formula:
-/// I_o = (0.01 × CBD × H × (460 + 25.9 × M_c)) / CBH
+/// `I_o` = (0.01 × CBD × H × (460 + 25.9 × `M_c`)) / CBH
 ///
 /// # Arguments
 /// * `crown_bulk_density` - Crown bulk density (kg/m³), typical range 0.05-0.3
@@ -73,6 +73,7 @@ impl CrownFireBehavior {
 ///
 /// # References
 /// Van Wagner (1977), Equation 4
+#[must_use]
 pub fn calculate_critical_surface_intensity(
     crown_bulk_density: f32,
     heat_content: f32,
@@ -90,7 +91,7 @@ pub fn calculate_critical_surface_intensity(
 /// Calculate critical crown fire spread rate
 ///
 /// Van Wagner (1977) formula:
-/// R_critical = 3.0 / CBD
+/// `R_critical` = 3.0 / CBD
 ///
 /// # Arguments
 /// * `crown_bulk_density` - Crown bulk density (kg/m³)
@@ -100,6 +101,7 @@ pub fn calculate_critical_surface_intensity(
 ///
 /// # References
 /// Van Wagner (1977), Equation 9
+#[must_use]
 pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
     if crown_bulk_density <= 0.0 {
         return 0.0;
@@ -112,7 +114,7 @@ pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
 /// Calculate crown fraction burned (CFB)
 ///
 /// Cruz & Alexander (2010) formula:
-/// CFB = 1 - exp(-0.23 × (R_active - R_critical))
+/// CFB = 1 - exp(-0.23 × (`R_active` - `R_critical`))
 ///
 /// # Arguments
 /// * `active_spread_rate` - Actual crown fire spread rate (m/min)
@@ -140,9 +142,9 @@ pub(crate) fn calculate_crown_fraction_burned(
 /// Determine crown fire type based on spread rates and intensity
 ///
 /// Classification:
-/// - Surface: I_surface < I_critical
-/// - Passive: I_surface >= I_critical AND R_active < R_critical
-/// - Active: I_surface >= I_critical AND R_active >= R_critical
+/// - Surface: `I_surface` < `I_critical`
+/// - Passive: `I_surface` >= `I_critical` AND `R_active` < `R_critical`
+/// - Active: `I_surface` >= `I_critical` AND `R_active` >= `R_critical`
 ///
 /// # References
 /// Van Wagner (1977, 1993)
@@ -235,8 +237,7 @@ mod tests {
         // = 30 × 3050 / 5.0 = 91500 / 5.0 = 18300 kW/m
         assert!(
             (i_critical - 18300.0).abs() < 100.0,
-            "I_critical was {}",
-            i_critical
+            "I_critical was {i_critical}"
         );
     }
 
@@ -250,8 +251,7 @@ mod tests {
         // Expected: 3.0 / 0.15 = 20 m/min
         assert!(
             (r_critical - 20.0).abs() < 0.1,
-            "R_critical was {}",
-            r_critical
+            "R_critical was {r_critical}"
         );
     }
 
@@ -265,7 +265,7 @@ mod tests {
         // Should be between 0 and 1
         assert!(cfb > 0.0 && cfb <= 1.0);
         // CFB = 1 - exp(-0.23 × (30-20)) = 1 - exp(-2.3) ≈ 0.9
-        assert!((cfb - 0.9).abs() < 0.1, "CFB was {}", cfb);
+        assert!((cfb - 0.9).abs() < 0.1, "CFB was {cfb}");
     }
 
     #[test]
@@ -309,9 +309,7 @@ mod tests {
         // But in practice, lower CBH means fire reaches crown sooner
         assert!(
             stringybark_i > smooth_bark_i,
-            "Stringybark I_critical: {}, Smooth bark: {}",
-            stringybark_i,
-            smooth_bark_i
+            "Stringybark I_critical: {stringybark_i}, Smooth bark: {smooth_bark_i}"
         );
 
         // Both should be reasonable values (thousands of kW/m)

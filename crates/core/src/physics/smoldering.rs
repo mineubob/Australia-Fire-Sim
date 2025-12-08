@@ -74,6 +74,7 @@ impl SmolderingState {
     }
 
     /// Get the current combustion phase
+    #[must_use]
     pub fn phase(&self) -> CombustionPhase {
         self.phase
     }

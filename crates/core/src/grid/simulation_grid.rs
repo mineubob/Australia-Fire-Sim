@@ -67,6 +67,7 @@ pub struct GridCell {
 
 impl GridCell {
     /// Create a new cell with atmospheric defaults
+    #[must_use]
     pub fn new(elevation: f32) -> Self {
         GridCell {
             temperature: 20.0, // Ambient 20°C
@@ -87,7 +88,8 @@ impl GridCell {
     }
 
     /// Calculate air density (kg/m³) using ideal gas law
-    /// ρ = P / (R_specific × T_kelvin)
+    /// ρ = P / (`R_specific` × `T_kelvin`)
+    #[must_use]
     pub fn air_density(&self) -> f32 {
         const R_SPECIFIC_AIR: f32 = 287.05; // J/(kg·K)
         let temp_k = self.temperature + 273.15;
@@ -96,6 +98,7 @@ impl GridCell {
 
     /// Calculate buoyancy force per unit volume (N/m³)
     /// Based on temperature difference from ambient
+    #[must_use]
     pub fn buoyancy_force(&self, ambient_temp: Celsius) -> f32 {
         // Calculate ambient air density from temperature using ideal gas law
         const R_SPECIFIC_AIR: f32 = 287.05; // J/(kg·K)
@@ -108,12 +111,14 @@ impl GridCell {
 
     /// Check if oxygen is sufficient for combustion
     /// Requires at least 15% O2 concentration
+    #[must_use]
     pub fn can_support_combustion(&self) -> bool {
         self.oxygen > 0.195 // 15% of normal concentration
     }
 
     /// Calculate effective thermal conductivity (W/(m·K))
     /// Accounts for smoke and water vapor
+    #[must_use]
     pub fn thermal_conductivity(&self) -> f32 {
         let base_conductivity = 0.026; // Air at 20°C
 
@@ -134,56 +139,67 @@ impl GridCell {
     // Public accessor methods for FFI and external use
 
     /// Get air temperature (°C)
+    #[must_use]
     pub fn temperature(&self) -> f32 {
         self.temperature
     }
 
     /// Get wind velocity vector (m/s) - returns reference for zero-copy access
+    #[must_use]
     pub fn wind(&self) -> &Vec3 {
         &self.wind
     }
 
     /// Get relative humidity (0-1)
+    #[must_use]
     pub fn humidity(&self) -> f32 {
         self.humidity
     }
 
     /// Get oxygen concentration (kg/m³)
+    #[must_use]
     pub fn oxygen(&self) -> f32 {
         self.oxygen
     }
 
     /// Get CO concentration (kg/m³)
+    #[must_use]
     pub fn carbon_monoxide(&self) -> f32 {
         self.carbon_monoxide
     }
 
     /// Get CO2 concentration (kg/m³)
+    #[must_use]
     pub fn carbon_dioxide(&self) -> f32 {
         self.carbon_dioxide
     }
 
     /// Get smoke/particulate concentration (kg/m³)
+    #[must_use]
     pub fn smoke_particles(&self) -> f32 {
         self.smoke_particles
     }
 
     /// Get water vapor concentration (kg/m³)
+    #[must_use]
     pub fn water_vapor(&self) -> f32 {
         self.water_vapor
     }
 
     /// Get suppression agent concentration (kg/m³)
+    #[must_use]
     pub fn suppression_agent(&self) -> f32 {
         self.suppression_agent
     }
 
     /// Get cell elevation (m)
+    #[must_use]
     pub fn elevation(&self) -> f32 {
         self.elevation
     }
 
     /// Check if cell is active
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.is_active
     }
@@ -232,6 +248,7 @@ pub struct SimulationGrid {
 
 impl SimulationGrid {
     /// Create a new simulation grid
+    #[must_use]
     pub fn new(width: f32, height: f32, depth: f32, cell_size: f32, terrain: TerrainData) -> Self {
         let nx = (width / cell_size).ceil() as usize;
         let ny = (height / cell_size).ceil() as usize;
@@ -278,11 +295,13 @@ impl SimulationGrid {
 
     /// Get cell index from (x, y, z) indices
     #[inline]
+    #[must_use]
     pub fn cell_index(&self, ix: usize, iy: usize, iz: usize) -> usize {
         iz * (self.ny * self.nx) + iy * self.nx + ix
     }
 
     /// Get cell at grid indices (bounds-checked)
+    #[must_use]
     pub fn cell_at(&self, ix: usize, iy: usize, iz: usize) -> Option<&GridCell> {
         if ix < self.nx && iy < self.ny && iz < self.nz {
             Some(&self.cells[self.cell_index(ix, iy, iz)])
@@ -302,6 +321,7 @@ impl SimulationGrid {
     }
 
     /// Get cell at world position using nearest neighbor
+    #[must_use]
     pub fn cell_at_position(&self, pos: Vec3) -> Option<&GridCell> {
         let ix = (pos.x / self.cell_size).floor() as isize;
         let iy = (pos.y / self.cell_size).floor() as isize;
@@ -328,6 +348,7 @@ impl SimulationGrid {
     }
 
     /// Interpolate cell properties at world position (trilinear)
+    #[must_use]
     pub fn interpolate_at_position(&self, pos: Vec3) -> GridCell {
         let gx = pos.x / self.cell_size;
         let gy = pos.y / self.cell_size;
@@ -692,12 +713,12 @@ impl SimulationGrid {
         }
 
         // Most cells have all 6 neighbors (interior cells), early exit rare
-        let neighbor_count = (has_x_minus as u32)
-            + (has_x_plus as u32)
-            + (has_y_minus as u32)
-            + (has_y_plus as u32)
-            + (has_z_minus as u32)
-            + (has_z_plus as u32);
+        let neighbor_count = u32::from(has_x_minus)
+            + u32::from(has_x_plus)
+            + u32::from(has_y_minus)
+            + u32::from(has_y_plus)
+            + u32::from(has_z_minus)
+            + u32::from(has_z_plus);
 
         if neighbor_count == 0 {
             return None;
@@ -782,7 +803,7 @@ impl SimulationGrid {
         let mut cell_buckets: rustc_hash::FxHashMap<(i32, i32, i32), u32> =
             rustc_hash::FxHashMap::with_capacity_and_hasher(
                 active_positions.len() / 4,
-                Default::default(),
+                rustc_hash::FxBuildHasher,
             );
 
         for pos in active_positions {
@@ -868,6 +889,7 @@ impl SimulationGrid {
     }
 
     /// Get number of active cells
+    #[must_use]
     pub fn active_cell_count(&self) -> usize {
         self.cells.iter().filter(|c| c.is_active).count()
     }

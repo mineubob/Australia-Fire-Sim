@@ -5,7 +5,7 @@
 //! - Sherman, C.A. (1978). "A Mass-Consistent Model for Wind Fields Over Complex Terrain."
 //!   Journal of Applied Meteorology, 17(3), 312-319.
 //! - Forthofer, J.M. (2007). "Modeling Wind in Complex Terrain for Use in Fire Spread Prediction."
-//!   PhD Thesis, Colorado State University.
+//!   `PhD` Thesis, Colorado State University.
 //! - Mandel, J. et al. (2011). "Coupled atmosphere-wildland fire modeling with WRF 3.3 and SFIRE 2011."
 //!
 //! # Theory
@@ -166,6 +166,7 @@ pub enum StabilityClass {
 impl StabilityClass {
     /// Get the vertical-to-horizontal scaling factor for this stability class
     /// More stable = less vertical mixing = higher sigma
+    #[must_use]
     pub fn sigma_factor(&self) -> f32 {
         match self {
             StabilityClass::A => 0.1, // Very unstable - strong vertical mixing
@@ -238,6 +239,7 @@ pub struct WindField {
 
 impl WindField {
     /// Create a new wind field for the given terrain
+    #[must_use]
     pub fn new(config: WindFieldConfig, terrain: &TerrainData) -> Self {
         let total_cells = config.nx * config.ny * config.nz;
         let total_xy = config.nx * config.ny;
@@ -276,6 +278,7 @@ impl WindField {
     }
 
     /// Create with default configuration
+    #[must_use]
     pub fn new_default(terrain: &TerrainData, domain_width: f32, domain_height: f32) -> Self {
         let cell_size = 50.0;
         let nx = (domain_width / cell_size).ceil() as usize;
@@ -306,6 +309,7 @@ impl WindField {
     }
 
     /// Get wind at a specific grid cell
+    #[must_use]
     pub fn wind_at_grid(&self, ix: usize, iy: usize, iz: usize) -> Vec3 {
         if ix < self.config.nx && iy < self.config.ny && iz < self.config.nz {
             self.wind[self.index(ix, iy, iz)]
@@ -323,6 +327,7 @@ impl WindField {
     }
 
     /// Get wind at any world position using trilinear interpolation
+    #[must_use]
     pub fn wind_at_position(&self, pos: Vec3) -> Vec3 {
         // Clamp position to grid bounds
         let x = pos
@@ -936,12 +941,14 @@ impl WindField {
     }
 
     /// Get horizontal wind speed at position (m/s)
+    #[must_use]
     pub fn wind_speed_at(&self, pos: Vec3) -> f32 {
         let wind = self.wind_at_position(pos);
         (wind.x * wind.x + wind.y * wind.y).sqrt()
     }
 
     /// Get wind direction at position (degrees, 0 = from north, 90 = from east)
+    #[must_use]
     pub fn wind_direction_at(&self, pos: Vec3) -> f32 {
         let wind = self.wind_at_position(pos);
         // Wind direction is where wind is coming FROM
@@ -954,16 +961,19 @@ impl WindField {
     }
 
     /// Get vertical wind component at position (m/s, positive = upward)
+    #[must_use]
     pub fn vertical_wind_at(&self, pos: Vec3) -> f32 {
         self.wind_at_position(pos).z
     }
 
     /// Get base wind vector
+    #[must_use]
     pub fn base_wind(&self) -> Vec3 {
         self.base_wind
     }
 
     /// Get grid configuration
+    #[must_use]
     pub fn config(&self) -> &WindFieldConfig {
         &self.config
     }
@@ -972,6 +982,7 @@ impl WindField {
     ///
     /// Returns a multiplier for fire spread rate based on wind-slope alignment.
     /// This follows the Rothermel (1972) wind factor formulation.
+    #[must_use]
     pub fn rothermel_wind_factor(&self, pos: Vec3, fire_direction: f32) -> f32 {
         let wind = self.wind_at_position(pos);
         let wind_speed = (wind.x * wind.x + wind.y * wind.y).sqrt();
@@ -1160,6 +1171,6 @@ mod tests {
         }
 
         // Divergence should be small after mass-consistent adjustment
-        assert!(max_div < 0.5, "Max divergence should be small: {}", max_div);
+        assert!(max_div < 0.5, "Max divergence should be small: {max_div}");
     }
 }

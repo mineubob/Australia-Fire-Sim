@@ -57,6 +57,7 @@ pub struct TerrainData {
 
 impl TerrainData {
     /// Create flat terrain at given elevation
+    #[must_use]
     pub fn flat(width: f32, height: f32, resolution: f32, elevation: f32) -> Self {
         let nx = (width / resolution).ceil() as usize + 1;
         let ny = (height / resolution).ceil() as usize + 1;
@@ -75,6 +76,7 @@ impl TerrainData {
     }
 
     /// Create terrain with a single hill
+    #[must_use]
     pub fn single_hill(
         width: f32,
         height: f32,
@@ -125,6 +127,7 @@ impl TerrainData {
     }
 
     /// Create terrain with valley between two hills
+    #[must_use]
     pub fn valley_between_hills(
         width: f32,
         height: f32,
@@ -195,6 +198,7 @@ impl TerrainData {
     /// * `ny` - Number of samples in Y direction
     /// * `elevation_scale` - Multiplier for heightmap values (heightmap values are [0,1])
     /// * `base_elevation` - Base elevation to add to all heights
+    #[must_use]
     pub fn from_heightmap(
         width: f32,
         height: f32,
@@ -234,6 +238,7 @@ impl TerrainData {
     }
 
     /// Query elevation at world position (x, y) using bilinear interpolation
+    #[must_use]
     pub fn elevation_at(&self, x: f32, y: f32) -> f32 {
         // Clamp to terrain bounds
         let x_clamped = x.max(0.0).min(self.width);
@@ -269,6 +274,7 @@ impl TerrainData {
     ///
     /// This is a fast approximation suitable for most use cases.
     /// For more accurate results, use `slope_at_horn()` which uses Horn's method.
+    #[must_use]
     pub fn slope_at(&self, x: f32, y: f32) -> f32 {
         let delta = self.resolution;
 
@@ -298,6 +304,7 @@ impl TerrainData {
     ///
     /// # Returns
     /// Slope angle in degrees (0° = flat, 90° = vertical)
+    #[must_use]
     pub fn slope_at_horn(&self, x: f32, y: f32) -> f32 {
         let d = self.resolution;
 
@@ -335,6 +342,7 @@ impl TerrainData {
     ///
     /// # Returns
     /// Aspect in degrees (0° = North, 90° = East, 180° = South, 270° = West)
+    #[must_use]
     pub fn aspect_at_horn(&self, x: f32, y: f32) -> f32 {
         let d = self.resolution;
 
@@ -370,6 +378,7 @@ impl TerrainData {
 
     /// Calculate aspect (direction of slope) at position in degrees (0-360)
     /// 0° = North, 90° = East, 180° = South, 270° = West
+    #[must_use]
     pub fn aspect_at(&self, x: f32, y: f32) -> f32 {
         let delta = self.resolution;
 
@@ -396,6 +405,7 @@ impl TerrainData {
 
     /// Calculate solar radiation modifier based on terrain (0-1 scale)
     /// Accounts for slope and aspect relative to sun position
+    #[must_use]
     pub fn solar_radiation_factor(
         &self,
         x: f32,
@@ -429,6 +439,7 @@ impl TerrainData {
     /// Build terrain cache for fast slope/aspect lookups
     /// Precomputes slope and aspect for every grid position
     /// This is expensive but only done once at initialization
+    #[must_use]
     pub fn build_cache(&self, cache_nx: usize, cache_ny: usize, cell_size: f32) -> TerrainCache {
         let mut slope = Vec::with_capacity(cache_nx * cache_ny);
         let mut aspect = Vec::with_capacity(cache_nx * cache_ny);
@@ -452,6 +463,7 @@ impl TerrainData {
     }
 
     /// Get gradient vector at position (dz/dx, dz/dy, 1.0 normalized)
+    #[must_use]
     pub fn gradient_at(&self, x: f32, y: f32) -> Vec3 {
         let delta = self.resolution;
 
@@ -467,26 +479,31 @@ impl TerrainData {
     }
 
     /// Get terrain width in meters
+    #[must_use]
     pub fn width(&self) -> f32 {
         self.width
     }
 
     /// Get terrain height in meters
+    #[must_use]
     pub fn height(&self) -> f32 {
         self.height
     }
 
     /// Get minimum elevation in meters
+    #[must_use]
     pub fn min_elevation(&self) -> f32 {
         self.min_elevation
     }
 
     /// Get maximum elevation in meters
+    #[must_use]
     pub fn max_elevation(&self) -> f32 {
         self.max_elevation
     }
 
     /// Get terrain resolution in meters
+    #[must_use]
     pub fn resolution(&self) -> f32 {
         self.resolution
     }

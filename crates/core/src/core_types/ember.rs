@@ -92,19 +92,19 @@ impl Ember {
     ///
     /// # Forces
     ///
-    /// 1. **Buoyancy (F_b)**: Hot air updraft lifts ember
+    /// 1. **Buoyancy (`F_b`)**: Hot air updraft lifts ember
     ///    ```text
     ///    F_b = ρ_air × g × V × (T_ember / T_threshold)
     ///    ```
     ///    Active when T > 300°C
     ///
-    /// 2. **Drag (F_d)**: Wind resistance and drift
+    /// 2. **Drag (`F_d`)**: Wind resistance and drift
     ///    ```text
     ///    F_d = 0.5 × ρ_air × C_d × A × |v_rel|²
     ///    ```
-    ///    Where v_rel = wind - ember_velocity
+    ///    Where `v_rel` = wind - `ember_velocity`
     ///
-    /// 3. **Gravity (F_g)**: Downward pull
+    /// 3. **Gravity (`F_g`)**: Downward pull
     ///    ```text
     ///    F_g = m × g = m × 9.81 m/s²
     ///    ```
@@ -188,11 +188,13 @@ impl Ember {
     }
 
     /// Check if ember is still active (hot and airborne)
+    #[must_use]
     pub fn is_active(&self) -> bool {
         *self.temperature > 200.0 && self.position.z > 0.0
     }
 
     /// Check if ember has landed on the ground
+    #[must_use]
     pub fn has_landed(&self) -> bool {
         self.position.z < 1.0
     }
@@ -202,31 +204,37 @@ impl Ember {
     /// Embers can ignite receptive fuel if:
     /// - Temperature > 250°C (typical ignition threshold)
     /// - Landed on surface (z < 1m)
+    #[must_use]
     pub fn can_ignite(&self) -> bool {
         self.has_landed() && *self.temperature > 250.0
     }
 
     /// Get current temperature
+    #[must_use]
     pub fn temperature(&self) -> Celsius {
         self.temperature
     }
 
     /// Get current mass
+    #[must_use]
     pub fn mass(&self) -> Kilograms {
         self.mass
     }
 
     /// Get current velocity (m/s)
+    #[must_use]
     pub fn velocity(&self) -> Vec3 {
         self.velocity
     }
 
     /// Get current position (m)
+    #[must_use]
     pub fn position(&self) -> Vec3 {
         self.position
     }
 
     /// Get source fuel type ID
+    #[must_use]
     pub fn source_fuel_type(&self) -> u8 {
         self.source_fuel_type
     }
@@ -247,6 +255,7 @@ impl Ember {
     ///
     /// # References
     /// Albini (1979, 1983) trajectory integration
+    #[must_use]
     pub fn predict_landing_position(
         &self,
         wind_speed_10m: f32,

@@ -1,5 +1,5 @@
 use crate::core_types::element::Vec3;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 /// Spatial index using hash-based octree for fast neighbor queries
 pub(crate) struct SpatialIndex {
@@ -12,7 +12,7 @@ impl SpatialIndex {
     /// Create a new spatial index
     pub fn new(bounds: (Vec3, Vec3), cell_size: f32) -> Self {
         SpatialIndex {
-            octree: FxHashMap::with_capacity_and_hasher(1024, Default::default()),
+            octree: FxHashMap::with_capacity_and_hasher(1024, FxBuildHasher),
             cell_size,
             bounds,
         }

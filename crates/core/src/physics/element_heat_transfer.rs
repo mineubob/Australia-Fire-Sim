@@ -10,7 +10,7 @@
 //! # Scientific References
 //! - Stefan-Boltzmann Law: Stefan (1879), Boltzmann (1884)
 //! - Wildfire radiation: Butler & Cohen (1998) - "Firefighter Safety Zones"
-//! - Wind effects: McArthur (1967), Rothermel (1972)
+//! - Wind effects: `McArthur` (1967), Rothermel (1972)
 //! - Slope effects: Butler et al. (2004), Rothermel slope factors
 
 use crate::core_types::element::{FuelElement, Vec3};
@@ -25,7 +25,7 @@ const STEFAN_BOLTZMANN: f32 = 5.67e-8;
 const EMISSIVITY: f32 = 0.95;
 
 /// Calculate radiant heat flux from source element to target element
-/// Uses full Stefan-Boltzmann law: σ * ε * (T_source^4 - T_target^4)
+/// Uses full Stefan-Boltzmann law: σ * ε * (`T_source^4` - `T_target^4`)
 ///
 /// # References
 /// - Stefan-Boltzmann Law applied to wildfire heat transfer
@@ -83,7 +83,7 @@ pub(crate) fn calculate_radiation_flux(
 /// Calculate convection heat transfer for vertical spread
 /// Fire climbs faster due to hot gases rising and preheating fuel above
 ///
-/// This matches the physics in calculate_heat_transfer_raw for consistency
+/// This matches the physics in `calculate_heat_transfer_raw` for consistency
 pub(crate) fn calculate_convection_heat(
     source: &FuelElement,
     target: &FuelElement,
@@ -126,7 +126,7 @@ pub(crate) fn calculate_convection_heat(
 /// 26x boost downwind at 10 m/s, 5% minimum upwind
 ///
 /// # References
-/// - McArthur (1967) - Australian bushfire observations
+/// - `McArthur` (1967) - Australian bushfire observations
 /// - Rothermel (1972) - Wind coefficient equations
 /// - Empirical data from Australian fire behavior studies
 #[inline(always)]
@@ -266,7 +266,7 @@ pub(crate) fn calculate_total_heat_transfer(
     total_heat.max(0.0)
 }
 
-/// OPTIMIZED: Calculate heat transfer using raw data instead of FuelElement structures
+/// OPTIMIZED: Calculate heat transfer using raw data instead of `FuelElement` structures
 /// Eliminates 500,000+ temporary structure allocations per frame at 12.5k burning elements
 /// Inline attribute ensures this hot function is optimized (called millions of times per frame)
 #[inline(always)]
@@ -537,8 +537,7 @@ mod tests {
         // This creates appropriate FFDI-scaled spread differentiation
         assert!(
             multiplier > 3.0 && multiplier < 4.5,
-            "Expected ~3.5× boost at 10 m/s, got {}",
-            multiplier
+            "Expected ~3.5× boost at 10 m/s, got {multiplier}"
         );
     }
 
@@ -551,7 +550,7 @@ mod tests {
         let multiplier = wind_radiation_multiplier(from, to, wind);
 
         // Should be suppressed to ~5% upwind
-        assert!(multiplier < 0.1, "Expected ~5% upwind, got {}", multiplier);
+        assert!(multiplier < 0.1, "Expected ~5% upwind, got {multiplier}");
         assert!(multiplier >= 0.05, "Should not go below 5%");
     }
 
@@ -566,8 +565,7 @@ mod tests {
         // Reduced from 2.5× to prevent excessive vertical spread in moderate conditions
         assert!(
             (1.8..=2.5).contains(&factor),
-            "Expected 1.8-2.2× upward, got {}",
-            factor
+            "Expected 1.8-2.2× upward, got {factor}"
         );
     }
 
@@ -581,8 +579,7 @@ mod tests {
         // Fire spreads slower downward
         assert!(
             factor < 1.0,
-            "Expected reduced downward spread, got {}",
-            factor
+            "Expected reduced downward spread, got {factor}"
         );
     }
 
@@ -594,7 +591,7 @@ mod tests {
         let factor = slope_spread_multiplier(&source, &target);
 
         // Should have uphill boost
-        assert!(factor > 1.5, "Expected uphill boost, got {}", factor);
+        assert!(factor > 1.5, "Expected uphill boost, got {factor}");
     }
 
     #[test]
@@ -605,7 +602,7 @@ mod tests {
         let factor = slope_spread_multiplier(&source, &target);
 
         // Should have reduced effectiveness downhill
-        assert!(factor < 1.0, "Expected downhill reduction, got {}", factor);
+        assert!(factor < 1.0, "Expected downhill reduction, got {factor}");
     }
 
     /// Test that vertical heat transfer is significantly faster than horizontal.
@@ -664,19 +661,14 @@ mod tests {
         // Vertical should be significantly faster (includes convection + directional boost)
         assert!(
             vert > horiz,
-            "Vertical heat transfer ({}) should exceed horizontal ({})",
-            vert,
-            horiz
+            "Vertical heat transfer ({vert}) should exceed horizontal ({horiz})"
         );
 
         // Vertical should be at least 2× horizontal (conservative lower bound)
         let ratio = vert / horiz;
         assert!(
             ratio >= 2.0,
-            "Vertical/horizontal ratio {} should be at least 2× (vert={}, horiz={})",
-            ratio,
-            vert,
-            horiz
+            "Vertical/horizontal ratio {ratio} should be at least 2× (vert={vert}, horiz={horiz})"
         );
     }
 
@@ -694,9 +686,7 @@ mod tests {
         assert!(radiation > 0.0, "Radiation expected to be > 0");
         assert!(
             convection <= radiation * 0.6,
-            "Convection ({}) should not dominate radiation ({}) at small vertical separations",
-            convection,
-            radiation
+            "Convection ({convection}) should not dominate radiation ({radiation}) at small vertical separations"
         );
     }
 
@@ -709,7 +699,7 @@ mod tests {
     /// - Crown (stringybark) at z=8m
     ///
     /// # Scientific basis
-    /// - Van Wagner (1977): Crown fire requires surface intensity ≥ I_0
+    /// - Van Wagner (1977): Crown fire requires surface intensity ≥ `I_0`
     /// - Stringybark ladder fuels reduce crown base height threshold
     /// - Heat transfer should decay with height but reach crown at high temps
     /// - Total time to crown ignition for 8-10m tree: typically 30-120 seconds
@@ -809,19 +799,16 @@ mod tests {
 
         // Print diagnostic info BEFORE assertions so we can see values on failure
         eprintln!("\n=== Multi-part stringybark tree heat transfer diagnostics ===");
-        eprintln!(
-            "Ground fire (dry grass): {}°C, {:.2} kg fuel, SAV={}",
-            src_temp, src_remain, src_sav
-        );
+        eprintln!("Ground fire (dry grass): {src_temp}°C, {src_remain:.2} kg fuel, SAV={src_sav}");
         eprintln!(
             "Trunk SAV={}, Branch SAV={}, Crown SAV={}",
             *trunk_lower.fuel.surface_area_to_volume,
             *branch.fuel.surface_area_to_volume,
             *crown.fuel.surface_area_to_volume
         );
-        eprintln!("Heat to trunk (2m):    {:.2} kJ/s", heat_to_trunk);
-        eprintln!("Heat to branch (4m):   {:.2} kJ/s", heat_to_branch);
-        eprintln!("Heat to crown (8m):    {:.2} kJ/s", heat_to_crown);
+        eprintln!("Heat to trunk (2m):    {heat_to_trunk:.2} kJ/s");
+        eprintln!("Heat to branch (4m):   {heat_to_branch:.2} kJ/s");
+        eprintln!("Heat to crown (8m):    {heat_to_crown:.2} kJ/s");
 
         // Heat should decay with height (inverse square law + view factor)
         // BUG DETECTION: If higher elements receive more heat than lower, vertical transfer is broken
@@ -837,12 +824,9 @@ mod tests {
         // TODO: Fix convection to include distance attenuation and cap vertical factor
         assert!(
             heat_to_trunk > heat_to_crown,
-            "Trunk (2m) should receive more heat than crown (8m): trunk={:.1}, crown={:.1}\n\
+            "Trunk (2m) should receive more heat than crown (8m): trunk={heat_to_trunk:.1}, crown={heat_to_crown:.1}\n\
              This indicates vertical heat transfer is too aggressive!\n\
-             Branch at 4m received: {:.1} kJ/s (should be between trunk and crown)",
-            heat_to_trunk,
-            heat_to_crown,
-            heat_to_branch
+             Branch at 4m received: {heat_to_branch:.1} kJ/s (should be between trunk and crown)"
         );
 
         // Check that heat decay is not too extreme (fire should still reach crown)
@@ -894,30 +878,25 @@ mod tests {
         // Cascading ignition achieves realistic 60-180s crown fire timing.
         assert!(
             estimated_time_to_crown_ignition > 15.0,
-            "Crown ignition too fast ({:.1}s) - vertical heat transfer excessive",
-            estimated_time_to_crown_ignition
+            "Crown ignition too fast ({estimated_time_to_crown_ignition:.1}s) - vertical heat transfer excessive"
         );
         assert!(
             estimated_time_to_crown_ignition < 5000.0,
-            "Crown ignition too slow ({:.1}s) - check heat transfer physics",
-            estimated_time_to_crown_ignition
+            "Crown ignition too slow ({estimated_time_to_crown_ignition:.1}s) - check heat transfer physics"
         );
 
         // Print diagnostic info for tuning (visible with `cargo test -- --nocapture`)
         eprintln!("\n=== Multi-part stringybark tree heat transfer diagnostics ===");
-        eprintln!(
-            "Ground fire (dry grass): {}°C, {:.2} kg fuel, SAV={}",
-            src_temp, src_remain, src_sav
-        );
+        eprintln!("Ground fire (dry grass): {src_temp}°C, {src_remain:.2} kg fuel, SAV={src_sav}");
         eprintln!(
             "Trunk SAV={}, Branch SAV={}, Crown SAV={}",
             *trunk_lower.fuel.surface_area_to_volume,
             *branch.fuel.surface_area_to_volume,
             *crown.fuel.surface_area_to_volume
         );
-        eprintln!("Heat to trunk (2m):    {:.2} kJ/s", heat_to_trunk);
-        eprintln!("Heat to branch (4m):   {:.2} kJ/s", heat_to_branch);
-        eprintln!("Heat to crown (8m):    {:.2} kJ/s", heat_to_crown);
+        eprintln!("Heat to trunk (2m):    {heat_to_trunk:.2} kJ/s");
+        eprintln!("Heat to branch (4m):   {heat_to_branch:.2} kJ/s");
+        eprintln!("Heat to crown (8m):    {heat_to_crown:.2} kJ/s");
         eprintln!("Crown/trunk ratio:     {:.2}%", crown_fraction * 100.0);
         // Expected from inverse square: (2/8)² = 6.25%, with 2.5× vertical boost → ~16%
         eprintln!(
@@ -925,8 +904,7 @@ mod tests {
             crown_fraction * 100.0
         );
         eprintln!(
-            "Est. time to crown ignition (ground fire only): {:.1}s",
-            estimated_time_to_crown_ignition
+            "Est. time to crown ignition (ground fire only): {estimated_time_to_crown_ignition:.1}s"
         );
         eprintln!(
             "Stringybark ignition temp: {:.1}°C",

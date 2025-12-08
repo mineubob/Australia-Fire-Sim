@@ -1,6 +1,6 @@
 //! Ultra-realistic fire simulation integrating all advanced systems
 //!
-//! FireSimulationUltra combines:
+//! `FireSimulationUltra` combines:
 //! - 3D atmospheric grid with terrain elevation
 //! - Discrete fuel elements with grid coupling
 //! - Chemistry-based combustion
@@ -28,7 +28,7 @@ use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField,
 use crate::physics::{calculate_layer_transition_probability, CanopyLayer};
 use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
 use rayon::prelude::*;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::collections::HashSet;
 
 // ============================================================================
@@ -103,6 +103,7 @@ pub struct FireSimulation {
 
 impl FireSimulation {
     /// Create a new ultra-realistic fire simulation
+    #[must_use]
     pub fn new(grid_cell_size: f32, terrain: TerrainData) -> Self {
         // Use terrain dimensions
         let width = terrain.width;
@@ -186,17 +187,20 @@ impl FireSimulation {
     ///
     /// If advanced wind field is enabled, returns the mass-consistent wind at that position.
     /// Otherwise, returns the global weather wind vector.
+    #[must_use]
     pub fn wind_at_position(&self, pos: Vec3) -> Vec3 {
         // Always use the mass-consistent wind field which is now always present
         self.wind_field.wind_at_position(pos)
     }
 
     /// Get the grid's terrain.
+    #[must_use]
     pub fn terrain(&self) -> &TerrainData {
         &self.grid.terrain
     }
 
     /// Get the current number of active embers
+    #[must_use]
     pub fn ember_count(&self) -> usize {
         self.embers.len()
     }
@@ -253,9 +257,9 @@ impl FireSimulation {
     /// For realistic fire spread behavior, DO NOT use this method. Natural spread occurs through:
     /// - **Heat-based auto-ignition**: Elements receive heat via `apply_heat()` which respects
     ///   moisture evaporation (2260 kJ/kg latent heat) and probabilistic ignition via
-    ///   `check_ignition_probability()`. See FuelElement::apply_heat() in core_types/element.rs.
+    ///   `check_ignition_probability()`. See `FuelElement::apply_heat()` in `core_types/element.rs`.
     /// - **Ember spot fires**: Hot embers land on receptive fuel and attempt ignition based on
-    ///   ember temperature, fuel moisture, and fuel ember_receptivity property.
+    ///   ember temperature, fuel moisture, and fuel `ember_receptivity` property.
     ///
     /// # Physics Justification
     ///
@@ -290,7 +294,7 @@ impl FireSimulation {
     /// This method applies heat energy to a fuel element following realistic physics:
     /// - Heat goes to moisture evaporation FIRST (2260 kJ/kg latent heat)
     /// - Remaining heat raises temperature
-    /// - Probabilistic ignition via check_ignition_probability()
+    /// - Probabilistic ignition via `check_ignition_probability()`
     ///
     /// # Use Cases
     /// - Backburns/controlled burns (gradual heating)
@@ -331,6 +335,7 @@ impl FireSimulation {
     ///
     /// # Returns
     /// Vector of references to fuel elements within the specified radius
+    #[must_use]
     pub fn get_elements_in_radius(&self, position: Vec3, radius: f32) -> Vec<&FuelElement> {
         let nearby_ids = self.spatial_index.query_radius(position, radius);
 
@@ -341,11 +346,13 @@ impl FireSimulation {
     }
 
     /// Get a fuel element by ID
+    #[must_use]
     pub fn get_element(&self, id: usize) -> Option<&FuelElement> {
         self.elements.get(id)?.as_ref()
     }
 
     /// Get a mutable fuel element by ID
+    #[must_use]
     pub fn get_element_mut(&mut self, id: usize) -> Option<&mut FuelElement> {
         self.elements.get_mut(id)?.as_mut()
     }
@@ -362,6 +369,7 @@ impl FireSimulation {
     }
 
     /// Get reference to weather system (read-only)
+    #[must_use]
     pub fn get_weather(&self) -> &WeatherSystem {
         &self.weather
     }
@@ -422,7 +430,8 @@ impl FireSimulation {
     /// Get suppression coverage status for a fuel element
     ///
     /// # Returns
-    /// Tuple of (has_coverage, effectiveness_percent, is_within_duration)
+    /// Tuple of (`has_coverage`, `effectiveness_percent`, `is_within_duration`)
+    #[must_use]
     pub fn get_element_suppression_status(&self, element_id: usize) -> Option<(bool, f32, bool)> {
         if let Some(element) = self.get_element(element_id) {
             if let Some(coverage) = element.suppression_coverage() {
@@ -444,6 +453,7 @@ impl FireSimulation {
     // ========================================================================
 
     /// Get number of active pyrocumulus clouds
+    #[must_use]
     pub fn pyrocumulus_count(&self) -> usize {
         self.pyrocumulus_clouds.len()
     }
@@ -455,6 +465,7 @@ impl FireSimulation {
     /// - 4: Low fire weather potential  
     /// - 5: Moderate fire weather potential
     /// - 6: High fire weather potential
+    #[must_use]
     pub fn haines_index(&self) -> u8 {
         self.atmospheric_profile.haines_index
     }
@@ -467,6 +478,7 @@ impl FireSimulation {
     /// - "Low to Moderate": Haines Index 4, some instability
     /// - "High": Haines Index 5, significant instability
     /// - "Very High - Extreme Fire Behavior Possible": Haines Index 6
+    #[must_use]
     pub fn fire_weather_severity(&self) -> &'static str {
         self.atmospheric_profile.fire_weather_severity()
     }
@@ -479,16 +491,17 @@ impl FireSimulation {
     /// - "Moderate Pyrocumulus": 2-5km depth, significant convection
     /// - "Deep Pyrocumulus": 5-10km depth, strong updrafts
     /// - "Pyrocumulonimbus (pyroCb)": >10km depth or lightning present
+    #[must_use]
     pub fn dominant_cloud_type(&self) -> &'static str {
         self.pyrocumulus_clouds
             .iter()
-            .map(|c| c.cloud_type())
+            .map(super::weather::pyrocumulus::PyrocumulusCloud::cloud_type)
             .max_by_key(|s| match *s {
-                "None" => 0,
                 "Cumulus Flammagenitus" => 1,
                 "Moderate Pyrocumulus" => 2,
                 "Deep Pyrocumulus" => 3,
                 "Pyrocumulonimbus (pyroCb)" => 4,
+                // "None" and any unknown types
                 _ => 0,
             })
             .unwrap_or("None")
@@ -512,6 +525,7 @@ impl FireSimulation {
     /// - >1.0: Fire spreads faster (uphill)
     /// - <1.0: Fire spreads slower (downhill)
     /// - 1.0: No slope effect (flat terrain)
+    #[must_use]
     pub fn slope_spread_multiplier(&self, from: &Vec3, to: &Vec3) -> f32 {
         let wind = Vec3::zeros();
         crate::physics::terrain_spread_multiplier(from, to, &self.grid.terrain, &wind)
@@ -527,21 +541,25 @@ impl FireSimulation {
     }
 
     /// Get actions executed in the last frame (for network broadcast)
+    #[must_use]
     pub fn get_executed_actions(&self) -> &[PlayerAction] {
         self.action_queue.executed_this_frame()
     }
 
     /// Get full action history (for late joiners)
+    #[must_use]
     pub fn get_action_history(&self) -> &[PlayerAction] {
         self.action_queue.history()
     }
 
     /// Get pending action count
+    #[must_use]
     pub fn pending_action_count(&self) -> usize {
         self.action_queue.pending_actions_len()
     }
 
     /// Get frame number (for synchronization)
+    #[must_use]
     pub fn frame_number(&self) -> u32 {
         self.current_frame
     }
@@ -559,6 +577,7 @@ impl FireSimulation {
     ///
     /// # Returns
     /// Vector of predicted landing positions for all active embers
+    #[must_use]
     pub fn predict_spot_fire_locations(&self, max_prediction_time: f32) -> Vec<Vec3> {
         let wind = self.weather.wind_vector();
         let wind_speed = wind.magnitude();
@@ -621,7 +640,7 @@ impl FireSimulation {
     ///
     /// ## 3. Ember Spot Fire Ignition (`Ember::attempt_ignition`)
     /// - **Purpose**: Long-range fire spread via ember spotting (up to 25km)
-    /// - **Physics**: Probability based on ember temp, fuel moisture, ember_receptivity
+    /// - **Physics**: Probability based on ember temp, fuel moisture, `ember_receptivity`
     /// - **When**: Hot embers (>250°C) land on receptive fuel
     /// - **Justification**: Koo et al. (2010), Black Saturday 2009 empirical data
     ///   - Stringybark: 60% receptivity (highly susceptible)
@@ -875,8 +894,7 @@ impl FireSimulation {
             {
                 let grid_data = self.grid.interpolate_at_position(
                     self.get_element(element_id)
-                        .map(|e| e.position)
-                        .unwrap_or(Vec3::zeros()),
+                        .map_or(Vec3::zeros(), |e| e.position),
                 );
 
                 if let Some(element) = self.get_element_mut(element_id) {
@@ -1058,11 +1076,15 @@ impl FireSimulation {
                         };
 
                     // Calculate probability of transitioning to next layer
-                    let transition_prob = if current_layer != CanopyLayer::Overstory {
+                    let transition_prob = if current_layer == CanopyLayer::Overstory {
+                        0.0
+                    } else {
                         let target_layer = match current_layer {
                             CanopyLayer::Understory => CanopyLayer::Midstory,
-                            CanopyLayer::Midstory => CanopyLayer::Overstory,
-                            CanopyLayer::Overstory => CanopyLayer::Overstory,
+                            // Both Midstory and Overstory transition to Overstory
+                            CanopyLayer::Midstory | CanopyLayer::Overstory => {
+                                CanopyLayer::Overstory
+                            }
                         };
                         calculate_layer_transition_probability(
                             intensity,
@@ -1070,8 +1092,6 @@ impl FireSimulation {
                             current_layer,
                             target_layer,
                         )
-                    } else {
-                        0.0
                     };
 
                     // Combine Van Wagner crown fire model with canopy layer physics
@@ -1190,7 +1210,7 @@ impl FireSimulation {
             .map(|(_, _, nearby)| nearby.len())
             .sum::<usize>();
         let mut heat_map: FxHashMap<usize, f32> =
-            FxHashMap::with_capacity_and_hasher(estimated_targets, Default::default());
+            FxHashMap::with_capacity_and_hasher(estimated_targets, FxBuildHasher);
 
         // Sequential iteration with better cache locality
         for (element_id, _pos, nearby) in &nearby_cache {
@@ -1260,8 +1280,7 @@ impl FireSimulation {
                         #[cfg(debug_assertions)]
                         if base_heat > 0.0 && !target.ignited && std::env::var("DEBUG_HEAT").is_ok()
                         {
-                            eprintln!("Heat {:?}->{:?}: base={:.4} ffdi_mult={:.2} terrain={:.2} final={:.4} kJ",
-                                element_id, target_id, base_heat, ffdi_multiplier, terrain_multiplier, heat);
+                            eprintln!("Heat {element_id:?}->{target_id:?}: base={base_heat:.4} ffdi_mult={ffdi_multiplier:.2} terrain={terrain_multiplier:.2} final={heat:.4} kJ");
                         }
 
                         if heat > 0.0 {
@@ -1372,7 +1391,9 @@ impl FireSimulation {
 
         // 6c. Update existing pyrocumulus clouds
         // Calculate average fire intensity for cloud update
-        let avg_fire_intensity = if !self.burning_elements.is_empty() {
+        let avg_fire_intensity = if self.burning_elements.is_empty() {
+            0.0
+        } else {
             let total_intensity: f32 = self
                 .burning_elements
                 .iter()
@@ -1382,8 +1403,6 @@ impl FireSimulation {
                 })
                 .sum();
             total_intensity / self.burning_elements.len() as f32
-        } else {
-            0.0
         };
 
         for cloud in &mut self.pyrocumulus_clouds {
@@ -1391,14 +1410,15 @@ impl FireSimulation {
         }
 
         // Remove dissipated clouds
-        self.pyrocumulus_clouds.retain(|c| c.is_active());
+        self.pyrocumulus_clouds
+            .retain(super::weather::pyrocumulus::PyrocumulusCloud::is_active);
 
         // 6d. Calculate ember lofting enhancement from pyrocumulus clouds
         let ember_lofting_multiplier = self
             .pyrocumulus_clouds
             .iter()
-            .map(|c| c.ember_lofting_multiplier())
-            .fold(1.0_f32, |acc, m| acc.max(m));
+            .map(super::weather::pyrocumulus::PyrocumulusCloud::ember_lofting_multiplier)
+            .fold(1.0_f32, f32::max);
 
         // 6e. Generate embers with Albini spotting physics (enhanced by pyrocumulus)
         // Collect ember data first to avoid borrow conflicts (ember generation requires mutable push)
@@ -1445,8 +1465,7 @@ impl FireSimulation {
                 .elements
                 .iter()
                 .find_map(|e| e.as_ref().filter(|el| el.fuel.id == fuel_id))
-                .map(|el| el.fuel.ember_mass_kg)
-                .unwrap_or(0.0005); // Fallback to typical mass
+                .map_or(0.0005, |el| el.fuel.ember_mass_kg); // Fallback to typical mass
             let ember = Ember::new(
                 new_ember_id,
                 position,
@@ -1634,6 +1653,7 @@ impl FireSimulation {
     }
 
     /// Get all burning elements
+    #[must_use]
     pub fn get_burning_elements(&self) -> Vec<&FuelElement> {
         self.burning_elements
             .iter()
@@ -1642,6 +1662,7 @@ impl FireSimulation {
     }
 
     /// Get all fuel elements (both burning and unburned)
+    #[must_use]
     pub fn get_all_elements(&self) -> Vec<&FuelElement> {
         self.elements
             .iter()
@@ -1650,16 +1671,19 @@ impl FireSimulation {
     }
 
     /// Get grid cell at position
+    #[must_use]
     pub fn get_cell_at_position(&self, pos: Vec3) -> Option<&GridCell> {
         self.grid.cell_at_position(pos)
     }
 
     /// Get number of active cells
+    #[must_use]
     pub fn active_cell_count(&self) -> usize {
         self.grid.active_cell_count()
     }
 
     /// Get statistics
+    #[must_use]
     pub fn get_stats(&self) -> SimulationStats {
         SimulationStats {
             burning_elements: self.burning_elements.len(),
@@ -1794,8 +1818,7 @@ mod tests {
         // The physics now accurately reflects that low danger ≠ no spread, just slower
         assert!(
             burning_count <= 25,
-            "Low fire danger should allow controlled spread (<=25 of 25), got {} burning elements",
-            burning_count
+            "Low fire danger should allow controlled spread (<=25 of 25), got {burning_count} burning elements"
         );
 
         // Verify that it's not spreading as fast as higher danger conditions
@@ -1803,7 +1826,7 @@ mod tests {
 
         // FFDI should be low
         let ffdi = sim.weather.calculate_ffdi();
-        assert!(ffdi < 12.0, "FFDI should be low (<12), got {}", ffdi);
+        assert!(ffdi < 12.0, "FFDI should be low (<12), got {ffdi}");
     }
 
     /// Test fire spread under MODERATE fire danger conditions
@@ -1855,16 +1878,14 @@ mod tests {
         // Spread to neighbors takes longer under moderate conditions (by design)
         assert!(
             burning_count >= 1,
-            "Moderate fire danger should maintain fire (>=1), got {}",
-            burning_count
+            "Moderate fire danger should maintain fire (>=1), got {burning_count}"
         );
 
         // FFDI should be moderate
         let ffdi = sim.weather.calculate_ffdi();
         assert!(
             (12.0..50.0).contains(&ffdi),
-            "FFDI should be moderate (12-50), got {}",
-            ffdi
+            "FFDI should be moderate (12-50), got {ffdi}"
         );
     }
 
@@ -1919,13 +1940,12 @@ mod tests {
         // 60 seconds should spread ~300m, easily covering 30m of 1.5m-spaced elements
         assert!(
             burning_count >= 10,
-            "Extreme fire danger should have rapid downwind spread (>=10), got {}",
-            burning_count
+            "Extreme fire danger should have rapid downwind spread (>=10), got {burning_count}"
         );
 
         // FFDI should be extreme (>75)
         let ffdi = sim.weather.calculate_ffdi();
-        assert!(ffdi > 75.0, "FFDI should be extreme (>75), got {}", ffdi);
+        assert!(ffdi > 75.0, "FFDI should be extreme (>75), got {ffdi}");
     }
 
     /// Test that Australian-specific factors affect fire behavior correctly
@@ -2047,8 +2067,7 @@ mod tests {
         // Fire should spread in wind direction (to elements 1, 2, 3...)
         assert!(
             downwind_burning >= 2,
-            "Fire should spread downwind, got {} elements",
-            downwind_burning
+            "Fire should spread downwind, got {downwind_burning} elements"
         );
     }
 }

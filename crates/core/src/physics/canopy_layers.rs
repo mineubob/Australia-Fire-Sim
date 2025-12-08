@@ -28,6 +28,7 @@ pub enum CanopyLayer {
 
 impl CanopyLayer {
     /// Get height range for this layer in meters
+    #[must_use]
     pub fn height_range(&self) -> (f32, f32) {
         match self {
             CanopyLayer::Understory => (0.0, 2.0),
@@ -37,6 +38,7 @@ impl CanopyLayer {
     }
 
     /// Check if a height falls within this layer
+    #[must_use]
     pub fn contains_height(&self, height: f32) -> bool {
         let (min, max) = self.height_range();
         height >= min && height < max
@@ -86,6 +88,7 @@ const GRASSLAND_LADDER_FUEL_FACTOR: f32 = 0.0;
 
 impl CanopyStructure {
     /// Get the ladder fuel factor
+    #[must_use]
     pub fn ladder_fuel_factor(&self) -> f32 {
         self.ladder_fuel_factor
     }
@@ -96,6 +99,7 @@ impl CanopyStructure {
     /// - Fibrous bark hanging from trunk (ladder fuel)
     /// - Low crown base height
     /// - Dense mid-story shrubs
+    #[must_use]
     pub fn eucalyptus_stringybark() -> Self {
         CanopyStructure {
             understory_load: 1.5, // kg/m² (grass, litter)
@@ -120,6 +124,7 @@ impl CanopyStructure {
     /// - Minimal ladder fuels
     /// - Higher crown base
     /// - Gaps between layers
+    #[must_use]
     pub fn eucalyptus_smooth_bark() -> Self {
         CanopyStructure {
             understory_load: 1.2,
@@ -139,6 +144,7 @@ impl CanopyStructure {
     }
 
     /// Create canopy structure for grassland (single layer)
+    #[must_use]
     pub fn grassland() -> Self {
         CanopyStructure {
             understory_load: 0.8,
@@ -158,6 +164,7 @@ impl CanopyStructure {
     }
 
     /// Get fuel load for a specific layer
+    #[must_use]
     pub fn load_at_layer(&self, layer: CanopyLayer) -> f32 {
         match layer {
             CanopyLayer::Understory => self.understory_load,
@@ -167,6 +174,7 @@ impl CanopyStructure {
     }
 
     /// Get bulk density for a specific layer
+    #[must_use]
     pub fn density_at_layer(&self, layer: CanopyLayer) -> f32 {
         match layer {
             CanopyLayer::Understory => self.understory_density,
@@ -176,6 +184,7 @@ impl CanopyStructure {
     }
 
     /// Get moisture for a specific layer
+    #[must_use]
     pub fn moisture_at_layer(&self, layer: CanopyLayer) -> f32 {
         match layer {
             CanopyLayer::Understory => self.understory_moisture,
@@ -185,6 +194,7 @@ impl CanopyStructure {
     }
 
     /// Get total canopy height
+    #[must_use]
     pub fn total_height(&self) -> f32 {
         if self.overstory_load > 0.0 {
             30.0 // Typical eucalyptus height
@@ -211,6 +221,7 @@ impl CanopyStructure {
 ///
 /// # Returns
 /// Transition probability (0-1)
+#[must_use]
 pub fn calculate_layer_transition_probability(
     lower_layer_intensity: f32,
     canopy: &CanopyStructure,
@@ -324,7 +335,7 @@ mod tests {
         );
 
         // Should have reasonable probability
-        assert!(prob > 0.1, "Probability was {}", prob);
+        assert!(prob > 0.1, "Probability was {prob}");
     }
 
     #[test]

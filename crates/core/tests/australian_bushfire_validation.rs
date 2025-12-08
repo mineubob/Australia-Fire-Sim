@@ -8,7 +8,7 @@
 //! - **Rothermel (1972)**: USDA Forest Service Research Paper INT-115
 //! - **Van Wagner (1977, 1993)**: Crown Fire Initiation and Spread
 //! - **Albini (1979, 1983)**: Spotting Distance Models
-//! - **McArthur (1967, Mark 5)**: Forest Fire Danger Index
+//! - **`McArthur` (1967, Mark 5)**: Forest Fire Danger Index
 //! - **Byram (1959)**: Fire Intensity and Flame Height
 //! - **Cruz et al. (2012)**: Black Saturday Fire Behavior Analysis
 //! - **Cruz et al. (2015)**: Australian Fuel Type Spread Rates
@@ -18,7 +18,7 @@
 //! - **Pausas et al. (2017)**: Stringybark Ladder Fuel Behavior
 //! - **Bureau of Meteorology**: Fire Danger Ratings and FFDI Calibration
 //!
-//! Run tests with: cargo test --test australian_bushfire_validation
+//! Run tests with: cargo test --test `australian_bushfire_validation`
 
 use fire_sim_core::{
     core_types::Kilograms,
@@ -38,9 +38,9 @@ use fire_sim_core::{
 // TEST 1: McArthur FFDI Mark 5 Validation (Bureau of Meteorology)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Test McArthur FFDI Mark 5 formula calibrated to WA Fire Behaviour Calculator
+/// Test `McArthur` FFDI Mark 5 formula calibrated to WA Fire Behaviour Calculator
 ///
-/// Reference: https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest
+/// Reference: <https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest>
 /// Formula: FFDI = 2.11 × exp(-0.45 + 0.987×ln(D) - 0.0345×H + 0.0338×T + 0.0234×V)
 /// Calibration constant: 2.11 (empirical WA data, theoretical is 2.0)
 ///
@@ -52,8 +52,7 @@ fn test_mcarthur_ffdi_mark5_low_moderate() {
     let ffdi = weather.calculate_ffdi();
     assert!(
         (ffdi - 5.0).abs() <= 2.0,
-        "Low FFDI: expected ~5.0, got {:.1}",
-        ffdi
+        "Low FFDI: expected ~5.0, got {ffdi:.1}"
     );
 
     // Moderate conditions
@@ -61,8 +60,7 @@ fn test_mcarthur_ffdi_mark5_low_moderate() {
     let ffdi = weather.calculate_ffdi();
     assert!(
         (ffdi - 12.7).abs() <= 2.0,
-        "Moderate FFDI: expected ~12.7, got {:.1}",
-        ffdi
+        "Moderate FFDI: expected ~12.7, got {ffdi:.1}"
     );
 }
 
@@ -73,8 +71,7 @@ fn test_mcarthur_ffdi_mark5_high_very_high() {
     let ffdi = weather.calculate_ffdi();
     assert!(
         (ffdi - 35.0).abs() <= 5.0,
-        "High FFDI: expected ~35.0, got {:.1}",
-        ffdi
+        "High FFDI: expected ~35.0, got {ffdi:.1}"
     );
 
     // Severe conditions
@@ -82,8 +79,7 @@ fn test_mcarthur_ffdi_mark5_high_very_high() {
     let ffdi = weather.calculate_ffdi();
     assert!(
         (ffdi - 70.0).abs() <= 10.0,
-        "Severe FFDI: expected ~70.0, got {:.1}",
-        ffdi
+        "Severe FFDI: expected ~70.0, got {ffdi:.1}"
     );
 }
 
@@ -166,10 +162,7 @@ fn test_byram_flame_height_low_moderate() {
         let tolerance = expected_height * tolerance_factor;
         assert!(
             (calculated - expected_height).abs() <= tolerance,
-            "Intensity {:.0} kW/m: expected {:.1}m flame height, got {:.1}m",
-            intensity,
-            expected_height,
-            calculated
+            "Intensity {intensity:.0} kW/m: expected {expected_height:.1}m flame height, got {calculated:.1}m"
         );
     }
 }
@@ -189,10 +182,7 @@ fn test_byram_flame_height_high_extreme() {
         let tolerance = expected_height * tolerance_factor;
         assert!(
             (calculated - expected_height).abs() <= tolerance,
-            "Intensity {:.0} kW/m: expected {:.1}m flame height, got {:.1}m",
-            intensity,
-            expected_height,
-            calculated
+            "Intensity {intensity:.0} kW/m: expected {expected_height:.1}m flame height, got {calculated:.1}m"
         );
     }
 }
@@ -221,11 +211,7 @@ fn test_rothermel_grassland_spread_rate_wind_rule() {
         let spread_rate = rothermel_spread_rate(&fuel, 0.05, wind_ms, 0.0, 20.0);
         assert!(
             spread_rate >= min_rate && spread_rate <= max_rate,
-            "Wind {:.0} km/h: spread rate {:.1} m/min not in expected range {:.0}-{:.0} m/min",
-            wind_kmh,
-            spread_rate,
-            min_rate,
-            max_rate
+            "Wind {wind_kmh:.0} km/h: spread rate {spread_rate:.1} m/min not in expected range {min_rate:.0}-{max_rate:.0} m/min"
         );
     }
 }
@@ -240,8 +226,7 @@ fn test_rothermel_wind_effect_multiplier() {
     let wind_multiplier = with_wind_10ms / no_wind.max(0.1);
     assert!(
         wind_multiplier >= 5.0,
-        "10 m/s wind should increase spread by at least 5x, got {:.1}x",
-        wind_multiplier
+        "10 m/s wind should increase spread by at least 5x, got {wind_multiplier:.1}x"
     );
 }
 
@@ -267,9 +252,7 @@ fn test_rothermel_fuel_moisture_effect() {
 
     assert!(
         wet_spread < dry_spread * 0.7,
-        "20% moisture should reduce spread by >30%: dry={:.1}, wet={:.1}",
-        dry_spread,
-        wet_spread
+        "20% moisture should reduce spread by >30%: dry={dry_spread:.1}, wet={wet_spread:.1}"
     );
 }
 
@@ -279,8 +262,8 @@ fn test_rothermel_fuel_moisture_effect() {
 
 /// Van Wagner (1977, 1993) Crown Fire Initiation Model
 ///
-/// Critical surface intensity: I_o = (0.010 × CBH × (460 + 25.9×FMC))^1.5
-/// Critical crown spread rate: R_critical = 3.0 / CBD
+/// Critical surface intensity: `I_o` = (0.010 × CBH × (460 + 25.9×FMC))^1.5
+/// Critical crown spread rate: `R_critical` = 3.0 / CBD
 #[test]
 fn test_van_wagner_critical_surface_intensity() {
     let tests = vec![
@@ -293,10 +276,7 @@ fn test_van_wagner_critical_surface_intensity() {
         let i_critical = calculate_critical_surface_intensity(cbd, heat, fmc, cbh);
         assert!(
             i_critical >= expected_min && i_critical <= expected_max,
-            "Crown fire critical intensity {:.0} kW/m not in expected range {:.0}-{:.0} kW/m",
-            i_critical,
-            expected_min,
-            expected_max
+            "Crown fire critical intensity {i_critical:.0} kW/m not in expected range {expected_min:.0}-{expected_max:.0} kW/m"
         );
     }
 }
@@ -315,10 +295,7 @@ fn test_van_wagner_critical_crown_spread_rate() {
         let r_critical = calculate_critical_crown_spread_rate(cbd);
         assert!(
             (r_critical - expected).abs() < 0.5,
-            "CBD {:.2}: expected R_critical={:.1} m/min, got {:.1}",
-            cbd,
-            expected,
-            r_critical
+            "CBD {cbd:.2}: expected R_critical={expected:.1} m/min, got {r_critical:.1}"
         );
     }
 }
@@ -345,10 +322,7 @@ fn test_albini_lofting_height() {
         let tolerance = expected_h * tolerance_factor;
         assert!(
             (calculated_h - expected_h).abs() <= tolerance,
-            "Intensity {:.0} kW/m: expected lofting height ~{:.0}m, got {:.0}m",
-            intensity,
-            expected_h,
-            calculated_h
+            "Intensity {intensity:.0} kW/m: expected lofting height ~{expected_h:.0}m, got {calculated_h:.0}m"
         );
     }
 }
@@ -365,8 +339,7 @@ fn test_albini_spotting_moderate_conditions() {
     let dist = calculate_maximum_spotting_distance(intensity, wind, mass, diameter, slope);
     assert!(
         (300.0..=3000.0).contains(&dist),
-        "Moderate conditions: spotting distance {:.0}m not in expected range 300-3000m",
-        dist
+        "Moderate conditions: spotting distance {dist:.0}m not in expected range 300-3000m"
     );
 }
 
@@ -382,8 +355,7 @@ fn test_albini_spotting_high_intensity() {
     let dist = calculate_maximum_spotting_distance(intensity, wind, mass, diameter, slope);
     assert!(
         (1000.0..=8000.0).contains(&dist),
-        "High intensity: spotting distance {:.0}m not in expected range 1000-8000m",
-        dist
+        "High intensity: spotting distance {dist:.0}m not in expected range 1000-8000m"
     );
 }
 
@@ -401,8 +373,7 @@ fn test_albini_spotting_extreme_black_saturday() {
     let dist = calculate_maximum_spotting_distance(intensity, wind, mass, diameter, slope);
     assert!(
         (5000.0..=40000.0).contains(&dist),
-        "Extreme conditions: spotting distance {:.0}m not in expected range 5000-40000m (CSIRO validated up to 37km)",
-        dist
+        "Extreme conditions: spotting distance {dist:.0}m not in expected range 5000-40000m (CSIRO validated up to 37km)"
     );
 }
 
@@ -532,8 +503,7 @@ fn test_black_saturday_ffdi() {
     // Documented FFDI: 173
     assert!(
         ffdi > 150.0,
-        "Black Saturday FFDI should be >150, got {:.1} (documented: 173)",
-        ffdi
+        "Black Saturday FFDI should be >150, got {ffdi:.1} (documented: 173)"
     );
 
     assert_eq!(
@@ -552,8 +522,7 @@ fn test_black_saturday_spread_rate() {
     // Documented: up to 150 m/min sustained, peaks 300 m/min
     assert!(
         spread_rate > 100.0,
-        "Black Saturday spread rate should be >100 m/min, got {:.0} (documented: up to 150)",
-        spread_rate
+        "Black Saturday spread rate should be >100 m/min, got {spread_rate:.0} (documented: up to 150)"
     );
 }
 
@@ -596,13 +565,11 @@ fn test_regional_weather_temperature_ranges() {
     let (summer_min, summer_max) = perth.monthly_temps[0]; // January
     assert!(
         (17.0..=19.0).contains(&summer_min),
-        "Perth summer min {:.1}°C outside expected 17-19°C range",
-        summer_min
+        "Perth summer min {summer_min:.1}°C outside expected 17-19°C range"
     );
     assert!(
         (30.0..=32.0).contains(&summer_max),
-        "Perth summer max {:.1}°C outside expected 30-32°C range",
-        summer_max
+        "Perth summer max {summer_max:.1}°C outside expected 30-32°C range"
     );
 
     // Goldfields - Very hot, arid
@@ -610,8 +577,7 @@ fn test_regional_weather_temperature_ranges() {
     let (_gold_summer_min, gold_summer_max) = goldfields.monthly_temps[0];
     assert!(
         gold_summer_max >= 35.0,
-        "Goldfields summer should be very hot (>35°C), got {:.0}°C",
-        gold_summer_max
+        "Goldfields summer should be very hot (>35°C), got {gold_summer_max:.0}°C"
     );
 }
 
@@ -689,15 +655,13 @@ fn test_full_simulation_moderate_conditions() {
         .iter()
         .filter(|id| {
             sim.get_element(**id)
-                .map(|e| e.is_ignited())
-                .unwrap_or(false)
+                .is_some_and(fire_sim_core::FuelElement::is_ignited)
         })
         .count();
 
     assert!(
         (2..=25).contains(&burning_count),
-        "Moderate conditions: expected 2-25 burning elements, got {} (note: grass spreads quickly)",
-        burning_count
+        "Moderate conditions: expected 2-25 burning elements, got {burning_count} (note: grass spreads quickly)"
     );
 }
 
@@ -741,8 +705,7 @@ fn test_full_simulation_catastrophic_conditions() {
         .iter()
         .filter(|id| {
             sim.get_element(**id)
-                .map(|e| e.is_ignited())
-                .unwrap_or(false)
+                .is_some_and(fire_sim_core::FuelElement::is_ignited)
         })
         .count();
 
@@ -750,7 +713,6 @@ fn test_full_simulation_catastrophic_conditions() {
     // (center + some downwind neighbors)
     assert!(
         burning_count >= 5,
-        "Catastrophic conditions: expected ≥5 burning elements, got {}",
-        burning_count
+        "Catastrophic conditions: expected ≥5 burning elements, got {burning_count}"
     );
 }

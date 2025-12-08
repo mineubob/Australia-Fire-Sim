@@ -26,6 +26,7 @@ pub enum PlayerActionType {
 
 impl PlayerActionType {
     /// Convert from u8 for FFI compatibility
+    #[must_use]
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0 => Some(PlayerActionType::ApplySuppression),
@@ -36,6 +37,7 @@ impl PlayerActionType {
     }
 
     /// Convert to u8 for FFI compatibility
+    #[must_use]
     pub fn as_u8(&self) -> u8 {
         match self {
             PlayerActionType::ApplySuppression => 0,
@@ -64,6 +66,7 @@ pub struct PlayerAction {
 
 impl PlayerAction {
     /// Create a new player action
+    #[must_use]
     pub fn new(
         action_type: PlayerActionType,
         player_id: u32,
@@ -83,36 +86,43 @@ impl PlayerAction {
     }
 
     /// Get the action type
+    #[must_use]
     pub fn action_type(&self) -> PlayerActionType {
         self.action_type
     }
 
     /// Get the player ID
+    #[must_use]
     pub fn player_id(&self) -> u32 {
         self.player_id
     }
 
     /// Get the timestamp
+    #[must_use]
     pub fn timestamp(&self) -> f32 {
         self.timestamp
     }
 
     /// Get the position
+    #[must_use]
     pub fn position(&self) -> Vec3 {
         self.position
     }
 
     /// Get the primary parameter (mass, intensity, etc.)
+    #[must_use]
     pub fn param1(&self) -> f32 {
         self.param1
     }
 
     /// Get the secondary parameter (agent type, element ID, etc.)
+    #[must_use]
     pub fn param2(&self) -> u32 {
         self.param2
     }
 
     /// Create a suppression action
+    #[must_use]
     pub fn suppression(
         player_id: u32,
         timestamp: f32,
@@ -126,11 +136,12 @@ impl PlayerAction {
             timestamp,
             position,
             mass,
-            agent_type as u32,
+            u32::from(agent_type),
         )
     }
 
     /// Create an ignition action
+    #[must_use]
     pub fn ignite(player_id: u32, timestamp: f32, position: Vec3, intensity: f32) -> Self {
         Self::new(
             PlayerActionType::IgniteSpot,
@@ -193,7 +204,7 @@ impl ActionQueue {
         &self.history
     }
 
-    /// Clear executed_this_frame at the start of each update
+    /// Clear `executed_this_frame` at the start of each update
     pub fn begin_frame(&mut self) {
         self.executed_this_frame.clear();
     }

@@ -123,41 +123,49 @@ impl FuelElement {
     }
 
     /// This fuel element's id.
+    #[must_use]
     pub fn id(&self) -> usize {
         self.id
     }
 
     /// Get world position
+    #[must_use]
     pub fn position(&self) -> &Vec3 {
         &self.position
     }
 
     /// Get fuel type
+    #[must_use]
     pub fn fuel(&self) -> &Fuel {
         &self.fuel
     }
 
     /// Get fuel part type
+    #[must_use]
     pub fn part_type(&self) -> FuelPart {
         self.part_type
     }
 
     /// Get elevation (height above ground)
+    #[must_use]
     pub fn elevation(&self) -> Meters {
         self.elevation
     }
 
     /// Get local terrain slope angle in degrees
+    #[must_use]
     pub fn slope_angle(&self) -> Degrees {
         self.slope_angle
     }
 
     /// Get local terrain aspect angle in degrees (0-360)
+    #[must_use]
     pub fn aspect_angle(&self) -> Degrees {
         self.aspect_angle
     }
 
     /// Get neighboring element IDs
+    #[must_use]
     pub fn neighbors(&self) -> &[u32] {
         &self.neighbors
     }
@@ -198,11 +206,26 @@ impl FuelElement {
         // Mark that this element received heat - prevents moisture_state from overwriting evaporation
         self.heat_received_this_frame = true;
 
+        // STEP 0: Apply suppression coverage effects (water/foam/retardant absorbs heat)
+        // Suppression agents absorb heat through evaporation and chemical inhibition
+        let effective_heat = if let Some(ref mut coverage) = self.suppression_coverage {
+            let surface_area = *self.fuel.surface_area_to_volume * *self.fuel_remaining;
+            let (effective, _absorbed) = coverage.modify_heat_transfer(heat_kj, surface_area, dt);
+            effective
+        } else {
+            heat_kj
+        };
+
+        // Early exit if suppression absorbed all heat
+        if effective_heat <= 0.0 {
+            return;
+        }
+
         // STEP 1: Evaporate moisture (2260 kJ/kg latent heat of vaporization)
         let moisture_mass = *self.fuel_remaining * *self.moisture_fraction;
         if moisture_mass > 0.0 {
             let evaporation_energy = moisture_mass * 2260.0;
-            let heat_for_evaporation = heat_kj.min(evaporation_energy);
+            let heat_for_evaporation = effective_heat.min(evaporation_energy);
             let moisture_evaporated = heat_for_evaporation / 2260.0;
 
             let new_moisture_mass = (moisture_mass - moisture_evaporated).max(0.0);
@@ -218,22 +241,22 @@ impl FuelElement {
 
             // DEBUG: Print evaporation calculation
             #[cfg(debug_assertions)]
-            if std::env::var("DEBUG_EVAP").is_ok() && heat_kj > 1.0 {
+            if std::env::var("DEBUG_EVAP").is_ok() && effective_heat > 1.0 {
                 eprintln!(
                     "EVAP: heat={:.2} kJ, fuel={:.2} kg, moisture_mass={:.4} kg, evap_energy={:.2} kJ, evaporated={:.4} kg, moisture {:.4}->{:.4}",
-                    heat_kj, *self.fuel_remaining, moisture_mass, evaporation_energy, moisture_evaporated, *old_moisture, *self.moisture_fraction
+                    effective_heat, *self.fuel_remaining, moisture_mass, evaporation_energy, moisture_evaporated, *old_moisture, *self.moisture_fraction
                 );
             }
 
             // STEP 2: Remaining heat raises temperature
-            let remaining_heat = heat_kj - heat_for_evaporation;
+            let remaining_heat = effective_heat - heat_for_evaporation;
             if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
                 let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
                 self.temperature = Celsius::new(*self.temperature + temp_rise);
             }
         } else {
             // No moisture, all heat goes to temperature rise
-            let temp_rise = heat_kj / (*self.fuel_remaining * *self.fuel.specific_heat);
+            let temp_rise = effective_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
             self.temperature = Celsius::new(*self.temperature + temp_rise);
         }
 
@@ -371,6 +394,7 @@ impl FuelElement {
     /// # References
     /// - Byram, G.M. (1959). "Combustion of forest fuels." In Forest Fire: Control and Use.
     /// - Rothermel, R.C. (1972). "A mathematical model for predicting fire spread in wildland fuels."
+    #[must_use]
     pub fn byram_fireline_intensity(&self, wind_speed_ms: f32) -> f32 {
         // OPTIMIZATION: Early exits for non-burning conditions
         if !self.ignited {
@@ -411,51 +435,59 @@ impl FuelElement {
     // Public accessor methods for visualization/external use
 
     /// Get current temperature
+    #[must_use]
     pub fn temperature(&self) -> Celsius {
         self.temperature
     }
 
     /// Get current moisture fraction (0-1)
+    #[must_use]
     pub fn moisture_fraction(&self) -> Fraction {
         self.moisture_fraction
     }
 
     /// Get remaining fuel mass
+    #[must_use]
     pub fn fuel_remaining(&self) -> Kilograms {
         self.fuel_remaining
     }
 
     /// Check if element is currently ignited
+    #[must_use]
     pub fn is_ignited(&self) -> bool {
         self.ignited
     }
 
     /// Get current flame height
+    #[must_use]
     pub fn flame_height(&self) -> Meters {
         self.flame_height
     }
 
     /// Get smoldering state (if present)
+    #[must_use]
     pub fn smoldering_state(&self) -> Option<&crate::physics::SmolderingState> {
         self.smoldering_state.as_ref()
     }
 
     /// Check if crown fire is currently active
+    #[must_use]
     pub fn is_crown_fire_active(&self) -> bool {
         self.crown_fire_active
     }
 
     /// Get suppression coverage (if present)
+    #[must_use]
     pub fn suppression_coverage(&self) -> Option<&SuppressionCoverage> {
         self.suppression_coverage.as_ref()
     }
 
     /// Check if element has active suppression coverage
+    #[must_use]
     pub fn has_active_suppression(&self) -> bool {
         self.suppression_coverage
             .as_ref()
-            .map(|c| c.is_active())
-            .unwrap_or(false)
+            .is_some_and(super::super::suppression::coverage::SuppressionCoverage::is_active)
     }
 
     /// Get ember ignition modifier from suppression coverage
@@ -463,11 +495,12 @@ impl FuelElement {
     /// Returns a value between 0 and 1:
     /// - 1.0 = no suppression effect (ember ignition at full probability)
     /// - 0.0 = full suppression (ember ignition blocked)
+    #[must_use]
     pub fn ember_ignition_modifier(&self) -> f32 {
-        self.suppression_coverage
-            .as_ref()
-            .map(|c| c.ember_ignition_modifier())
-            .unwrap_or(1.0)
+        self.suppression_coverage.as_ref().map_or(
+            1.0,
+            super::super::suppression::coverage::SuppressionCoverage::ember_ignition_modifier,
+        )
     }
 
     /// Apply suppression coverage to this fuel element
@@ -532,6 +565,7 @@ impl FuelElement {
     }
 
     /// Get comprehensive statistics about this fuel element
+    #[must_use]
     pub fn get_stats(&self) -> FuelElementStats {
         FuelElementStats {
             id: self.id,

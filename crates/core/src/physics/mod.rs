@@ -35,21 +35,21 @@ pub(crate) use terrain_physics::{terrain_spread_multiplier, terrain_spread_multi
 // 2. FFI bindings can access physics calculations for external consumers
 //    (game engines, visualization tools, etc.)
 
-/// Public re-exports of validation test functions from albini_spotting module
+/// Public re-exports of validation test functions from `albini_spotting` module
 pub mod albini_spotting_validation {
     pub use super::albini_spotting::{
         calculate_ember_trajectory, calculate_lofting_height, calculate_maximum_spotting_distance,
     };
 }
 
-/// Public re-exports of validation test functions from canopy_layers module
+/// Public re-exports of validation test functions from `canopy_layers` module
 pub mod canopy_layers_validation {
     pub use super::canopy_layers::{
         calculate_layer_transition_probability, CanopyLayer, CanopyStructure,
     };
 }
 
-/// Public re-exports of validation test functions from crown_fire module
+/// Public re-exports of validation test functions from `crown_fire` module
 pub mod crown_fire_validation {
     pub use super::crown_fire::{
         calculate_critical_crown_spread_rate, calculate_critical_surface_intensity,

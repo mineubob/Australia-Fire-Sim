@@ -62,7 +62,7 @@ pub(crate) fn calculate_equilibrium_moisture(
 ///
 /// The timelag constant (τ) determines how quickly fuel moisture equilibrates
 ///
-/// dM/dt = (M_e - M) / τ
+/// dM/dt = (`M_e` - M) / τ
 ///
 /// # Arguments
 /// * `timelag_hours` - Characteristic timelag (hours)
@@ -82,7 +82,7 @@ pub(crate) fn timelag_rate_constant(timelag_hours: f32) -> f32 {
 /// Update fuel moisture for a specific size class using timelag dynamics
 ///
 /// Nelson (2000) exponential lag equation:
-/// M(t+dt) = M_e + (M(t) - M_e) × exp(-dt / τ)
+/// M(t+dt) = `M_e` + (M(t) - `M_e`) × exp(-dt / τ)
 ///
 /// # Arguments
 /// * `current_moisture` - Current moisture content (fraction 0-1)
@@ -222,7 +222,7 @@ mod tests {
         let emc = calculate_equilibrium_moisture(25.0, 50.0, false);
 
         // EMC should be between 5% and 20% for these conditions
-        assert!(emc > 0.05 && emc < 0.20, "EMC was {}", emc);
+        assert!(emc > 0.05 && emc < 0.20, "EMC was {emc}");
     }
 
     #[test]
@@ -260,9 +260,7 @@ mod tests {
         // Should converge close to target after 50 hours (5 timelags)
         assert!(
             (moisture - target).abs() < 0.01,
-            "Moisture was {} vs target {}",
-            moisture,
-            target
+            "Moisture was {moisture} vs target {target}"
         );
     }
 
@@ -297,7 +295,7 @@ mod tests {
         let avg = calculate_weighted_moisture(m1, m10, m100, m1000, dist);
 
         // Should be average
-        assert!((avg - 0.175).abs() < 0.01, "Weighted average was {}", avg);
+        assert!((avg - 0.175).abs() < 0.01, "Weighted average was {avg}");
     }
 
     #[test]
@@ -335,9 +333,7 @@ mod tests {
         // Should show diurnal pattern
         assert!(
             night_moisture > day_moisture,
-            "Moisture should recover at night: day={}, night={}",
-            day_moisture,
-            night_moisture
+            "Moisture should recover at night: day={day_moisture}, night={night_moisture}"
         );
     }
 }

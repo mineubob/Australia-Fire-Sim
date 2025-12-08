@@ -43,6 +43,7 @@ use crate::core_types::element::Vec3;
 ///
 /// # References
 /// Albini (1979), Equation 8, adjusted for Australian conditions
+#[must_use]
 pub fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
     if fireline_intensity <= 0.0 {
         return 0.0;
@@ -55,7 +56,7 @@ pub fn calculate_lofting_height(fireline_intensity: f32) -> f32 {
 /// Calculate wind speed at height using logarithmic wind profile
 ///
 /// Standard atmospheric boundary layer wind profile:
-/// u(z) = u_ref × (z / z_ref)^α
+/// u(z) = `u_ref` × (z / `z_ref)^α`
 ///
 /// # Arguments
 /// * `wind_speed_10m` - Wind speed at 10m reference height (m/s)
@@ -82,7 +83,7 @@ pub(crate) fn wind_speed_at_height(wind_speed_10m: f32, height: f32) -> f32 {
 /// Calculate ember terminal velocity based on size and density
 ///
 /// Terminal velocity from drag balance:
-/// w_f = sqrt((2 × m × g) / (ρ_air × C_d × A))
+/// `w_f` = sqrt((2 × m × g) / (`ρ_air` × `C_d` × A))
 ///
 /// # Arguments
 /// * `ember_mass` - Mass of ember (kg)
@@ -114,7 +115,7 @@ pub(crate) fn calculate_terminal_velocity(ember_mass: f32, ember_diameter: f32) 
 /// Calculate maximum spotting distance using Albini model
 ///
 /// Albini (1983) simplified formula:
-/// s_max = H × (u_H / w_f) × terrain_factor
+/// `s_max` = H × (`u_H` / `w_f`) × `terrain_factor`
 ///
 /// # Arguments
 /// * `fireline_intensity` - Byram's fireline intensity (kW/m)
@@ -128,6 +129,7 @@ pub(crate) fn calculate_terminal_velocity(ember_mass: f32, ember_diameter: f32) 
 ///
 /// # References
 /// Albini (1979, 1983)
+#[must_use]
 pub fn calculate_maximum_spotting_distance(
     fireline_intensity: f32,
     wind_speed_10m: f32,
@@ -194,6 +196,7 @@ pub fn calculate_maximum_spotting_distance(
 /// # References
 /// Tarifa et al. (1965), Albini (1983)
 #[allow(clippy::too_many_arguments)] // Required for scientific calculation
+#[must_use]
 pub fn calculate_ember_trajectory(
     initial_position: Vec3,
     initial_velocity: Vec3,
@@ -276,7 +279,7 @@ mod tests {
         let height = calculate_lofting_height(intensity);
 
         // H = 6.1 × 5000^0.4 = 6.1 × 30.17 ≈ 184m
-        assert!((height - 184.0).abs() < 10.0, "Height was {}", height);
+        assert!((height - 184.0).abs() < 10.0, "Height was {height}");
     }
 
     #[test]
@@ -286,7 +289,7 @@ mod tests {
         let height = calculate_lofting_height(intensity);
 
         // H = 6.1 × 50000^0.4 ≈ 462m
-        assert!(height > 450.0 && height < 475.0, "Height was {}", height);
+        assert!(height > 450.0 && height < 475.0, "Height was {height}");
     }
 
     #[test]
@@ -317,8 +320,7 @@ mod tests {
         // Should be in reasonable range (few m/s to low tens)
         assert!(
             term_vel > 5.0 && term_vel < 15.0,
-            "Terminal velocity was {}",
-            term_vel
+            "Terminal velocity was {term_vel}"
         );
     }
 
@@ -336,8 +338,7 @@ mod tests {
         // With adjusted lofting height (6.1 coefficient), expect ~300-2500m
         assert!(
             distance > 250.0 && distance < 2500.0,
-            "Distance was {} m",
-            distance
+            "Distance was {distance} m"
         );
     }
 
@@ -357,8 +358,7 @@ mod tests {
         // Note: 25km spotting requires the lightest, largest embers in strongest winds
         assert!(
             distance > 5000.0,
-            "Black Saturday spotting distance was {} m",
-            distance
+            "Black Saturday spotting distance was {distance} m"
         );
     }
 
@@ -412,8 +412,7 @@ mod tests {
         let horizontal_distance = (final_pos.x.powi(2) + final_pos.y.powi(2)).sqrt();
         assert!(
             horizontal_distance > 100.0,
-            "Should travel > 100m, was {}",
-            horizontal_distance
+            "Should travel > 100m, was {horizontal_distance}"
         );
     }
 }

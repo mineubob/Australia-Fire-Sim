@@ -102,6 +102,7 @@ impl SuppressionCoverage {
     }
 
     /// Check if coverage is still active
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.active
     }
@@ -122,8 +123,8 @@ impl SuppressionCoverage {
     /// - `dt`: Time step (seconds)
     ///
     /// # Returns
-    /// Tuple of (effective_heat_kj, heat_absorbed_kj)
-    pub(crate) fn _modify_heat_transfer(
+    /// Tuple of (`effective_heat_kj`, `heat_absorbed_kj`)
+    pub(crate) fn modify_heat_transfer(
         &mut self,
         incoming_heat_kj: f32,
         fuel_surface_area: f32,
@@ -262,6 +263,7 @@ impl SuppressionCoverage {
     ///
     /// # Returns
     /// Additional moisture fraction to add to fuel element
+    #[must_use]
     pub fn moisture_contribution(&self) -> f32 {
         if !self.active || self.mass_per_area <= 0.0 {
             return 0.0;
@@ -283,6 +285,7 @@ impl SuppressionCoverage {
     ///
     /// # Returns
     /// True if coating is within effective duration
+    #[must_use]
     pub fn is_within_duration(&self, current_time: f32) -> bool {
         let props = SuppressionAgentProperties::for_type(self.agent_type);
         let elapsed = current_time - self.application_time;
@@ -290,6 +293,7 @@ impl SuppressionCoverage {
     }
 
     /// Get remaining effectiveness as a percentage
+    #[must_use]
     pub fn effectiveness_percent(&self) -> f32 {
         if !self.active {
             return 0.0;
@@ -342,7 +346,7 @@ mod tests {
         );
 
         let incoming = 5000.0; // 5000 kJ
-        let (effective, absorbed) = coverage._modify_heat_transfer(incoming, 1.0, 0.1);
+        let (effective, absorbed) = coverage.modify_heat_transfer(incoming, 1.0, 0.1);
 
         // Some heat should be absorbed
         assert!(absorbed > 0.0);
@@ -363,15 +367,13 @@ mod tests {
             SuppressionCoverage::new(SuppressionAgentType::Water, 5.0, 1.0, 0.0);
 
         let incoming = 1000.0;
-        let (foam_effective, _) = foam_coverage._modify_heat_transfer(incoming, 1.0, 0.1);
-        let (water_effective, _) = water_coverage._modify_heat_transfer(incoming, 1.0, 0.1);
+        let (foam_effective, _) = foam_coverage.modify_heat_transfer(incoming, 1.0, 0.1);
+        let (water_effective, _) = water_coverage.modify_heat_transfer(incoming, 1.0, 0.1);
 
         // Foam should reduce heat more than water (oxygen displacement)
         assert!(
             foam_effective < water_effective,
-            "Foam ({}) should reduce heat more than water ({})",
-            foam_effective,
-            water_effective
+            "Foam ({foam_effective}) should reduce heat more than water ({water_effective})"
         );
     }
 
@@ -395,8 +397,7 @@ mod tests {
         // Mass should decrease
         assert!(
             coverage.mass_per_area < initial_mass,
-            "Mass should decrease from {} to less",
-            initial_mass
+            "Mass should decrease from {initial_mass} to less"
         );
     }
 

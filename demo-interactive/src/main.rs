@@ -79,7 +79,7 @@ fn main() {
     let mut rl = match DefaultEditor::new() {
         Ok(rl) => rl,
         Err(e) => {
-            eprintln!("Failed to create readline: {}", e);
+            eprintln!("Failed to create readline: {e}");
             return;
         }
     };
@@ -188,10 +188,7 @@ fn main() {
                             .collect();
 
                         if id_dist_ign.is_empty() {
-                            println!(
-                                "No elements found within radius {:.1} at ({}, {})",
-                                radius, x, y
-                            );
+                            println!("No elements found within radius {radius:.1} at ({x}, {y})");
                         } else {
                             // Sort by Z ascending (ground-up), then horizontal distance ascending
                             id_dist_ign.sort_by(|a, b| {
@@ -219,10 +216,9 @@ fn main() {
                                 if amount < 0 { total } else { to_ignite.len() }
                             );
 
-                            for (id, dist, ign_temp, z) in to_ignite.iter() {
+                            for (id, dist, ign_temp, z) in &to_ignite {
                                 println!(
-                                    "  ID {}: {:.2}m, z={:.2} — ignition temp {:.1}°C",
-                                    id, dist, z, ign_temp
+                                    "  ID {id}: {dist:.2}m, z={z:.2} — ignition temp {ign_temp:.1}°C"
                                 );
                                 // Start at 600°C - realistic for piloted ignition
                                 let initial_temp = Celsius::new(600.0).max(*ign_temp);
@@ -280,10 +276,7 @@ fn main() {
                         );
 
                         if id_dist_z.is_empty() {
-                            println!(
-                                "No elements found within radius {:.1} at ({}, {})",
-                                radius, x, y
-                            );
+                            println!("No elements found within radius {radius:.1} at ({x}, {y})");
                         } else {
                             // Sort by Z ascending (ground-up), then horizontal distance ascending
                             id_dist_z.sort_by(|a, b| {
@@ -312,8 +305,8 @@ fn main() {
                                 temperature
                             );
 
-                            for (id, dist, z) in to_heat.iter() {
-                                println!("  ID {}: {:.2}m, z={:.2}", id, dist, z);
+                            for (id, dist, z) in &to_heat {
+                                println!("  ID {id}: {dist:.2}m, z={z:.2}");
                                 heat_element_to_temp(&mut sim, *id, temperature);
                             }
                         }
@@ -352,7 +345,7 @@ fn main() {
                     "heatmap" | "hm" => {
                         let grid_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
 
-                        show_heatmap(&sim, current_width, current_height, grid_size)
+                        show_heatmap(&sim, current_width, current_height, grid_size);
                     }
                     "quit" | "q" | "exit" => {
                         println!("Goodbye!");
@@ -373,7 +366,7 @@ fn main() {
                 break;
             }
             Err(err) => {
-                eprintln!("Error: {:?}", err);
+                eprintln!("Error: {err:?}");
                 break;
             }
         }
@@ -387,14 +380,14 @@ fn prompt_terrain_dimensions() -> (f32, f32) {
     println!("Enter terrain dimensions (or press Enter for defaults):");
 
     // Width
-    print!("  Width in meters [{}]: ", DEFAULT_WIDTH);
+    print!("  Width in meters [{DEFAULT_WIDTH}]: ");
     io::stdout().flush().unwrap();
     let mut width_str = String::new();
     io::stdin().read_line(&mut width_str).unwrap();
     let width: f32 = width_str.trim().parse().unwrap_or(DEFAULT_WIDTH);
 
     // Height
-    print!("  Height in meters [{}]: ", DEFAULT_HEIGHT);
+    print!("  Height in meters [{DEFAULT_HEIGHT}]: ");
     io::stdout().flush().unwrap();
     let mut height_str = String::new();
     io::stdin().read_line(&mut height_str).unwrap();
@@ -426,10 +419,7 @@ fn parse_filters(
                 "minz" => min_z = val.parse::<f32>().ok(),
                 "maxz" => max_z = val.parse::<f32>().ok(),
                 _ => {
-                    println!(
-                        "Unknown filter '{}', supported: fuel=, part=, minz=, maxz=",
-                        key
-                    );
+                    println!("Unknown filter '{key}', supported: fuel=, part=, minz=, maxz=");
                 }
             }
         }
@@ -446,10 +436,10 @@ fn get_part_name(part: &fire_sim_core::core_types::element::FuelPart) -> String 
         fire_sim_core::core_types::element::FuelPart::TrunkMiddle => "trunkmiddle".to_string(),
         fire_sim_core::core_types::element::FuelPart::TrunkUpper => "trunkupper".to_string(),
         fire_sim_core::core_types::element::FuelPart::BarkLayer(h) => {
-            format!("barklayer({:.0})", h)
+            format!("barklayer({h:.0})")
         }
         fire_sim_core::core_types::element::FuelPart::Branch { height, angle: _ } => {
-            format!("branch({:.0})", height)
+            format!("branch({height:.0})")
         }
         fire_sim_core::core_types::element::FuelPart::Crown => "crown".to_string(),
         fire_sim_core::core_types::element::FuelPart::GroundLitter => "groundlitter".to_string(),
@@ -457,7 +447,7 @@ fn get_part_name(part: &fire_sim_core::core_types::element::FuelPart) -> String 
             "groundvegetation".to_string()
         }
         fire_sim_core::core_types::element::FuelPart::BuildingWall { floor } => {
-            format!("buildingwall({})", floor)
+            format!("buildingwall({floor})")
         }
         fire_sim_core::core_types::element::FuelPart::BuildingRoof => "buildingroof".to_string(),
         fire_sim_core::core_types::element::FuelPart::BuildingInterior => {
@@ -612,7 +602,7 @@ fn create_tree(sim: &mut FireSimulation, x: f32, y: f32, _ground_id: usize) {
 
 fn step_simulation(sim: &mut FireSimulation, count: u32) {
     let dt = 1.0; // 1 second timestep
-    println!("Stepping {} timestep(s)...", count);
+    println!("Stepping {count} timestep(s)...");
 
     for i in 0..count {
         let burning_before = sim.get_burning_elements().len();
@@ -665,9 +655,9 @@ fn show_status(sim: &FireSimulation) {
             burning.iter().map(|e| e.temperature).sum::<f32>() / burning.len() as f32;
 
         println!("\nBurning element temperatures:");
-        println!("  Min: {:.1}°C", min_temp);
-        println!("  Max: {:.1}°C", max_temp);
-        println!("  Avg: {:.1}°C", avg_temp);
+        println!("  Min: {min_temp:.1}°C");
+        println!("  Max: {max_temp:.1}°C");
+        println!("  Avg: {avg_temp:.1}°C");
     }
 
     println!("══════════════════════════════════════════════════\n");
@@ -695,7 +685,7 @@ fn show_weather(sim: &FireSimulation) {
 fn show_element(sim: &FireSimulation, id: usize) {
     if let Some(e) = sim.get_element(id) {
         let stats = e.get_stats();
-        println!("\n═══════════════ ELEMENT {} ═══════════════", id);
+        println!("\n═══════════════ ELEMENT {id} ═══════════════");
         println!(
             "Position:      ({:.1}, {:.1}, {:.1})",
             stats.position.x, stats.position.y, stats.position.z
@@ -711,7 +701,7 @@ fn show_element(sim: &FireSimulation, id: usize) {
         println!("Fuel Mass:     {:.2} kg", stats.fuel_remaining);
         println!("══════════════════════════════════════════════════\n");
     } else {
-        println!("Element {} not found", id);
+        println!("Element {id} not found");
     }
 }
 
@@ -755,7 +745,7 @@ fn show_embers(sim: &FireSimulation) {
     if ember_count == 0 {
         println!("No active embers.");
     } else {
-        println!("Active embers: {}", ember_count);
+        println!("Active embers: {ember_count}");
     }
     println!("══════════════════════════════════════════════════\n");
 }
@@ -765,7 +755,7 @@ fn show_nearby(sim: &FireSimulation, id: usize) {
         let source_pos = *e.position();
         let nearby = sim.get_elements_in_radius(source_pos, 15.0);
 
-        println!("\n═══════════════ ELEMENTS NEAR {} ═══════════════", id);
+        println!("\n═══════════════ ELEMENTS NEAR {id} ═══════════════");
         println!(
             "{:<6} {:<20} {:<10} {:<10} {:<8}",
             "ID", "Position", "Temp", "Dist", "Ignited"
@@ -792,7 +782,7 @@ fn show_nearby(sim: &FireSimulation, id: usize) {
         }
         println!("══════════════════════════════════════════════════\n");
     } else {
-        println!("Element {} not found", id);
+        println!("Element {id} not found");
     }
 }
 
@@ -809,7 +799,7 @@ fn ignite_element(sim: &mut FireSimulation, id: usize) {
             id, stats.position.x, stats.position.y, stats.position.z
         );
     } else {
-        println!("Element {} not found", id);
+        println!("Element {id} not found");
     }
 }
 
@@ -827,7 +817,7 @@ fn heat_element(sim: &mut FireSimulation, id: usize, target_temp: f32) {
             stats.position.z
         );
     } else {
-        println!("Element {} not found", id);
+        println!("Element {id} not found");
     }
 }
 
@@ -886,15 +876,14 @@ fn set_preset(sim: &mut FireSimulation, name: &str) {
         }
         _ => {
             println!(
-                "Unknown preset: {}. Available: perth, catastrophic, goldfields, wheatbelt, hot",
-                name
+                "Unknown preset: {name}. Available: perth, catastrophic, goldfields, wheatbelt, hot"
             );
             return;
         }
     };
 
     sim.set_weather(weather);
-    println!("Weather preset changed to '{}'", name);
+    println!("Weather preset changed to '{name}'");
     show_weather(sim);
 }
 
@@ -973,10 +962,9 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
     // Legend with dynamic values
     println!("Legend: · = empty/ambient  🔥 = burning (ignited)");
     println!(
-        "        ░ >{:.0}°C  ▒ >{:.0}°C  ▓ >{:.0}°C  █ >{:.0}°C",
-        threshold_cool, threshold_warm, threshold_hot, threshold_very_hot
+        "        ░ >{threshold_cool:.0}°C  ▒ >{threshold_warm:.0}°C  ▓ >{threshold_hot:.0}°C  █ >{threshold_very_hot:.0}°C"
     );
-    println!("Temperature range: {:.0}°C - {:.0}°C\n", min_temp, max_temp);
+    println!("Temperature range: {min_temp:.0}°C - {max_temp:.0}°C\n");
 
     // Print heatmap (top-down view, Y increases downward)
     for y in (0..grid_size).rev() {
@@ -1000,7 +988,7 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
                 } else {
                     '·' // At ambient
                 };
-                print!("{} ", c);
+                print!("{c} ");
             }
         }
         println!();

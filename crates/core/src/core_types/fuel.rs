@@ -83,6 +83,7 @@ impl BarkProperties {
     };
 
     /// Get bark type name
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self.bark_type_id {
             0 => "Smooth",
@@ -154,13 +155,13 @@ pub struct Fuel {
     // Rothermel model parameters (fuel-specific)
     /// Mineral damping (0-1) - mineral/ash content effect, wood=0.41, grass=0.7-0.9
     pub mineral_damping: Fraction,
-    /// Particle density (kg/m³) - ρ_p, softwood=450, hardwood=550, grass=300
+    /// Particle density (kg/m³) - `ρ_p`, softwood=450, hardwood=550, grass=300
     pub particle_density: KgPerCubicMeter,
     /// Effective heating fraction (0-1) - fine=0.5-0.6, medium=0.4-0.5, coarse=0.3-0.4
     pub effective_heating: Fraction,
     /// Packing ratio (0-1) - β, actual/optimum, compacted=0.8, loose=0.5
     pub packing_ratio: Fraction,
-    /// Optimum packing ratio - β_op, grass=0.35, shrub=0.30, forest=0.25
+    /// Optimum packing ratio - `β_op`, grass=0.35, shrub=0.30, forest=0.25
     pub optimum_packing_ratio: Fraction,
 
     // Thermal behavior coefficients (fuel-specific, not hardcoded)
@@ -229,6 +230,7 @@ impl Fuel {
     /// - Forest Education Foundation - "Eucalypts and Fire"
     /// - Black Saturday 2009 Royal Commission (25km spotting observations)
     /// - Oil properties: eucalyptol vaporization and autoignition temperatures
+    #[must_use]
     pub fn eucalyptus_stringybark() -> Self {
         Fuel {
             id: 1,
@@ -308,6 +310,7 @@ impl Fuel {
     }
 
     /// Create Eucalyptus Smooth Bark - less ladder fuel
+    #[must_use]
     pub fn eucalyptus_smooth_bark() -> Self {
         Fuel {
             id: 2,
@@ -385,6 +388,7 @@ impl Fuel {
     }
 
     /// Create Dry Grass - fast ignition
+    #[must_use]
     pub fn dry_grass() -> Self {
         Fuel {
             id: 3,
@@ -463,6 +467,7 @@ impl Fuel {
     }
 
     /// Create Shrubland/Scrub
+    #[must_use]
     pub fn shrubland() -> Self {
         Fuel {
             id: 4,
@@ -540,6 +545,7 @@ impl Fuel {
     }
 
     /// Create Dead Wood/Litter
+    #[must_use]
     pub fn dead_wood_litter() -> Self {
         Fuel {
             id: 5,
@@ -617,6 +623,7 @@ impl Fuel {
     }
 
     /// Create Green Vegetation - fire resistant
+    #[must_use]
     pub fn green_vegetation() -> Self {
         Fuel {
             id: 6,
@@ -694,6 +701,7 @@ impl Fuel {
     }
 
     /// Get fuel by ID
+    #[must_use]
     pub fn from_id(id: u8) -> Option<Self> {
         match id {
             1 => Some(Self::eucalyptus_stringybark()),
@@ -707,6 +715,7 @@ impl Fuel {
     }
 
     /// Calculate actual max flame temperature based on current conditions
+    #[must_use]
     pub fn calculate_max_flame_temperature(&self, moisture_fraction: f32) -> f32 {
         let base_temp = 800.0 + (*self.heat_content - 18000.0) / 10.0;
         let oil_bonus = *self.volatile_oil_content * 3000.0;
@@ -715,12 +724,14 @@ impl Fuel {
     }
 
     /// Check if this fuel can burn
+    #[must_use]
     pub fn is_burnable(&self) -> bool {
         *self.heat_content > 0.0 && *self.ignition_temperature > 0.0
     }
 
     /// Get thermal transmissivity (0-1, how much heat passes through)
     /// Non-burnable objects like water, rock, concrete block heat
+    #[must_use]
     pub fn thermal_transmissivity(&self) -> f32 {
         if self.is_burnable() {
             0.9 // Burnable fuels don't block much
@@ -737,6 +748,7 @@ impl Fuel {
     }
 
     /// Create non-burnable water fuel
+    #[must_use]
     pub fn water() -> Self {
         Fuel {
             id: 10,
@@ -807,6 +819,7 @@ impl Fuel {
     }
 
     /// Create non-burnable rock fuel
+    #[must_use]
     pub fn rock() -> Self {
         Fuel {
             id: 11,

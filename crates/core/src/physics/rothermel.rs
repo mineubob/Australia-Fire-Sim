@@ -7,9 +7,9 @@
 //!   USDA Forest Service Research Paper INT-115.
 //! - Rothermel, R.C. (1991). "Predicting behavior and size of crown fires in the Northern Rocky Mountains."
 //!   USDA Forest Service Research Paper INT-438.
-//! - McArthur, A.G. (1967). "Fire behaviour in eucalypt forests." Commonwealth of Australia Forestry and
+//! - `McArthur`, A.G. (1967). "Fire behaviour in eucalypt forests." Commonwealth of Australia Forestry and
 //!   Timber Bureau Leaflet 107.
-//! - Cruz, M.G., Gould, J.S., Alexander, M.E., Sullivan, A.L., McCaw, W.L., Matthews, S. (2015).
+//! - Cruz, M.G., Gould, J.S., Alexander, M.E., Sullivan, A.L., `McCaw`, W.L., Matthews, S. (2015).
 //!   "Empirical-based models for predicting head-fire rate of spread in Australian fuel types."
 //!   Australian Forestry, 78(3), 118-158.
 
@@ -26,13 +26,13 @@ use crate::core_types::fuel::Fuel;
 ///
 /// Where:
 /// - **R** = Rate of spread (m/min)
-/// - **I_R** = Reaction intensity (kJ/(m²·min))
+/// - **`I_R`** = Reaction intensity (kJ/(m²·min))
 /// - **ξ** = Propagating flux ratio (0-1)
-/// - **Φ_w** = Wind coefficient (dimensionless)
-/// - **Φ_s** = Slope coefficient (dimensionless)
-/// - **ρ_b** = Fuel bed bulk density (kg/m³)
+/// - **`Φ_w`** = Wind coefficient (dimensionless)
+/// - **`Φ_s`** = Slope coefficient (dimensionless)
+/// - **`ρ_b`** = Fuel bed bulk density (kg/m³)
 /// - **ε** = Effective heating number (0.3-0.5)
-/// - **Q_ig** = Heat of pre-ignition (kJ/kg)
+/// - **`Q_ig`** = Heat of pre-ignition (kJ/kg)
 ///
 /// # Arguments
 /// * `fuel` - Fuel properties
@@ -56,6 +56,7 @@ use crate::core_types::fuel::Fuel;
 /// Calculate fire spread rate using the Rothermel (1972) model
 ///
 /// Returns spread rate in m/min based on fuel, moisture, wind, and slope
+#[must_use]
 pub fn rothermel_spread_rate(
     fuel: &Fuel,
     moisture_fraction: f32,
@@ -114,10 +115,10 @@ pub fn rothermel_spread_rate(
 ///
 /// Where:
 /// - **Γ'** = Optimum reaction velocity (1/min)
-/// - **w_n** = Net fuel loading (kg/m²)
+/// - **`w_n`** = Net fuel loading (kg/m²)
 /// - **h** = Heat content (kJ/kg)
-/// - **η_M** = Moisture damping coefficient (0-1)
-/// - **η_s** = Mineral damping coefficient (0-1, typically 0.41 for wood)
+/// - **`η_M`** = Moisture damping coefficient (0-1)
+/// - **`η_s`** = Mineral damping coefficient (0-1, typically 0.41 for wood)
 fn calculate_reaction_intensity(fuel: &Fuel, moisture_fraction: f32) -> f32 {
     // Optimum reaction velocity (empirical, depends on surface-area-to-volume ratio)
     // Γ'_max = σ^1.5 / (495 + 0.0594 × σ^1.5)
@@ -143,7 +144,7 @@ fn calculate_reaction_intensity(fuel: &Fuel, moisture_fraction: f32) -> f32 {
     reaction_velocity * fuel_loading * *fuel.heat_content * moisture_damping * mineral_damping
 }
 
-/// Calculate moisture damping coefficient (η_M)
+/// Calculate moisture damping coefficient (`η_M`)
 ///
 /// Reduces reaction intensity as fuel moisture increases.
 ///
@@ -153,8 +154,8 @@ fn calculate_reaction_intensity(fuel: &Fuel, moisture_fraction: f32) -> f32 {
 /// ```
 ///
 /// Where:
-/// - **M_f** = Fuel moisture content (fraction)
-/// - **M_x** = Moisture of extinction (fraction)
+/// - **`M_f`** = Fuel moisture content (fraction)
+/// - **`M_x`** = Moisture of extinction (fraction)
 fn calculate_moisture_damping(moisture_fraction: f32, moisture_extinction: f32) -> f32 {
     if moisture_extinction <= 0.0 {
         return 1.0;
@@ -194,7 +195,7 @@ fn calculate_propagating_flux(fuel: &Fuel) -> f32 {
     (numerator / denominator).clamp(0.0, 1.0)
 }
 
-/// Calculate wind coefficient (Φ_w)
+/// Calculate wind coefficient (`Φ_w`)
 ///
 /// Wind increases fire spread rate exponentially.
 ///
@@ -208,10 +209,10 @@ fn calculate_propagating_flux(fuel: &Fuel) -> f32 {
 /// - **U** = Midflame wind speed (m/min, converted from m/s)
 /// - **B** = Wind exponent (function of σ)
 /// - **β** = Packing ratio
-/// - **β_op** = Optimum packing ratio
+/// - **`β_op`** = Optimum packing ratio
 /// - **E** = Packing ratio exponent
 ///
-/// Simplified for Australian conditions based on McArthur and Cruz et al. (2015)
+/// Simplified for Australian conditions based on `McArthur` and Cruz et al. (2015)
 fn calculate_wind_coefficient(fuel: &Fuel, wind_speed_ms: f32) -> f32 {
     if wind_speed_ms < 0.1 {
         return 0.0; // No wind effect
@@ -242,7 +243,7 @@ fn calculate_wind_coefficient(fuel: &Fuel, wind_speed_ms: f32) -> f32 {
     c_coeff * wind_speed_m_per_min.powf(b_exp) * packing_effect
 }
 
-/// Calculate slope coefficient (Φ_s)
+/// Calculate slope coefficient (`Φ_s`)
 ///
 /// Slope increases fire spread rate exponentially uphill.
 ///
@@ -277,7 +278,7 @@ fn calculate_slope_coefficient(slope_angle: f32) -> f32 {
     5.275 * 1.25 * tan_slope.powi(2)
 }
 
-/// Calculate heat of pre-ignition (Q_ig) in kJ/kg
+/// Calculate heat of pre-ignition (`Q_ig`) in kJ/kg
 ///
 /// The energy required to raise fuel from ambient to ignition temperature,
 /// including moisture evaporation.
@@ -288,10 +289,10 @@ fn calculate_slope_coefficient(slope_angle: f32) -> f32 {
 /// ```
 ///
 /// Where:
-/// - **C_p** = Specific heat of fuel (kJ/(kg·K))
-/// - **T_ig** = Ignition temperature (°C)
-/// - **T_a** = Ambient temperature (°C)
-/// - **M_f** = Moisture fraction (kg/kg)
+/// - **`C_p`** = Specific heat of fuel (kJ/(kg·K))
+/// - **`T_ig`** = Ignition temperature (°C)
+/// - **`T_a`** = Ambient temperature (°C)
+/// - **`M_f`** = Moisture fraction (kg/kg)
 /// - **2260** = Latent heat of vaporization for water (kJ/kg)
 fn calculate_heat_preignition(fuel: &Fuel, moisture_fraction: f32, ambient_temp: f32) -> f32 {
     // Sensible heat to raise fuel to ignition
@@ -317,8 +318,7 @@ mod tests {
         // Cruz et al. (2015) documents Australian grassland fires at 10-60 m/min
         assert!(
             spread_rate > 1.0 && spread_rate < 150.0,
-            "Dry grass spread rate {} m/min out of expected range",
-            spread_rate
+            "Dry grass spread rate {spread_rate} m/min out of expected range"
         );
     }
 

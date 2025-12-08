@@ -12,10 +12,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// Each agent type has unique characteristics that affect firefighting effectiveness:
 /// - **Water**: Basic suppression through evaporative cooling
-/// - **FoamClassA**: Enhanced penetration and coverage for wildland fuels
-/// - **ShortTermRetardant**: Water-based gel with temporary retardant effect
-/// - **LongTermRetardant**: Phosphate-based coating with long-lasting protection
-/// - **WettingAgent**: Surfactant-enhanced water for better fuel penetration
+/// - **`FoamClassA`**: Enhanced penetration and coverage for wildland fuels
+/// - **`ShortTermRetardant`**: Water-based gel with temporary retardant effect
+/// - **`LongTermRetardant`**: Phosphate-based coating with long-lasting protection
+/// - **`WettingAgent`**: Surfactant-enhanced water for better fuel penetration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SuppressionAgentType {
     /// Pure water - basic suppression
@@ -32,6 +32,7 @@ pub enum SuppressionAgentType {
 
 impl SuppressionAgentType {
     /// Convert from u8 for FFI
+    #[must_use]
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0 => Some(Self::Water),
@@ -44,6 +45,7 @@ impl SuppressionAgentType {
     }
 
     /// Convert to u8 for FFI
+    #[must_use]
     pub fn as_u8(self) -> u8 {
         self as u8
     }
@@ -256,6 +258,7 @@ impl SuppressionAgentProperties {
     }
 
     /// Get oxygen displacement factor
+    #[must_use]
     pub fn oxygen_displacement(&self) -> f32 {
         self.oxygen_displacement
     }
@@ -282,6 +285,7 @@ impl SuppressionAgentProperties {
     ///
     /// # Scientific Reference
     /// NFPA 1145: Guide for the Use of Class A Foams in Fire Fighting
+    #[must_use]
     pub fn cooling_capacity(&self, agent_temp: f32) -> f32 {
         let sensible = self.specific_heat * (self.boiling_point - agent_temp).max(0.0);
         self.latent_heat_vaporization + sensible

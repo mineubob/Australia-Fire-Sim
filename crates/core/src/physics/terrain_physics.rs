@@ -7,7 +7,7 @@
 //!
 //! - Rothermel, R.C. (1972). "A Mathematical Model for Predicting Fire Spread
 //!   in Wildland Fuels." USDA Forest Service Research Paper INT-115.
-//! - McArthur, A.G. (1967). "Fire Behaviour in Eucalypt Forests."
+//! - `McArthur`, A.G. (1967). "Fire Behaviour in Eucalypt Forests."
 //!   Forestry and Timber Bureau Leaflet 107.
 
 use crate::core_types::element::Vec3;
@@ -27,7 +27,7 @@ use crate::grid::TerrainData;
 /// formulation: Rate of Spread increases exponentially with slope
 /// angle for uphill spread, approximately following:
 ///
-/// φ_s = 5.275 × β^(-0.3) × (tan(θ))^2
+/// `φ_s` = 5.275 × β^(-0.3) × (tan(θ))^2
 ///
 /// Where β is packing ratio and θ is slope angle.
 ///
@@ -47,8 +47,8 @@ pub(crate) fn slope_spread_multiplier_terrain(
     terrain: &TerrainData,
 ) -> f32 {
     // Get midpoint for slope calculation
-    let mid_x = (from.x + to.x) / 2.0;
-    let mid_y = (from.y + to.y) / 2.0;
+    let mid_x = f32::midpoint(from.x, to.x);
+    let mid_y = f32::midpoint(from.y, to.y);
 
     // Get slope angle from terrain (using Horn's method for accuracy)
     let slope_angle = terrain.slope_at_horn(mid_x, mid_y);
@@ -187,7 +187,7 @@ pub(crate) fn terrain_spread_multiplier(
 
 /// OPTIMIZED: Calculate terrain-aware fire spread rate using cached terrain properties
 ///
-/// This version uses pre-computed slope and aspect values cached on FuelElements,
+/// This version uses pre-computed slope and aspect values cached on `FuelElements`,
 /// eliminating expensive Horn's method terrain lookups during every heat transfer.
 ///
 /// **Performance Impact**: Reduces terrain calculation overhead from 82.8% to <5%
@@ -325,8 +325,7 @@ mod tests {
         // Just verify it's above baseline (terrain calculations may vary)
         assert!(
             multiplier > 1.0,
-            "Uphill should boost spread above baseline: {}",
-            multiplier
+            "Uphill should boost spread above baseline: {multiplier}"
         );
     }
 
@@ -344,8 +343,7 @@ mod tests {
         // The actual value depends on how steep the terrain is
         assert!(
             multiplier > 0.0 && multiplier <= 10.0,
-            "Downhill multiplier should be valid: {}",
-            multiplier
+            "Downhill multiplier should be valid: {multiplier}"
         );
     }
 
@@ -360,8 +358,7 @@ mod tests {
 
         assert!(
             (multiplier - 1.0).abs() < 0.2,
-            "Flat terrain should be ~neutral: {}",
-            multiplier
+            "Flat terrain should be ~neutral: {multiplier}"
         );
     }
 
@@ -384,13 +381,11 @@ mod tests {
         // Both should be valid multipliers
         assert!(
             mult_north > 0.0 && mult_north < 5.0,
-            "North wind multiplier should be valid: {}",
-            mult_north
+            "North wind multiplier should be valid: {mult_north}"
         );
         assert!(
             mult_south > 0.0 && mult_south < 5.0,
-            "South wind multiplier should be valid: {}",
-            mult_south
+            "South wind multiplier should be valid: {mult_south}"
         );
     }
 
@@ -405,16 +400,8 @@ mod tests {
         let combined = terrain_spread_multiplier(&from, &to, &terrain, &wind);
 
         // Combined effect should produce a valid clamped result
-        assert!(
-            combined >= 0.2,
-            "Should respect minimum clamp: {}",
-            combined
-        );
-        assert!(
-            combined <= 10.0,
-            "Should respect maximum clamp: {}",
-            combined
-        );
+        assert!(combined >= 0.2, "Should respect minimum clamp: {combined}");
+        assert!(combined <= 10.0, "Should respect maximum clamp: {combined}");
     }
 
     #[test]
@@ -440,8 +427,7 @@ mod tests {
         // The steep terrain may cause unusual values but should be capped
         assert!(
             (0.2..=50.0).contains(&multiplier),
-            "Cross-slope should produce valid result: {}",
-            multiplier
+            "Cross-slope should produce valid result: {multiplier}"
         );
     }
 }

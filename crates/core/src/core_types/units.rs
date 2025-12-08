@@ -35,7 +35,7 @@ use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
 // HELPER FUNCTION FOR TOTAL ORDERING OF F32
 // ============================================================================
 
-/// Compare f32 values with total ordering using Rust's built-in total_cmp
+/// Compare f32 values with total ordering using Rust's built-in `total_cmp`
 /// This is available since Rust 1.62 and handles NaN correctly
 #[inline]
 fn f32_total_cmp(a: f32, b: f32) -> Ordering {
@@ -92,11 +92,11 @@ impl Celsius {
 
     /// Create a new Celsius temperature. Asserts value >= absolute zero (-273.15°C).
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= -273.15,
-            "Celsius::new: value {} is below absolute zero (-273.15°C)",
-            value
+            "Celsius::new: value {value} is below absolute zero (-273.15°C)"
         );
         Celsius(value)
     }
@@ -105,18 +105,21 @@ impl Celsius {
     /// # Safety
     /// Caller must ensure value >= -273.15 (absolute zero).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Celsius(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
 
     /// Convert to Kelvin
     #[inline]
+    #[must_use]
     pub fn to_kelvin(self) -> Kelvin {
         Kelvin(self.0 + 273.15)
     }
@@ -214,11 +217,11 @@ impl Kelvin {
 
     /// Create a new Kelvin temperature. Asserts value >= absolute zero (0 K).
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "Kelvin::new: value {} is below absolute zero (0 K)",
-            value
+            "Kelvin::new: value {value} is below absolute zero (0 K)"
         );
         Kelvin(value)
     }
@@ -227,18 +230,21 @@ impl Kelvin {
     /// # Safety
     /// Caller must ensure value >= 0 (absolute zero).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Kelvin(value)
     }
 
     /// Convert to Celsius
     #[inline]
+    #[must_use]
     pub fn to_celsius(self) -> Celsius {
         Celsius::new(self.0 - 273.15)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -337,11 +343,11 @@ impl DerefMut for Meters {
 impl Meters {
     /// Create a new distance in meters
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "Meters::new: negative distance {} is invalid",
-            value
+            "Meters::new: negative distance {value} is invalid"
         );
         Meters(value)
     }
@@ -350,18 +356,21 @@ impl Meters {
     /// # Safety
     /// Caller must ensure value >= 0 (non-negative distance).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Meters(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
 
     /// Convert to kilometers
     #[inline]
+    #[must_use]
     pub fn to_kilometers(self) -> Kilometers {
         Kilometers(self.0 / 1000.0)
     }
@@ -458,11 +467,11 @@ impl DerefMut for Kilometers {
 impl Kilometers {
     /// Create a new Kilometers value.
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "Kilometers::new: negative distance {} is invalid",
-            value
+            "Kilometers::new: negative distance {value} is invalid"
         );
         Kilometers(value)
     }
@@ -471,18 +480,21 @@ impl Kilometers {
     /// # Safety
     /// Caller must ensure value >= 0 (non-negative distance).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Kilometers(value)
     }
 
     /// Convert to meters
     #[inline]
+    #[must_use]
     pub fn to_meters(self) -> Meters {
         Meters::new(self.0 * 1000.0)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -577,11 +589,11 @@ impl DerefMut for Kilograms {
 impl Kilograms {
     /// Create a new mass in kilograms. Asserts value >= 0 (non-negative mass).
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "Kilograms::new: negative mass {} is invalid",
-            value
+            "Kilograms::new: negative mass {value} is invalid"
         );
         Kilograms(value)
     }
@@ -590,12 +602,14 @@ impl Kilograms {
     /// # Safety
     /// Caller must ensure value >= 0 (non-negative mass).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Kilograms(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -709,11 +723,11 @@ impl KgPerCubicMeter {
 
     /// Create a new density. Asserts value >= 0 (non-negative density).
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "KgPerCubicMeter::new: negative density {} is invalid",
-            value
+            "KgPerCubicMeter::new: negative density {value} is invalid"
         );
         KgPerCubicMeter(value)
     }
@@ -722,12 +736,14 @@ impl KgPerCubicMeter {
     /// # Safety
     /// Caller must ensure value >= 0 (non-negative density).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         KgPerCubicMeter(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -792,11 +808,11 @@ impl DerefMut for Seconds {
 impl Seconds {
     /// Create a new duration in seconds
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "Seconds::new: negative duration {} is invalid",
-            value
+            "Seconds::new: negative duration {value} is invalid"
         );
         Seconds(value)
     }
@@ -805,18 +821,21 @@ impl Seconds {
     /// # Safety
     /// Caller must ensure value >= 0 (non-negative duration).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Seconds(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
 
     /// Convert to hours
     #[inline]
+    #[must_use]
     pub fn to_hours(self) -> Hours {
         Hours(self.0 / 3600.0)
     }
@@ -905,11 +924,11 @@ impl DerefMut for Hours {
 impl Hours {
     /// Create a new Hours value.
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "Hours::new: negative duration {} is invalid",
-            value
+            "Hours::new: negative duration {value} is invalid"
         );
         Hours(value)
     }
@@ -918,18 +937,21 @@ impl Hours {
     /// # Safety
     /// No validation required for time.
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Hours(value)
     }
 
     /// Convert to seconds
     #[inline]
+    #[must_use]
     pub fn to_seconds(self) -> Seconds {
         Seconds::new(self.0 * 3600.0)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -994,18 +1016,21 @@ impl DerefMut for MetersPerSecond {
 impl MetersPerSecond {
     /// Create a new velocity
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         MetersPerSecond(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
 
     /// Convert to km/h
     #[inline]
+    #[must_use]
     pub fn to_kmh(self) -> KilometersPerHour {
         KilometersPerHour(self.0 * 3.6)
     }
@@ -1108,20 +1133,23 @@ impl DerefMut for KilometersPerHour {
 }
 
 impl KilometersPerHour {
-    /// Create a new KilometersPerHour value.
+    /// Create a new `KilometersPerHour` value.
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         KilometersPerHour(value)
     }
 
     /// Convert to m/s
     #[inline]
+    #[must_use]
     pub fn to_mps(self) -> MetersPerSecond {
         MetersPerSecond::new(self.0 / 3.6)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -1230,11 +1258,11 @@ impl DerefMut for Kilojoules {
 impl Kilojoules {
     /// Create a new energy value
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "Kilojoules::new: negative energy {} is invalid",
-            value
+            "Kilojoules::new: negative energy {value} is invalid"
         );
         Kilojoules(value)
     }
@@ -1243,12 +1271,14 @@ impl Kilojoules {
     /// # Safety
     /// No validation required for energy.
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Kilojoules(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -1340,11 +1370,11 @@ impl KjPerKg {
 
     /// Create a new heat content value
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "KjPerKg::new: negative heat content {} is invalid",
-            value
+            "KjPerKg::new: negative heat content {value} is invalid"
         );
         KjPerKg(value)
     }
@@ -1353,12 +1383,14 @@ impl KjPerKg {
     /// # Safety
     /// No validation required for specific energy.
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         KjPerKg(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -1449,11 +1481,11 @@ impl DerefMut for KwPerMeter {
 impl KwPerMeter {
     /// Create a new fire intensity value. Asserts value >= 0 (non-negative intensity).
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "KwPerMeter::new: negative intensity {} is invalid",
-            value
+            "KwPerMeter::new: negative intensity {value} is invalid"
         );
         KwPerMeter(value)
     }
@@ -1462,12 +1494,14 @@ impl KwPerMeter {
     /// # Safety
     /// Caller must ensure value >= 0 (non-negative intensity).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         KwPerMeter(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -1553,11 +1587,11 @@ impl KjPerKgK {
 
     /// Create a new specific heat value. Asserts value >= 0 (non-negative specific heat).
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "KjPerKgK::new: negative specific heat {} is invalid",
-            value
+            "KjPerKgK::new: negative specific heat {value} is invalid"
         );
         KjPerKgK(value)
     }
@@ -1566,12 +1600,14 @@ impl KjPerKgK {
     /// # Safety
     /// Caller must ensure value >= 0 (non-negative specific heat).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         KjPerKgK(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -1657,11 +1693,11 @@ impl Fraction {
 
     /// Create a new fraction. Asserts value is within [0, 1].
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             (0.0..=1.0).contains(&value),
-            "Fraction::new: value {} not in [0, 1]",
-            value
+            "Fraction::new: value {value} not in [0, 1]"
         );
         Fraction(value)
     }
@@ -1669,6 +1705,7 @@ impl Fraction {
     /// Create a fraction at compile time (const context).
     /// Value must be in [0, 1] - not validated at compile time.
     #[inline]
+    #[must_use]
     pub const fn new_const(value: f32) -> Self {
         Fraction(value)
     }
@@ -1677,18 +1714,21 @@ impl Fraction {
     /// # Safety
     /// Caller must ensure value is in [0, 1].
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         Fraction(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
 
     /// Convert to percentage (0-100)
     #[inline]
+    #[must_use]
     pub fn to_percent(self) -> Percent {
         Percent::new(self.0 * 100.0)
     }
@@ -1791,18 +1831,21 @@ impl DerefMut for Percent {
 impl Percent {
     /// Create a new percentage
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         Percent(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
 
     /// Convert to fraction (0-1)
     #[inline]
+    #[must_use]
     pub fn to_fraction(self) -> Fraction {
         Fraction(self.0 / 100.0)
     }
@@ -1907,18 +1950,21 @@ impl DerefMut for Degrees {
 impl Degrees {
     /// Create a new angle in degrees
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         Degrees(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
 
     /// Convert to radians
     #[inline]
+    #[must_use]
     pub fn to_radians(self) -> Radians {
         Radians(self.0.to_radians())
     }
@@ -1985,36 +2031,42 @@ impl DerefMut for Radians {
 impl Radians {
     /// Create a new angle in radians
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         Radians(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
 
     /// Convert to degrees
     #[inline]
+    #[must_use]
     pub fn to_degrees(self) -> Degrees {
         Degrees(self.0.to_degrees())
     }
 
     /// Compute sine
     #[inline]
+    #[must_use]
     pub fn sin(self) -> f32 {
         self.0.sin()
     }
 
     /// Compute cosine
     #[inline]
+    #[must_use]
     pub fn cos(self) -> f32 {
         self.0.cos()
     }
 
     /// Compute tangent
     #[inline]
+    #[must_use]
     pub fn tan(self) -> f32 {
         self.0.tan()
     }
@@ -2101,11 +2153,11 @@ impl SurfaceAreaToVolume {
 
     /// Create a new surface area to volume ratio. Asserts value >= 0 (non-negative SAV).
     #[inline]
+    #[must_use]
     pub fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "SurfaceAreaToVolume::new: negative SAV {} is invalid",
-            value
+            "SurfaceAreaToVolume::new: negative SAV {value} is invalid"
         );
         SurfaceAreaToVolume(value)
     }
@@ -2114,12 +2166,14 @@ impl SurfaceAreaToVolume {
     /// # Safety
     /// Caller must ensure value >= 0 (non-negative SAV).
     #[inline]
+    #[must_use]
     pub unsafe fn new_unchecked(value: f32) -> Self {
         SurfaceAreaToVolume(value)
     }
 
     /// Get the raw f32 value
     #[inline]
+    #[must_use]
     pub fn value(self) -> f32 {
         self.0
     }
@@ -2189,13 +2243,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "Fraction::new: value 1.5 not in [0, 1]")]
     fn test_fraction_new_panics_on_too_large() {
-        Fraction::new(1.5);
+        let _ = Fraction::new(1.5);
     }
 
     #[test]
     #[should_panic(expected = "Fraction::new: value -0.5 not in [0, 1]")]
     fn test_fraction_new_panics_on_negative() {
-        Fraction::new(-0.5);
+        let _ = Fraction::new(-0.5);
     }
 
     #[test]

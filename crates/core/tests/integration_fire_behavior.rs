@@ -170,14 +170,13 @@ fn test_single_tree_complete_burnout() {
                 total_fuel_remaining,
             ));
             println!(
-                "t={:3}s: Burning={:2}, Smoldering={:2}, Crown={}, MaxTemp={:4.0}°C, FuelLeft={:5.1}kg",
-                step, burning_count, smoldering_count, crown_fire_active, max_temp, total_fuel_remaining
+                "t={step:3}s: Burning={burning_count:2}, Smoldering={smoldering_count:2}, Crown={crown_fire_active}, MaxTemp={max_temp:4.0}°C, FuelLeft={total_fuel_remaining:5.1}kg"
             );
         }
 
         // Stop if all fuel consumed
         if total_fuel_remaining < 0.1 {
-            println!("All fuel consumed at t={}s", step);
+            println!("All fuel consumed at t={step}s");
             break;
         }
     }
@@ -187,16 +186,15 @@ fn test_single_tree_complete_burnout() {
 
     // 1. Fire should have spread to multiple elements
     let max_burning = stats.iter().map(|(_, b, _, _, _, _)| *b).max().unwrap_or(0);
-    println!("✓ Max simultaneous burning elements: {}", max_burning);
+    println!("✓ Max simultaneous burning elements: {max_burning}");
     assert!(
         max_burning >= 5,
-        "Fire should spread to at least 5 elements, got {}",
-        max_burning
+        "Fire should spread to at least 5 elements, got {max_burning}"
     );
 
     // 2. Crown fire should have activated (stringybark has low crown threshold)
     let crown_fire_detected = stats.iter().any(|(_, _, _, cf, _, _)| *cf);
-    println!("✓ Crown fire detected: {}", crown_fire_detected);
+    println!("✓ Crown fire detected: {crown_fire_detected}");
     assert!(
         crown_fire_detected,
         "Crown fire should activate for eucalyptus stringybark"
@@ -206,7 +204,7 @@ fn test_single_tree_complete_burnout() {
     // Smoldering requires temperatures in 200-700°C range, which won't happen during
     // active crown fire at 1400°C with plenty of fuel
     let max_smoldering = stats.iter().map(|(_, _, s, _, _, _)| *s).max().unwrap_or(0);
-    println!("✓ Max smoldering elements: {}", max_smoldering);
+    println!("✓ Max smoldering elements: {max_smoldering}");
     // Note: Smoldering is not expected during intense active burning - it occurs after flames die down
     // This is scientifically accurate: Rein (2009) shows smoldering occurs post-flaming
 
@@ -215,23 +213,21 @@ fn test_single_tree_complete_burnout() {
         .iter()
         .map(|(_, _, _, _, t, _)| *t)
         .fold(0.0f32, f32::max);
-    println!("✓ Maximum temperature: {:.0}°C", max_temp);
+    println!("✓ Maximum temperature: {max_temp:.0}°C");
     assert!(
         max_temp > 600.0 && max_temp < 1500.0,
-        "Temperature should be 600-1500°C, got {:.0}°C",
-        max_temp
+        "Temperature should be 600-1500°C, got {max_temp:.0}°C"
     );
 
     // 5. Fuel should be consumed (reduced requirement for realistic burn rates)
     // With realistic burn coefficients (0.1x) a 300s burn consumes ~5-10% fuel
-    let final_fuel = stats.last().map(|(_, _, _, _, _, f)| *f).unwrap_or(0.0);
-    let initial_fuel = stats.first().map(|(_, _, _, _, _, f)| *f).unwrap_or(0.0);
+    let final_fuel = stats.last().map_or(0.0, |(_, _, _, _, _, f)| *f);
+    let initial_fuel = stats.first().map_or(0.0, |(_, _, _, _, _, f)| *f);
     let consumption_pct = (1.0 - final_fuel / initial_fuel) * 100.0;
-    println!("✓ Fuel consumption: {:.1}%", consumption_pct);
+    println!("✓ Fuel consumption: {consumption_pct:.1}%");
     assert!(
         consumption_pct > 5.0,
-        "Should consume >5% of fuel, got {:.1}%",
-        consumption_pct
+        "Should consume >5% of fuel, got {consumption_pct:.1}%"
     );
 
     println!("\n✅ Single tree test PASSED - All fire behavior models working correctly");
@@ -270,10 +266,7 @@ fn test_multiple_trees_fire_spread() {
         let tree_elements = create_eucalyptus_tree(&mut sim, tree_center, 12.0);
         let num_elements = tree_elements.len();
         tree_sets.push((i, tree_center, tree_elements));
-        println!(
-            "Created tree {} at ({:.1}, {:.1}) with {} elements",
-            i, x, y, num_elements
-        );
+        println!("Created tree {i} at ({x:.1}, {y:.1}) with {num_elements} elements");
     }
 
     // Ignite first tree (eastern-most, upwind)
@@ -291,7 +284,7 @@ fn test_multiple_trees_fire_spread() {
 
         // Check status of each tree
         if step % 20 == 0 {
-            println!("t={:3}s:", step);
+            println!("t={step:3}s:");
             for (tree_idx, _tree_center, tree_elements) in &tree_sets {
                 let mut burning = 0;
                 let mut smoldering = 0;
@@ -319,7 +312,7 @@ fn test_multiple_trees_fire_spread() {
                             // Record first ignition time
                             if tree_ignition_times[*tree_idx].is_none() {
                                 tree_ignition_times[*tree_idx] = Some(step);
-                                println!("  🔥 Tree {} ignited at t={}s", tree_idx, step);
+                                println!("  🔥 Tree {tree_idx} ignited at t={step}s");
                             }
                         }
                     }
@@ -329,8 +322,7 @@ fn test_multiple_trees_fire_spread() {
 
                 if burning > 0 || max_temp > 100.0 {
                     println!(
-                        "  Tree {}: Burn={:2}, Smold={:2}, Crown={}, Temp={:4.0}°C, Fuel={:5.1}kg",
-                        tree_idx, burning, smoldering, crown_fire, max_temp, fuel_remaining
+                        "  Tree {tree_idx}: Burn={burning:2}, Smold={smoldering:2}, Crown={crown_fire}, Temp={max_temp:4.0}°C, Fuel={fuel_remaining:5.1}kg"
                     );
                 }
             }
@@ -349,7 +341,7 @@ fn test_multiple_trees_fire_spread() {
                 i, ignition_time, tree_max_burning[i]
             );
         } else {
-            println!("Tree {}: Never ignited", i);
+            println!("Tree {i}: Never ignited");
         }
     }
 
@@ -366,11 +358,10 @@ fn test_multiple_trees_fire_spread() {
 
     // 2. At least one neighboring tree should ignite (fire spread)
     let trees_ignited = tree_ignition_times.iter().filter(|t| t.is_some()).count();
-    println!("✓ Total trees ignited: {}/5", trees_ignited);
+    println!("✓ Total trees ignited: {trees_ignited}/5");
     assert!(
         trees_ignited >= 2,
-        "Fire should spread to at least 2 trees, got {}",
-        trees_ignited
+        "Fire should spread to at least 2 trees, got {trees_ignited}"
     );
 
     // 3. Ignition should progress downwind (westward) - later trees ignite later
@@ -398,7 +389,7 @@ fn test_multiple_trees_fire_spread() {
     // 4. Fire should demonstrate realistic spread timing
     if let (Some(t0), Some(t1)) = (tree_ignition_times[0], tree_ignition_times[1]) {
         let spread_time = t1 - t0;
-        println!("✓ Spread time tree 0→1: {}s", spread_time);
+        println!("✓ Spread time tree 0→1: {spread_time}s");
         // Note: With high FFDI and strong wind, spread can be very fast (5-15s realistic for 12m)
         // This demonstrates the extreme fire behavior under Australian conditions
     }
@@ -470,8 +461,7 @@ fn test_ember_spotting_between_trees() {
         // Check tree 1
         let tree1_active = tree1_elements.iter().any(|id| {
             sim.get_element(*id)
-                .map(|e| e.is_ignited())
-                .unwrap_or(false)
+                .is_some_and(fire_sim_core::FuelElement::is_ignited)
         });
 
         if tree1_active {
@@ -481,16 +471,12 @@ fn test_ember_spotting_between_trees() {
         // Check tree 2
         let tree2_active = tree2_elements.iter().any(|id| {
             sim.get_element(*id)
-                .map(|e| e.is_ignited())
-                .unwrap_or(false)
+                .is_some_and(fire_sim_core::FuelElement::is_ignited)
         });
 
         if tree2_active && tree2_ignited_time.is_none() {
             tree2_ignited_time = Some(step);
-            println!(
-                "🔥 Tree 2 SPOT IGNITION at t={}s via ember transport!",
-                step
-            );
+            println!("🔥 Tree 2 SPOT IGNITION at t={step}s via ember transport!");
         }
 
         if step % 30 == 0 {
@@ -498,22 +484,19 @@ fn test_ember_spotting_between_trees() {
                 .iter()
                 .filter(|id| {
                     sim.get_element(**id)
-                        .map(|e| e.is_ignited())
-                        .unwrap_or(false)
+                        .is_some_and(fire_sim_core::FuelElement::is_ignited)
                 })
                 .count();
             let tree2_burning_count = tree2_elements
                 .iter()
                 .filter(|id| {
                     sim.get_element(**id)
-                        .map(|e| e.is_ignited())
-                        .unwrap_or(false)
+                        .is_some_and(fire_sim_core::FuelElement::is_ignited)
                 })
                 .count();
 
             println!(
-                "t={:3}s: Tree1={:2} burning, Tree2={:2} burning, Embers={:3}",
-                step, tree1_burning_count, tree2_burning_count, ember_count
+                "t={step:3}s: Tree1={tree1_burning_count:2} burning, Tree2={tree2_burning_count:2} burning, Embers={ember_count:3}"
             );
         }
     }
@@ -521,28 +504,24 @@ fn test_ember_spotting_between_trees() {
     println!("\n=== Validation Results ===");
 
     // 1. Tree 1 should have burned
-    println!("✓ Tree 1 burned: {}", tree1_burning);
+    println!("✓ Tree 1 burned: {tree1_burning}");
     assert!(tree1_burning, "Tree 1 should have burned");
 
     // 2. Embers should have been generated (Albini model active)
-    println!("✓ Max embers generated: {}", ember_count_max);
+    println!("✓ Max embers generated: {ember_count_max}");
     assert!(
         ember_count_max > 0,
-        "Embers should be generated under extreme conditions, got {}",
-        ember_count_max
+        "Embers should be generated under extreme conditions, got {ember_count_max}"
     );
 
     // 3. Tree 2 ignition indicates successful ember spotting
     if let Some(ignition_time) = tree2_ignited_time {
-        println!("✓ Tree 2 spot ignition: YES at t={}s", ignition_time);
+        println!("✓ Tree 2 spot ignition: YES at t={ignition_time}s");
         println!("  → Albini spotting physics successfully bridged 25m gap");
     } else {
         println!("⚠ Tree 2 spot ignition: NO");
         println!("  → This is acceptable - spotting is probabilistic");
-        println!(
-            "  → Embers were generated ({}), proving Albini model is active",
-            ember_count_max
-        );
+        println!("  → Embers were generated ({ember_count_max}), proving Albini model is active");
     }
 
     println!("\n✅ Ember spotting test PASSED - Albini physics active and generating embers");
@@ -577,11 +556,8 @@ fn test_weather_conditions_spread_rate() {
     let mut results = Vec::new();
 
     for (name, temp, humidity, wind) in conditions {
-        println!("\n--- Testing {} conditions ---", name);
-        println!(
-            "Temperature: {}°C, Humidity: {}%, Wind: {} km/h",
-            temp, humidity, wind
-        );
+        println!("\n--- Testing {name} conditions ---");
+        println!("Temperature: {temp}°C, Humidity: {humidity}%, Wind: {wind} km/h");
 
         // Create simulation
         let terrain = TerrainData::flat(100.0, 100.0, 3.0, 0.0);
@@ -619,8 +595,7 @@ fn test_weather_conditions_spread_rate() {
                 .iter()
                 .filter(|id| {
                     sim.get_element(**id)
-                        .map(|e| e.is_ignited())
-                        .unwrap_or(false)
+                        .is_some_and(fire_sim_core::FuelElement::is_ignited)
                 })
                 .count();
 
@@ -631,15 +606,15 @@ fn test_weather_conditions_spread_rate() {
             }
         }
 
-        let final_count = ignited_count_at_times.last().map(|(_, c)| *c).unwrap_or(0);
+        let final_count = ignited_count_at_times.last().map_or(0, |(_, c)| *c);
         results.push((name, final_count, ignited_count_at_times));
     }
 
     println!("\n=== Results Summary ===");
     for (name, final_count, times) in &results {
-        println!("{}: {} elements after 60s", name, final_count);
+        println!("{name}: {final_count} elements after 60s");
         for (t, c) in times {
-            println!("  t={}s: {}", t, c);
+            println!("  t={t}s: {c}");
         }
     }
 
@@ -657,18 +632,15 @@ fn test_weather_conditions_spread_rate() {
     // 1. All conditions should show fire spread
     assert!(
         moderate_count >= 1,
-        "Moderate: Should have at least 1 burning, got {}",
-        moderate_count
+        "Moderate: Should have at least 1 burning, got {moderate_count}"
     );
     assert!(
         severe_count >= 1,
-        "Severe: Should have at least 1 burning, got {}",
-        severe_count
+        "Severe: Should have at least 1 burning, got {severe_count}"
     );
     assert!(
         catastrophic_count >= 1,
-        "Catastrophic: Should have at least 1 burning, got {}",
-        catastrophic_count
+        "Catastrophic: Should have at least 1 burning, got {catastrophic_count}"
     );
     println!("✓ All conditions show fire activity");
 
@@ -677,10 +649,9 @@ fn test_weather_conditions_spread_rate() {
     // At 11s, should have 1-5 elements (not full ignition)
     assert!(
         moderate_t11 < 15,
-        "Moderate should show gradual spread, got {} at t=11s",
-        moderate_t11
+        "Moderate should show gradual spread, got {moderate_t11} at t=11s"
     );
-    println!("✓ Moderate: Progressive spread ({} at t=11s)", moderate_t11);
+    println!("✓ Moderate: Progressive spread ({moderate_t11} at t=11s)");
 
     // 3. CATASTROPHIC conditions SHOULD show rapid/mass ignition
     // Cruz et al. (2012): Black Saturday showed "profuse short range spotting"
@@ -692,10 +663,7 @@ fn test_weather_conditions_spread_rate() {
     // due to turbulent wind effects, heat distribution patterns, and fuel moisture.
     // The key validation is OVERALL rapid spread, not exact element count at one timestep.
     let catastrophic_multiplier = catastrophic_t11 as f32 / severe_t11.max(1) as f32;
-    println!(
-        "✓ Catastrophic spread multiplier vs Severe: {:.2}x at t=11s",
-        catastrophic_multiplier
-    );
+    println!("✓ Catastrophic spread multiplier vs Severe: {catastrophic_multiplier:.2}x at t=11s");
 
     // Validate that catastrophic conditions show rapid spread
     // Check at t=60s for comparison with 2m element spacing
@@ -706,24 +674,20 @@ fn test_weather_conditions_spread_rate() {
     let severe_t60 = results[1].2[2].1; // Severe at 60s
 
     println!(
-        "  → Catastrophic: {} elements at t=11s, {} at t=31s, {} at t=60s",
-        catastrophic_t11, catastrophic_t31, catastrophic_t60
+        "  → Catastrophic: {catastrophic_t11} elements at t=11s, {catastrophic_t31} at t=31s, {catastrophic_t60} at t=60s"
     );
     println!(
-        "  → Severe: {} elements at t=11s, {} at t=31s, {} at t=60s",
-        severe_t11, severe_t31, severe_t60
+        "  → Severe: {severe_t11} elements at t=11s, {severe_t31} at t=31s, {severe_t60} at t=60s"
     );
 
     // Validate spread: significant spread by t=60s under extreme conditions
     assert!(
         catastrophic_t60 >= 10,
-        "Catastrophic should show rapid spread, got {} elements at t=60s",
-        catastrophic_t60
+        "Catastrophic should show rapid spread, got {catastrophic_t60} elements at t=60s"
     );
     assert!(
         severe_t60 >= 3,
-        "Severe should show significant spread, got {} elements at t=60s",
-        severe_t60
+        "Severe should show significant spread, got {severe_t60} elements at t=60s"
     );
 
     println!("  → CITATION: Cruz et al. (2012) Black Saturday - mass ignition documented");
@@ -739,8 +703,7 @@ fn test_weather_conditions_spread_rate() {
         "Severe should spread more than Moderate"
     );
     println!(
-        "\n✓ Spread gradient maintained: Moderate({}) < Severe({}) <= Catastrophic({})",
-        moderate_count, severe_count, catastrophic_count
+        "\n✓ Spread gradient maintained: Moderate({moderate_count}) < Severe({severe_count}) <= Catastrophic({catastrophic_count})"
     );
 
     println!("\n✅ Weather conditions test PASSED - Spread rates match scientific literature");

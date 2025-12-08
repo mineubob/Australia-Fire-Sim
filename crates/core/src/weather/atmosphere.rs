@@ -221,9 +221,9 @@ impl AtmosphericProfile {
 
     /// Calculate Lifted Index (LI)
     ///
-    /// LI = T_500 - T_parcel
+    /// LI = `T_500` - `T_parcel`
     ///
-    /// Where T_parcel is the temperature of an air parcel lifted from
+    /// Where `T_parcel` is the temperature of an air parcel lifted from
     /// the surface to 500 hPa (approximately 5.5 km).
     ///
     /// # Scientific Reference
@@ -253,7 +253,7 @@ impl AtmosphericProfile {
 
     /// Calculate K-Index
     ///
-    /// K = (T_850 - T_500) + Td_850 - (T_700 - Td_700)
+    /// K = (`T_850` - `T_500`) + `Td_850` - (`T_700` - `Td_700`)
     ///
     /// Measures thunderstorm/convection potential.
     ///
@@ -325,7 +325,7 @@ impl AtmosphericProfile {
     /// - `fire_intensity`: Fireline intensity (kW/m)
     ///
     /// # Returns
-    /// (can_form, intensity_threshold_factor)
+    /// (`can_form`, `intensity_threshold_factor`)
     pub fn pyrocumulus_potential(&self, fire_intensity_kwm: f32) -> (bool, f32) {
         // Minimum intensity for pyrocumulus (typically ~10,000 kW/m = 10 MW/m)
         let min_intensity = 10_000.0;
@@ -545,8 +545,7 @@ mod tests {
         assert!(cape > 0.0, "Unstable atmosphere should have positive CAPE");
         assert!(
             cape < 5000.0,
-            "CAPE should be reasonable (<5000 J/kg), got {}",
-            cape
+            "CAPE should be reasonable (<5000 J/kg), got {cape}"
         );
     }
 
@@ -599,8 +598,7 @@ mod tests {
         // K = (15 - (-10)) + 8 - (5 - (-5)) = 25 + 8 - 10 = 23
         assert!(
             (k - 23.0).abs() < 0.1,
-            "K-index calculation error: expected 23, got {}",
-            k
+            "K-index calculation error: expected 23, got {k}"
         );
     }
 }
