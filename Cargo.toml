@@ -6,13 +6,30 @@ resolver = "2"
 warnings = "deny"
 
 [workspace.lints.clippy]
-all = "deny"
-pedantic = "deny"
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Allow noisy pedantic lints that don't affect correctness
+similar_names = "allow"              # Variable naming style preference
+cast_precision_loss = "allow"        # Common in f32 simulation code
+cast_possible_truncation = "allow"   # Acceptable in controlled contexts
+cast_sign_loss = "allow"             # Acceptable when values known positive
+cast_possible_wrap = "allow"         # Acceptable in controlled contexts
+missing_panics_doc = "allow"         # Tests and infallible panics
+too_many_lines = "allow"             # Large simulation functions are unavoidable
+items_after_statements = "allow"     # Physical constants in context is clearer
+inline_always = "allow"              # Performance-critical hot paths
+unsafe_derive_deserialize = "allow"  # Serde on types with safe methods
+needless_pass_by_value = "allow"     # FFI boundary requirements
+manual_let_else = "allow"            # Style preference
+unreadable_literal = "allow"         # Scientific constants don't need separators
+trivially_copy_pass_by_ref = "allow" # API stability preference
+must_use_candidate = "allow"         # Too noisy for simulation code
+return_self_not_must_use = "allow"   # Builder pattern preference
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Fire Sim Team"]
+authors = ["Mineubob"]
 license = "MIT"
 
 [workspace.dependencies]
