@@ -506,7 +506,6 @@ mod tests {
             Fuel::dry_grass(),
             Kilograms::new(5.0),
             FuelPart::GroundVegetation,
-            None,
         )
         .with_temperature(Celsius::new(temp))
     }
@@ -726,7 +725,6 @@ mod tests {
             Fuel::dry_grass(),
             Kilograms::new(3.0), // 3kg grass load
             FuelPart::GroundVegetation,
-            None,
         )
         .with_temperature(Celsius::new(600.0));
 
@@ -738,7 +736,6 @@ mod tests {
             Fuel::eucalyptus_stringybark(),
             Kilograms::new(10.0),
             FuelPart::TrunkLower,
-            None,
         )
         .with_temperature(Celsius::new(20.0));
 
@@ -752,7 +749,6 @@ mod tests {
                 height: Meters::new(4.0),
                 angle: Degrees::new(0.0),
             },
-            Some(1),
         )
         .with_temperature(Celsius::new(20.0));
 
@@ -763,7 +759,6 @@ mod tests {
             Fuel::eucalyptus_stringybark(),
             Kilograms::new(5.0),
             FuelPart::Crown,
-            Some(1),
         )
         .with_temperature(Celsius::new(20.0));
 

@@ -35,7 +35,7 @@ pub enum FuelPart {
 /// Individual fuel element in 3D space
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FuelElement {
-    pub(crate) id: u32,
+    pub(crate) id: usize,
     pub(crate) position: Vec3, // World position in meters
     pub(crate) fuel: Fuel,     // Comprehensive fuel type with all properties
 
@@ -45,10 +45,7 @@ pub struct FuelElement {
     pub(crate) fuel_remaining: Kilograms,   // Mass remaining
     pub(crate) ignited: bool,
     pub(crate) flame_height: Meters, // meters (Byram's formula)
-
-    // Structural relationships
-    pub(crate) parent_id: Option<u32>, // Parent structure/tree ID
-    pub(crate) part_type: FuelPart,    // What kind of fuel part
+    pub(crate) part_type: FuelPart,  // What kind of fuel part
 
     // Spatial context
     pub(crate) elevation: Meters,     // Height above ground
@@ -82,12 +79,11 @@ pub struct FuelElement {
 impl FuelElement {
     /// Create a new fuel element
     pub(crate) fn new(
-        id: u32,
+        id: usize,
         position: Vec3,
         fuel: Fuel,
         mass: Kilograms,
         part_type: FuelPart,
-        parent_id: Option<u32>,
     ) -> Self {
         let moisture_fraction = fuel.base_moisture;
         let elevation = Meters::new(position.z);
@@ -111,7 +107,6 @@ impl FuelElement {
             fuel_remaining: mass,
             ignited: false,
             flame_height: Meters::new(0.0),
-            parent_id,
             part_type,
             elevation,
             slope_angle: Degrees::new(0.0),
@@ -128,7 +123,7 @@ impl FuelElement {
     }
 
     /// This fuel element's id.
-    pub fn id(&self) -> u32 {
+    pub fn id(&self) -> usize {
         self.id
     }
 
@@ -145,11 +140,6 @@ impl FuelElement {
     /// Get fuel part type
     pub fn part_type(&self) -> FuelPart {
         self.part_type
-    }
-
-    /// Get parent element ID (if any)
-    pub fn parent_id(&self) -> Option<u32> {
-        self.parent_id
     }
 
     /// Get elevation (height above ground)
@@ -238,8 +228,7 @@ impl FuelElement {
             // STEP 2: Remaining heat raises temperature
             let remaining_heat = heat_kj - heat_for_evaporation;
             if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
-                let temp_rise =
-                    remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
+                let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
                 self.temperature = Celsius::new(*self.temperature + temp_rise);
             }
         } else {
@@ -249,9 +238,10 @@ impl FuelElement {
         }
 
         // STEP 3: Cap at fuel-specific maximum (prevents thermal runaway)
-        let max_temp = Celsius::new(self
-            .fuel
-            .calculate_max_flame_temperature(*self.moisture_fraction));
+        let max_temp = Celsius::new(
+            self.fuel
+                .calculate_max_flame_temperature(*self.moisture_fraction),
+        );
         self.temperature = self.temperature.min(max_temp);
 
         // STEP 4: Clamp to ambient minimum (prevents negative heat)
@@ -379,7 +369,9 @@ impl FuelElement {
     /// # References
     /// - Byram, G.M. (1959). "Combustion of forest fuels." In Forest Fire: Control and Use.
     /// - Rothermel, R.C. (1972). "A mathematical model for predicting fire spread in wildland fuels."
-    pub(crate) fn byram_fireline_intensity(&self, wind_speed_ms: f32) -> f32 {
+    /// Calculate Byram's fireline intensity in kW/m
+    /// Calculate Byram's fireline intensity in kW/m (public for FFI access)
+    pub fn byram_fireline_intensity(&self, wind_speed_ms: f32) -> f32 {
         // OPTIMIZATION: Early exits for non-burning conditions
         if !self.ignited {
             return 0.0;
@@ -563,7 +555,7 @@ impl FuelElement {
 /// Statistics snapshot of a fuel element
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FuelElementStats {
-    pub id: u32,
+    pub id: usize,
     pub position: Vector3<f32>,
     pub temperature: f32,
     pub moisture_fraction: f32,

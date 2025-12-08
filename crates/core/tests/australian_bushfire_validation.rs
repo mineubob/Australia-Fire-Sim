@@ -21,6 +21,7 @@
 //! Run tests with: cargo test --test australian_bushfire_validation
 
 use fire_sim_core::{
+    core_types::Kilograms,
     physics::{
         albini_spotting_validation::{
             calculate_lofting_height, calculate_maximum_spotting_distance,
@@ -660,16 +661,14 @@ fn test_full_simulation_moderate_conditions() {
             let id = sim.add_fuel_element(
                 Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
                 Fuel::dry_grass(),
-                2.0,
+                Kilograms::new(2.0),
                 FuelPart::GroundVegetation,
-                None,
             );
             element_ids.push(id);
         }
     }
 
-    // Moderate conditions with wind in +X direction (90°)
-    // This makes elements 13, 14, 17, 18, 22, 23 downwind from center (12)
+    // Phase 2: Place suppression before fire ignites n wind from center (12)
     // wind_vector(90°) = (sin(90°), cos(90°), 0) = (1, 0, 0)
     let weather = WeatherSystem::new(30.0, 30.0, 40.0, 90.0, 6.0);
     sim.set_weather(weather);
@@ -715,15 +714,14 @@ fn test_full_simulation_catastrophic_conditions() {
             let id = sim.add_fuel_element(
                 Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
                 Fuel::dry_grass(),
-                2.0,
+                Kilograms::new(2.0),
                 FuelPart::GroundVegetation,
-                None,
             );
             element_ids.push(id);
         }
     }
 
-    // Catastrophic conditions with wind in +X direction (90°)
+    // Ignite bottom-left corner and let fire spread upwind with retardant barrier
     // wind_vector(90°) = (1, 0, 0) - blowing +X
     // This makes the +X elements downwind from center
     let weather = WeatherSystem::new(45.0, 8.0, 80.0, 90.0, 10.0);

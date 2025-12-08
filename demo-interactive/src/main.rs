@@ -38,7 +38,7 @@
 //! - `quit` - Exit the simulation
 
 use fire_sim_core::{
-    core_types::{Celsius, Degrees, Meters},
+    core_types::{Celsius, Degrees, Kilograms, Meters},
     ClimatePattern, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherPreset,
     WeatherSystem,
 };
@@ -179,7 +179,7 @@ fn main() {
                             max_z,
                         );
 
-                        let mut id_dist_ign: Vec<(u32, f32, Celsius, f32)> = filtered
+                        let mut id_dist_ign: Vec<(usize, f32, Celsius, f32)> = filtered
                             .into_iter()
                             .filter_map(|(id, dist, z)| {
                                 sim.get_element(id)
@@ -205,7 +205,7 @@ fn main() {
                             });
 
                             let total = id_dist_ign.len();
-                            let to_ignite: Vec<(u32, f32, Celsius, f32)> = if amount < 0 {
+                            let to_ignite: Vec<(usize, f32, Celsius, f32)> = if amount < 0 {
                                 id_dist_ign.clone()
                             } else {
                                 let amt = amount as usize;
@@ -297,7 +297,7 @@ fn main() {
                             });
 
                             let total = id_dist_z.len();
-                            let to_heat: Vec<(u32, f32, f32)> = if amount < 0 {
+                            let to_heat: Vec<(usize, f32, f32)> = if amount < 0 {
                                 id_dist_z.clone()
                             } else {
                                 let amt = amount as usize;
@@ -477,7 +477,7 @@ fn filter_elements_in_circle(
     part_filter: Option<String>,
     min_z: Option<f32>,
     max_z: Option<f32>,
-) -> Vec<(u32, f32, f32)> {
+) -> Vec<(usize, f32, f32)> {
     let candidates = sim.get_elements_in_radius(center, radius);
 
     candidates
@@ -549,9 +549,8 @@ fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
             let id = sim.add_fuel_element(
                 Vec3::new(x as f32, y as f32, 0.0),
                 fuel,
-                3.0,
+                Kilograms::new(3.0),
                 FuelPart::GroundVegetation,
-                None,
             );
 
             // Add some trees (every 15m)
@@ -573,45 +572,41 @@ fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
     sim
 }
 
-fn create_tree(sim: &mut FireSimulation, x: f32, y: f32, _ground_id: u32) {
+fn create_tree(sim: &mut FireSimulation, x: f32, y: f32, _ground_id: usize) {
     // Trunk
-    let trunk_id = sim.add_fuel_element(
+    sim.add_fuel_element(
         Vec3::new(x, y, 2.0),
         Fuel::eucalyptus_stringybark(),
-        10.0,
+        Kilograms::new(10.0),
         FuelPart::TrunkLower,
-        None,
     );
 
     // Lower branches
     sim.add_fuel_element(
         Vec3::new(x - 1.0, y, 4.0),
         Fuel::eucalyptus_stringybark(),
-        3.0,
+        Kilograms::new(3.0),
         FuelPart::Branch {
             height: Meters::new(4.0),
             angle: Degrees::new(0.0),
         },
-        Some(trunk_id),
     );
     sim.add_fuel_element(
         Vec3::new(x + 1.0, y, 4.0),
         Fuel::eucalyptus_stringybark(),
-        3.0,
+        Kilograms::new(3.0),
         FuelPart::Branch {
             height: Meters::new(4.0),
             angle: Degrees::new(180.0),
         },
-        Some(trunk_id),
     );
 
     // Crown
     sim.add_fuel_element(
         Vec3::new(x, y, 8.0),
         Fuel::eucalyptus_stringybark(),
-        5.0,
+        Kilograms::new(5.0),
         FuelPart::Crown,
-        Some(trunk_id),
     );
 }
 
@@ -697,7 +692,7 @@ fn show_weather(sim: &FireSimulation) {
     println!("══════════════════════════════════════════════════\n");
 }
 
-fn show_element(sim: &FireSimulation, id: u32) {
+fn show_element(sim: &FireSimulation, id: usize) {
     if let Some(e) = sim.get_element(id) {
         let stats = e.get_stats();
         println!("\n═══════════════ ELEMENT {} ═══════════════", id);
@@ -765,7 +760,7 @@ fn show_embers(sim: &FireSimulation) {
     println!("══════════════════════════════════════════════════\n");
 }
 
-fn show_nearby(sim: &FireSimulation, id: u32) {
+fn show_nearby(sim: &FireSimulation, id: usize) {
     if let Some(e) = sim.get_element(id) {
         let source_pos = *e.position();
         let nearby = sim.get_elements_in_radius(source_pos, 15.0);
@@ -801,7 +796,7 @@ fn show_nearby(sim: &FireSimulation, id: u32) {
     }
 }
 
-fn ignite_element(sim: &mut FireSimulation, id: u32) {
+fn ignite_element(sim: &mut FireSimulation, id: usize) {
     if let Some(e) = sim.get_element(id) {
         let stats = e.get_stats();
         // Start at 600°C - realistic for piloted ignition (matches test values)
@@ -818,7 +813,7 @@ fn ignite_element(sim: &mut FireSimulation, id: u32) {
     }
 }
 
-fn heat_element(sim: &mut FireSimulation, id: u32, target_temp: f32) {
+fn heat_element(sim: &mut FireSimulation, id: usize, target_temp: f32) {
     if let Some(e) = sim.get_element(id) {
         let stats = e.get_stats();
         heat_element_to_temp(sim, id, target_temp);
@@ -837,7 +832,7 @@ fn heat_element(sim: &mut FireSimulation, id: u32, target_temp: f32) {
 }
 
 /// Helper function to heat an element to a target temperature
-fn heat_element_to_temp(sim: &mut FireSimulation, id: u32, target_temp: f32) {
+fn heat_element_to_temp(sim: &mut FireSimulation, id: usize, target_temp: f32) {
     if let Some(e) = sim.get_element(id) {
         let stats = e.get_stats();
         let current_temp = stats.temperature;

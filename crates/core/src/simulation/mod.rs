@@ -48,13 +48,13 @@ pub struct FireSimulation {
     // Fuel elements
     elements: Vec<Option<FuelElement>>,
     /// Set of ALL burning element IDs (includes interior and perimeter)
-    pub(crate) burning_elements: HashSet<u32>,
+    pub(crate) burning_elements: HashSet<usize>,
     /// OPTIMIZATION: Set of actively spreading element IDs (fire perimeter only)
     /// Interior burning elements (surrounded by burned fuel) don't spread to new targets.
     /// Tracking this separately reduces spatial queries by 80-90% in large fires.
     /// Maintains 100% physics realism - interior fires still burn down, just don't spread.
-    active_spreading_elements: HashSet<u32>,
-    next_element_id: u32,
+    active_spreading_elements: HashSet<usize>,
+    next_element_id: usize,
 
     // Spatial indexing for elements
     /// Spatial index for efficient neighbor queries
@@ -76,13 +76,13 @@ pub struct FireSimulation {
 
     // OPTIMIZATION: Cache neighbor queries to avoid rebuilding every frame
     // At 13k elements with 1k burning, this saves ~1k query_radius calls per frame
-    nearby_cache: FxHashMap<u32, Vec<u32>>,
+    nearby_cache: FxHashMap<usize, Vec<usize>>,
     current_frame: u32,
 
     // OPTIMIZATION: Cache burning element IDs to skip mark_active_cells when unchanged
     // mark_active_cells is expensive (spatial bucketing, neighbor iteration)
     // but only needs to update when burning elements change (ignition/extinguish)
-    cached_burning_elements: HashSet<u32>,
+    cached_burning_elements: HashSet<usize>,
 
     // Phase 2: Advanced Weather Phenomena
     /// Atmospheric profile for stability indices
@@ -206,23 +206,22 @@ impl FireSimulation {
         &mut self,
         position: Vec3,
         fuel: Fuel,
-        mass: f32,
+        mass: Kilograms,
         part_type: FuelPart,
-        parent_id: Option<u32>,
-    ) -> u32 {
-        use crate::core_types::units::{Degrees, Kilograms};
+    ) -> usize {
+        use crate::core_types::units::Degrees;
 
         let id = self.next_element_id;
         self.next_element_id += 1;
 
-        let mut element =
-            FuelElement::new(id, position, fuel, Kilograms::new(mass), part_type, parent_id);
+        let mut element = FuelElement::new(id, position, fuel, mass, part_type);
 
         // OPTIMIZATION: Cache terrain properties once at creation
         // Uses Horn's method (3x3 kernel) for accurate slope/aspect
         // Eliminates 10,000-20,000 terrain lookups per frame during heat transfer
         element.slope_angle = Degrees::new(self.grid.terrain.slope_at_horn(position.x, position.y));
-        element.aspect_angle = Degrees::new(self.grid.terrain.aspect_at_horn(position.x, position.y));
+        element.aspect_angle =
+            Degrees::new(self.grid.terrain.aspect_at_horn(position.x, position.y));
 
         // Add to spatial index
         self.spatial_index.insert(id, position);
@@ -231,7 +230,7 @@ impl FireSimulation {
         if id as usize >= self.elements.len() {
             self.elements.resize((id as usize + 1) * 2, None);
         }
-        self.elements[id as usize] = Some(element);
+        self.elements[id] = Some(element);
 
         id
     }
@@ -273,8 +272,8 @@ impl FireSimulation {
     /// - `element_id`: ID of fuel element to ignite
     /// - `initial_temp`: Initial burning temperature (°C). Will be clamped to at least
     ///   the fuel's ignition temperature.
-    pub fn ignite_element(&mut self, element_id: u32, initial_temp: Celsius) {
-        if let Some(Some(element)) = self.elements.get_mut(element_id as usize) {
+    pub fn ignite_element(&mut self, element_id: usize, initial_temp: Celsius) {
+        if let Some(Some(element)) = self.elements.get_mut(element_id) {
             element.ignited = true;
             element.temperature = initial_temp.max(element.fuel.ignition_temperature);
             // Set smoldering state to FLAMING phase for direct ignition (Phase 3)
@@ -306,7 +305,7 @@ impl FireSimulation {
     /// - `has_pilot_flame`: Whether there's an adjacent burning element (piloted vs auto-ignition)
     pub fn apply_heat_to_element(
         &mut self,
-        element_id: u32,
+        element_id: usize,
         heat_kj: f32,
         dt: f32,
         has_pilot_flame: bool,
@@ -342,13 +341,13 @@ impl FireSimulation {
     }
 
     /// Get a fuel element by ID
-    pub fn get_element(&self, id: u32) -> Option<&FuelElement> {
-        self.elements.get(id as usize)?.as_ref()
+    pub fn get_element(&self, id: usize) -> Option<&FuelElement> {
+        self.elements.get(id)?.as_ref()
     }
 
     /// Get a mutable fuel element by ID
-    pub fn get_element_mut(&mut self, id: u32) -> Option<&mut FuelElement> {
-        self.elements.get_mut(id as usize)?.as_mut()
+    pub fn get_element_mut(&mut self, id: usize) -> Option<&mut FuelElement> {
+        self.elements.get_mut(id)?.as_mut()
     }
 
     /// Set weather conditions
@@ -424,7 +423,7 @@ impl FireSimulation {
     ///
     /// # Returns
     /// Tuple of (has_coverage, effectiveness_percent, is_within_duration)
-    pub fn get_element_suppression_status(&self, element_id: u32) -> Option<(bool, f32, bool)> {
+    pub fn get_element_suppression_status(&self, element_id: usize) -> Option<(bool, f32, bool)> {
         if let Some(element) = self.get_element(element_id) {
             if let Some(coverage) = element.suppression_coverage() {
                 Some((
@@ -860,7 +859,7 @@ impl FireSimulation {
 
         // Third pass: build nearby_cache from cache for active spreading elements only
         // OPTIMIZATION: Pre-allocate to exact size to avoid reallocation
-        let mut nearby_cache: Vec<(u32, Vec3, Vec<u32>)> =
+        let mut nearby_cache: Vec<(usize, Vec3, Vec<usize>)> =
             Vec::with_capacity(self.active_spreading_elements.len());
         for &element_id in &self.active_spreading_elements {
             if let Some(e) = self.get_element(element_id) {
@@ -1096,9 +1095,7 @@ impl FireSimulation {
                         // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
                         let crown_temp =
                             base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
-                        element.temperature = element
-                            .temperature
-                            .max(Celsius::new(crown_temp));
+                        element.temperature = element.temperature.max(Celsius::new(crown_temp));
                     }
                 }
             }
@@ -1192,7 +1189,7 @@ impl FireSimulation {
             .iter()
             .map(|(_, _, nearby)| nearby.len())
             .sum::<usize>();
-        let mut heat_map: FxHashMap<u32, f32> =
+        let mut heat_map: FxHashMap<usize, f32> =
             FxHashMap::with_capacity_and_hasher(estimated_targets, Default::default());
 
         // Sequential iteration with better cache locality
@@ -1493,7 +1490,7 @@ impl FireSimulation {
         for (idx, position, temperature, _source_fuel) in ember_ignition_attempts {
             // Find nearby fuel elements within 1.5m radius (embers need close contact)
             // Reduced from 2.0m to minimize query overhead while maintaining ignition realism
-            let nearby_fuel_ids: Vec<u32> = self.spatial_index.query_radius(position, 1.5);
+            let nearby_fuel_ids: Vec<usize> = self.spatial_index.query_radius(position, 1.5);
 
             // Try to ignite nearby receptive fuel
             let mut ignition_occurred = false;
@@ -1597,7 +1594,7 @@ impl FireSimulation {
 
             // Use frame number to determine which subset to check
             // Converts HashSet to Vec slice for indexed access (one-time cost amortized)
-            let elements_vec: Vec<u32> = self.active_spreading_elements.iter().copied().collect();
+            let elements_vec: Vec<usize> = self.active_spreading_elements.iter().copied().collect();
             let start_idx = (self.current_frame as usize * batch_size) % elements_vec.len();
             let end_idx = (start_idx + batch_size).min(elements_vec.len());
 
@@ -1709,9 +1706,8 @@ mod tests {
         let id = sim.add_fuel_element(
             Vec3::new(50.0, 50.0, 1.0),
             fuel,
-            1.0,
+            Kilograms::new(1.0),
             FuelPart::GroundVegetation,
-            None,
         );
 
         sim.ignite_element(id, Celsius::new(600.0));
@@ -1729,9 +1725,8 @@ mod tests {
         let id = sim.add_fuel_element(
             Vec3::new(50.0, 50.0, 1.0),
             fuel,
-            1.0,
+            Kilograms::new(1.0),
             FuelPart::GroundVegetation,
-            None,
         );
 
         sim.ignite_element(id, Celsius::new(600.0));
@@ -1776,9 +1771,8 @@ mod tests {
                 let id = sim.add_fuel_element(
                     Vec3::new(x, y, 0.5),
                     fuel,
-                    3.0,
+                    Kilograms::new(3.0),
                     FuelPart::GroundVegetation,
-                    None,
                 );
                 fuel_ids.push(id);
             }
@@ -1839,9 +1833,8 @@ mod tests {
                 let id = sim.add_fuel_element(
                     Vec3::new(x, y, 0.5),
                     fuel,
-                    3.0,
+                    Kilograms::new(3.0),
                     FuelPart::GroundVegetation,
-                    None,
                 );
                 fuel_ids.push(id);
             }
@@ -1904,9 +1897,8 @@ mod tests {
             let id = sim.add_fuel_element(
                 Vec3::new(x, y, 0.5),
                 fuel,
-                3.0,
+                Kilograms::new(3.0),
                 FuelPart::GroundVegetation,
-                None,
             );
             fuel_ids.push(id);
         }
@@ -2026,9 +2018,8 @@ mod tests {
             let id = sim.add_fuel_element(
                 Vec3::new(x, 25.0, 0.5),
                 fuel,
-                3.0,
+                Kilograms::new(3.0),
                 FuelPart::GroundVegetation,
-                None,
             );
             fuel_ids.push(id);
         }

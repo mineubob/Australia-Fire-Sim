@@ -4,12 +4,12 @@
 //! spotting, smoldering) work correctly in real fire scenarios.
 
 use fire_sim_core::{
-    core_types::{Celsius, Degrees, Meters},
+    core_types::{Celsius, Degrees, Kilograms, Meters},
     CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem,
 };
 
 /// Helper to create a simple eucalyptus tree with realistic structure
-fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f32) -> Vec<u32> {
+fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f32) -> Vec<usize> {
     let mut element_ids = Vec::new();
 
     // Tree base/roots (0-1m)
@@ -17,9 +17,8 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
     let base_id = sim.add_fuel_element(
         Vec3::new(center.x, center.y, center.z + 0.5),
         trunk_base,
-        10.0,
+        Kilograms::new(10.0),
         FuelPart::TrunkLower,
-        None,
     );
     element_ids.push(base_id);
 
@@ -30,9 +29,8 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
         let trunk_id = sim.add_fuel_element(
             Vec3::new(center.x, center.y, center.z + height),
             Fuel::eucalyptus_stringybark(),
-            8.0,
+            Kilograms::new(8.0),
             FuelPart::TrunkMiddle,
-            Some(base_id),
         );
         element_ids.push(trunk_id);
     }
@@ -44,9 +42,8 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
         let trunk_id = sim.add_fuel_element(
             Vec3::new(center.x, center.y, center.z + height),
             Fuel::eucalyptus_stringybark(),
-            6.0,
+            Kilograms::new(6.0),
             FuelPart::TrunkUpper,
-            Some(base_id),
         );
         element_ids.push(trunk_id);
     }
@@ -64,9 +61,8 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
             let crown_id = sim.add_fuel_element(
                 Vec3::new(center.x + offset_x, center.y + offset_y, center.z + height),
                 Fuel::eucalyptus_stringybark(),
-                3.0,
+                Kilograms::new(3.0),
                 FuelPart::Crown,
-                Some(base_id),
             );
             element_ids.push(crown_id);
         }
@@ -81,12 +77,11 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
         let branch_id = sim.add_fuel_element(
             Vec3::new(center.x + offset_x, center.y + offset_y, center.z + height),
             Fuel::eucalyptus_stringybark(),
-            2.0,
+            Kilograms::new(2.0),
             FuelPart::Branch {
                 height: Meters::new(0.0),
                 angle: Degrees::new(0.0),
             },
-            Some(base_id),
         );
         element_ids.push(branch_id);
     }
@@ -600,9 +595,8 @@ fn test_weather_conditions_spread_rate() {
                 let id = sim.add_fuel_element(
                     Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
                     Fuel::dry_grass(),
-                    2.0,
+                    Kilograms::new(2.0),
                     FuelPart::GroundVegetation,
-                    None,
                 );
                 element_ids.push(id);
             }

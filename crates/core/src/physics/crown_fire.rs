@@ -328,7 +328,6 @@ mod tests {
             Fuel::eucalyptus_stringybark(),
             Kilograms::new(5.0),
             FuelPart::TrunkUpper,
-            None,
         );
         element.temperature = Celsius::new(800.0);
         element.ignited = true;

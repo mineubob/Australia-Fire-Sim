@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 
 /// Spatial index using hash-based octree for fast neighbor queries
 pub(crate) struct SpatialIndex {
-    octree: FxHashMap<u64, Vec<(u32, Vec3)>>,
+    octree: FxHashMap<u64, Vec<(usize, Vec3)>>,
     cell_size: f32,
     bounds: (Vec3, Vec3),
 }
@@ -29,13 +29,13 @@ impl SpatialIndex {
     }
 
     /// Insert an element into the spatial index
-    pub fn insert(&mut self, id: u32, position: Vec3) {
+    pub fn insert(&mut self, id: usize, position: Vec3) {
         let hash = self.hash_position(position);
         self.octree.entry(hash).or_default().push((id, position));
     }
 
     /// Query all elements within a radius
-    pub fn query_radius(&self, pos: Vec3, radius: f32) -> Vec<u32> {
+    pub fn query_radius(&self, pos: Vec3, radius: f32) -> Vec<usize> {
         let cells_needed = (radius / self.cell_size).ceil() as i32;
         let radius_sq = radius * radius;
 

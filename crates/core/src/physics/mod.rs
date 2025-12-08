@@ -27,12 +27,13 @@ pub use suppression_physics::SuppressionAgent;
 pub(crate) use terrain_physics::{terrain_spread_multiplier, terrain_spread_multiplier_cached};
 
 // ============================================================================
-// PUBLIC RE-EXPORTS FOR VALIDATION TESTING
+// PUBLIC RE-EXPORTS FOR VALIDATION TESTING AND FFI
 // ============================================================================
-// These functions are exported publicly so integration tests can validate
-// the scientific accuracy of the physics models. According to the
-// implementation plan, validation tests need access to internal physics
-// functions to verify they match peer-reviewed research.
+// These functions are exported publicly so:
+// 1. Integration tests can validate the scientific accuracy of physics models
+//    against peer-reviewed research
+// 2. FFI bindings can access physics calculations for external consumers
+//    (game engines, visualization tools, etc.)
 
 /// Public re-exports of validation test functions from albini_spotting module
 pub mod albini_spotting_validation {

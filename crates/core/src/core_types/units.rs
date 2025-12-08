@@ -338,7 +338,11 @@ impl Meters {
     /// Create a new distance in meters
     #[inline]
     pub fn new(value: f32) -> Self {
-        assert!(value >= 0.0, "Meters::new: negative distance {} is invalid", value);
+        assert!(
+            value >= 0.0,
+            "Meters::new: negative distance {} is invalid",
+            value
+        );
         Meters(value)
     }
 
@@ -455,7 +459,11 @@ impl Kilometers {
     /// Create a new Kilometers value.
     #[inline]
     pub fn new(value: f32) -> Self {
-        assert!(value >= 0.0, "Kilometers::new: negative distance {} is invalid", value);
+        assert!(
+            value >= 0.0,
+            "Kilometers::new: negative distance {} is invalid",
+            value
+        );
         Kilometers(value)
     }
 
@@ -785,7 +793,11 @@ impl Seconds {
     /// Create a new duration in seconds
     #[inline]
     pub fn new(value: f32) -> Self {
-        assert!(value >= 0.0, "Seconds::new: negative duration {} is invalid", value);
+        assert!(
+            value >= 0.0,
+            "Seconds::new: negative duration {} is invalid",
+            value
+        );
         Seconds(value)
     }
 
@@ -894,7 +906,11 @@ impl Hours {
     /// Create a new Hours value.
     #[inline]
     pub fn new(value: f32) -> Self {
-        assert!(value >= 0.0, "Hours::new: negative duration {} is invalid", value);
+        assert!(
+            value >= 0.0,
+            "Hours::new: negative duration {} is invalid",
+            value
+        );
         Hours(value)
     }
 
@@ -981,8 +997,6 @@ impl MetersPerSecond {
     pub fn new(value: f32) -> Self {
         MetersPerSecond(value)
     }
-
-    
 
     /// Get the raw f32 value
     #[inline]
@@ -1099,8 +1113,6 @@ impl KilometersPerHour {
     pub fn new(value: f32) -> Self {
         KilometersPerHour(value)
     }
-
-    
 
     /// Convert to m/s
     #[inline]
@@ -1219,7 +1231,11 @@ impl Kilojoules {
     /// Create a new energy value
     #[inline]
     pub fn new(value: f32) -> Self {
-        assert!(value >= 0.0, "Kilojoules::new: negative energy {} is invalid", value);
+        assert!(
+            value >= 0.0,
+            "Kilojoules::new: negative energy {} is invalid",
+            value
+        );
         Kilojoules(value)
     }
 
@@ -1325,7 +1341,11 @@ impl KjPerKg {
     /// Create a new heat content value
     #[inline]
     pub fn new(value: f32) -> Self {
-        assert!(value >= 0.0, "KjPerKg::new: negative heat content {} is invalid", value);
+        assert!(
+            value >= 0.0,
+            "KjPerKg::new: negative heat content {} is invalid",
+            value
+        );
         KjPerKg(value)
     }
 
@@ -1775,8 +1795,6 @@ impl Percent {
         Percent(value)
     }
 
-    
-
     /// Get the raw f32 value
     #[inline]
     pub fn value(self) -> f32 {
@@ -1893,8 +1911,6 @@ impl Degrees {
         Degrees(value)
     }
 
-    
-
     /// Get the raw f32 value
     #[inline]
     pub fn value(self) -> f32 {
@@ -1972,8 +1988,6 @@ impl Radians {
     pub fn new(value: f32) -> Self {
         Radians(value)
     }
-
-    
 
     /// Get the raw f32 value
     #[inline]

@@ -930,7 +930,7 @@ mod tests {
     #[test]
     fn test_buoyancy() {
         use crate::core_types::units::Celsius;
-        
+
         let mut cell_hot = GridCell::new(0.0);
         cell_hot.temperature = 300.0;
 

@@ -267,16 +267,16 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new_const(0.25), // Coarse fuel optimal compaction
 
             // Thermal behavior (coarse fuel - retains heat well)
-            cooling_rate: 0.05,                   // Slow cooling (thick bark)
+            cooling_rate: 0.05, // Slow cooling (thick bark)
             self_heating_fraction: Fraction::new_const(0.4), // Retains 40% of combustion heat
-            convective_heat_coefficient: 400.0,   // Moderate convection
+            convective_heat_coefficient: 400.0, // Moderate convection
             atmospheric_heat_efficiency: Fraction::new_const(0.7), // 70% heat to atmosphere
-            wind_sensitivity: Fraction::new_const(0.6),      // Moderate wind effect (sheltered by canopy)
+            wind_sensitivity: Fraction::new_const(0.6), // Moderate wind effect (sheltered by canopy)
             crown_fire_temp_multiplier: Fraction::new_const(0.95), // Very hot crown fires
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new_const(0.92), // High efficiency (dry hardwood)
-            surface_area_geometry_factor: 0.12,    // Irregular bark strips increase area
+            surface_area_geometry_factor: 0.12,               // Irregular bark strips increase area
 
             volatile_oil_content: Fraction::new_const(0.04),
             oil_vaporization_temp: Celsius::new(170.0),
@@ -291,9 +291,9 @@ impl Fuel {
             foliar_moisture_content: Percent::new(90.0),   // % (typical for eucalyptus foliage)
 
             // Nelson Timelag parameters (mixed size classes)
-            timelag_1h: Hours::new(1.0),       // Fine bark strips and leaves
-            timelag_10h: Hours::new(10.0),     // Small twigs
-            timelag_100h: Hours::new(100.0),   // Medium branches
+            timelag_1h: Hours::new(1.0),   // Fine bark strips and leaves
+            timelag_10h: Hours::new(10.0), // Small twigs
+            timelag_100h: Hours::new(100.0), // Medium branches
             timelag_1000h: Hours::new(1000.0), // Large branches and trunk
             size_class_distribution: [
                 Fraction::new_const(0.15),
@@ -333,7 +333,7 @@ impl Fuel {
             max_spotting_distance: Meters::new(10000.0), // 10km
 
             // Ember physics (smooth bark produces fewer, smaller embers)
-            ember_mass_kg: 0.0007,                       // 0.7g embers
+            ember_mass_kg: 0.0007, // 0.7g embers
             ember_launch_velocity_factor: Fraction::new_const(0.4), // Lower launch velocity
 
             // Rothermel parameters (eucalyptus hardwood, denser)
@@ -344,16 +344,16 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new_const(0.28), // Medium fuel optimal compaction
 
             // Thermal behavior (medium fuel)
-            cooling_rate: 0.08,                          // Moderate cooling
-            self_heating_fraction: Fraction::new_const(0.35),       // Retains 35% of combustion heat
-            convective_heat_coefficient: 450.0,          // Good convection
+            cooling_rate: 0.08,                               // Moderate cooling
+            self_heating_fraction: Fraction::new_const(0.35), // Retains 35% of combustion heat
+            convective_heat_coefficient: 450.0,               // Good convection
             atmospheric_heat_efficiency: Fraction::new_const(0.75), // 75% heat to atmosphere
-            wind_sensitivity: Fraction::new_const(0.7),             // Moderate-high wind effect
-            crown_fire_temp_multiplier: Fraction::new_const(0.90),  // Hot crown fires
+            wind_sensitivity: Fraction::new_const(0.7),       // Moderate-high wind effect
+            crown_fire_temp_multiplier: Fraction::new_const(0.90), // Hot crown fires
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new_const(0.93), // High efficiency (dense hardwood)
-            surface_area_geometry_factor: 0.08,    // Smooth bark, lower surface area
+            surface_area_geometry_factor: 0.08,               // Smooth bark, lower surface area
 
             volatile_oil_content: Fraction::new_const(0.02),
             oil_vaporization_temp: Celsius::new(170.0),
@@ -405,10 +405,10 @@ impl Fuel {
             fuel_bed_depth: Meters::new(0.1),
             base_moisture: Fraction::new_const(0.05), // Very dry
             moisture_of_extinction: Fraction::new_const(0.25),
-            burn_rate_coefficient: 0.15,           // Burns fast
-            ember_production: Fraction::new_const(0.1),       // Low: 10% chance per second
-            ember_receptivity: Fraction::new_const(0.8),      // Easy to ignite
-            max_spotting_distance: Meters::new(1000.0), // 1km
+            burn_rate_coefficient: 0.15,                 // Burns fast
+            ember_production: Fraction::new_const(0.1),  // Low: 10% chance per second
+            ember_receptivity: Fraction::new_const(0.8), // Easy to ignite
+            max_spotting_distance: Meters::new(1000.0),  // 1km
 
             // Ember physics (grass produces very light embers)
             ember_mass_kg: 0.0002, // 0.2g embers (light grass)
@@ -431,7 +431,7 @@ impl Fuel {
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new_const(0.85), // Moderate efficiency (fast burn, incomplete)
-            surface_area_geometry_factor: 0.15,    // Fine grass has high surface area
+            surface_area_geometry_factor: 0.15,               // Fine grass has high surface area
 
             volatile_oil_content: Fraction::new_const(0.0),
             oil_vaporization_temp: Celsius::new(0.0),
@@ -443,14 +443,19 @@ impl Fuel {
             // Van Wagner Crown Fire Model parameters (grass - no crown fire)
             crown_bulk_density: KgPerCubicMeter::new(0.0), // N/A for grass
             crown_base_height: Meters::new(0.0),           // N/A for grass
-            foliar_moisture_content: Percent::new(0.0),    // N/A for grass (base_moisture used instead)
+            foliar_moisture_content: Percent::new(0.0), // N/A for grass (base_moisture used instead)
 
             // Nelson Timelag parameters (very fine fuels only)
             timelag_1h: Hours::new(1.0),
             timelag_10h: Hours::new(10.0),
             timelag_100h: Hours::new(100.0),
             timelag_1000h: Hours::new(1000.0),
-            size_class_distribution: [Fraction::new_const(1.0), Fraction::new_const(0.0), Fraction::new_const(0.0), Fraction::new_const(0.0)], // All 1-hour timelag
+            size_class_distribution: [
+                Fraction::new_const(1.0),
+                Fraction::new_const(0.0),
+                Fraction::new_const(0.0),
+                Fraction::new_const(0.0),
+            ], // All 1-hour timelag
 
             // Canopy structure (grassland - no vertical structure)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -483,7 +488,7 @@ impl Fuel {
             max_spotting_distance: Meters::new(3000.0), // 3km
 
             // Ember physics (medium-sized woody embers)
-            ember_mass_kg: 0.0004,                        // 0.4g embers
+            ember_mass_kg: 0.0004, // 0.4g embers
             ember_launch_velocity_factor: Fraction::new_const(0.35), // Medium launch velocity
 
             // Rothermel parameters (medium shrub fuel)
@@ -494,16 +499,16 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new_const(0.30), // Shrub optimal compaction
 
             // Thermal behavior (medium shrub fuel)
-            cooling_rate: 0.10,                          // Moderate cooling
-            self_heating_fraction: Fraction::new_const(0.32),       // Retains 32% of combustion heat
-            convective_heat_coefficient: 500.0,          // Moderate convection
+            cooling_rate: 0.10,                               // Moderate cooling
+            self_heating_fraction: Fraction::new_const(0.32), // Retains 32% of combustion heat
+            convective_heat_coefficient: 500.0,               // Moderate convection
             atmospheric_heat_efficiency: Fraction::new_const(0.80), // 80% heat to atmosphere
-            wind_sensitivity: Fraction::new_const(0.85),            // High wind effect (exposed)
-            crown_fire_temp_multiplier: Fraction::new_const(0.85),  // Moderate crown fires
+            wind_sensitivity: Fraction::new_const(0.85),      // High wind effect (exposed)
+            crown_fire_temp_multiplier: Fraction::new_const(0.85), // Moderate crown fires
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new_const(0.88), // Good efficiency (woody fuel)
-            surface_area_geometry_factor: 0.10,    // Medium-sized branches
+            surface_area_geometry_factor: 0.10,               // Medium-sized branches
 
             volatile_oil_content: Fraction::new_const(0.01),
             oil_vaporization_temp: Celsius::new(180.0),
@@ -557,7 +562,7 @@ impl Fuel {
             burn_rate_coefficient: 0.12,
             ember_production: Fraction::new_const(0.35), // Moderate: 35% chance per second
             ember_receptivity: Fraction::new_const(0.9), // Highly susceptible
-            max_spotting_distance: Meters::new(5000.0), // 5km
+            max_spotting_distance: Meters::new(5000.0),  // 5km
 
             // Ember physics (wood produces typical-sized embers)
             ember_mass_kg: 0.0005, // 0.5g embers (typical)
@@ -580,7 +585,7 @@ impl Fuel {
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new_const(0.90), // High efficiency (dry dead wood)
-            surface_area_geometry_factor: 0.09,    // Compacted litter
+            surface_area_geometry_factor: 0.09,               // Compacted litter
 
             volatile_oil_content: Fraction::new_const(0.0),
             oil_vaporization_temp: Celsius::new(0.0),
@@ -637,7 +642,7 @@ impl Fuel {
             max_spotting_distance: Meters::new(200.0),
 
             // Ember physics (minimal ember production from green fuel)
-            ember_mass_kg: 0.0003,                       // 0.3g embers
+            ember_mass_kg: 0.0003, // 0.3g embers
             ember_launch_velocity_factor: Fraction::new_const(0.2), // Minimal launch velocity
 
             // Rothermel parameters (live herbaceous/foliage)
@@ -650,14 +655,14 @@ impl Fuel {
             // Thermal behavior (live fuel - moisture dominated)
             cooling_rate: 0.12, // Fast cooling (moisture evaporation)
             self_heating_fraction: Fraction::new_const(0.20), // Low retention (moisture absorbs heat)
-            convective_heat_coefficient: 550.0, // High convection (moisture)
+            convective_heat_coefficient: 550.0,               // High convection (moisture)
             atmospheric_heat_efficiency: Fraction::new_const(0.90), // 90% heat to atmosphere (cooling)
-            wind_sensitivity: Fraction::new_const(0.75), // Moderate-high wind effect
-            crown_fire_temp_multiplier: Fraction::new_const(0.80), // Cooler fires (moisture)
+            wind_sensitivity: Fraction::new_const(0.75),            // Moderate-high wind effect
+            crown_fire_temp_multiplier: Fraction::new_const(0.80),  // Cooler fires (moisture)
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new_const(0.70), // Low efficiency (high moisture, incomplete)
-            surface_area_geometry_factor: 0.11,    // Live foliage
+            surface_area_geometry_factor: 0.11,               // Live foliage
 
             volatile_oil_content: Fraction::new_const(0.0),
             oil_vaporization_temp: Celsius::new(0.0),
@@ -767,10 +772,10 @@ impl Fuel {
             self_heating_fraction: Fraction::new_const(0.0),
             convective_heat_coefficient: 1000.0, // High cooling
             atmospheric_heat_efficiency: Fraction::new_const(1.0), // All heat absorbed
-            wind_sensitivity: Fraction::new_const(0.0),     // No wind effect
+            wind_sensitivity: Fraction::new_const(0.0), // No wind effect
             crown_fire_temp_multiplier: Fraction::new_const(0.0),
             combustion_efficiency: Fraction::new_const(0.0), // Non-burnable
-            surface_area_geometry_factor: 0.0,    // N/A for water
+            surface_area_geometry_factor: 0.0,               // N/A for water
 
             volatile_oil_content: Fraction::new_const(0.0),
             oil_vaporization_temp: Celsius::new(0.0),
@@ -789,7 +794,12 @@ impl Fuel {
             timelag_10h: Hours::new(10.0),
             timelag_100h: Hours::new(100.0),
             timelag_1000h: Hours::new(1000.0),
-            size_class_distribution: [Fraction::new_const(0.0), Fraction::new_const(0.0), Fraction::new_const(0.0), Fraction::new_const(0.0)],
+            size_class_distribution: [
+                Fraction::new_const(0.0),
+                Fraction::new_const(0.0),
+                Fraction::new_const(0.0),
+                Fraction::new_const(0.0),
+            ],
 
             // Canopy structure (grassland - water has no structure)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
@@ -832,10 +842,10 @@ impl Fuel {
             self_heating_fraction: Fraction::new_const(0.0),
             convective_heat_coefficient: 200.0, // Low convection (smooth)
             atmospheric_heat_efficiency: Fraction::new_const(0.30), // Absorbs heat
-            wind_sensitivity: Fraction::new_const(0.0),    // No wind effect
+            wind_sensitivity: Fraction::new_const(0.0), // No wind effect
             crown_fire_temp_multiplier: Fraction::new_const(0.0),
             combustion_efficiency: Fraction::new_const(0.0), // Non-burnable
-            surface_area_geometry_factor: 0.0,    // N/A for rock
+            surface_area_geometry_factor: 0.0,               // N/A for rock
 
             volatile_oil_content: Fraction::new_const(0.0),
             oil_vaporization_temp: Celsius::new(0.0),
@@ -854,7 +864,12 @@ impl Fuel {
             timelag_10h: Hours::new(10.0),
             timelag_100h: Hours::new(100.0),
             timelag_1000h: Hours::new(1000.0),
-            size_class_distribution: [Fraction::new_const(0.0), Fraction::new_const(0.0), Fraction::new_const(0.0), Fraction::new_const(0.0)],
+            size_class_distribution: [
+                Fraction::new_const(0.0),
+                Fraction::new_const(0.0),
+                Fraction::new_const(0.0),
+                Fraction::new_const(0.0),
+            ],
 
             // Canopy structure (grassland - rock has no structure)
             canopy_structure: crate::physics::CanopyStructure::grassland(),

@@ -1039,6 +1039,11 @@ impl WeatherSystem {
         *self.time_of_day >= 6.0 && *self.time_of_day < 18.0
     }
 
+    /// Get current air temperature in Celsius
+    pub fn temperature(&self) -> Celsius {
+        self.temperature
+    }
+
     /// Get wind vector in m/s
     pub fn wind_vector(&self) -> Vec3 {
         let wind_ms = *self.wind_speed / 3.6; // Convert km/h to m/s

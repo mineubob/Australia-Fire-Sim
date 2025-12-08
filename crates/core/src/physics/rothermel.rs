@@ -53,6 +53,9 @@ use crate::core_types::fuel::Fuel;
 /// let spread_rate = rothermel_spread_rate(&fuel, 0.05, 5.0, 0.0, 20.0);
 /// // Expect ~30-50 m/min for dry grass with 5 m/s wind
 /// ```
+/// Calculate fire spread rate using the Rothermel (1972) model
+///
+/// Returns spread rate in m/min based on fuel, moisture, wind, and slope
 pub fn rothermel_spread_rate(
     fuel: &Fuel,
     moisture_fraction: f32,
