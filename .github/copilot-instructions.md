@@ -123,14 +123,18 @@ AI agents MUST NOT stop, pause, or ask permission until the user's request is fu
 ### Always View Full Output
 Use `--no-pager`, `--no-truncate`, or redirect to file. Truncated output causes incorrect conclusions.
 
-**NEVER** pipe command output to programs like `head`, `tail`, `less`, or `more` — these truncate output and hide critical information.
+**NEVER PIPE TO PAGERS OR TRUNCATORS.** Do not use `head`, `tail`, `less`, `more`, `grep | head`, or any pipeline that truncates or limits output. These commands hide critical information and lead to incomplete conclusions. **Always:**
+- Use full untruncated output (use `wc -l` to count lines first if needed)
+- Redirect to files: `command > output.txt` then read the file
+- Use explicit flags: `git --no-pager`, `cargo --color never`
+- Read everything before making decisions
 
 ### Validate Rust Code Before Submitting
 ```bash
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --all-targets --all-features
 cargo fmt --all -v --check
 ```
-**CRITICAL:** Fix ALL clippy warnings by changing code — NEVER use `#[allow(...)]` macros.
+**CRITICAL:** Fix ALL warnings by changing code — NEVER use `#[allow(...)]` macros. Workspace `Cargo.toml` denies both rustc and clippy warnings (equivalent to `-D warnings`), so any warning will fail the build.
 
 ---
 
