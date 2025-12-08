@@ -366,11 +366,11 @@ impl FuelElement {
     /// - **w** = Fuel consumed per unit area (kg/m²)
     /// - **r** = Rate of spread (m/min)
     ///
+    /// Calculate Byram's fireline intensity in kW/m (public for FFI access)
+    ///
     /// # References
     /// - Byram, G.M. (1959). "Combustion of forest fuels." In Forest Fire: Control and Use.
     /// - Rothermel, R.C. (1972). "A mathematical model for predicting fire spread in wildland fuels."
-    /// Calculate Byram's fireline intensity in kW/m
-    /// Calculate Byram's fireline intensity in kW/m (public for FFI access)
     pub fn byram_fireline_intensity(&self, wind_speed_ms: f32) -> f32 {
         // OPTIMIZATION: Early exits for non-burning conditions
         if !self.ignited {

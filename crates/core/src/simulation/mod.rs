@@ -227,8 +227,8 @@ impl FireSimulation {
         self.spatial_index.insert(id, position);
 
         // Add to elements array
-        if id as usize >= self.elements.len() {
-            self.elements.resize((id as usize + 1) * 2, None);
+        if id >= self.elements.len() {
+            self.elements.resize((id + 1) * 2, None);
         }
         self.elements[id] = Some(element);
 
