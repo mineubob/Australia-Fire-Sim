@@ -7,6 +7,7 @@ warnings = "deny"
 
 [workspace.lints.clippy]
 all = "deny"
+pedantic = "deny"
 
 [workspace.package]
 version = "0.1.0"
