@@ -1,11 +1,21 @@
 name: Tests
 
 on:
+  push:
   pull_request:
+    types:
+      - ready_for_review
   workflow_dispatch:  
 
 env:
   CARGO_TERM_COLOR: always
+
+concurrency:
+  # Use the pull-request head ref (branch) if present, otherwise the ref name (branch) from push.
+  # This keeps push and PR runs on the same branch grouped so the push run will be cancelled
+  # when a non-draft PR run starts for that same branch.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   clippy:
