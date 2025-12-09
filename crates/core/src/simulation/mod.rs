@@ -916,7 +916,7 @@ impl FireSimulation {
                         let mass = *element.fuel_remaining;
                         let temp_drop = cooling_rate / (mass * *element.fuel.specific_heat);
                         element.temperature = Celsius::new(*element.temperature - f64::from(temp_drop))
-                            .max(Celsius::from(grid_data.temperature));
+                            .max(grid_data.temperature);
                     }
                 }
             }
@@ -1157,23 +1157,23 @@ impl FireSimulation {
                 // Now we can safely borrow grid mutably
                 if let Some(cell) = self.grid.cell_at_position_mut(pos) {
                     // Enhanced heat transfer - fires need to heat air more effectively
-                    let temp_diff = (temp as f32) - cell.temperature;
-                    if temp_diff > 0.0 {
+                    let temp_diff = Celsius::new(f64::from(temp as f32)) - cell.temperature;
+                    if *temp_diff > 0.0 {
                         // Fuel-specific convective heat transfer (grass=600, forest=400)
                         let h = h_conv; // W/(m²·K)
                         let area = surface_area * fuel_remaining.sqrt();
-                        let heat_kj = h * area * temp_diff * dt * 0.001;
+                        let heat_kj = f64::from(h * area * (*temp_diff as f32) * dt * 0.001);
 
                         let air_mass = cell.air_density() * cell_volume;
                         const SPECIFIC_HEAT_AIR: f32 = 1.005; // kJ/(kg·K) - physical constant
-                        let temp_rise = heat_kj / (air_mass * SPECIFIC_HEAT_AIR);
+                        let temp_rise = Celsius::new(heat_kj / f64::from(air_mass * SPECIFIC_HEAT_AIR));
 
                         // Fuel-specific atmospheric heat efficiency (how much heat transfers to air)
                         // Cell should not exceed element temp (can't be hotter than source)
                         // and must respect physical limits for wildfire air temperatures
                         let target_temp = (cell.temperature + temp_rise)
-                            .min((temp as f32) * atm_efficiency) // Fuel-specific max transfer (grass=0.85, forest=0.70)
-                            .min(800.0); // Physical cap for wildfire plume air
+                            .min(Celsius::new(f64::from(temp as f32 * atm_efficiency))) // Fuel-specific max transfer (grass=0.85, forest=0.70)
+                            .min(Celsius::new(800.0)); // Physical cap for wildfire plume air
 
                         cell.temperature = target_temp;
                     }
@@ -1773,7 +1773,7 @@ mod tests {
         let cell = sim
             .get_cell_at_position(Vec3::new(50.0, 50.0, 1.0))
             .unwrap();
-        assert!(cell.temperature > 20.0);
+        assert!(*cell.temperature > 20.0);
     }
 
     /// Test fire spread under LOW fire danger conditions (cool, humid, calm)

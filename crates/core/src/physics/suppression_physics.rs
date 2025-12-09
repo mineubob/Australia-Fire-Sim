@@ -6,6 +6,7 @@
 //! - Support for multiple agent types
 
 use crate::core_types::element::Vec3;
+use crate::core_types::units::Celsius;
 use crate::grid::SimulationGrid;
 use serde::{Deserialize, Serialize};
 
@@ -96,9 +97,9 @@ pub(crate) fn apply_suppression_direct(
         let cooling_kj = mass * cooling_capacity;
         let air_mass = cell.air_density() * cell_volume;
         const SPECIFIC_HEAT_AIR: f32 = 1.005; // kJ/(kg·K) - physical constant
-        let temp_drop = cooling_kj / (air_mass * SPECIFIC_HEAT_AIR);
+        let temp_drop = Celsius::new(f64::from(cooling_kj / (air_mass * SPECIFIC_HEAT_AIR)));
 
-        cell.temperature = (cell.temperature - temp_drop).max(*ambient_temp as f32);
+        cell.temperature = (cell.temperature - temp_drop).max(ambient_temp);
 
         // Increase humidity (water vapor)
         if matches!(agent_type, SuppressionAgent::Water | SuppressionAgent::Foam) {
@@ -110,9 +111,9 @@ pub(crate) fn apply_suppression_direct(
             // Humidity increases
             // Max vapor capacity depends on temperature (Clausius-Clapeyron)
             // At 20°C: ~17 g/m³, at 30°C: ~30 g/m³, at 40°C: ~51 g/m³
-            let temp_celsius = cell.temperature.max(0.0);
-            let max_vapor = 0.017 * (1.0 + (temp_celsius - 20.0) * 0.07); // Temperature-dependent saturation
-            let vapor_fraction = (cell.water_vapor / max_vapor).min(1.0);
+            let temp_celsius = cell.temperature.max(Celsius::new(0.0));
+            let max_vapor = 0.017 * (1.0 + (*temp_celsius - 20.0) * 0.07); // Temperature-dependent saturation
+            let vapor_fraction = (cell.water_vapor / max_vapor as f32).min(1.0);
             cell.humidity = cell.humidity.max(vapor_fraction);
         }
     }
