@@ -731,7 +731,7 @@ impl FireSimulation {
                         // Newton's law of cooling: dT/dt = -k(T - T_ambient)
                         let cooling_rate = element.fuel.cooling_rate; // Fuel-specific (grass=0.15, forest=0.05)
                         let temp_diff = *element.temperature - *ambient_temp;
-                        let temp_change = temp_diff * cooling_rate * dt;
+                        let temp_change = temp_diff * f64::from(cooling_rate * dt);
                         element.temperature = Celsius::new(*element.temperature - temp_change);
                         element.temperature = element.temperature.max(ambient_temp);
                     }
@@ -764,7 +764,7 @@ impl FireSimulation {
 
                     // Update suppression coverage evaporation/degradation (Phase 1)
                     element.update_suppression(
-                        weather_temp,
+                        f32::from(weather_temp),
                         weather_humidity,
                         weather_wind,
                         solar_radiation,
@@ -915,8 +915,8 @@ impl FireSimulation {
                         let cooling_rate = grid_data.suppression_agent * 1000.0;
                         let mass = *element.fuel_remaining;
                         let temp_drop = cooling_rate / (mass * *element.fuel.specific_heat);
-                        element.temperature = Celsius::new(*element.temperature - temp_drop)
-                            .max(Celsius::new(grid_data.temperature));
+                        element.temperature = Celsius::new(*element.temperature - f64::from(temp_drop))
+                            .max(Celsius::from(grid_data.temperature));
                     }
                 }
             }
@@ -937,7 +937,7 @@ impl FireSimulation {
                 if let Some(element) = self.get_element_mut(element_id) {
                     element.smoldering_state = Some(crate::physics::update_smoldering_state(
                         smold_state,
-                        temp,
+                        f32::from(temp),
                         oxygen,
                         dt,
                     ));
@@ -1017,7 +1017,7 @@ impl FireSimulation {
                     let self_heating = combustion_heat * *element.fuel.self_heating_fraction;
                     let temp_rise =
                         self_heating / (*element.fuel_remaining * *element.fuel.specific_heat);
-                    element.temperature = Celsius::new(*element.temperature + temp_rise)
+                    element.temperature = Celsius::new(*element.temperature + f64::from(temp_rise))
                         .min(element.fuel.max_flame_temperature);
                 }
 
@@ -1048,7 +1048,7 @@ impl FireSimulation {
                         *element.moisture_fraction,
                         wind_vector.norm(),
                         *element.slope_angle,
-                        *ambient_temperature,
+                        f32::from(*ambient_temperature),
                     );
 
                     // Use fuel properties for crown fire calculation
@@ -1110,12 +1110,12 @@ impl FireSimulation {
                         let ladder_boost = 1.0
                             + element.fuel.canopy_structure.ladder_fuel_factor()
                                 * LADDER_FUEL_TEMP_BOOST_FACTOR;
-                        let base_crown_temp = *element.fuel.max_flame_temperature
+                        let base_crown_temp = f32::from(*element.fuel.max_flame_temperature)
                             * *element.fuel.crown_fire_temp_multiplier;
                         // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
                         let crown_temp =
                             base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
-                        element.temperature = element.temperature.max(Celsius::new(crown_temp));
+                        element.temperature = element.temperature.max(Celsius::from(crown_temp));
                     }
                 }
             }
@@ -1157,7 +1157,7 @@ impl FireSimulation {
                 // Now we can safely borrow grid mutably
                 if let Some(cell) = self.grid.cell_at_position_mut(pos) {
                     // Enhanced heat transfer - fires need to heat air more effectively
-                    let temp_diff = temp - cell.temperature;
+                    let temp_diff = f32::from(temp) - cell.temperature;
                     if temp_diff > 0.0 {
                         // Fuel-specific convective heat transfer (grass=600, forest=400)
                         let h = h_conv; // W/(m²·K)
