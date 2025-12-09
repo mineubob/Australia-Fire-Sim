@@ -703,7 +703,7 @@ impl FireSimulation {
         // Previously: two separate iterations over ALL elements (~600k+ elements each)
         // Now: one iteration with both operations (50% reduction in memory scans)
         let _equilibrium_moisture = crate::physics::calculate_equilibrium_moisture(
-            f32::from(*self.weather.temperature),
+            *self.weather.temperature as f32,
             *self.weather.humidity,
             false, // is_adsorbing - false for typical drying conditions
         );
@@ -751,7 +751,7 @@ impl FireSimulation {
                             // handles all timelag classes and calculates weighted average
                             moisture_state.update(
                                 &element.fuel,
-                                f32::from(weather_temp),
+                                weather_temp as f32,
                                 weather_humidity / 100.0,
                                 dt_hours,
                             );
@@ -764,7 +764,7 @@ impl FireSimulation {
 
                     // Update suppression coverage evaporation/degradation (Phase 1)
                     element.update_suppression(
-                        f32::from(weather_temp),
+                        weather_temp as f32,
                         weather_humidity,
                         weather_wind,
                         solar_radiation,
@@ -937,7 +937,7 @@ impl FireSimulation {
                 if let Some(element) = self.get_element_mut(element_id) {
                     element.smoldering_state = Some(crate::physics::update_smoldering_state(
                         smold_state,
-                        f32::from(temp),
+                        temp as f32,
                         oxygen,
                         dt,
                     ));
@@ -1048,7 +1048,7 @@ impl FireSimulation {
                         *element.moisture_fraction,
                         wind_vector.norm(),
                         *element.slope_angle,
-                        f32::from(*ambient_temperature),
+                        *ambient_temperature as f32,
                     );
 
                     // Use fuel properties for crown fire calculation
@@ -1110,12 +1110,12 @@ impl FireSimulation {
                         let ladder_boost = 1.0
                             + element.fuel.canopy_structure.ladder_fuel_factor()
                                 * LADDER_FUEL_TEMP_BOOST_FACTOR;
-                        let base_crown_temp = f32::from(*element.fuel.max_flame_temperature)
+                        let base_crown_temp = (*element.fuel.max_flame_temperature as f32)
                             * *element.fuel.crown_fire_temp_multiplier;
                         // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
                         let crown_temp =
                             base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
-                        element.temperature = element.temperature.max(Celsius::from(crown_temp));
+                        element.temperature = element.temperature.max(Celsius::from(crown_temp as f64));
                     }
                 }
             }
@@ -1157,7 +1157,7 @@ impl FireSimulation {
                 // Now we can safely borrow grid mutably
                 if let Some(cell) = self.grid.cell_at_position_mut(pos) {
                     // Enhanced heat transfer - fires need to heat air more effectively
-                    let temp_diff = f32::from(temp) - cell.temperature;
+                    let temp_diff = (temp as f32) - cell.temperature;
                     if temp_diff > 0.0 {
                         // Fuel-specific convective heat transfer (grass=600, forest=400)
                         let h = h_conv; // W/(m²·K)
@@ -1172,7 +1172,7 @@ impl FireSimulation {
                         // Cell should not exceed element temp (can't be hotter than source)
                         // and must respect physical limits for wildfire air temperatures
                         let target_temp = (cell.temperature + temp_rise)
-                            .min(f32::from(temp * f64::from(atm_efficiency))) // Fuel-specific max transfer (grass=0.85, forest=0.70)
+                            .min((temp as f32) * atm_efficiency) // Fuel-specific max transfer (grass=0.85, forest=0.70)
                             .min(800.0); // Physical cap for wildfire plume air
 
                         cell.temperature = target_temp;
@@ -1250,11 +1250,11 @@ impl FireSimulation {
                         let base_heat =
                             crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
                                 source_pos,
-                                source_temp,
+                                source_temp as f32,
                                 source_fuel_remaining,
                                 *source_surface_area_vol,
                                 target.position,
-                                *target.temperature,
+                                *target.temperature as f32,
                                 *target.fuel.surface_area_to_volume,
                                 wind_vector,
                                 dt,
@@ -1360,7 +1360,7 @@ impl FireSimulation {
         // Atmospheric stability changes over minutes, not seconds
         if self.current_frame.is_multiple_of(5) {
             self.atmospheric_profile = AtmosphericProfile::from_surface_conditions(
-                f32::from(*self.weather.temperature),
+                *self.weather.temperature as f32,
                 *self.weather.humidity,
                 wind_vector.magnitude(),
                 self.weather.is_daytime(),
@@ -1470,7 +1470,7 @@ impl FireSimulation {
                 new_ember_id,
                 position,
                 velocity,
-                Celsius(temperature),
+                Celsius::new(temperature),
                 Kilograms::new(ember_mass),
                 fuel_id,
             );

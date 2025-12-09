@@ -517,7 +517,7 @@ mod tests {
             Kilograms::new(5.0),
             FuelPart::GroundVegetation,
         )
-        .with_temperature(Celsius::new(temp))
+        .with_temperature(Celsius::new(temp as f64))
     }
 
     #[test]
@@ -642,11 +642,11 @@ mod tests {
 
         let horiz = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             target_h.position,
-            *target_h.temperature,
+            *target_h.temperature as f32,
             *target_h.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
@@ -862,7 +862,7 @@ mod tests {
         let specific_heat = *crown.fuel.specific_heat;
         let crown_mass = *crown.fuel_remaining;
         let delta_t = *crown.fuel.ignition_temperature - *crown.temperature;
-        let energy_to_ignite_kj = specific_heat * crown_mass * delta_t;
+        let energy_to_ignite_kj = specific_heat * crown_mass * (delta_t as f32);
         let estimated_time_to_crown_ignition = energy_to_ignite_kj / heat_to_crown;
 
         // PHYSICAL REALITY: Direct ground-to-crown (8m) heating is SLOW

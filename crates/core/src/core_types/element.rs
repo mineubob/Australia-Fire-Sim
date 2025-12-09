@@ -327,7 +327,7 @@ impl FuelElement {
         // 0.003 gives ~0.3% per second at max temp_factor
         // Scales with FFDI for extreme conditions
         let base_coefficient = 0.003;
-        let ignition_prob = (moisture_factor * temp_factor * dt * base_coefficient * ffdi_multiplier) as f64;
+        let ignition_prob = (moisture_factor * (temp_factor as f32) * dt * base_coefficient * ffdi_multiplier) as f64;
 
         // GUARANTEED IGNITION: Elements above ignition temp for sufficient time
         // This ensures elements that have been hot for extended periods ignite
@@ -368,11 +368,11 @@ impl FuelElement {
             ((*self.temperature - *self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
 
         // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
-        self.fuel.burn_rate_coefficient
+        (self.fuel.burn_rate_coefficient
             * moisture_factor
-            * f64::from(temp_factor)
+            * (temp_factor as f32)
             * (*self.fuel_remaining).sqrt()
-            * 0.1
+            * 0.1) as f32
     }
 
     /// Calculate Byram's fireline intensity in kW/m
@@ -571,7 +571,7 @@ impl FuelElement {
         FuelElementStats {
             id: self.id,
             position: self.position,
-            temperature: f32::from(*self.temperature),
+            temperature: *self.temperature as f32,
             moisture_fraction: *self.moisture_fraction,
             fuel_remaining: *self.fuel_remaining,
             ignited: self.ignited,
@@ -581,7 +581,7 @@ impl FuelElement {
             slope_angle: *self.slope_angle,
             crown_fire_active: self.crown_fire_active,
             fuel_type_name: self.fuel.name.clone(),
-            ignition_temperature: f32::from(*self.fuel.ignition_temperature),
+            ignition_temperature: *self.fuel.ignition_temperature as f32,
             heat_content: *self.fuel.heat_content,
         }
     }

@@ -273,7 +273,7 @@ impl Ember {
             self.velocity,
             *self.mass,
             ember_diameter,
-            f32::from(*self.temperature),
+            *self.temperature as f32,
             wind_speed_10m,
             wind_direction,
             dt,

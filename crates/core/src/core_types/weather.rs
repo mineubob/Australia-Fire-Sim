@@ -1103,15 +1103,16 @@ impl WeatherSystem {
         // If using a preset, calculate weather from preset
         if let Some(preset) = &self.preset {
             // Update targets from preset
-            *self.target_temperature = Celsius::from(preset.get_temperature(
+            let preset_temp = preset.get_temperature(
                 self.day_of_year,
                 12.0, // Base temperature at noon
                 self.climate_pattern,
                 self.is_heatwave,
-            ));
+            );
+            self.target_temperature = Celsius::new(preset_temp as f64);
             *self.target_humidity = preset.get_humidity(
                 self.day_of_year,
-                f32::from(*self.target_temperature),
+                *self.target_temperature as f32,
                 self.climate_pattern,
             );
             *self.target_wind_speed = preset.get_wind_speed(self.day_of_year);
@@ -1129,7 +1130,7 @@ impl WeatherSystem {
 
             // Humidity varies with temperature
             let humidity =
-                preset.get_humidity(self.day_of_year, f32::from(*self.temperature), self.climate_pattern);
+                preset.get_humidity(self.day_of_year, *self.temperature as f32, self.climate_pattern);
             let humidity_diff = humidity - *self.humidity;
             *self.humidity =
                 (*self.humidity + humidity_diff * (dt / 1800.0).min(0.1)).clamp(5.0, 95.0);
@@ -1338,7 +1339,7 @@ impl WeatherSystem {
         // Simplified fuel moisture calculation
         // Higher humidity increases moisture, higher temperature decreases it
         let humidity_factor = *self.humidity / 100.0;
-        let temp_factor = (30.0 / f32::from(*self.temperature).max(10.0)).min(2.0);
+        let temp_factor = (30.0 / (*self.temperature as f32).max(10.0)).min(2.0);
 
         (base_moisture * humidity_factor * temp_factor).clamp(0.0, 1.0)
     }
