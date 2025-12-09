@@ -67,22 +67,26 @@ pub(crate) fn calculate_radiation_flux(
     //
     // Effective flame area scales with fuel mass (Byram's flame height model)
     // Coefficient 6.0 calibrated to match Rothermel spread rate predictions
-    let effective_flame_area = (*source.fuel_remaining * 6.0).max(0.5);
-    let view_factor = effective_flame_area / (std::f32::consts::PI * distance * distance);
-    let view_factor = view_factor.clamp(0.001, 1.0);
+    let effective_flame_area_f64 = f64::from(*source.fuel_remaining * 6.0).max(0.5);
+    let distance_f64 = f64::from(distance);
+    let view_factor_f64 = effective_flame_area_f64 / (std::f64::consts::PI * distance_f64 * distance_f64);
+    let view_factor_f64 = view_factor_f64.clamp(0.001, 1.0);
 
     // Calculate flux at target (W/m²)
-    let flux = radiant_power * view_factor;
+    let flux_f64 = radiant_power_f64 * view_factor_f64;
 
     // Target absorption based on fuel characteristics
     // Fine fuels (high SAV) have more surface area to absorb heat
     // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (*target.fuel.surface_area_to_volume / 3500.0)
+    let sav_f64 = f64::from(*target.fuel.surface_area_to_volume);
+    let absorption_efficiency_f64 = (sav_f64 / 3500.0)
         .sqrt()
         .clamp(0.2, 1.5);
 
-    // Convert W/m² to kW (kJ/s)
-    flux * absorption_efficiency * 0.001
+    // Convert W/m² to kW (kJ/s) and downcast to f32 for API boundary
+    #[allow(clippy::cast_precision_loss)]
+    let result = (flux_f64 * absorption_efficiency_f64 * 0.001) as f32;
+    result
 }
 
 /// Calculate convection heat transfer for vertical spread
@@ -101,30 +105,34 @@ pub(crate) fn calculate_convection_heat(
         return 0.0;
     }
 
-    let temp_diff = *source.temperature - *target.temperature;
-    if temp_diff <= 0.0 {
+    let temp_diff_f64 = f64::from(*source.temperature - *target.temperature);
+    if temp_diff_f64 <= 0.0 {
         return 0.0;
     }
 
     // Natural convection coefficient for wildfire conditions (W/(m²·K))
     // h ≈ 1.32 * (ΔT/L)^0.25 for natural convection
     // Typical range: 5-50 W/(m²·K) for natural convection
-    let convection_coeff = 25.0; // Conservative for element-to-element
+    let convection_coeff: f64 = 25.0; // Conservative for element-to-element
 
     // CRITICAL: Convection attenuates with distance (plume disperses)
     // Using inverse-square-like attenuation to match radiation physics
     // At 1m: full effect; at 2m: 25%; at 4m: 6.25%; at 8m: 1.56%
-    let distance_attenuation = 1.0 / (1.0 + distance * distance);
+    let distance_f64 = f64::from(distance);
+    let distance_attenuation_f64 = 1.0 / (1.0 + distance_f64 * distance_f64);
 
     // Target absorption based on fuel characteristics (matches radiation)
     // Fine fuels (high SAV) have more surface area to absorb heat
     // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (*target.fuel.surface_area_to_volume / 3500.0)
+    let sav_f64 = f64::from(*target.fuel.surface_area_to_volume);
+    let absorption_efficiency_f64 = (sav_f64 / 3500.0)
         .sqrt()
         .clamp(0.2, 1.5);
 
-    // Convert W/m² to kW (kJ/s)
-    convection_coeff * temp_diff * absorption_efficiency * distance_attenuation * 0.001
+    // Convert W/m² to kW (kJ/s) and downcast to f32 for API boundary
+    #[allow(clippy::cast_precision_loss)]
+    let result = (convection_coeff * temp_diff_f64 * absorption_efficiency_f64 * distance_attenuation_f64 * 0.001) as f32;
+    result
 }
 
 /// Wind direction multiplier for heat transfer
@@ -137,18 +145,19 @@ pub(crate) fn calculate_convection_heat(
 #[inline(always)]
 #[allow(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
 pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32 {
-    let wind_speed_ms = wind.magnitude();
+    let wind_speed_ms_f64 = f64::from(wind.magnitude());
 
     // No wind effect if wind is negligible
-    if wind_speed_ms < 0.1 {
+    if wind_speed_ms_f64 < 0.1 {
         return 1.0;
     }
 
     let direction = (to - from).normalize();
     let wind_normalized = wind.normalize();
-    let alignment = direction.dot(&wind_normalized);
+    let alignment_f64 = f64::from(direction.dot(&wind_normalized));
 
-    if alignment > 0.0 {
+    #[allow(clippy::cast_precision_loss)]
+    let result = if alignment_f64 > 0.0 {
         // Downwind: Balanced scaling for realistic fire spread
         // Using reduced coefficients to achieve target spread rates:
         //   - Moderate (6.9 m/s): ~3x multiplier → 1-10 ha/hr
@@ -156,12 +165,12 @@ pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32
         //
         // At 6.9 m/s (25 km/h): 1.0 + 1.0 × sqrt(6.9) × 0.8 = ~3.1× (Moderate)
         // At 16.7 m/s (60 km/h): 1.0 + 1.0 × sqrt(16.7) × 0.8 = ~4.3× (Extreme base)
-        let base_multiplier = 1.0 + alignment * wind_speed_ms.sqrt() * 0.8;
+        let base_multiplier = 1.0 + alignment_f64 * wind_speed_ms_f64.sqrt() * 0.8;
 
-        if wind_speed_ms > 15.0 {
+        if wind_speed_ms_f64 > 15.0 {
             // Additional boost for catastrophic conditions, but gentler
             // At 16.7 m/s: 4.3 × 1.08 = ~4.7×
-            let extreme_boost = ((wind_speed_ms - 15.0) / 10.0).min(1.0);
+            let extreme_boost = ((wind_speed_ms_f64 - 15.0) / 10.0).min(1.0);
             base_multiplier * (1.0 + extreme_boost * 0.5)
         } else {
             base_multiplier
@@ -171,8 +180,10 @@ pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32
         // alignment is negative, so we want exp(alignment * wind_speed_ms * 0.35)
         // which gives exp(negative) = small number
         // At -1.0 alignment and 10 m/s: exp(-1.0 * 10 * 0.35) = exp(-3.5) ≈ 0.03 (3%)
-        ((alignment * wind_speed_ms * 0.35).exp()).max(0.05)
-    }
+        ((alignment_f64 * wind_speed_ms_f64 * 0.35).exp()).max(0.05)
+    };
+
+    result as f32
 }
 
 /// Vertical spread factor - fire climbs much faster than it spreads horizontally
@@ -184,20 +195,23 @@ pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32
 #[inline(always)]
 #[allow(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
 pub(crate) fn vertical_spread_factor(from: &FuelElement, to: &FuelElement) -> f32 {
-    let height_diff = to.position.z - from.position.z;
+    let height_diff_f64 = f64::from(to.position.z - from.position.z);
 
-    if height_diff > 0.0 {
+    #[allow(clippy::cast_precision_loss)]
+    let result = if height_diff_f64 > 0.0 {
         // Fire climbs (convection + radiation push flames upward)
         // Base 1.8x + additional boost for each meter of height
         // Reduced from 2.5x to prevent excessive vertical spread in moderate conditions
-        1.8 + (height_diff * 0.08)
-    } else if height_diff < 0.0 {
+        1.8 + (height_diff_f64 * 0.08)
+    } else if height_diff_f64 < 0.0 {
         // Fire descends (radiation only, no convection assist)
         // Weakens with depth, minimum 30% effectiveness
-        0.7 * (1.0 / (1.0 + height_diff.abs() * 0.2))
+        0.7 * (1.0 / (1.0 + height_diff_f64.abs() * 0.2))
     } else {
         1.0 // Horizontal spread
-    }
+    };
+
+    result as f32
 }
 
 /// Slope effects on fire spread
@@ -210,27 +224,30 @@ pub(crate) fn vertical_spread_factor(from: &FuelElement, to: &FuelElement) -> f3
 #[inline(always)]
 #[allow(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
 pub(crate) fn slope_spread_multiplier(from: &FuelElement, to: &FuelElement) -> f32 {
-    let horizontal = ((to.position.x - from.position.x).powi(2)
+    let horizontal_f64 = f64::from(((to.position.x - from.position.x).powi(2)
         + (to.position.y - from.position.y).powi(2))
-    .sqrt();
+    .sqrt());
 
-    if horizontal < 0.01 {
+    if horizontal_f64 < 0.01 {
         // Purely vertical, use vertical spread factor instead
         return 1.0;
     }
 
-    let vertical = to.position.z - from.position.z;
-    let slope_angle = (vertical / horizontal).atan().to_degrees();
+    let vertical_f64 = f64::from(to.position.z - from.position.z);
+    let slope_angle_f64 = (vertical_f64 / horizontal_f64).atan().to_degrees();
 
-    if slope_angle > 0.0 {
+    #[allow(clippy::cast_precision_loss)]
+    let result = if slope_angle_f64 > 0.0 {
         // Uphill: exponential effect (flames tilt closer to fuel ahead)
         // Slope angle of 10° gives 2x boost, 20° gives ~4.8x boost
-        1.0 + (slope_angle / 10.0).powf(1.5) * 2.0
+        1.0 + (slope_angle_f64 / 10.0).powf(1.5) * 2.0
     } else {
         // Downhill: much slower (gravity pulls flames away from unburned fuel)
         // -30° slope gives 0.3x (30% effectiveness)
-        (1.0 + slope_angle / 30.0).max(0.3)
-    }
+        (1.0 + slope_angle_f64 / 30.0).max(0.3)
+    };
+
+    result as f32
 }
 
 /// Calculate total heat transfer from source to target element
@@ -312,17 +329,14 @@ pub(crate) fn calculate_heat_transfer_raw(
     }
 
     // === RADIATION CALCULATION (Stefan-Boltzmann) ===
-    // Use f64 for the T^4 computation, then downcast for the hot path performance
+    // Use f64 for the T^4 computation for higher precision
     let temp_source_k = f64::from(source_temp + 273.15);
     let temp_target_k = f64::from(target_temp + 273.15);
 
     let radiant_power_f64 =
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
 
-    #[allow(clippy::cast_precision_loss)]
-    let radiant_power = radiant_power_f64 as f32;
-
-    if radiant_power <= 0.0 {
+    if radiant_power_f64 <= 0.0 {
         return 0.0;
     }
 
@@ -350,13 +364,14 @@ pub(crate) fn calculate_heat_transfer_raw(
     //   - fuel_remaining × 6.0 gives realistic flame areas
     //   - 3kg grass → 18 m² (matches Byram/Rothermel predictions)
     //   - This ensures heat transfer matches expected spread rates (5-100 m/min for grass)
-    let effective_flame_area = (source_fuel_remaining * 6.0).max(0.5); // m²
+    let effective_flame_area_f64 = f64::from(source_fuel_remaining * 6.0).max(0.5); // m²
+    let distance_f64 = f64::from(distance);
 
     // Planar view factor: A / (πr²) for extended radiator facing target
     // This is 4× higher than point source and matches fire radiation physics
     // Reference: Drysdale (2011) "Introduction to Fire Dynamics" - radiative heat transfer
-    let view_factor = effective_flame_area / (std::f32::consts::PI * distance * distance);
-    let view_factor = view_factor.clamp(0.001, 1.0);
+    let view_factor_f64 = (effective_flame_area_f64 / (std::f64::consts::PI * distance_f64 * distance_f64))
+        .clamp(0.001, 1.0);
 
     // === DIRECT FLAME CONTACT MULTIPLIER ===
     // For elements within ~1.5m, flames physically engulf adjacent fuel.
@@ -369,44 +384,45 @@ pub(crate) fn calculate_heat_transfer_raw(
     //
     // Multiplier: 3x at 0m, tapering to 1x at 1.5m (no boost beyond)
     // This matches observed grass fire spread rates of 1-3 m/s under high wind.
-    let flame_contact_boost = if distance < 1.5 {
-        1.0 + 2.0 * (1.0 - distance / 1.5) // 3x at 0m, 1x at 1.5m
+    let flame_contact_boost_f64 = if distance_f64 < 1.5 {
+        1.0 + 2.0 * (1.0 - distance_f64 / 1.5) // 3x at 0m, 1x at 1.5m
     } else {
         1.0
     };
 
-    let flux = radiant_power * view_factor * flame_contact_boost;
+    let flux_f64 = radiant_power_f64 * view_factor_f64 * flame_contact_boost_f64;
 
     // Target absorption based on fuel characteristics
     // Fine fuels (high SAV) have more surface area to absorb heat
     // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (target_surface_area_vol / 3500.0).sqrt().clamp(0.2, 1.5);
+    let sav_f64 = f64::from(target_surface_area_vol);
+    let absorption_efficiency_f64 = (sav_f64 / 3500.0).sqrt().clamp(0.2, 1.5);
 
     // Convert W/m² to kW (kJ/s) - radiation is power per unit area
     // CRITICAL: Must match units with convection term (which also converts to kW)
-    let radiation = flux * absorption_efficiency * 0.001;
+    let radiation_f64 = flux_f64 * absorption_efficiency_f64 * 0.001;
 
     // === CONVECTION CALCULATION (vertical only) ===
     // Natural convection from hot gases rising - attenuates with distance
-    let vertical_diff = target_pos.z - source_pos.z;
-    let convection = if vertical_diff > 0.0 {
-        let temp_diff = source_temp - target_temp;
-        if temp_diff > 0.0 {
+    let vertical_diff_f64 = f64::from(target_pos.z - source_pos.z);
+    let convection_f64 = if vertical_diff_f64 > 0.0 {
+        let temp_diff_f64 = f64::from(source_temp - target_temp);
+        if temp_diff_f64 > 0.0 {
             // Natural convection coefficient for wildfire conditions (W/(m²·K))
             // h ≈ 1.32 * (ΔT/L)^0.25 for natural convection
             // Typical range: 5-50 W/(m²·K) for natural convection
-            let convection_coeff = 25.0; // Conservative for element-to-element
+            let convection_coeff: f64 = 25.0; // Conservative for element-to-element
 
             // CRITICAL: Convection attenuates with distance (plume disperses)
             // Using inverse-square-like attenuation to match radiation physics
             // At 1m: full effect; at 2m: 25%; at 4m: 6.25%; at 8m: 1.56%
-            let distance_attenuation = 1.0 / (1.0 + distance * distance);
+            let distance_attenuation_f64 = 1.0 / (1.0 + distance_f64 * distance_f64);
 
             // Normalize surface area factor (same as radiation absorption)
             // High SAV = more surface for convective heating
-            let convective_area_factor = absorption_efficiency;
+            let convective_area_factor_f64 = absorption_efficiency_f64;
 
-            convection_coeff * temp_diff * convective_area_factor * distance_attenuation * 0.001
+            convection_coeff * temp_diff_f64 * convective_area_factor_f64 * distance_attenuation_f64 * 0.001
         } else {
             0.0
         }
@@ -416,15 +432,15 @@ pub(crate) fn calculate_heat_transfer_raw(
 
     // === WIND FACTOR ===
     let direction = (target_pos - source_pos).normalize();
-    let wind_speed_ms = wind.magnitude();
-    let wind_normalized = if wind_speed_ms > 0.1 {
+    let wind_speed_ms_f64 = f64::from(wind.magnitude());
+    let wind_normalized = if wind_speed_ms_f64 > 0.1 {
         wind.normalize()
     } else {
         Vec3::new(0.0, 0.0, 0.0)
     };
-    let alignment = direction.dot(&wind_normalized);
+    let alignment_f64 = f64::from(direction.dot(&wind_normalized));
 
-    let wind_factor = if alignment > 0.0 {
+    let wind_factor_f64 = if alignment_f64 > 0.0 {
         // Downwind: Balanced scaling for realistic fire spread
         // Using reduced coefficients to achieve target spread rates:
         //   - Moderate (6.9 m/s): ~3x multiplier → 1-10 ha/hr
@@ -435,12 +451,12 @@ pub(crate) fn calculate_heat_transfer_raw(
         //
         // NOTE: 0.8 coefficient is for element-to-element transfer physics (universal)
         // Fuel-specific wind_sensitivity is applied at higher level (Rothermel model)
-        let base_multiplier = 1.0 + alignment * wind_speed_ms.sqrt() * 0.8;
+        let base_multiplier = 1.0 + alignment_f64 * wind_speed_ms_f64.sqrt() * 0.8;
 
-        if wind_speed_ms > 15.0 {
+        if wind_speed_ms_f64 > 15.0 {
             // Additional boost for catastrophic conditions, but gentler
             // At 16.7 m/s: 4.3 × 1.08 = ~4.7×
-            let extreme_boost = ((wind_speed_ms - 15.0) / 10.0).min(1.0);
+            let extreme_boost = ((wind_speed_ms_f64 - 15.0) / 10.0).min(1.0);
             base_multiplier * (1.0 + extreme_boost * 0.5)
         } else {
             base_multiplier
@@ -451,7 +467,7 @@ pub(crate) fn calculate_heat_transfer_raw(
         // At 16.7 m/s directly upwind (alignment=-1): exp(-5.8) ≈ 0.003 → clamped to 0.05
         // At 10 m/s directly upwind: exp(-3.5) ≈ 0.03 → clamped to 0.05
         // At 5 m/s directly upwind: exp(-1.75) ≈ 0.17
-        (alignment * wind_speed_ms * 0.35).exp().max(0.05)
+        (alignment_f64 * wind_speed_ms_f64 * 0.35).exp().max(0.05)
     };
 
     // === VERTICAL/SLOPE COMBINED FACTOR ===
@@ -462,30 +478,30 @@ pub(crate) fn calculate_heat_transfer_raw(
     //
     // These effects overlap, so we use MAX(vertical, slope) rather than multiplying
     // Literature (Rothermel 1972, Finney 2015): combined upward boost 2-6× typical
-    let horizontal_diff_sq = diff.x * diff.x + diff.y * diff.y;
-    let horizontal = horizontal_diff_sq.sqrt();
+    let horizontal_diff_sq_f64 = f64::from(diff.x * diff.x + diff.y * diff.y);
+    let horizontal_f64 = horizontal_diff_sq_f64.sqrt();
 
     // Vertical factor (for nearly vertical transfers)
-    let vertical_factor = if vertical_diff > 0.0 {
-        let height_boost = (vertical_diff * 0.08).min(0.7);
+    let vertical_factor_f64 = if vertical_diff_f64 > 0.0 {
+        let height_boost = (vertical_diff_f64 * 0.08).min(0.7);
         1.8 + height_boost // 1.8× to 2.5×
-    } else if vertical_diff < 0.0 {
-        0.7 * (1.0 / (1.0 + vertical_diff.abs() * 0.2))
+    } else if vertical_diff_f64 < 0.0 {
+        0.7 * (1.0 / (1.0 + vertical_diff_f64.abs() * 0.2))
     } else {
         1.0
     };
 
     // Slope factor (for angled transfers with significant horizontal component)
-    let slope_factor = if horizontal > 0.5 {
-        let slope_angle_rad = (vertical_diff / horizontal).atan();
-        let slope_angle = slope_angle_rad.to_degrees();
+    let slope_factor_f64 = if horizontal_f64 > 0.5 {
+        let slope_angle_rad_f64 = (vertical_diff_f64 / horizontal_f64).atan();
+        let slope_angle_f64 = slope_angle_rad_f64.to_degrees();
 
-        if slope_angle > 0.0 {
-            let effective_angle = slope_angle.min(45.0);
+        if slope_angle_f64 > 0.0 {
+            let effective_angle = slope_angle_f64.min(45.0);
             let factor = 1.0 + (effective_angle / 10.0).powf(1.5) * 2.0;
             factor.min(6.0) // Cap at 6×
         } else {
-            (1.0 + slope_angle / 30.0).max(0.3)
+            (1.0 + slope_angle_f64 / 30.0).max(0.3)
         }
     } else {
         1.0 // Purely vertical: use vertical_factor only
@@ -493,12 +509,16 @@ pub(crate) fn calculate_heat_transfer_raw(
 
     // Use the larger of the two factors, not their product
     // This prevents double-counting the upward spread advantage
-    let directional_factor = vertical_factor.max(slope_factor);
+    let directional_factor_f64 = vertical_factor_f64.max(slope_factor_f64);
 
     // Total heat transfer
     // directional_factor combines vertical and slope effects (max, not product)
-    let total_heat = (radiation + convection) * wind_factor * directional_factor * dt;
-    total_heat.max(0.0)
+    let dt_f64 = f64::from(dt);
+    let total_heat_f64 = (radiation_f64 + convection_f64) * wind_factor_f64 * directional_factor_f64 * dt_f64;
+    
+    #[allow(clippy::cast_precision_loss)]
+    let result = total_heat_f64.max(0.0) as f32;
+    result
 }
 
 #[cfg(test)]
