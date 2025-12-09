@@ -2,34 +2,13 @@ name: Tests
 
 on:
   push:
-  pull_request:
-    # Run when PR becomes ready AND when new commits are pushed to an already-ready PR.
-    types:
-      - ready_for_review
-      - synchronize
   workflow_dispatch:  
 
 env:
   CARGO_TERM_COLOR: always
 
-concurrency:
-  # Grouping strategy:
-  # - If the event is a draft PR, give that run a "draft" suffix so it does NOT share the
-  #   concurrency group with normal pushes (this prevents a draft PR run from cancelling a push).
-  # - For push events and non-draft PR events, use the same "ready" group so a non-draft PR run
-  #   WILL cancel any in-progress push run for the same branch.
-  #
-  # This expression resolves to either "draft" (for draft PR events) or "ready" (for push
-  # runs and non-draft PR runs).
-  # Append '-draft' only when this is a draft PR run; leave no suffix otherwise so
-  # pushes and non-draft PR runs share the same concurrency group (they can cancel each other).
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true && '-draft' || '' }}
-  cancel-in-progress: true
-
 jobs:
   clippy:
-    if: >-
-      github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
     name: Clippy
     runs-on: ubuntu-latest
     steps:
@@ -60,8 +39,6 @@ jobs:
         run: cargo clippy --all-features -- -D warnings
 
   fmt:
-    if: >-
-      github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
@@ -76,8 +53,6 @@ jobs:
         run: cargo fmt --all -- --check
 
   test:
-    if: >-
-      github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
     name: Test Suite
     runs-on: ubuntu-latest
     needs:
@@ -109,8 +84,6 @@ jobs:
         run: cargo test --all-features
 
   build-dev:
-    if: >-
-      github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
     name: "Build Debug"
     runs-on: ${{ matrix.os }}
     strategy:
@@ -155,8 +128,6 @@ jobs:
             target/debug/demo-interactive.exe
 
   build-release:
-    if: >-
-      github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
     name: "Build Release"
     runs-on: ${{ matrix.os }}
     strategy:
