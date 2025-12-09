@@ -664,9 +664,10 @@ fn test_weather_conditions_spread_rate() {
     // REALISTIC EXPECTATION: Early transient phase (t<15s) can have complex dynamics
     // due to turbulent wind effects, heat distribution patterns, and fuel moisture.
     // The key validation is OVERALL rapid spread, not exact element count at one timestep.
-    #[allow(clippy::cast_precision_loss)] // Deliberate: comparing test counts as ratio
+    #[allow(clippy::cast_precision_loss)] // Deliberate: comparing test counts as ratio for validation
     let catastrophic_multiplier = f64::from(catastrophic_t11) / f64::from(severe_t11.max(1));
-    println!("✓ Catastrophic spread multiplier vs Severe: {catastrophic_multiplier:.2}x at t=11s");
+    #[allow(clippy::cast_possible_truncation)] // Deliberate: f64 ratio cast to f32 for display
+    println!("✓ Catastrophic spread multiplier vs Severe: {:.2}x at t=11s", catastrophic_multiplier as f32);
 
     // Validate that catastrophic conditions show rapid spread
     // Check at t=60s for comparison with 2m element spacing

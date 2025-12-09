@@ -336,10 +336,9 @@ impl FuelElement {
         //   - 500°C: 60s / 2.1 = 29s threshold
         //   - 758°C: 60s / 3.4 = 18s threshold
         // Does NOT scale with FFDI - heat transfer controls spread rate instead
-        let time_threshold = 60.0 / (1.0 + temp_excess / 200.0);
+        let time_threshold_f64 = f64::from(60.0 / (1.0 + temp_excess / 200.0));
 
-        #[allow(clippy::cast_possible_truncation)] // Deliberate: time_threshold is within f32 range
-        let guaranteed_ignition = self.time_above_ignition >= f64::from(time_threshold);
+        let guaranteed_ignition = self.time_above_ignition >= time_threshold_f64;
 
         if guaranteed_ignition || rand::random::<f32>() < ignition_prob {
             self.ignited = true;
