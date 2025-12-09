@@ -140,7 +140,7 @@ impl Ember {
         // 1. Buoyancy (hot embers rise)
         let buoyancy = if *self.temperature > 300.0 {
             let temp_ratio = *self.temperature / 300.0;
-            AIR_DENSITY * 9.81 * ember_volume * temp_ratio
+            AIR_DENSITY * 9.81 * ember_volume * f32::from(temp_ratio)
         } else {
             0.0
         };
@@ -181,7 +181,7 @@ impl Ember {
         // 5. Radiative cooling (Stefan-Boltzmann)
         // Simplified: dT/dt = -k(T - T_ambient)
         let cooling_rate = (*self.temperature - *ambient_temp) * 0.05;
-        *self.temperature -= cooling_rate * dt;
+        *self.temperature -= f64::from(cooling_rate * dt);
 
         // Clamp temperature to ambient minimum
         self.temperature = self.temperature.max(ambient_temp);

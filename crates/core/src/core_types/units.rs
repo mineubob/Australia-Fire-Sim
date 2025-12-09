@@ -5,7 +5,8 @@
 //! meters with kilograms).
 //!
 //! # Design Philosophy
-//! - Each type wraps f32 for performance (sufficient for fire simulation precision)
+//! - Temperature types use f64 for high-precision T^4 calculations (Stefan-Boltzmann)
+//! - Spatial/Mass/Angle types use f32 for performance where precision is adequate
 //! - Implements common traits (Add, Sub, Mul, Div, Ord, Display, etc.)
 //! - Provides explicit conversion methods between related types
 //! - Serde support for serialization
@@ -32,7 +33,7 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
 
 // ============================================================================
-// HELPER FUNCTION FOR TOTAL ORDERING OF F32
+// HELPER FUNCTIONS FOR TOTAL ORDERING
 // ============================================================================
 
 /// Compare f32 values with total ordering using Rust's built-in `total_cmp`
@@ -42,14 +43,22 @@ fn f32_total_cmp(a: f32, b: f32) -> Ordering {
     a.total_cmp(&b)
 }
 
+/// Compare f64 values with total ordering using Rust's built-in `total_cmp`
+/// Used for high-precision temperature types
+#[inline]
+fn f64_total_cmp(a: f64, b: f64) -> Ordering {
+    a.total_cmp(&b)
+}
+
 // ============================================================================
-// TEMPERATURE TYPES
+// TEMPERATURE TYPES (f64 for high-precision T^4 calculations)
 // ============================================================================
 
 /// Temperature in degrees Celsius
+/// Uses f64 for Stefan-Boltzmann law (T^4) calculations
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Celsius(f32);
+pub struct Celsius(f64);
 
 impl Eq for Celsius {}
 
@@ -61,21 +70,21 @@ impl PartialOrd for Celsius {
 
 impl Ord for Celsius {
     fn cmp(&self, other: &Self) -> Ordering {
-        f32_total_cmp(self.0, other.0)
+        f64_total_cmp(self.0, other.0)
     }
 }
 
 impl Deref for Celsius {
-    type Target = f32;
+    type Target = f64;
     #[inline]
-    fn deref(&self) -> &f32 {
+    fn deref(&self) -> &f64 {
         &self.0
     }
 }
 
 impl DerefMut for Celsius {
     #[inline]
-    fn deref_mut(&mut self) -> &mut f32 {
+    fn deref_mut(&mut self) -> &mut f64 {
         &mut self.0
     }
 }
@@ -93,7 +102,7 @@ impl Celsius {
     /// Create a new Celsius temperature. Asserts value >= absolute zero (-273.15°C).
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub fn new(value: f64) -> Self {
         assert!(
             value >= -273.15,
             "Celsius::new: value {value} is below absolute zero (-273.15°C)"
@@ -106,14 +115,14 @@ impl Celsius {
     /// Caller must ensure value >= -273.15 (absolute zero).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub unsafe fn new_unchecked(value: f64) -> Self {
         Celsius(value)
     }
 
-    /// Get the raw f32 value
+    /// Get the raw f64 value
     #[inline]
     #[must_use]
-    pub fn value(self) -> f32 {
+    pub fn value(self) -> f64 {
         self.0
     }
 
@@ -131,14 +140,20 @@ impl From<Celsius> for Kelvin {
     }
 }
 
-impl From<f32> for Celsius {
-    fn from(v: f32) -> Self {
+impl From<f64> for Celsius {
+    fn from(v: f64) -> Self {
         Celsius(v)
     }
 }
 
-impl From<Celsius> for f32 {
-    fn from(c: Celsius) -> f32 {
+impl From<f32> for Celsius {
+    fn from(v: f32) -> Self {
+        Celsius(f64::from(v))
+    }
+}
+
+impl From<Celsius> for f64 {
+    fn from(c: Celsius) -> f64 {
         c.0
     }
 }
@@ -157,16 +172,16 @@ impl Sub for Celsius {
     }
 }
 
-impl Mul<f32> for Celsius {
+impl Mul<f64> for Celsius {
     type Output = Celsius;
-    fn mul(self, rhs: f32) -> Celsius {
+    fn mul(self, rhs: f64) -> Celsius {
         Celsius(self.0 * rhs)
     }
 }
 
-impl Div<f32> for Celsius {
+impl Div<f64> for Celsius {
     type Output = Celsius;
-    fn div(self, rhs: f32) -> Celsius {
+    fn div(self, rhs: f64) -> Celsius {
         Celsius(self.0 / rhs)
     }
 }
@@ -178,9 +193,10 @@ impl fmt::Display for Celsius {
 }
 
 /// Temperature in Kelvin (absolute scale)
+/// Uses f64 for Stefan-Boltzmann law (T^4) calculations
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Kelvin(f32);
+pub struct Kelvin(f64);
 
 impl Eq for Kelvin {}
 
@@ -192,21 +208,21 @@ impl PartialOrd for Kelvin {
 
 impl Ord for Kelvin {
     fn cmp(&self, other: &Self) -> Ordering {
-        f32_total_cmp(self.0, other.0)
+        f64_total_cmp(self.0, other.0)
     }
 }
 
 impl Deref for Kelvin {
-    type Target = f32;
+    type Target = f64;
     #[inline]
-    fn deref(&self) -> &f32 {
+    fn deref(&self) -> &f64 {
         &self.0
     }
 }
 
 impl DerefMut for Kelvin {
     #[inline]
-    fn deref_mut(&mut self) -> &mut f32 {
+    fn deref_mut(&mut self) -> &mut f64 {
         &mut self.0
     }
 }
@@ -218,7 +234,7 @@ impl Kelvin {
     /// Create a new Kelvin temperature. Asserts value >= absolute zero (0 K).
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub fn new(value: f64) -> Self {
         assert!(
             value >= 0.0,
             "Kelvin::new: value {value} is below absolute zero (0 K)"
@@ -231,7 +247,7 @@ impl Kelvin {
     /// Caller must ensure value >= 0 (absolute zero).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub unsafe fn new_unchecked(value: f64) -> Self {
         Kelvin(value)
     }
 
@@ -242,10 +258,10 @@ impl Kelvin {
         Celsius::new(self.0 - 273.15)
     }
 
-    /// Get the raw f32 value
+    /// Get the raw f64 value
     #[inline]
     #[must_use]
-    pub fn value(self) -> f32 {
+    pub fn value(self) -> f64 {
         self.0
     }
 }
@@ -256,14 +272,20 @@ impl From<Kelvin> for Celsius {
     }
 }
 
-impl From<f32> for Kelvin {
-    fn from(v: f32) -> Self {
+impl From<f64> for Kelvin {
+    fn from(v: f64) -> Self {
         Kelvin::new(v)
     }
 }
 
-impl From<Kelvin> for f32 {
-    fn from(k: Kelvin) -> f32 {
+impl From<f32> for Kelvin {
+    fn from(v: f32) -> Self {
+        Kelvin::new(f64::from(v))
+    }
+}
+
+impl From<Kelvin> for f64 {
+    fn from(k: Kelvin) -> f64 {
         k.0
     }
 }
@@ -282,16 +304,16 @@ impl Sub for Kelvin {
     }
 }
 
-impl Mul<f32> for Kelvin {
+impl Mul<f64> for Kelvin {
     type Output = Kelvin;
-    fn mul(self, rhs: f32) -> Kelvin {
+    fn mul(self, rhs: f64) -> Kelvin {
         Kelvin(self.0 * rhs)
     }
 }
 
-impl Div<f32> for Kelvin {
+impl Div<f64> for Kelvin {
     type Output = Kelvin;
-    fn div(self, rhs: f32) -> Kelvin {
+    fn div(self, rhs: f64) -> Kelvin {
         Kelvin(self.0 / rhs)
     }
 }

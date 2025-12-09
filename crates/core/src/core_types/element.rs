@@ -253,16 +253,16 @@ impl FuelElement {
             let remaining_heat = effective_heat - heat_for_evaporation;
             if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
                 let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-                self.temperature = Celsius::new(*self.temperature + temp_rise);
+                self.temperature = Celsius::new(*self.temperature + f64::from(temp_rise));
             }
         } else {
             // No moisture, all heat goes to temperature rise
             let temp_rise = effective_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-            self.temperature = Celsius::new(*self.temperature + temp_rise);
+            self.temperature = Celsius::new(*self.temperature + f64::from(temp_rise));
         }
 
         // STEP 3: Cap at fuel-specific maximum (prevents thermal runaway)
-        let max_temp = Celsius::new(
+        let max_temp = Celsius::from(
             self.fuel
                 .calculate_max_flame_temperature(*self.moisture_fraction),
         );
@@ -327,7 +327,7 @@ impl FuelElement {
         // 0.003 gives ~0.3% per second at max temp_factor
         // Scales with FFDI for extreme conditions
         let base_coefficient = 0.003;
-        let ignition_prob = moisture_factor * temp_factor * dt * base_coefficient * ffdi_multiplier;
+        let ignition_prob = f64::from(moisture_factor * temp_factor * dt * base_coefficient * ffdi_multiplier);
 
         // GUARANTEED IGNITION: Elements above ignition temp for sufficient time
         // This ensures elements that have been hot for extended periods ignite
@@ -571,7 +571,7 @@ impl FuelElement {
         FuelElementStats {
             id: self.id,
             position: self.position,
-            temperature: *self.temperature,
+            temperature: f32::from(*self.temperature),
             moisture_fraction: *self.moisture_fraction,
             fuel_remaining: *self.fuel_remaining,
             ignited: self.ignited,
@@ -581,7 +581,7 @@ impl FuelElement {
             slope_angle: *self.slope_angle,
             crown_fire_active: self.crown_fire_active,
             fuel_type_name: self.fuel.name.clone(),
-            ignition_temperature: *self.fuel.ignition_temperature,
+            ignition_temperature: f32::from(*self.fuel.ignition_temperature),
             heat_content: *self.fuel.heat_content,
         }
     }
