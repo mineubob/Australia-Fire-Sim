@@ -703,7 +703,7 @@ impl FireSimulation {
         // Previously: two separate iterations over ALL elements (~600k+ elements each)
         // Now: one iteration with both operations (50% reduction in memory scans)
         let _equilibrium_moisture = crate::physics::calculate_equilibrium_moisture(
-            *self.weather.temperature,
+            f32::from(*self.weather.temperature),
             *self.weather.humidity,
             false, // is_adsorbing - false for typical drying conditions
         );
