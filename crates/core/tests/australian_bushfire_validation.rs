@@ -1,3 +1,4 @@
+#![expect(clippy::cast_precision_loss)]
 //! Scientific Validation Test Suite for Australian Bushfire Simulation
 //!
 //! This module contains comprehensive unit tests validating the fire simulation against
@@ -616,7 +617,7 @@ fn test_el_nino_la_nina_effects() {
 #[test]
 fn test_full_simulation_moderate_conditions() {
     let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-    let mut sim = FireSimulation::new(5.0, terrain);
+    let mut sim = FireSimulation::new(5.0, &terrain);
 
     // Create 5x5 grid of grass (25 elements) - 2m spacing for continuous fuel bed
     // Real grass fires require continuous fuel; 2m spacing represents dense grass
@@ -668,7 +669,7 @@ fn test_full_simulation_moderate_conditions() {
 #[test]
 fn test_full_simulation_catastrophic_conditions() {
     let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-    let mut sim = FireSimulation::new(5.0, terrain);
+    let mut sim = FireSimulation::new(5.0, &terrain);
 
     // Create 5x5 grid - 2m spacing for continuous fuel bed
     // Continuous grass fuel allows realistic fire spread under catastrophic conditions

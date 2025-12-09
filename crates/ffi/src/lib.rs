@@ -118,8 +118,8 @@ pub struct FireSimInstance {
 impl FireSimInstance {
     /// Creates a new `FireSim` instance with the specified terrain.
     #[must_use]
-    pub fn new(terrain: Terrain) -> Box<Self> {
-        let terrain = match terrain {
+    pub fn new(terrain: &Terrain) -> Box<Self> {
+        let terrain = match *terrain {
             Terrain::Flat { width, height } => TerrainData::flat(width, height, 5.0, 0.0),
 
             Terrain::SingleHill {
@@ -171,7 +171,7 @@ impl FireSimInstance {
                     TerrainData::from_heightmap(
                         width,
                         height,
-                        slice.to_vec(),
+                        slice,
                         nx,
                         ny,
                         elevation_scale,
@@ -181,7 +181,7 @@ impl FireSimInstance {
             }
         };
 
-        let sim = FireSimulation::new(5.0, terrain);
+        let sim = FireSimulation::new(5.0, &terrain);
 
         Box::new(Self {
             sim: RwLock::new(sim),
@@ -230,7 +230,7 @@ impl FireSimInstance {
 /// ```
 #[no_mangle]
 pub extern "C" fn fire_sim_new(terrain: Terrain) -> *mut FireSimInstance {
-    Box::into_raw(FireSimInstance::new(terrain))
+    Box::into_raw(FireSimInstance::new(&terrain))
 }
 
 /// Destroys a `FireSim` instance previously created by `fire_sim_new`.

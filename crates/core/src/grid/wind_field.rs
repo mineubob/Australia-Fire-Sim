@@ -237,6 +237,13 @@ pub struct WindField {
     last_plume_intensities: Vec<f32>,
 }
 
+// Helper for explicit, documented usize -> f32 conversions used throughout wind field code
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
+}
+
 impl WindField {
     /// Create a new wind field for the given terrain
     #[must_use]
@@ -252,8 +259,8 @@ impl WindField {
 
         for iy in 0..config.ny {
             for ix in 0..config.nx {
-                let x = ix as f32 * config.cell_size + config.cell_size * 0.5;
-                let y = iy as f32 * config.cell_size + config.cell_size * 0.5;
+                let x = usize_to_f32(ix) * config.cell_size + config.cell_size * 0.5;
+                let y = usize_to_f32(iy) * config.cell_size + config.cell_size * 0.5;
                 terrain_height.push(terrain.elevation_at(x, y));
                 terrain_slope.push(terrain.slope_at_horn(x, y).to_radians());
                 terrain_aspect.push(terrain.aspect_at_horn(x, y).to_radians());
@@ -333,11 +340,11 @@ impl WindField {
         let x = pos
             .x
             .max(0.0)
-            .min((self.config.nx - 1) as f32 * self.config.cell_size);
+            .min(usize_to_f32(self.config.nx - 1) * self.config.cell_size);
         let y = pos
             .y
             .max(0.0)
-            .min((self.config.ny - 1) as f32 * self.config.cell_size);
+            .min(usize_to_f32(self.config.ny - 1) * self.config.cell_size);
 
         // Get grid indices
         let gx = x / self.config.cell_size;
@@ -357,9 +364,9 @@ impl WindField {
         let iz1 = iz0 + 1;
 
         // Fractional parts for interpolation
-        let fx = gx - ix0 as f32;
-        let fy = gy - iy0 as f32;
-        let fz = gz - iz0 as f32;
+        let fx = gx - usize_to_f32(ix0);
+        let fy = gy - usize_to_f32(iy0);
+        let fz = gz - usize_to_f32(iz0);
 
         // Trilinear interpolation of 8 corners
         let w000 = self.wind_at_grid(ix0, iy0, iz0) * (1.0 - fx) * (1.0 - fy) * (1.0 - fz);
@@ -525,7 +532,7 @@ impl WindField {
             .enumerate()
             .for_each(|(iz, (wind_layer, wind_initial_layer))| {
                 // Pre-calculate height-dependent logarithmic factor for this layer
-                let z_layer = iz as f32 * cell_size_z + cell_size_z * 0.5;
+                let z_layer = usize_to_f32(iz) * cell_size_z + cell_size_z * 0.5;
 
                 for iy in 0..ny {
                     for ix in 0..nx {
@@ -600,7 +607,7 @@ impl WindField {
 
             // Maximum influence radius: plume affects cells up to 5x its radius
             // This is where entrainment effects become negligible (<1% of peak)
-            let max_height = self.config.nz as f32 * self.config.cell_size_z;
+            let max_height = usize_to_f32(self.config.nz) * self.config.cell_size_z;
             let max_plume_radius = plume_base_radius + entrainment_coefficient * max_height;
             let max_influence_radius = max_plume_radius * 5.0;
 
@@ -619,10 +626,10 @@ impl WindField {
             for iz in 0..self.config.nz {
                 for iy in iy_min..iy_max {
                     for ix in ix_min..ix_max {
-                        let x = ix as f32 * self.config.cell_size + self.config.cell_size * 0.5;
-                        let y = iy as f32 * self.config.cell_size + self.config.cell_size * 0.5;
+                        let x = usize_to_f32(ix) * self.config.cell_size + self.config.cell_size * 0.5;
+                        let y = usize_to_f32(iy) * self.config.cell_size + self.config.cell_size * 0.5;
                         let terrain_z = self.terrain_height[self.index_2d(ix, iy)];
-                        let z = iz as f32 * self.config.cell_size_z
+                        let z = usize_to_f32(iz) * self.config.cell_size_z
                             + self.config.cell_size_z * 0.5
                             + terrain_z;
 
@@ -719,14 +726,14 @@ impl WindField {
             .par_chunks_mut(nx * ny)
             .enumerate()
             .for_each(|(iz, wind_layer)| {
-                let z_above = iz as f32 * cell_size_z + cell_size_z * 0.5;
+                let z_above = usize_to_f32(iz) * cell_size_z + cell_size_z * 0.5;
 
                 for iy in 0..ny {
                     for ix in 0..nx {
                         let idx_2d = iy * nx + ix;
                         let idx_layer = iy * nx + ix;
-                        let x = ix as f32 * cell_size + cell_size * 0.5;
-                        let y = iy as f32 * cell_size + cell_size * 0.5;
+                        let x = usize_to_f32(ix) * cell_size + cell_size * 0.5;
+                        let y = usize_to_f32(iy) * cell_size + cell_size * 0.5;
                         let local_terrain_z = terrain_height[idx_2d];
 
                         // Check upwind terrain (50m upwind)

@@ -292,6 +292,7 @@ pub(crate) fn terrain_spread_multiplier_cached(
 }
 
 #[cfg(test)]
+#[expect(clippy::cast_precision_loss)]
 mod tests {
     use super::*;
 
@@ -309,7 +310,7 @@ mod tests {
             }
         }
 
-        TerrainData::from_heightmap(100.0, 100.0, elevations, nx, ny, 1.0, 0.0)
+        TerrainData::from_heightmap(100.0, 100.0, &elevations, nx, ny, 1.0, 0.0)
     }
 
     #[test]
@@ -415,7 +416,7 @@ mod tests {
                 elevations.push(ix as f32 * 5.0);
             }
         }
-        let terrain = TerrainData::from_heightmap(100.0, 100.0, elevations, nx, ny, 1.0, 0.0);
+        let terrain = TerrainData::from_heightmap(100.0, 100.0, &elevations, nx, ny, 1.0, 0.0);
 
         // Fire spreading north (cross-slope direction)
         let from = Vec3::new(50.0, 30.0, 0.0);

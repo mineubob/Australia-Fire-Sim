@@ -10,6 +10,15 @@ use crate::grid::{TerrainCache, TerrainData};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+// Local helper to centralize deliberate integer -> f32 conversions.
+// These conversions are deliberate for index→world-coordinate math (small ranges)
+// and are annotated so linting tools see clear intent in one place.
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
+}
+
 // Pre-computed neighbor offsets for mark_active_cells (compile-time computation)
 // cells_radius=2 (30m / 15m cell_size) = 5×5×5 = 125 offsets
 const MARK_ACTIVE_OFFSETS: [(i32, i32, i32); 125] = {
@@ -261,8 +270,8 @@ impl SimulationGrid {
         for _iz in 0..nz {
             for iy in 0..ny {
                 for ix in 0..nx {
-                    let x = ix as f32 * cell_size + cell_size / 2.0;
-                    let y = iy as f32 * cell_size + cell_size / 2.0;
+                    let x = usize_to_f32(ix) * cell_size + cell_size / 2.0;
+                    let y = usize_to_f32(iy) * cell_size + cell_size / 2.0;
                     let elevation = terrain.elevation_at(x, y);
 
                     cells.push(GridCell::new(elevation));
@@ -362,9 +371,9 @@ impl SimulationGrid {
         let iy1 = iy0 + 1;
         let iz1 = iz0 + 1;
 
-        let fx = gx - ix0 as f32;
-        let fy = gy - iy0 as f32;
-        let fz = gz - iz0 as f32;
+        let fx = gx - usize_to_f32(ix0);
+        let fy = gy - usize_to_f32(iy0);
+        let fz = gz - usize_to_f32(iz0);
 
         // Get 8 corner cells
         let c000 = &self.cells[self.cell_index(ix0, iy0, iz0)];

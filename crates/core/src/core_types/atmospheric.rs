@@ -48,6 +48,15 @@ pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &
                 let cy = (pos.y / grid.cell_size) as i32;
                 let cz = (pos.z / grid.cell_size) as i32;
 
+                // dz is an integer loop index used to calculate dilution factors
+                // Small, deliberate conversion to f32 is needed for the physics math;
+                // keep the conversion localized and documented.
+                #[inline]
+                #[expect(clippy::cast_precision_loss)]
+                fn i32_to_f32(v: i32) -> f32 {
+                    v as f32
+                }
+
                 for dz in 1..=(cells_to_rise as i32).min(5) {
                     let target_z = cz + dz;
 
@@ -68,7 +77,8 @@ pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &
                                         target_z as usize,
                                     ) {
                                         // Dilution with height
-                                        let dilution = 1.0 / (dz as f32 * dz as f32);
+                                        let dzf = i32_to_f32(dz);
+                                        let dilution = 1.0 / (dzf * dzf);
 
                                         let temp_transfer = temp_excess * 0.1 * dilution;
                                         target_cell.temperature += temp_transfer;

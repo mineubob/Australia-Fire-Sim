@@ -166,15 +166,15 @@ fn main() {
                         // Parse optional filters after amount
                         let (fuel_filter, part_filter, min_z, max_z) = parse_filters(&parts, 5);
 
-                        let center = Vec3::new(x as f32, y as f32, 0.0);
+                        let center = Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0);
 
                         // Get filtered elements with ignition temperatures
                         let filtered = filter_elements_in_circle(
                             &sim,
                             center,
                             radius,
-                            fuel_filter,
-                            part_filter,
+                            fuel_filter.as_deref(),
+                            part_filter.as_deref(),
                             min_z,
                             max_z,
                         );
@@ -262,15 +262,15 @@ fn main() {
                         // Parse optional filters after amount
                         let (fuel_filter, part_filter, min_z, max_z) = parse_filters(&parts, 6);
 
-                        let center = Vec3::new(x as f32, y as f32, 0.0);
+                        let center = Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0);
 
                         // Get filtered elements
                         let mut id_dist_z = filter_elements_in_circle(
                             &sim,
                             center,
                             radius,
-                            fuel_filter,
-                            part_filter,
+                            fuel_filter.as_deref(),
+                            part_filter.as_deref(),
                             min_z,
                             max_z,
                         );
@@ -373,6 +373,26 @@ fn main() {
     }
 }
 
+// Small helpers for deliberate integer->float casts used in the demo.
+// These centralize the `as` conversions and document / expect the precision loss.
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn i32_to_f32(v: i32) -> f32 {
+    v as f32
+}
+
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
+}
+
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn u32_to_f32(v: u32) -> f32 {
+    v as f32
+}
+
 // Advanced wind field is always enabled — no startup prompt needed.
 
 /// Prompt user for terrain dimensions at startup
@@ -463,8 +483,8 @@ fn filter_elements_in_circle(
     sim: &FireSimulation,
     center: Vec3,
     radius: f32,
-    fuel_filter: Option<String>,
-    part_filter: Option<String>,
+    fuel_filter: Option<&str>,
+    part_filter: Option<&str>,
     min_z: Option<f32>,
     max_z: Option<f32>,
 ) -> Vec<(usize, f32, f32)> {
@@ -479,7 +499,7 @@ fn filter_elements_in_circle(
 
             if dist2d <= radius {
                 // Apply fuel filter
-                if let Some(ref f) = fuel_filter {
+                if let Some(f) = fuel_filter {
                     let fuel_name = e.fuel().name.to_lowercase();
                     if !fuel_name.contains(f) {
                         return None;
@@ -487,7 +507,7 @@ fn filter_elements_in_circle(
                 }
 
                 // Apply part filter
-                if let Some(ref p) = part_filter {
+                if let Some(p) = part_filter {
                     let part_name = get_part_name(&e.part_type());
                     if !part_name.to_lowercase().contains(p) {
                         return None;
@@ -517,7 +537,7 @@ fn filter_elements_in_circle(
 }
 
 fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
-    let mut sim = FireSimulation::new(5.0, TerrainData::flat(width, height, 5.0, 0.0));
+    let mut sim = FireSimulation::new(5.0, &TerrainData::flat(width, height, 5.0, 0.0));
 
     // Wind field is always initialized by the simulation itself; no reconfiguration call required.
 
@@ -537,7 +557,7 @@ fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
             };
 
             let id = sim.add_fuel_element(
-                Vec3::new(x as f32, y as f32, 0.0),
+                Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0),
                 fuel,
                 Kilograms::new(3.0),
                 FuelPart::GroundVegetation,
@@ -545,7 +565,7 @@ fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
 
             // Add some trees (every 15m)
             if x % 15 == 0 && y % 15 == 0 {
-                create_tree(&mut sim, x as f32, y as f32, id);
+                create_tree(&mut sim, i32_to_f32(x), i32_to_f32(y), id);
             }
         }
     }
@@ -652,7 +672,7 @@ fn show_status(sim: &FireSimulation) {
             .map(|e| e.temperature)
             .fold(f32::MIN, f32::max);
         let avg_temp: f32 =
-            burning.iter().map(|e| e.temperature).sum::<f32>() / burning.len() as f32;
+            burning.iter().map(|e| e.temperature).sum::<f32>() / usize_to_f32(burning.len());
 
         println!("\nBurning element temperatures:");
         println!("  Min: {min_temp:.1}°C");
@@ -892,8 +912,8 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
     println!("\n═══════════════ TEMPERATURE HEATMAP ═══════════════");
 
     // Create a grid covering the simulation area with appropriate cell size
-    let cell_width = terrain_width / grid_size as f32;
-    let cell_height = terrain_height / grid_size as f32;
+    let cell_width = terrain_width / usize_to_f32(grid_size);
+    let cell_height = terrain_height / usize_to_f32(grid_size);
 
     let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
     let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
@@ -920,7 +940,7 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
     for y in 0..grid_size {
         for x in 0..grid_size {
             if counts[y][x] > 0 {
-                grid[y][x] /= counts[y][x] as f32;
+                grid[y][x] /= u32_to_f32(counts[y][x]);
             }
         }
     }
@@ -968,7 +988,7 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
 
     // Print heatmap (top-down view, Y increases downward)
     for y in (0..grid_size).rev() {
-        print!("{:3} │ ", (y as f32 * cell_height) as i32);
+        print!("{:3} │ ", (usize_to_f32(y) * cell_height) as i32);
         for x in 0..grid_size {
             if counts[y][x] == 0 {
                 print!("· ");
@@ -1002,7 +1022,7 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
     println!();
     print!("      ");
     for x in (0..grid_size).step_by(5) {
-        print!("{:<10}", (x as f32 * cell_width) as i32);
+        print!("{:<10}", (usize_to_f32(x) * cell_width) as i32);
     }
     println!("\n");
 

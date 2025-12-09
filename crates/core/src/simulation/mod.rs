@@ -104,7 +104,7 @@ pub struct FireSimulation {
 impl FireSimulation {
     /// Create a new ultra-realistic fire simulation
     #[must_use]
-    pub fn new(grid_cell_size: f32, terrain: TerrainData) -> Self {
+    pub fn new(grid_cell_size: f32, terrain: &TerrainData) -> Self {
         // Use terrain dimensions
         let width = terrain.width;
         let height = terrain.height;
@@ -165,7 +165,7 @@ impl FireSimulation {
                     terrain_update_interval: 10,
                     ..Default::default()
                 };
-                WindField::new(config, &terrain)
+                WindField::new(config, terrain)
             },
         }
     }
@@ -1402,7 +1402,7 @@ impl FireSimulation {
                         .map(|e| e.byram_fireline_intensity(wind_vector.magnitude()))
                 })
                 .sum();
-            total_intensity / self.burning_elements.len() as f32
+            total_intensity / usize_to_f32(self.burning_elements.len())
         };
 
         for cloud in &mut self.pyrocumulus_clouds {
@@ -1707,14 +1707,22 @@ pub struct SimulationStats {
     pub simulation_time: f32,
 }
 
+// Small helper to convert usize -> f32 in deliberate, documented places
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
+}
+
 #[cfg(test)]
+#[expect(clippy::cast_precision_loss)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_ultra_simulation_creation() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        let sim = FireSimulation::new(10.0, terrain);
+        let sim = FireSimulation::new(10.0, &terrain);
 
         assert_eq!(sim.burning_elements.len(), 0);
         assert_eq!(sim.grid.nx, 10);
@@ -1724,7 +1732,7 @@ mod tests {
     #[test]
     fn test_add_and_ignite() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        let mut sim = FireSimulation::new(10.0, terrain);
+        let mut sim = FireSimulation::new(10.0, &terrain);
 
         let fuel = Fuel::dry_grass();
         let id = sim.add_fuel_element(
@@ -1743,7 +1751,7 @@ mod tests {
     #[test]
     fn test_simulation_update() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
-        let mut sim = FireSimulation::new(10.0, terrain);
+        let mut sim = FireSimulation::new(10.0, &terrain);
 
         let fuel = Fuel::dry_grass();
         let id = sim.add_fuel_element(
@@ -1773,7 +1781,7 @@ mod tests {
     #[test]
     fn test_low_fire_danger_minimal_spread() {
         let terrain = TerrainData::flat(50.0, 50.0, 2.0, 0.0);
-        let mut sim = FireSimulation::new(2.0, terrain);
+        let mut sim = FireSimulation::new(2.0, &terrain);
 
         // Set LOW fire danger conditions (cool, humid, calm - winter conditions)
         let weather = WeatherSystem::new(
@@ -1834,7 +1842,7 @@ mod tests {
     #[test]
     fn test_moderate_fire_danger_controlled_spread() {
         let terrain = TerrainData::flat(50.0, 50.0, 2.0, 0.0);
-        let mut sim = FireSimulation::new(2.0, terrain);
+        let mut sim = FireSimulation::new(2.0, &terrain);
 
         // Set MODERATE fire danger conditions (warm, moderate humidity, light wind)
         let weather = WeatherSystem::new(
@@ -1894,7 +1902,7 @@ mod tests {
     #[test]
     fn test_extreme_fire_danger_rapid_spread() {
         let terrain = TerrainData::flat(50.0, 50.0, 2.0, 0.0);
-        let mut sim = FireSimulation::new(2.0, terrain);
+        let mut sim = FireSimulation::new(2.0, &terrain);
 
         // Set EXTREME fire danger conditions (hot, dry, strong wind - Code Red)
         // Wind is in km/h - 90 km/h = 25 m/s
@@ -1952,7 +1960,7 @@ mod tests {
     #[test]
     fn test_australian_fire_characteristics() {
         let terrain = TerrainData::flat(50.0, 50.0, 2.0, 0.0);
-        let mut sim = FireSimulation::new(2.0, terrain);
+        let mut sim = FireSimulation::new(2.0, &terrain);
 
         // Test eucalyptus fuel with volatile oils
         let eucalyptus = Fuel::eucalyptus_stringybark();
@@ -2000,7 +2008,7 @@ mod tests {
     #[test]
     fn test_wind_direction_fire_spread() {
         let terrain = TerrainData::flat(50.0, 50.0, 2.0, 0.0);
-        let mut sim = FireSimulation::new(2.0, terrain);
+        let mut sim = FireSimulation::new(2.0, &terrain);
 
         // Strong wind blowing in +X direction (easterly wind)
         // Wind direction in weather system is where wind comes FROM in degrees.

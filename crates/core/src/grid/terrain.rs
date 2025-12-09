@@ -6,6 +6,13 @@
 use crate::core_types::element::Vec3;
 use serde::{Deserialize, Serialize};
 
+// Small helper to centralize intentional usize -> f32 conversions in terrain code
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
+}
+
 /// Precomputed terrain properties cache for performance
 /// Stores slope and aspect at each grid position to avoid runtime computation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,8 +104,8 @@ impl TerrainData {
 
         for iy in 0..ny {
             for ix in 0..nx {
-                let x = ix as f32 * resolution;
-                let y = iy as f32 * resolution;
+                let x = usize_to_f32(ix) * resolution;
+                let y = usize_to_f32(iy) * resolution;
 
                 let dx = x - center_x;
                 let dy = y - center_y;
@@ -149,8 +156,8 @@ impl TerrainData {
 
         for iy in 0..ny {
             for ix in 0..nx {
-                let x = ix as f32 * resolution;
-                let y = iy as f32 * resolution;
+                let x = usize_to_f32(ix) * resolution;
+                let y = usize_to_f32(iy) * resolution;
 
                 // Distance to first hill
                 let dx1 = x - hill1_x;
@@ -202,7 +209,7 @@ impl TerrainData {
     pub fn from_heightmap(
         width: f32,
         height: f32,
-        heightmap: Vec<f32>,
+        heightmap: &[f32],
         nx: usize,
         ny: usize,
         elevation_scale: f32,
@@ -210,7 +217,7 @@ impl TerrainData {
     ) -> Self {
         assert_eq!(heightmap.len(), nx * ny, "Heightmap size mismatch");
 
-        let resolution = width / (nx - 1) as f32;
+        let resolution = width / usize_to_f32(nx - 1);
 
         let mut min_elev = f32::MAX;
         let mut max_elev = f32::MIN;
@@ -255,8 +262,8 @@ impl TerrainData {
         let iy1 = iy0 + 1;
 
         // Fractional parts for interpolation
-        let fx = gx - ix0 as f32;
-        let fy = gy - iy0 as f32;
+        let fx = gx - usize_to_f32(ix0);
+        let fy = gy - usize_to_f32(iy0);
 
         // Get four corner elevations
         let e00 = self.elevations[iy0 * self.nx + ix0];
@@ -446,8 +453,8 @@ impl TerrainData {
 
         for iy in 0..cache_ny {
             for ix in 0..cache_nx {
-                let x = ix as f32 * cell_size + cell_size / 2.0;
-                let y = iy as f32 * cell_size + cell_size / 2.0;
+                let x = usize_to_f32(ix) * cell_size + cell_size / 2.0;
+                let y = usize_to_f32(iy) * cell_size + cell_size / 2.0;
 
                 slope.push(self.slope_at(x, y));
                 aspect.push(self.aspect_at(x, y));
@@ -599,7 +606,7 @@ mod tests {
         ];
 
         let terrain = TerrainData::from_heightmap(
-            100.0, 100.0, heightmap, 3, 3, 50.0, // Scale: 1.0 in heightmap = 50m elevation
+            100.0, 100.0, &heightmap, 3, 3, 50.0, // Scale: 1.0 in heightmap = 50m elevation
             10.0, // Base elevation
         );
 

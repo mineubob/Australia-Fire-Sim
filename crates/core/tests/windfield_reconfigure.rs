@@ -3,7 +3,7 @@ use fire_sim_core::{FireSimulation, TerrainData, Vec3, WindFieldConfig};
 #[test]
 fn test_reconfigure_wind_field() {
     // Create a small simulation and reconfigure the always-present wind field
-    let mut sim = FireSimulation::new(5.0, TerrainData::flat(100.0, 100.0, 5.0, 0.0));
+    let mut sim = FireSimulation::new(5.0, &TerrainData::flat(100.0, 100.0, 5.0, 0.0));
 
     // Make a small, low-resolution config and apply it
     let cfg = WindFieldConfig {

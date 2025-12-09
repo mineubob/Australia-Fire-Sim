@@ -228,6 +228,7 @@ impl ActionQueue {
 }
 
 #[cfg(test)]
+#[expect(clippy::cast_precision_loss)]
 mod tests {
     use super::*;
 

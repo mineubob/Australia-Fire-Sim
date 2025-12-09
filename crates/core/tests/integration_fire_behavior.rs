@@ -1,3 +1,4 @@
+#![expect(clippy::cast_precision_loss)]
 //! Comprehensive integration tests for fire behavior on single and multiple trees
 //!
 //! These tests validate that all advanced fire behavior models (crown fire, fuel moisture,
@@ -96,7 +97,7 @@ fn test_single_tree_complete_burnout() {
 
     // Create simulation with flat terrain
     let terrain = TerrainData::flat(50.0, 50.0, 1.0, 0.0);
-    let mut sim = FireSimulation::new(1.0, terrain);
+    let mut sim = FireSimulation::new(1.0, &terrain);
 
     // Set extreme fire weather conditions
     let weather = WeatherSystem::new(
@@ -240,7 +241,7 @@ fn test_multiple_trees_fire_spread() {
 
     // Create simulation
     let terrain = TerrainData::flat(100.0, 100.0, 2.0, 0.0);
-    let mut sim = FireSimulation::new(2.0, terrain);
+    let mut sim = FireSimulation::new(2.0, &terrain);
 
     // Set high fire danger conditions
     let weather = WeatherSystem::new(
@@ -403,7 +404,7 @@ fn test_ember_spotting_between_trees() {
     println!("\n=== TEST: Ember Spotting Between Trees ===");
 
     let terrain = TerrainData::flat(150.0, 150.0, 3.0, 0.0);
-    let mut sim = FireSimulation::new(3.0, terrain);
+    let mut sim = FireSimulation::new(3.0, &terrain);
 
     // Extreme fire weather for maximum spotting
     let weather = WeatherSystem::new(
@@ -561,7 +562,7 @@ fn test_weather_conditions_spread_rate() {
 
         // Create simulation
         let terrain = TerrainData::flat(100.0, 100.0, 3.0, 0.0);
-        let mut sim = FireSimulation::new(5.0, terrain);
+        let mut sim = FireSimulation::new(5.0, &terrain);
 
         // Create simple grid of fuel elements (5x5 = 25 elements, 2m spacing for continuous fuel)
         // Real grass fires require continuous fuel; 2m spacing represents dense grass
