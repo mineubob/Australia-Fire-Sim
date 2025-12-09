@@ -52,7 +52,7 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
     // Crown/foliage (crown base to top)
     let crown_levels = 4;
     for i in 0..crown_levels {
-        #[allow(clippy::cast_precision_loss)] // Deliberate: converting layer count to height
+        #[expect(clippy::cast_precision_loss, reason = "Converting small layer count (0-4) to height - precision loss acceptable for tree structure")]
         let height = crown_base + (tree_height - crown_base) / (crown_levels as f32) * (i as f32);
         // Create multiple crown elements in a circle at each level
         let radius = 2.0 + ((i as f32) * 0.5);
@@ -664,9 +664,9 @@ fn test_weather_conditions_spread_rate() {
     // REALISTIC EXPECTATION: Early transient phase (t<15s) can have complex dynamics
     // due to turbulent wind effects, heat distribution patterns, and fuel moisture.
     // The key validation is OVERALL rapid spread, not exact element count at one timestep.
-    #[allow(clippy::cast_precision_loss)] // Deliberate: comparing test counts as ratio for validation
+    #[expect(clippy::cast_precision_loss, reason = "Converting small element counts to f64 for ratio calculation - counts are < 100")]
     let catastrophic_multiplier = f64::from(catastrophic_t11) / f64::from(severe_t11.max(1));
-    #[allow(clippy::cast_possible_truncation)] // Deliberate: f64 ratio cast to f32 for display
+    #[expect(clippy::cast_possible_truncation, reason = "f64 ratio always in valid f32 range for display - multipliers are small values")]
     println!("✓ Catastrophic spread multiplier vs Severe: {:.2}x at t=11s", catastrophic_multiplier as f32);
 
     // Validate that catastrophic conditions show rapid spread

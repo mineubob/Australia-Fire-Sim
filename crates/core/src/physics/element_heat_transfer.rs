@@ -52,7 +52,7 @@ pub(crate) fn calculate_radiation_flux(
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
 
     // cast back to f32 for the rest of this API boundary
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(clippy::cast_precision_loss, reason = "f64 T^4 calculation result fits in f32 range for physical temperatures - max ~1e15 for 1500K")]
     let radiant_power = radiant_power_f64 as f32;
 
     // Only transfer heat if source is hotter
@@ -275,7 +275,7 @@ pub(crate) fn calculate_total_heat_transfer(
 /// Eliminates 500,000+ temporary structure allocations per frame at 12.5k burning elements
 /// Inline attribute ensures this hot function is optimized (called millions of times per frame)
 #[inline(always)]
-#[allow(clippy::too_many_arguments)] // Performance-critical: avoids 500k+ allocations/frame
+#[expect(clippy::too_many_arguments, reason = "Performance-critical hot path - struct allocation would add 500k+ allocations/frame overhead")]
 pub(crate) fn calculate_heat_transfer_raw(
     source_pos: Vec3,
     source_temp: f32,
@@ -319,7 +319,7 @@ pub(crate) fn calculate_heat_transfer_raw(
     let radiant_power_f64 =
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
 
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(clippy::cast_precision_loss, reason = "f64 T^4 calculation result fits in f32 range for physical temperatures - max ~1e15 for 1500K")]
     let radiant_power = radiant_power_f64 as f32;
 
     if radiant_power <= 0.0 {
