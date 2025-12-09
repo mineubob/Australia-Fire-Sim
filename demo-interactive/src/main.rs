@@ -20,14 +20,27 @@
 //! - `embers` - List all active embers
 //! - `nearby <id>` - Show elements near the specified element
 //! - `ignite <id>` - Manually ignite an element
+//! - `ignite_position <x> <y> [radius] [amount]` - Ignite elements around position in XY circle
+//!   - radius: optional, meters (default 1.0)
+//!   - amount: optional, number of elements to ignite (from ground-up). Use -1 for all (default -1)
+//!   - filters: optional tokens to further limit selection: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>
+//! - `heat <id> <temperature>` - Apply heat to an element (target temp in °C)
+//! - `heat_position <x> <y> <temperature> [radius] [amount]` - Apply heat to elements around position
+//!   - temperature: target temperature in Celsius
+//!   - radius: optional, meters (default 1.0)
+//!   - amount: optional, number of elements to heat (from ground-up). Use -1 for all (default -1)
+//!   - filters: optional tokens to further limit selection: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>
 //! - `preset <name>` - Switch weather preset (perth, catastrophic, etc.)
+//! - Advanced 3D wind field (mass-consistent model) — always enabled
 //! - `reset` - Reset simulation with new terrain dimensions
 //! - `heatmap [size]` - Generate a heatmap of the simulation
 //! - `help` - Show available commands
 //! - `quit` - Exit the simulation
 
 use fire_sim_core::{
-    ClimatePattern, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherPreset, WeatherSystem,
+    core_types::{Celsius, Degrees, Kilograms, Meters},
+    ClimatePattern, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherPreset,
+    WeatherSystem,
 };
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -66,7 +79,7 @@ fn main() {
     let mut rl = match DefaultEditor::new() {
         Ok(rl) => rl,
         Err(e) => {
-            eprintln!("Failed to create readline: {}", e);
+            eprintln!("Failed to create readline: {e}");
             return;
         }
     };
@@ -114,6 +127,190 @@ fn main() {
                             println!("Usage: ignite <id>");
                         }
                     }
+                    "heat" | "h" => {
+                        if let (Some(id), Some(temperature)) = (
+                            parts.get(1).and_then(|s| s.parse().ok()),
+                            parts.get(2).and_then(|s| s.parse().ok()),
+                        ) {
+                            heat_element(&mut sim, id, temperature);
+                        } else {
+                            println!("Usage: heat <id> <temperature>");
+                        }
+                    }
+                    "ignite_position" | "ip" => {
+                        let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
+                            println!("Usage: ignite_position <x> <y> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
+                            println!(
+                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
+                            );
+                            continue;
+                        };
+
+                        let Some(y) = parts.get(2).and_then(|s| s.parse::<i32>().ok()) else {
+                            println!("Usage: ignite_position <x> <y> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
+                            println!(
+                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
+                            );
+                            continue;
+                        };
+
+                        // Parse optional radius and amount parameters
+                        // Usage: ignite_position <x> <y> [radius] [amount]
+                        // amount: number of elements to ignite (from ground up). -1 = all
+                        let radius = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+                        let amount = parts
+                            .get(4)
+                            .and_then(|s| s.parse::<i32>().ok())
+                            .unwrap_or(-1);
+
+                        // Parse optional filters after amount
+                        let (fuel_filter, part_filter, min_z, max_z) = parse_filters(&parts, 5);
+
+                        let center = Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0);
+
+                        // Get filtered elements with ignition temperatures
+                        let filtered = filter_elements_in_circle(
+                            &sim,
+                            center,
+                            radius,
+                            fuel_filter.as_deref(),
+                            part_filter.as_deref(),
+                            min_z,
+                            max_z,
+                        );
+
+                        let mut id_dist_ign: Vec<(usize, f32, Celsius, f32)> = filtered
+                            .into_iter()
+                            .filter_map(|(id, dist, z)| {
+                                sim.get_element(id)
+                                    .map(|e| (id, dist, e.fuel().ignition_temperature, z))
+                            })
+                            .collect();
+
+                        if id_dist_ign.is_empty() {
+                            println!("No elements found within radius {radius:.1} at ({x}, {y})");
+                        } else {
+                            // Sort by Z ascending (ground-up), then horizontal distance ascending
+                            id_dist_ign.sort_by(|a, b| {
+                                let z_cmp =
+                                    a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal);
+                                if z_cmp == std::cmp::Ordering::Equal {
+                                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+                                } else {
+                                    z_cmp
+                                }
+                            });
+
+                            let total = id_dist_ign.len();
+                            let to_ignite: Vec<(usize, f32, Celsius, f32)> = if amount < 0 {
+                                id_dist_ign.clone()
+                            } else {
+                                let amt = amount as usize;
+                                id_dist_ign.into_iter().take(amt).collect()
+                            };
+
+                            println!(
+                                "Found {} element(s) within radius {:.1} — igniting {} (ground-up → closest):",
+                                total,
+                                radius,
+                                if amount < 0 { total } else { to_ignite.len() }
+                            );
+
+                            for (id, dist, ign_temp, z) in &to_ignite {
+                                println!(
+                                    "  ID {id}: {dist:.2}m, z={z:.2} — ignition temp {ign_temp:.1}°C"
+                                );
+                                // Start at 600°C - realistic for piloted ignition
+                                let initial_temp = Celsius::new(600.0).max(*ign_temp);
+                                sim.ignite_element(*id, initial_temp);
+                            }
+                        }
+                    }
+                    "heat_position" | "hp" => {
+                        let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
+                            println!("Usage: heat_position <x> <y> <temperature> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
+                            println!(
+                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
+                            );
+                            continue;
+                        };
+
+                        let Some(y) = parts.get(2).and_then(|s| s.parse::<i32>().ok()) else {
+                            println!("Usage: heat_position <x> <y> <temperature> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
+                            println!(
+                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
+                            );
+                            continue;
+                        };
+
+                        let Some(temperature) = parts.get(3).and_then(|s| s.parse::<f32>().ok())
+                        else {
+                            println!("Usage: heat_position <x> <y> <temperature> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
+                            println!(
+                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
+                            );
+                            continue;
+                        };
+
+                        // Parse optional radius and amount parameters
+                        let radius = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+                        let amount = parts
+                            .get(5)
+                            .and_then(|s| s.parse::<i32>().ok())
+                            .unwrap_or(-1);
+
+                        // Parse optional filters after amount
+                        let (fuel_filter, part_filter, min_z, max_z) = parse_filters(&parts, 6);
+
+                        let center = Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0);
+
+                        // Get filtered elements
+                        let mut id_dist_z = filter_elements_in_circle(
+                            &sim,
+                            center,
+                            radius,
+                            fuel_filter.as_deref(),
+                            part_filter.as_deref(),
+                            min_z,
+                            max_z,
+                        );
+
+                        if id_dist_z.is_empty() {
+                            println!("No elements found within radius {radius:.1} at ({x}, {y})");
+                        } else {
+                            // Sort by Z ascending (ground-up), then horizontal distance ascending
+                            id_dist_z.sort_by(|a, b| {
+                                let z_cmp =
+                                    a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal);
+                                if z_cmp == std::cmp::Ordering::Equal {
+                                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+                                } else {
+                                    z_cmp
+                                }
+                            });
+
+                            let total = id_dist_z.len();
+                            let to_heat: Vec<(usize, f32, f32)> = if amount < 0 {
+                                id_dist_z.clone()
+                            } else {
+                                let amt = amount as usize;
+                                id_dist_z.into_iter().take(amt).collect()
+                            };
+
+                            println!(
+                                "Found {} element(s) within radius {:.1} — heating {} to {:.1}°C (ground-up → closest):",
+                                total,
+                                radius,
+                                if amount < 0 { total } else { to_heat.len() },
+                                temperature
+                            );
+
+                            for (id, dist, z) in &to_heat {
+                                println!("  ID {id}: {dist:.2}m, z={z:.2}");
+                                heat_element_to_temp(&mut sim, *id, temperature);
+                            }
+                        }
+                    }
                     "preset" | "p" => {
                         if let Some(name) = parts.get(1) {
                             set_preset(&mut sim, name);
@@ -121,6 +318,7 @@ fn main() {
                             println!("Usage: preset <perth|catastrophic|goldfields|wheatbelt>");
                         }
                     }
+                    // Wind field is always enabled; runtime toggle is disabled
                     "reset" | "r" => {
                         // Parse optional dimensions from command or use current
                         let new_width = parts
@@ -147,7 +345,7 @@ fn main() {
                     "heatmap" | "hm" => {
                         let grid_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
 
-                        show_heatmap(&sim, current_width, current_height, grid_size)
+                        show_heatmap(&sim, current_width, current_height, grid_size);
                     }
                     "quit" | "q" | "exit" => {
                         println!("Goodbye!");
@@ -168,26 +366,48 @@ fn main() {
                 break;
             }
             Err(err) => {
-                eprintln!("Error: {:?}", err);
+                eprintln!("Error: {err:?}");
                 break;
             }
         }
     }
 }
 
+// Small helpers for deliberate integer->float casts used in the demo.
+// These centralize the `as` conversions and document / expect the precision loss.
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn i32_to_f32(v: i32) -> f32 {
+    v as f32
+}
+
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
+}
+
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn u32_to_f32(v: u32) -> f32 {
+    v as f32
+}
+
+// Advanced wind field is always enabled — no startup prompt needed.
+
 /// Prompt user for terrain dimensions at startup
 fn prompt_terrain_dimensions() -> (f32, f32) {
     println!("Enter terrain dimensions (or press Enter for defaults):");
 
     // Width
-    print!("  Width in meters [{}]: ", DEFAULT_WIDTH);
+    print!("  Width in meters [{DEFAULT_WIDTH}]: ");
     io::stdout().flush().unwrap();
     let mut width_str = String::new();
     io::stdin().read_line(&mut width_str).unwrap();
     let width: f32 = width_str.trim().parse().unwrap_or(DEFAULT_WIDTH);
 
     // Height
-    print!("  Height in meters [{}]: ", DEFAULT_HEIGHT);
+    print!("  Height in meters [{DEFAULT_HEIGHT}]: ");
     io::stdout().flush().unwrap();
     let mut height_str = String::new();
     io::stdin().read_line(&mut height_str).unwrap();
@@ -201,12 +421,133 @@ fn prompt_terrain_dimensions() -> (f32, f32) {
     (width, height)
 }
 
+/// Parse filter tokens from command arguments
+fn parse_filters(
+    parts: &[&str],
+    start_idx: usize,
+) -> (Option<String>, Option<String>, Option<f32>, Option<f32>) {
+    let mut fuel_filter: Option<String> = None;
+    let mut part_filter: Option<String> = None;
+    let mut min_z: Option<f32> = None;
+    let mut max_z: Option<f32> = None;
+
+    for token in parts.iter().skip(start_idx) {
+        if let Some((key, val)) = token.split_once('=') {
+            match key.to_lowercase().as_str() {
+                "fuel" => fuel_filter = Some(val.to_lowercase()),
+                "part" => part_filter = Some(val.to_lowercase()),
+                "minz" => min_z = val.parse::<f32>().ok(),
+                "maxz" => max_z = val.parse::<f32>().ok(),
+                _ => {
+                    println!("Unknown filter '{key}', supported: fuel=, part=, minz=, maxz=");
+                }
+            }
+        }
+    }
+
+    (fuel_filter, part_filter, min_z, max_z)
+}
+
+/// Get part name as a string for filtering
+fn get_part_name(part: &fire_sim_core::core_types::element::FuelPart) -> String {
+    match part {
+        fire_sim_core::core_types::element::FuelPart::Root => "root".to_string(),
+        fire_sim_core::core_types::element::FuelPart::TrunkLower => "trunklower".to_string(),
+        fire_sim_core::core_types::element::FuelPart::TrunkMiddle => "trunkmiddle".to_string(),
+        fire_sim_core::core_types::element::FuelPart::TrunkUpper => "trunkupper".to_string(),
+        fire_sim_core::core_types::element::FuelPart::BarkLayer(h) => {
+            format!("barklayer({h:.0})")
+        }
+        fire_sim_core::core_types::element::FuelPart::Branch { height, angle: _ } => {
+            format!("branch({height:.0})")
+        }
+        fire_sim_core::core_types::element::FuelPart::Crown => "crown".to_string(),
+        fire_sim_core::core_types::element::FuelPart::GroundLitter => "groundlitter".to_string(),
+        fire_sim_core::core_types::element::FuelPart::GroundVegetation => {
+            "groundvegetation".to_string()
+        }
+        fire_sim_core::core_types::element::FuelPart::BuildingWall { floor } => {
+            format!("buildingwall({floor})")
+        }
+        fire_sim_core::core_types::element::FuelPart::BuildingRoof => "buildingroof".to_string(),
+        fire_sim_core::core_types::element::FuelPart::BuildingInterior => {
+            "buildinginterior".to_string()
+        }
+        fire_sim_core::core_types::element::FuelPart::Vehicle => "vehicle".to_string(),
+        fire_sim_core::core_types::element::FuelPart::Surface => "surface".to_string(),
+    }
+}
+
+/// Filter elements within a 2D circle radius, applying optional fuel/part/z filters
+fn filter_elements_in_circle(
+    sim: &FireSimulation,
+    center: Vec3,
+    radius: f32,
+    fuel_filter: Option<&str>,
+    part_filter: Option<&str>,
+    min_z: Option<f32>,
+    max_z: Option<f32>,
+) -> Vec<(usize, f32, f32)> {
+    let candidates = sim.get_elements_in_radius(center, radius);
+
+    candidates
+        .into_iter()
+        .filter_map(|e| {
+            let dx = e.position().x - center.x;
+            let dy = e.position().y - center.y;
+            let dist2d = (dx * dx + dy * dy).sqrt();
+
+            if dist2d <= radius {
+                // Apply fuel filter
+                if let Some(f) = fuel_filter {
+                    let fuel_name = e.fuel().name.to_lowercase();
+                    if !fuel_name.contains(f) {
+                        return None;
+                    }
+                }
+
+                // Apply part filter
+                if let Some(p) = part_filter {
+                    let part_name = get_part_name(&e.part_type());
+                    if !part_name.to_lowercase().contains(p) {
+                        return None;
+                    }
+                }
+
+                // Apply min z filter
+                if let Some(minz) = min_z {
+                    if e.position().z < minz {
+                        return None;
+                    }
+                }
+
+                // Apply max z filter
+                if let Some(maxz) = max_z {
+                    if e.position().z > maxz {
+                        return None;
+                    }
+                }
+
+                Some((e.id(), dist2d, e.position().z))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
-    let mut sim = FireSimulation::new(5.0, TerrainData::flat(width, height, 5.0, 0.0));
+    let mut sim = FireSimulation::new(5.0, &TerrainData::flat(width, height, 5.0, 0.0));
+
+    // Wind field is always initialized by the simulation itself; no reconfiguration call required.
 
     // Create a grid of fuel elements representing different vegetation
     // Ground layer: grass and shrubs
-    let step = 5;
+    //
+    // SPACING: 1m simulates near-continuous fuel beds like real grasslands.
+    // Fire spreads through direct flame contact and short-range radiation.
+    // Smaller spacing = faster, more realistic spread patterns.
+    let step = 1;
     for x in (0..(width as i32)).step_by(step) {
         for y in (0..(height as i32)).step_by(step) {
             let fuel = if (x + y) % 20 == 0 {
@@ -216,16 +557,15 @@ fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
             };
 
             let id = sim.add_fuel_element(
-                Vec3::new(x as f32, y as f32, 0.0),
+                Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0),
                 fuel,
-                3.0,
+                Kilograms::new(3.0),
                 FuelPart::GroundVegetation,
-                None,
             );
 
-            // Add some trees
+            // Add some trees (every 15m)
             if x % 15 == 0 && y % 15 == 0 {
-                create_tree(&mut sim, x as f32, y as f32, id);
+                create_tree(&mut sim, i32_to_f32(x), i32_to_f32(y), id);
             }
         }
     }
@@ -242,51 +582,47 @@ fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
     sim
 }
 
-fn create_tree(sim: &mut FireSimulation, x: f32, y: f32, _ground_id: u32) {
+fn create_tree(sim: &mut FireSimulation, x: f32, y: f32, _ground_id: usize) {
     // Trunk
-    let trunk_id = sim.add_fuel_element(
+    sim.add_fuel_element(
         Vec3::new(x, y, 2.0),
         Fuel::eucalyptus_stringybark(),
-        10.0,
+        Kilograms::new(10.0),
         FuelPart::TrunkLower,
-        None,
     );
 
     // Lower branches
     sim.add_fuel_element(
         Vec3::new(x - 1.0, y, 4.0),
         Fuel::eucalyptus_stringybark(),
-        3.0,
+        Kilograms::new(3.0),
         FuelPart::Branch {
-            height: 4.0,
-            angle: 0.0,
+            height: Meters::new(4.0),
+            angle: Degrees::new(0.0),
         },
-        Some(trunk_id),
     );
     sim.add_fuel_element(
         Vec3::new(x + 1.0, y, 4.0),
         Fuel::eucalyptus_stringybark(),
-        3.0,
+        Kilograms::new(3.0),
         FuelPart::Branch {
-            height: 4.0,
-            angle: 180.0,
+            height: Meters::new(4.0),
+            angle: Degrees::new(180.0),
         },
-        Some(trunk_id),
     );
 
     // Crown
     sim.add_fuel_element(
         Vec3::new(x, y, 8.0),
         Fuel::eucalyptus_stringybark(),
-        5.0,
+        Kilograms::new(5.0),
         FuelPart::Crown,
-        Some(trunk_id),
     );
 }
 
 fn step_simulation(sim: &mut FireSimulation, count: u32) {
     let dt = 1.0; // 1 second timestep
-    println!("Stepping {} timestep(s)...", count);
+    println!("Stepping {count} timestep(s)...");
 
     for i in 0..count {
         let burning_before = sim.get_burning_elements().len();
@@ -336,12 +672,12 @@ fn show_status(sim: &FireSimulation) {
             .map(|e| e.temperature)
             .fold(f32::MIN, f32::max);
         let avg_temp: f32 =
-            burning.iter().map(|e| e.temperature).sum::<f32>() / burning.len() as f32;
+            burning.iter().map(|e| e.temperature).sum::<f32>() / usize_to_f32(burning.len());
 
         println!("\nBurning element temperatures:");
-        println!("  Min: {:.1}°C", min_temp);
-        println!("  Max: {:.1}°C", max_temp);
-        println!("  Avg: {:.1}°C", avg_temp);
+        println!("  Min: {min_temp:.1}°C");
+        println!("  Max: {max_temp:.1}°C");
+        println!("  Avg: {avg_temp:.1}°C");
     }
 
     println!("══════════════════════════════════════════════════\n");
@@ -366,10 +702,10 @@ fn show_weather(sim: &FireSimulation) {
     println!("══════════════════════════════════════════════════\n");
 }
 
-fn show_element(sim: &FireSimulation, id: u32) {
+fn show_element(sim: &FireSimulation, id: usize) {
     if let Some(e) = sim.get_element(id) {
         let stats = e.get_stats();
-        println!("\n═══════════════ ELEMENT {} ═══════════════", id);
+        println!("\n═══════════════ ELEMENT {id} ═══════════════");
         println!(
             "Position:      ({:.1}, {:.1}, {:.1})",
             stats.position.x, stats.position.y, stats.position.z
@@ -385,7 +721,7 @@ fn show_element(sim: &FireSimulation, id: u32) {
         println!("Fuel Mass:     {:.2} kg", stats.fuel_remaining);
         println!("══════════════════════════════════════════════════\n");
     } else {
-        println!("Element {} not found", id);
+        println!("Element {id} not found");
     }
 }
 
@@ -429,17 +765,17 @@ fn show_embers(sim: &FireSimulation) {
     if ember_count == 0 {
         println!("No active embers.");
     } else {
-        println!("Active embers: {}", ember_count);
+        println!("Active embers: {ember_count}");
     }
     println!("══════════════════════════════════════════════════\n");
 }
 
-fn show_nearby(sim: &FireSimulation, id: u32) {
+fn show_nearby(sim: &FireSimulation, id: usize) {
     if let Some(e) = sim.get_element(id) {
         let source_pos = *e.position();
         let nearby = sim.get_elements_in_radius(source_pos, 15.0);
 
-        println!("\n═══════════════ ELEMENTS NEAR {} ═══════════════", id);
+        println!("\n═══════════════ ELEMENTS NEAR {id} ═══════════════");
         println!(
             "{:<6} {:<20} {:<10} {:<10} {:<8}",
             "ID", "Position", "Temp", "Dist", "Ignited"
@@ -466,20 +802,62 @@ fn show_nearby(sim: &FireSimulation, id: u32) {
         }
         println!("══════════════════════════════════════════════════\n");
     } else {
-        println!("Element {} not found", id);
+        println!("Element {id} not found");
     }
 }
 
-fn ignite_element(sim: &mut FireSimulation, id: u32) {
+fn ignite_element(sim: &mut FireSimulation, id: usize) {
     if let Some(e) = sim.get_element(id) {
         let stats = e.get_stats();
-        sim.ignite_element(id, stats.ignition_temperature + 100.0);
+        // Start at 600°C - realistic for piloted ignition (matches test values)
+        // This represents the rapid flashover when a fuel element catches fire
+        // Real fires don't slowly heat from ignition temp - they flash to high temperatures
+        let initial_temp = Celsius::new(600.0).max(Celsius::from(stats.ignition_temperature));
+        sim.ignite_element(id, initial_temp);
         println!(
             "Ignited element {} at ({:.1}, {:.1}, {:.1})",
             id, stats.position.x, stats.position.y, stats.position.z
         );
     } else {
-        println!("Element {} not found", id);
+        println!("Element {id} not found");
+    }
+}
+
+fn heat_element(sim: &mut FireSimulation, id: usize, target_temp: f32) {
+    if let Some(e) = sim.get_element(id) {
+        let stats = e.get_stats();
+        heat_element_to_temp(sim, id, target_temp);
+        println!(
+            "Heating element {} to {:.1}°C (was {:.1}°C) at ({:.1}, {:.1}, {:.1})",
+            id,
+            target_temp,
+            stats.temperature,
+            stats.position.x,
+            stats.position.y,
+            stats.position.z
+        );
+    } else {
+        println!("Element {id} not found");
+    }
+}
+
+/// Helper function to heat an element to a target temperature
+fn heat_element_to_temp(sim: &mut FireSimulation, id: usize, target_temp: f32) {
+    if let Some(e) = sim.get_element(id) {
+        let stats = e.get_stats();
+        let current_temp = stats.temperature;
+        let fuel_mass = stats.fuel_remaining;
+        let specific_heat = e.fuel().specific_heat;
+
+        if target_temp > current_temp {
+            // Calculate heat needed: Q = m × c × ΔT
+            let temp_rise = target_temp - current_temp;
+            let specific_heat_val: f32 = specific_heat.into();
+            let heat_kj = fuel_mass * specific_heat_val * temp_rise;
+
+            // Apply heat over 1 second timestep (no pilot flame - external heat source)
+            sim.apply_heat_to_element(id, heat_kj, 1.0, false);
+        }
     }
 }
 
@@ -518,15 +896,14 @@ fn set_preset(sim: &mut FireSimulation, name: &str) {
         }
         _ => {
             println!(
-                "Unknown preset: {}. Available: perth, catastrophic, goldfields, wheatbelt, hot",
-                name
+                "Unknown preset: {name}. Available: perth, catastrophic, goldfields, wheatbelt, hot"
             );
             return;
         }
     };
 
     sim.set_weather(weather);
-    println!("Weather preset changed to '{}'", name);
+    println!("Weather preset changed to '{name}'");
     show_weather(sim);
 }
 
@@ -535,13 +912,14 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
     println!("\n═══════════════ TEMPERATURE HEATMAP ═══════════════");
 
     // Create a grid covering the simulation area with appropriate cell size
-    let cell_width = terrain_width / grid_size as f32;
-    let cell_height = terrain_height / grid_size as f32;
+    let cell_width = terrain_width / usize_to_f32(grid_size);
+    let cell_height = terrain_height / usize_to_f32(grid_size);
 
     let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
     let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
+    let mut burning_grid: Vec<Vec<bool>> = vec![vec![false; grid_size]; grid_size];
 
-    // Accumulate temperatures
+    // Accumulate temperatures and track burning state
     for e in sim.get_all_elements() {
         let stats = e.get_stats();
         let x = (stats.position.x / cell_width).floor() as i32;
@@ -552,6 +930,9 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
             let iy = y as usize;
             grid[iy][ix] += stats.temperature;
             counts[iy][ix] += 1;
+            if stats.ignited {
+                burning_grid[iy][ix] = true;
+            }
         }
     }
 
@@ -559,47 +940,75 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
     for y in 0..grid_size {
         for x in 0..grid_size {
             if counts[y][x] > 0 {
-                grid[y][x] /= counts[y][x] as f32;
+                grid[y][x] /= u32_to_f32(counts[y][x]);
             }
         }
     }
 
-    // Find temperature range
+    // Find temperature range (excluding cells with no elements)
     let mut min_temp = f32::MAX;
     let mut max_temp = f32::MIN;
-    for row in &grid {
-        for &temp in row {
-            if temp > 0.0 {
+    for y in 0..grid_size {
+        for x in 0..grid_size {
+            if counts[y][x] > 0 {
+                let temp = grid[y][x];
                 min_temp = min_temp.min(temp);
                 max_temp = max_temp.max(temp);
             }
         }
     }
 
-    // Legend
-    println!("Legend: · = empty  ░ = cold  ▒ = warm  ▓ = hot  █ = burning");
-    println!("Temperature range: {:.0}°C - {:.0}°C\n", min_temp, max_temp);
+    // Handle edge case where no elements exist
+    if min_temp == f32::MAX {
+        min_temp = 0.0;
+        max_temp = 0.0;
+    }
+
+    // Minimum absolute temperatures for heat visualization
+    // These ensure we don't show "hot" indicators at ambient temperatures
+    const MIN_TEMP_COOL: f32 = 50.0; // Must be above 50°C to show as warming
+    const MIN_TEMP_WARM: f32 = 100.0; // Must be above 100°C to show as warm
+    const MIN_TEMP_HOT: f32 = 200.0; // Must be above 200°C to show as hot
+    const MIN_TEMP_VERY_HOT: f32 = 350.0; // Must be above 350°C to show as very hot
+
+    // Calculate dynamic thresholds based on actual temperature range
+    // but enforce minimum absolute temperatures
+    let temp_range = max_temp - min_temp;
+    let threshold_very_hot = (min_temp + temp_range * 0.75).max(MIN_TEMP_VERY_HOT);
+    let threshold_hot = (min_temp + temp_range * 0.50).max(MIN_TEMP_HOT);
+    let threshold_warm = (min_temp + temp_range * 0.25).max(MIN_TEMP_WARM);
+    let threshold_cool = MIN_TEMP_COOL; // Fixed minimum for any heating indication
+
+    // Legend with dynamic values
+    println!("Legend: · = empty/ambient  🔥 = burning (ignited)");
+    println!(
+        "        ░ >{threshold_cool:.0}°C  ▒ >{threshold_warm:.0}°C  ▓ >{threshold_hot:.0}°C  █ >{threshold_very_hot:.0}°C"
+    );
+    println!("Temperature range: {min_temp:.0}°C - {max_temp:.0}°C\n");
 
     // Print heatmap (top-down view, Y increases downward)
     for y in (0..grid_size).rev() {
-        print!("{:3} │ ", (y as f32 * cell_height) as i32);
+        print!("{:3} │ ", (usize_to_f32(y) * cell_height) as i32);
         for x in 0..grid_size {
             if counts[y][x] == 0 {
                 print!("· ");
+            } else if burning_grid[y][x] {
+                // Actual burning element - use fire emoji or asterisk
+                print!("🔥");
             } else {
                 let temp = grid[y][x];
-                let c = if temp > 400.0 {
-                    '█' // Burning
-                } else if temp > 200.0 {
-                    '▓' // Hot
-                } else if temp > 100.0 {
-                    '▒' // Warm
-                } else if temp > 50.0 {
-                    '░' // Cold/warming
+                let c = if temp >= threshold_very_hot {
+                    '█' // Very hot (>350°C or top 25%)
+                } else if temp >= threshold_hot {
+                    '▓' // Hot (>200°C or 50-75%)
+                } else if temp >= threshold_warm {
+                    '▒' // Warm (>100°C or 25-50%)
+                } else if temp >= threshold_cool {
+                    '░' // Warming (>50°C)
                 } else {
-                    '·' // Ambient
+                    '·' // At ambient
                 };
-                print!("{} ", c);
+                print!("{c} ");
             }
         }
         println!();
@@ -613,9 +1022,19 @@ fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, g
     println!();
     print!("      ");
     for x in (0..grid_size).step_by(5) {
-        print!("{:<10}", (x as f32 * cell_width) as i32);
+        print!("{:<10}", (usize_to_f32(x) * cell_width) as i32);
     }
     println!("\n");
+
+    // Summary stats
+    let burning_cells: usize = burning_grid.iter().flatten().filter(|&&b| b).count();
+    if burning_cells > 0 {
+        println!(
+            "Burning cells: {} / {}",
+            burning_cells,
+            grid_size * grid_size
+        );
+    }
 
     println!("══════════════════════════════════════════════════\n");
 }
@@ -630,10 +1049,20 @@ fn show_help() {
     println!("  embers, em           - List active embers");
     println!("  nearby <id>, n       - Show elements near <id>");
     println!("  ignite <id>, i       - Manually ignite element");
+    println!("  heat <id> <temp>, h  - Heat element to target temperature (in °C)");
+    println!("  ignite_position <x> <y> [radius] [amount] - Ignite elements in an XY circle around (x,y)");
+    println!("                         radius defaults to 1.0m; amount: number to ignite (from ground-up). -1 = all (default -1)");
+    println!("                         Optional filters: fuel=<name> (substring), part=<partname> (substring), minz=<f32>, maxz=<f32>");
+    println!("                         Example: ignite_position 10 20 5 -1 fuel=dry_grass part=groundvegetation minz=0 maxz=0.5");
+    println!("  heat_position <x> <y> <temp> [radius] [amount] - Heat elements to target temperature (in °C)");
+    println!("                         radius defaults to 1.0m; amount: number to heat (from ground-up). -1 = all (default -1)");
+    println!("                         Optional filters: fuel=<name> (substring), part=<partname> (substring), minz=<f32>, maxz=<f32>");
+    println!("                         Example: heat_position 10 20 300 5 -1 fuel=dry_grass part=groundvegetation minz=0 maxz=0.5");
     println!("  heatmap, hm [size]   - Show temperature heatmap");
     println!("  preset <name>, p     - Change weather preset");
     println!("                         (perth, catastrophic, goldfields, wheatbelt, hot)");
     println!("  reset [w] [h], r     - Reset simulation (optional: new width/height)");
+    // Wind field is always enabled — runtime toggle removed
     println!("  help, ?              - Show this help");
     println!("  quit, q              - Exit");
     println!("══════════════════════════════════════════════════\n");

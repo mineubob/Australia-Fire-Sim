@@ -2,6 +2,9 @@
 
 A scientifically accurate wildfire simulation system built in Rust, based on Australian bushfire research.
 
+Note: the simulation now always uses the advanced 3D mass-consistent wind field (Sherman 1978) — there is no runtime toggle to disable it.
+The core API exposes `FireSimulation::reconfigure_wind_field(WindFieldConfig)` if you need to change solver configuration at runtime.
+
 ## Overview
 
 This is NOT a game - it's a physics-based simulation implementing real-world fire behavior including:
@@ -59,6 +62,7 @@ Heat MUST go to moisture evaporation FIRST (2260 kJ/kg latent heat) before tempe
 ```
 Australia-Fire-Sim/
 ├── Cargo.toml                  # Workspace configuration
+├── FireSimFFI.h                # Auto-generated C header (for game engines)
 ├── crates/
 │   ├── core/                   # Fire simulation core
 │   │   ├── src/
@@ -68,20 +72,17 @@ Australia-Fire-Sim/
 │   │   │   ├── physics/       # Heat transfer, combustion
 │   │   │   └── simulation/    # Main simulation loop
 │   │   └── Cargo.toml
-│   └── ffi/                    # FFI for Unreal Engine
+│   └── ffi/                    # C FFI for game engines
 │       ├── src/
 │       │   └── lib.rs         # C-compatible bindings
+│       ├── build.rs           # Auto-generates FireSimFFI.h
 │       ├── cbindgen.toml      # Header generation config
+│       ├── README.md          # FFI documentation
 │       └── Cargo.toml
-├── demo-headless/              # Command-line demo
-│   ├── src/
-│   │   └── main.rs            # Text-based demo with stats
-│   └── Cargo.toml
-└── demo-gui/                   # Bevy-based GUI demo (NEW!)
-    ├── src/
-    │   └── main.rs            # 3D visualization with Bevy
-    ├── README.md              # GUI demo documentation
-    └── Cargo.toml
+└── docs/                       # Integration guides
+    └── integration/
+        ├── unreal-engine-integration.md  # Unreal Engine 5 guide
+        └── godot-integration.md          # Godot 4.x guide
 ```
 
 ## Building
@@ -89,6 +90,15 @@ Australia-Fire-Sim/
 ```bash
 # Build all crates
 cargo build --release
+
+# Build FFI library for game engines (auto-generates FireSimFFI.h)
+cargo build --release -p fire-sim-ffi
+
+# Library outputs:
+# - Linux: target/release/libfire_sim_ffi.so
+# - Windows: target/release/fire_sim_ffi.dll  
+# - macOS: target/release/libfire_sim_ffi.dylib
+# - Header: FireSimFFI.h (repo root, auto-generated)
 
 # Run tests
 cargo test --release
@@ -99,6 +109,55 @@ cargo run --release --bin demo-headless
 # Run GUI demo (requires display system)
 cargo run --release --bin demo-gui
 ```
+
+## Game Engine Integration
+
+The simulation can be integrated into **Unreal Engine 5** and **Godot 4.x** via the C FFI layer. The C header (`FireSimFFI.h`) is **automatically generated** during builds.
+
+### Quick Start for Game Engines
+
+1. Build the FFI library: `cargo build --release -p fire-sim-ffi`
+2. Copy library files to your game project
+3. Use the auto-generated `FireSimFFI.h` header
+4. Follow the integration guide for your engine:
+   - **Unreal Engine 5**: [docs/integration/unreal-engine-integration.md](docs/integration/unreal-engine-integration.md)
+   - **Godot 4.x**: [docs/integration/godot-integration.md](docs/integration/godot-integration.md)
+
+### FFI Example (C/C++)
+
+```cpp
+#include "FireSimFFI.h"
+
+// Create simulation (1000x1000m, 2m grid cells, flat terrain)
+uintptr_t sim_id = 0;
+fire_sim_create(1000.0f, 1000.0f, 2.0f, 0, &sim_id);
+
+// Add fuel element (dry grass at position 500, 500, 0)
+uint32_t elem_id = 0;
+fire_sim_add_fuel(sim_id, 500.0f, 500.0f, 0.0f, 2, 10, 0.5f, -1, &elem_id);
+
+// Ignite element
+fire_sim_ignite(sim_id, elem_id, 600.0f);
+
+// Set weather conditions
+fire_sim_set_weather_from_live(sim_id, 35.0f, 20.0f, 40.0f, 45.0f, 1013.25f, 7.0f, 0.0f);
+
+// Update simulation (timestep in seconds)
+fire_sim_update(sim_id, 0.016f); // 60 FPS
+
+// Query burning elements
+ElementFireState states[100];
+uint32_t count = 0;
+fire_sim_get_burning_elements(sim_id, states, 100, &count);
+
+// Apply water suppression
+fire_sim_apply_water_direct(sim_id, 500.0f, 500.0f, 0.0f, 1000.0f);
+
+// Cleanup
+fire_sim_destroy(sim_id);
+```
+
+See `crates/ffi/README.md` for complete FFI documentation.
 
 ## Demos
 

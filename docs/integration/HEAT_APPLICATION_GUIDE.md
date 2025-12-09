@@ -330,7 +330,7 @@ use fire_sim_core::grid::TerrainData;
 fn simulate_backburn() {
     // Create simulation
     let terrain = TerrainData::flat(200.0, 200.0, 5.0, 0.0);
-    let mut sim = FireSimulation::new(5.0, terrain);
+    let mut sim = FireSimulation::new(5.0, &terrain);
     
     // Create fuel line to protect (e.g., near structure)
     let mut fuel_line = Vec::new();

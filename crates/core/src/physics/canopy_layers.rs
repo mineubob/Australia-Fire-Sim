@@ -1,67 +1,59 @@
-//! Multi-Layer Canopy Structure Model
+//! Multi-layer Canopy Fire Transition Model
 //!
-//! Implements vertical stratification of forest canopy into discrete layers.
-//! Critical for modeling fire propagation through tall eucalyptus forests where
-//! stringybark creates ladder fuels between layers.
+//! Models vertical fire spread through forest canopy layers based on fuel
+//! structure and fire intensity. Critical for simulating crown fire transitions
+//! in Australian eucalypt forests.
 //!
 //! # Scientific References
 //!
-//! - Scott, J.H., Reinhardt, E.D. (2001). "Assessing crown fire potential by linking models
-//!   of surface and crown fire behavior" USDA Forest Service Research Paper RMRS-RP-29
-//! - Keane, R.E., Burgan, R., van Wagtendonk, J. (2001). "Mapping wildland fuels for fire
-//!   management across multiple scales: Integrating remote sensing, GIS, and biophysical modeling"
-//!   International Journal of Wildland Fire, 10(3-4), 301-319
-//!
-//! # Model Overview
-//!
-//! Divides canopy into three layers:
-//! 1. **Understory** (0-2m): Shrubs, grass, ground fuels
-//! 2. **Midstory** (2-10m): Small trees, ladder fuels, stringybark
-//! 3. **Overstory** (10m+): Crown canopy, eucalyptus canopy
-//!
-//! Fire transitions between layers based on intensity and fuel continuity.
+//! - Van Wagner, C.E. (1977). "Conditions for the start and spread of crown fire"
+//!   Canadian Journal of Forest Research, 7(1), 23-34
+//! - Cruz, M.G., et al. (2006). "Development and testing of models for predicting
+//!   crown fire rate of spread in conifer forest stands"
+//!   Canadian Journal of Forest Research, 36(6), 1614-1630
+//! - Cheney, N.P., et al. (2012). "Predicting fire behaviour in dry eucalypt forest
+//!   in southern Australia"
+//!   Forest Ecology and Management, 280, 120-131
 
-use serde::{Deserialize, Serialize};
-
-/// Canopy layer definition
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// Vertical canopy layers for fire transition modeling
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanopyLayer {
-    /// Ground and surface fuels (0-2m)
+    /// Ground level: grass, litter (0-2m)
     Understory,
-    /// Intermediate layer with ladder fuels (2-10m)
+    /// Mid-level: shrubs, bark strips, ladder fuels (2-8m)
     Midstory,
-    /// Upper canopy layer (10m+)
+    /// Upper: crown, foliage (8m+)
     Overstory,
 }
 
 impl CanopyLayer {
-    /// Get height range for this layer
+    /// Get height range for this layer in meters
+    #[must_use]
     pub fn height_range(&self) -> (f32, f32) {
         match self {
             CanopyLayer::Understory => (0.0, 2.0),
-            CanopyLayer::Midstory => (2.0, 10.0),
-            CanopyLayer::Overstory => (10.0, 50.0),
+            CanopyLayer::Midstory => (2.0, 8.0),
+            CanopyLayer::Overstory => (8.0, 50.0),
         }
     }
 
-    /// Check if a height is in this layer
+    /// Check if a height falls within this layer
+    #[must_use]
     pub fn contains_height(&self, height: f32) -> bool {
         let (min, max) = self.height_range();
         height >= min && height < max
     }
 }
 
-/// Multi-layer canopy properties for a fuel location
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Canopy structure properties for a fuel type
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CanopyStructure {
-    /// Fuel load in understory (kg/m²)
+    /// Fuel load by layer (kg/m²)
     pub understory_load: f32,
-    /// Fuel load in midstory (kg/m²)
     pub midstory_load: f32,
-    /// Fuel load in overstory (kg/m²)
     pub overstory_load: f32,
 
-    /// Bulk density in each layer (kg/m³)
+    /// Bulk density by layer (kg/m³)
     pub understory_density: f32,
     pub midstory_density: f32,
     pub overstory_density: f32,
@@ -72,16 +64,42 @@ pub struct CanopyStructure {
     pub overstory_moisture: f32,
 
     /// Vertical fuel continuity (0-1, how connected layers are)
-    pub ladder_fuel_factor: f32,
+    ladder_fuel_factor: f32,
 }
 
+// ============================================================================
+// CANOPY STRUCTURE CONSTANTS
+// ============================================================================
+// Scientific basis: Ellis (2011), Cheney et al. (2012)
+
+/// Ladder fuel factor for stringybark eucalypts (high vertical continuity)
+/// Stringybark has fibrous, loosely-attached bark that creates strong vertical
+/// fuel continuity from ground to crown.
+/// Reference: Ellis (2011) "Fuelbed ignition potential and bark morphology"
+const STRINGYBARK_LADDER_FUEL_FACTOR: f32 = 0.9;
+
+/// Ladder fuel factor for smooth bark eucalypts (low vertical continuity)
+/// Smooth bark species shed bark cleanly, creating gaps in vertical fuel structure.
+/// Reference: Cheney et al. (2012) "Predicting fire behaviour in dry eucalypt forest"
+const SMOOTH_BARK_LADDER_FUEL_FACTOR: f32 = 0.3;
+
+/// Ladder fuel factor for grassland (no vertical structure)
+const GRASSLAND_LADDER_FUEL_FACTOR: f32 = 0.0;
+
 impl CanopyStructure {
+    /// Get the ladder fuel factor
+    #[must_use]
+    pub fn ladder_fuel_factor(&self) -> f32 {
+        self.ladder_fuel_factor
+    }
+
     /// Create canopy structure for eucalyptus stringybark forest
     ///
     /// Stringybark has strong vertical continuity due to:
     /// - Fibrous bark hanging from trunk (ladder fuel)
     /// - Low crown base height
     /// - Dense mid-story shrubs
+    #[must_use]
     pub fn eucalyptus_stringybark() -> Self {
         CanopyStructure {
             understory_load: 1.5, // kg/m² (grass, litter)
@@ -96,7 +114,7 @@ impl CanopyStructure {
             midstory_moisture: 0.15,   // Dead bark strips
             overstory_moisture: 0.90,  // Live foliage
 
-            ladder_fuel_factor: 0.9, // Very high continuity (stringybark!)
+            ladder_fuel_factor: STRINGYBARK_LADDER_FUEL_FACTOR,
         }
     }
 
@@ -106,6 +124,7 @@ impl CanopyStructure {
     /// - Minimal ladder fuels
     /// - Higher crown base
     /// - Gaps between layers
+    #[must_use]
     pub fn eucalyptus_smooth_bark() -> Self {
         CanopyStructure {
             understory_load: 1.2,
@@ -120,11 +139,12 @@ impl CanopyStructure {
             midstory_moisture: 0.20,
             overstory_moisture: 0.95,
 
-            ladder_fuel_factor: 0.3, // Low continuity
+            ladder_fuel_factor: SMOOTH_BARK_LADDER_FUEL_FACTOR,
         }
     }
 
     /// Create canopy structure for grassland (single layer)
+    #[must_use]
     pub fn grassland() -> Self {
         CanopyStructure {
             understory_load: 0.8,
@@ -139,11 +159,12 @@ impl CanopyStructure {
             midstory_moisture: 0.0,
             overstory_moisture: 0.0,
 
-            ladder_fuel_factor: 0.0, // No vertical structure
+            ladder_fuel_factor: GRASSLAND_LADDER_FUEL_FACTOR,
         }
     }
 
     /// Get fuel load for a specific layer
+    #[must_use]
     pub fn load_at_layer(&self, layer: CanopyLayer) -> f32 {
         match layer {
             CanopyLayer::Understory => self.understory_load,
@@ -153,6 +174,7 @@ impl CanopyStructure {
     }
 
     /// Get bulk density for a specific layer
+    #[must_use]
     pub fn density_at_layer(&self, layer: CanopyLayer) -> f32 {
         match layer {
             CanopyLayer::Understory => self.understory_density,
@@ -162,6 +184,7 @@ impl CanopyStructure {
     }
 
     /// Get moisture for a specific layer
+    #[must_use]
     pub fn moisture_at_layer(&self, layer: CanopyLayer) -> f32 {
         match layer {
             CanopyLayer::Understory => self.understory_moisture,
@@ -171,6 +194,7 @@ impl CanopyStructure {
     }
 
     /// Get total canopy height
+    #[must_use]
     pub fn total_height(&self) -> f32 {
         if self.overstory_load > 0.0 {
             30.0 // Typical eucalyptus height
@@ -197,6 +221,7 @@ impl CanopyStructure {
 ///
 /// # Returns
 /// Transition probability (0-1)
+#[must_use]
 pub fn calculate_layer_transition_probability(
     lower_layer_intensity: f32,
     canopy: &CanopyStructure,
@@ -310,7 +335,7 @@ mod tests {
         );
 
         // Should have reasonable probability
-        assert!(prob > 0.1, "Probability was {}", prob);
+        assert!(prob > 0.1, "Probability was {prob}");
     }
 
     #[test]

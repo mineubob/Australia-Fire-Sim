@@ -13,6 +13,10 @@
 //!
 //! # Scientific References
 //!
+//! - Albini, F.A. (1979). "Spot fire distance from burning trees: a predictive model"
+//!   USDA Forest Service Research Paper INT-56
+//! - Albini, F.A. (1983). "Transport of firebrands by line thermals"
+//!   Combustion Science and Technology, 32(5-6), 277-288
 //! - Koo, E., Pagni, P.J., Weise, D.R., Woycheese, J.P. (2010). "Firebrands and spotting ignition
 //!   in large-scale fires." International Journal of Wildland Fire, 19(7), 818-843.
 //! - Ellis, P.F. (2011). "Fuelbed ignition potential and bark morphology explain the notoriety
@@ -34,6 +38,7 @@
 //! kilometers ahead of the main fire front.
 
 use crate::core_types::element::Vec3;
+use crate::core_types::units::{Celsius, Kilograms};
 use serde::{Deserialize, Serialize};
 
 /// Ember particle with physics simulation
@@ -54,8 +59,10 @@ pub struct Ember {
     pub(crate) id: u32,
     pub(crate) position: Vec3,
     pub(crate) velocity: Vec3,
-    pub(crate) temperature: f32,
-    pub(crate) mass: f32, // kg (0.0001 to 0.01)
+    /// Current ember temperature
+    pub(crate) temperature: Celsius,
+    /// Ember mass (typical range: 0.0001 to 0.01 kg)
+    pub(crate) mass: Kilograms,
     pub(crate) source_fuel_type: u8,
 }
 
@@ -65,8 +72,8 @@ impl Ember {
         id: u32,
         position: Vec3,
         velocity: Vec3,
-        temperature: f32,
-        mass: f32,
+        temperature: Celsius,
+        mass: Kilograms,
         source_fuel_type: u8,
     ) -> Self {
         Ember {
@@ -85,19 +92,19 @@ impl Ember {
     ///
     /// # Forces
     ///
-    /// 1. **Buoyancy (F_b)**: Hot air updraft lifts ember
+    /// 1. **Buoyancy (`F_b`)**: Hot air updraft lifts ember
     ///    ```text
     ///    F_b = ρ_air × g × V × (T_ember / T_threshold)
     ///    ```
     ///    Active when T > 300°C
     ///
-    /// 2. **Drag (F_d)**: Wind resistance and drift
+    /// 2. **Drag (`F_d`)**: Wind resistance and drift
     ///    ```text
     ///    F_d = 0.5 × ρ_air × C_d × A × |v_rel|²
     ///    ```
-    ///    Where v_rel = wind - ember_velocity
+    ///    Where `v_rel` = wind - `ember_velocity`
     ///
-    /// 3. **Gravity (F_g)**: Downward pull
+    /// 3. **Gravity (`F_g`)**: Downward pull
     ///    ```text
     ///    F_g = m × g = m × 9.81 m/s²
     ///    ```
@@ -125,14 +132,14 @@ impl Ember {
     ///
     /// - Koo et al. (2010) - Firebrand physics and trajectory modeling
     /// - Manzello et al. (2020) - Experimental ember transport studies
-    pub(crate) fn update_physics(&mut self, wind: Vec3, ambient_temp: f32, dt: f32) {
+    pub(crate) fn update_physics(&mut self, wind: Vec3, ambient_temp: Celsius, dt: f32) {
         const AIR_DENSITY: f32 = 1.225; // kg/m³ at sea level, 20°C
 
-        let ember_volume = self.mass / 400.0; // ~400 kg/m³ for char
+        let ember_volume = *self.mass / 400.0; // ~400 kg/m³ for char
 
         // 1. Buoyancy (hot embers rise)
-        let buoyancy = if self.temperature > 300.0 {
-            let temp_ratio = self.temperature / 300.0;
+        let buoyancy = if *self.temperature > 300.0 {
+            let temp_ratio = *self.temperature / 300.0;
             AIR_DENSITY * 9.81 * ember_volume * temp_ratio
         } else {
             0.0
@@ -146,13 +153,13 @@ impl Ember {
                               // Cross section ~0.0002 m² (2 cm²)
                               // Scale cross section with mass for realistic physics
         let base_cross_section = 0.0002; // m² for 1g ember
-        let cross_section = base_cross_section * (self.mass / 0.001).powf(0.67); // Surface area scales as mass^(2/3)
+        let cross_section = base_cross_section * (*self.mass / 0.001).powf(0.67); // Surface area scales as mass^(2/3)
         let drag_force =
             0.5 * AIR_DENSITY * drag_coeff * relative_velocity.magnitude_squared() * cross_section;
         // Cap acceleration to prevent numerical instability
         let max_accel = 50.0; // m/s² maximum acceleration from drag
         let drag_accel = if relative_velocity.magnitude() > 0.01 {
-            let accel = (relative_velocity.normalize() * drag_force) / self.mass;
+            let accel = (relative_velocity.normalize() * drag_force) / *self.mass;
             let accel_mag = accel.magnitude();
             if accel_mag > max_accel {
                 accel * (max_accel / accel_mag)
@@ -167,25 +174,27 @@ impl Ember {
         let gravity = Vec3::new(0.0, 0.0, -9.81);
 
         // 4. Integrate motion (Euler method)
-        let accel = Vec3::new(0.0, 0.0, buoyancy / self.mass) + drag_accel + gravity;
+        let accel = Vec3::new(0.0, 0.0, buoyancy / *self.mass) + drag_accel + gravity;
         self.velocity += accel * dt;
         self.position += self.velocity * dt;
 
         // 5. Radiative cooling (Stefan-Boltzmann)
         // Simplified: dT/dt = -k(T - T_ambient)
-        let cooling_rate = (self.temperature - ambient_temp) * 0.05;
-        self.temperature -= cooling_rate * dt;
+        let cooling_rate = (*self.temperature - *ambient_temp) * 0.05;
+        *self.temperature -= cooling_rate * dt;
 
         // Clamp temperature to ambient minimum
         self.temperature = self.temperature.max(ambient_temp);
     }
 
     /// Check if ember is still active (hot and airborne)
+    #[must_use]
     pub fn is_active(&self) -> bool {
-        self.temperature > 200.0 && self.position.z > 0.0
+        *self.temperature > 200.0 && self.position.z > 0.0
     }
 
     /// Check if ember has landed on the ground
+    #[must_use]
     pub fn has_landed(&self) -> bool {
         self.position.z < 1.0
     }
@@ -195,33 +204,81 @@ impl Ember {
     /// Embers can ignite receptive fuel if:
     /// - Temperature > 250°C (typical ignition threshold)
     /// - Landed on surface (z < 1m)
+    #[must_use]
     pub fn can_ignite(&self) -> bool {
-        self.has_landed() && self.temperature > 250.0
+        self.has_landed() && *self.temperature > 250.0
     }
 
-    /// Get current temperature (°C)
-    pub fn temperature(&self) -> f32 {
+    /// Get current temperature
+    #[must_use]
+    pub fn temperature(&self) -> Celsius {
         self.temperature
     }
 
-    /// Get current mass (kg)
-    pub fn mass(&self) -> f32 {
+    /// Get current mass
+    #[must_use]
+    pub fn mass(&self) -> Kilograms {
         self.mass
     }
 
     /// Get current velocity (m/s)
+    #[must_use]
     pub fn velocity(&self) -> Vec3 {
         self.velocity
     }
 
     /// Get current position (m)
+    #[must_use]
     pub fn position(&self) -> Vec3 {
         self.position
     }
 
     /// Get source fuel type ID
+    #[must_use]
     pub fn source_fuel_type(&self) -> u8 {
         self.source_fuel_type
+    }
+
+    /// Predict final landing position using Albini trajectory model
+    ///
+    /// Uses the detailed trajectory integration from Albini (1983) to predict
+    /// where this ember will land based on current conditions.
+    ///
+    /// # Arguments
+    /// * `wind_speed_10m` - Wind speed at 10m reference height (m/s)
+    /// * `wind_direction` - Wind direction as unit vector
+    /// * `dt` - Integration time step (seconds)
+    /// * `max_time` - Maximum simulation time (seconds)
+    ///
+    /// # Returns
+    /// Predicted landing position (Vec3)
+    ///
+    /// # References
+    /// Albini (1979, 1983) trajectory integration
+    #[must_use]
+    pub fn predict_landing_position(
+        &self,
+        wind_speed_10m: f32,
+        wind_direction: Vec3,
+        dt: f32,
+        max_time: f32,
+    ) -> Vec3 {
+        // Calculate ember diameter from mass assuming density of 400 kg/m³
+        // Volume = mass / density, diameter = (6V/π)^(1/3)
+        let volume = *self.mass / 400.0;
+        let ember_diameter = (6.0 * volume / std::f32::consts::PI).powf(1.0 / 3.0);
+
+        crate::physics::calculate_ember_trajectory(
+            self.position,
+            self.velocity,
+            *self.mass,
+            ember_diameter,
+            *self.temperature,
+            wind_speed_10m,
+            wind_direction,
+            dt,
+            max_time,
+        )
     }
 }
 
@@ -235,8 +292,8 @@ mod tests {
             1,
             Vec3::new(0.0, 0.0, 10.0),
             Vec3::new(0.0, 0.0, 5.0),
-            800.0,
-            0.001,
+            Celsius::new(800.0),
+            Kilograms::new(0.001),
             1,
         );
 
@@ -245,11 +302,11 @@ mod tests {
 
         // Update for several seconds
         for _ in 0..100 {
-            ember.update_physics(wind, 20.0, 0.1);
+            ember.update_physics(wind, Celsius::new(20.0), 0.1);
         }
 
         // Ember should cool down over time
-        assert!(ember.temperature < initial_temp);
+        assert!(*ember.temperature < *initial_temp);
 
         // Ember should be affected by physics (moved from initial position)
         assert!(ember.position.z != 10.0 || ember.position.x != 0.0);
@@ -261,15 +318,15 @@ mod tests {
             1,
             Vec3::new(0.0, 0.0, 2.0),
             Vec3::new(0.0, 0.0, 0.0),
-            600.0,
-            0.001,
+            Celsius::new(600.0),
+            Kilograms::new(0.001),
             1,
         );
 
         // Hot ember should rise or at least not fall immediately
         // Update multiple times to allow buoyancy to overcome initial gravity
         for _ in 0..5 {
-            ember.update_physics(Vec3::zeros(), 20.0, 0.1);
+            ember.update_physics(Vec3::zeros(), Celsius::new(20.0), 0.1);
         }
 
         // Should have moved upward or stayed roughly the same (buoyancy counteracts gravity)

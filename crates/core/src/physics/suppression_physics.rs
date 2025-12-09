@@ -72,7 +72,7 @@ fn calculate_cooling_capacity(agent_type: SuppressionAgent, temperature: f32) ->
 /// - `mass`: Mass of suppression agent in kg
 /// - `agent_type`: Type of suppression agent (Water, Retardant, Foam)
 /// - `grid`: Mutable reference to the simulation grid
-pub fn apply_suppression_direct(
+pub(crate) fn apply_suppression_direct(
     position: Vec3,
     mass: f32,
     agent_type: SuppressionAgent,
@@ -98,7 +98,7 @@ pub fn apply_suppression_direct(
         const SPECIFIC_HEAT_AIR: f32 = 1.005; // kJ/(kg·K) - physical constant
         let temp_drop = cooling_kj / (air_mass * SPECIFIC_HEAT_AIR);
 
-        cell.temperature = (cell.temperature - temp_drop).max(ambient_temp);
+        cell.temperature = (cell.temperature - temp_drop).max(*ambient_temp);
 
         // Increase humidity (water vapor)
         if matches!(agent_type, SuppressionAgent::Water | SuppressionAgent::Foam) {

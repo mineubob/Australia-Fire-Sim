@@ -11,21 +11,38 @@
 //! - Advanced suppression physics (water, retardant, foam)
 //! - Buoyancy-driven convection and plume dynamics
 //! - Multi-band radiation transfer
+//! - Fuel element suppression coverage tracking
+//! - Ember spot fire ignition with suppression blocking
+//! - Advanced weather phenomena (pyrocumulus, atmospheric instability)
+//! - Terrain-based fire spread physics (Phase 3)
+//! - Multiplayer action queue system (Phase 5)
 
 // Core types and utilities
 pub mod core_types;
 
 // Ultra-realistic simulation modules (organized in subfolders)
-pub mod grid;
-pub mod physics;
+pub(crate) mod grid;
+pub mod physics; // Made pub for FFI access to SuppressionAgent
 pub mod simulation;
+pub mod suppression; // Made pub for FFI access to SuppressionAgentType
+pub(crate) mod weather;
 
-// Re-export core types
+// Re-export core types (public API)
+pub use core_types::Ember;
 pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
 pub use core_types::{ClimatePattern, WeatherPreset, WeatherSystem};
-pub use core_types::{Ember, SpatialIndex};
 
-// Re-export ultra-realistic types
+// Re-export simulation types (public API)
 pub use grid::{GridCell, SimulationGrid, TerrainData};
-pub use physics::{apply_suppression_direct, SuppressionAgent};
+pub use grid::{PlameSource, StabilityClass, WindField, WindFieldConfig};
 pub use simulation::{FireSimulation, SimulationStats};
+
+// Re-export suppression types (for FFI)
+pub use physics::SuppressionAgent;
+pub use suppression::SuppressionAgentType;
+
+// Re-export physics types for integration tests
+pub use physics::CombustionPhase;
+
+// Re-export multiplayer types (for FFI)
+pub use simulation::{PlayerAction, PlayerActionType};

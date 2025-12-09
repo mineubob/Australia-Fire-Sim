@@ -5,8 +5,14 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 fire-sim-core = { path = "../core" }
+
+[build-dependencies]
+cbindgen = "0.29"
 
 [lib]
 crate-type = ["cdylib", "staticlib"]

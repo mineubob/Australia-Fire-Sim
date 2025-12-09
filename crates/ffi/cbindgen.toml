@@ -5,8 +5,4 @@ include_version = true
 namespace = "fire_sim"
 
 [export]
-include = ["FireElementVisual", "EmberVisual"]
-
-[export.rename]
-"FireElementVisual" = "FireElementVisual"
-"EmberVisual" = "EmberVisual"
+include = ["*"]

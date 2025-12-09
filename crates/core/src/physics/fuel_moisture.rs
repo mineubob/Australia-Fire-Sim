@@ -34,7 +34,11 @@ use serde::{Deserialize, Serialize};
 ///
 /// # References
 /// Simard (1968), Nelson (2000)
-pub fn calculate_equilibrium_moisture(temperature: f32, humidity: f32, is_adsorbing: bool) -> f32 {
+pub(crate) fn calculate_equilibrium_moisture(
+    temperature: f32,
+    humidity: f32,
+    is_adsorbing: bool,
+) -> f32 {
     // Simard (1968) coefficients for adsorption and desorption
     // Modified Nelson (2000) formulation for better temperature response
     let (a, b, c, d) = if is_adsorbing {
@@ -58,7 +62,7 @@ pub fn calculate_equilibrium_moisture(temperature: f32, humidity: f32, is_adsorb
 ///
 /// The timelag constant (τ) determines how quickly fuel moisture equilibrates
 ///
-/// dM/dt = (M_e - M) / τ
+/// dM/dt = (`M_e` - M) / τ
 ///
 /// # Arguments
 /// * `timelag_hours` - Characteristic timelag (hours)
@@ -68,7 +72,7 @@ pub fn calculate_equilibrium_moisture(temperature: f32, humidity: f32, is_adsorb
 ///
 /// # References
 /// Nelson (2000)
-pub fn timelag_rate_constant(timelag_hours: f32) -> f32 {
+pub(crate) fn timelag_rate_constant(timelag_hours: f32) -> f32 {
     if timelag_hours <= 0.0 {
         return 0.0;
     }
@@ -78,7 +82,7 @@ pub fn timelag_rate_constant(timelag_hours: f32) -> f32 {
 /// Update fuel moisture for a specific size class using timelag dynamics
 ///
 /// Nelson (2000) exponential lag equation:
-/// M(t+dt) = M_e + (M(t) - M_e) × exp(-dt / τ)
+/// M(t+dt) = `M_e` + (M(t) - `M_e`) × exp(-dt / τ)
 ///
 /// # Arguments
 /// * `current_moisture` - Current moisture content (fraction 0-1)
@@ -91,18 +95,20 @@ pub fn timelag_rate_constant(timelag_hours: f32) -> f32 {
 ///
 /// # References
 /// Nelson (2000), Equation 3
-pub fn update_moisture_timelag(
+pub(crate) fn update_moisture_timelag(
     current_moisture: f32,
     equilibrium_moisture: f32,
     timelag_hours: f32,
     dt_hours: f32,
 ) -> f32 {
-    if timelag_hours <= 0.0 {
+    // Get rate constant using timelag_rate_constant
+    let rate = timelag_rate_constant(timelag_hours);
+    if rate <= 0.0 {
         return equilibrium_moisture;
     }
 
-    // Nelson (2000) exponential lag equation
-    let lag_factor = (-dt_hours / timelag_hours).exp();
+    // Nelson (2000) exponential lag equation: M(t+dt) = M_e + (M(t) - M_e) × exp(-dt × rate)
+    let lag_factor = (-dt_hours * rate).exp();
     let new_moisture =
         equilibrium_moisture + (current_moisture - equilibrium_moisture) * lag_factor;
 
@@ -120,7 +126,7 @@ pub fn update_moisture_timelag(
 ///
 /// # Returns
 /// Weighted average moisture content (fraction 0-1)
-pub fn calculate_weighted_moisture(
+pub(crate) fn calculate_weighted_moisture(
     moisture_1h: f32,
     moisture_10h: f32,
     moisture_100h: f32,
@@ -137,22 +143,22 @@ pub fn calculate_weighted_moisture(
 
 /// Fuel moisture state for all timelag classes
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct FuelMoistureState {
+pub(crate) struct FuelMoistureState {
     /// Moisture in 1-hour fuels (fraction 0-1)
-    pub moisture_1h: f32,
+    moisture_1h: f32,
     /// Moisture in 10-hour fuels (fraction 0-1)
-    pub moisture_10h: f32,
+    moisture_10h: f32,
     /// Moisture in 100-hour fuels (fraction 0-1)
-    pub moisture_100h: f32,
+    moisture_100h: f32,
     /// Moisture in 1000-hour fuels (fraction 0-1)
-    pub moisture_1000h: f32,
+    moisture_1000h: f32,
     /// Weighted average moisture (fraction 0-1)
-    pub average_moisture: f32,
+    average_moisture: f32,
 }
 
 impl FuelMoistureState {
     /// Create new moisture state with initial values for each timelag class
-    pub fn new(
+    pub(crate) fn new(
         moisture_1h: f32,
         moisture_10h: f32,
         moisture_100h: f32,
@@ -168,8 +174,13 @@ impl FuelMoistureState {
         }
     }
 
+    /// Get average moisture content
+    pub(crate) fn average_moisture(&self) -> f32 {
+        self.average_moisture
+    }
+
     /// Update all moisture classes based on weather
-    pub fn update(&mut self, fuel: &Fuel, temperature: f32, humidity: f32, dt_hours: f32) {
+    pub(crate) fn update(&mut self, fuel: &Fuel, temperature: f32, humidity: f32, dt_hours: f32) {
         // Determine if fuel is adsorbing (gaining) or desorbing (losing) moisture
         let emc = calculate_equilibrium_moisture(temperature, humidity, false);
         let is_adsorbing = self.average_moisture < emc;
@@ -179,16 +190,16 @@ impl FuelMoistureState {
 
         // Update each size class with its specific timelag
         self.moisture_1h =
-            update_moisture_timelag(self.moisture_1h, emc, fuel.timelag_1h, dt_hours);
+            update_moisture_timelag(self.moisture_1h, emc, *fuel.timelag_1h, dt_hours);
 
         self.moisture_10h =
-            update_moisture_timelag(self.moisture_10h, emc, fuel.timelag_10h, dt_hours);
+            update_moisture_timelag(self.moisture_10h, emc, *fuel.timelag_10h, dt_hours);
 
         self.moisture_100h =
-            update_moisture_timelag(self.moisture_100h, emc, fuel.timelag_100h, dt_hours);
+            update_moisture_timelag(self.moisture_100h, emc, *fuel.timelag_100h, dt_hours);
 
         self.moisture_1000h =
-            update_moisture_timelag(self.moisture_1000h, emc, fuel.timelag_1000h, dt_hours);
+            update_moisture_timelag(self.moisture_1000h, emc, *fuel.timelag_1000h, dt_hours);
 
         // Calculate weighted average
         self.average_moisture = calculate_weighted_moisture(
@@ -196,7 +207,7 @@ impl FuelMoistureState {
             self.moisture_10h,
             self.moisture_100h,
             self.moisture_1000h,
-            fuel.size_class_distribution,
+            fuel.size_class_distribution.map(|f| *f),
         );
     }
 }
@@ -211,7 +222,7 @@ mod tests {
         let emc = calculate_equilibrium_moisture(25.0, 50.0, false);
 
         // EMC should be between 5% and 20% for these conditions
-        assert!(emc > 0.05 && emc < 0.20, "EMC was {}", emc);
+        assert!(emc > 0.05 && emc < 0.20, "EMC was {emc}");
     }
 
     #[test]
@@ -249,9 +260,7 @@ mod tests {
         // Should converge close to target after 50 hours (5 timelags)
         assert!(
             (moisture - target).abs() < 0.01,
-            "Moisture was {} vs target {}",
-            moisture,
-            target
+            "Moisture was {moisture} vs target {target}"
         );
     }
 
@@ -286,7 +295,7 @@ mod tests {
         let avg = calculate_weighted_moisture(m1, m10, m100, m1000, dist);
 
         // Should be average
-        assert!((avg - 0.175).abs() < 0.01, "Weighted average was {}", avg);
+        assert!((avg - 0.175).abs() < 0.01, "Weighted average was {avg}");
     }
 
     #[test]
@@ -324,9 +333,7 @@ mod tests {
         // Should show diurnal pattern
         assert!(
             night_moisture > day_moisture,
-            "Moisture should recover at night: day={}, night={}",
-            day_moisture,
-            night_moisture
+            "Moisture should recover at night: day={day_moisture}, night={night_moisture}"
         );
     }
 }

@@ -1,418 +1,542 @@
-use fire_sim_core::{FireSimulation, Fuel, FuelPart, SuppressionAgent, TerrainData, Vec3};
-use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex, RwLock};
+use fire_sim_core::{FireSimulation, FuelElement, TerrainData};
+use std::ptr;
+use std::sync::{Mutex, RwLock};
 
-// Thread-safe simulation storage
-static SIMULATIONS: LazyLock<Mutex<HashMap<usize, Arc<RwLock<FireSimulation>>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-
-static mut NEXT_SIM_ID: usize = 1;
-
-// ============================================================================
-// FFI ERROR CODES FOR C++ INTEGRATION
-// ============================================================================
-
-/// Success code
-pub const FIRE_SIM_SUCCESS: i32 = 0;
-/// Invalid simulation ID
-pub const FIRE_SIM_INVALID_ID: i32 = -1;
-/// Null pointer passed
-pub const FIRE_SIM_NULL_POINTER: i32 = -2;
-/// Invalid fuel type
-pub const FIRE_SIM_INVALID_FUEL: i32 = -3;
-/// Invalid terrain type
-pub const FIRE_SIM_INVALID_TERRAIN: i32 = -4;
-/// Lock error (internal)
-pub const FIRE_SIM_LOCK_ERROR: i32 = -5;
-
-// ============================================================================
-// ULTRA-REALISTIC FIRE SIMULATION FFI
-// ============================================================================
-
-fn with_fire_sim_read<F, T>(id: &usize, func: F) -> Option<T>
-where
-    F: FnOnce(&FireSimulation) -> T,
-{
-    let simulation = {
-        let simulations = SIMULATIONS.lock().unwrap();
-
-        simulations.get(id)?.clone()
-    };
-    let simulation = simulation.read().unwrap();
-
-    Some(func(&simulation))
-}
-
-fn with_fire_sim_write<F, T>(id: &usize, func: F) -> Option<T>
-where
-    F: FnOnce(&mut FireSimulation) -> T,
-{
-    let simulation = {
-        let simulations = SIMULATIONS.lock().unwrap();
-
-        simulations.get(id)?.clone()
-    };
-    let mut simulation = simulation.write().unwrap();
-
-    Some(func(&mut simulation))
-}
-
-/// C-compatible grid cell data
+/// Terrain configuration for the fire simulation.
+/// Defines the shape and parameters of the simulated landscape.
 #[repr(C)]
-pub struct GridCellVisual {
-    pub temperature: f32,
-    pub wind_x: f32,
-    pub wind_y: f32,
-    pub wind_z: f32,
-    pub humidity: f32,
-    pub oxygen: f32,
-    pub smoke_particles: f32,
-    pub suppression_agent: f32,
+pub enum Terrain {
+    /// Flat terrain with specified width and height in meters.
+    Flat { width: f32, height: f32 },
+
+    /// Single hill terrain.
+    ///
+    /// width, height, resolution, `base_elevation`, `hill_height`, `hill_radius`
+    SingleHill {
+        width: f32,
+        height: f32,
+        resolution: f32,
+        base_elevation: f32,
+        hill_height: f32,
+        hill_radius: f32,
+    },
+
+    /// Valley between two hills.
+    ///
+    /// width, height, resolution, `base_elevation`, `hill_height`
+    ValleyBetweenHills {
+        width: f32,
+        height: f32,
+        resolution: f32,
+        base_elevation: f32,
+        hill_height: f32,
+    },
+
+    /// Create terrain from a heightmap.
+    ///
+    /// The heightmap pointer should point to nx*ny f32 values in row-major order.
+    FromHeightmap {
+        width: f32,
+        height: f32,
+        heightmap_ptr: *const f32,
+        nx: usize,
+        ny: usize,
+        elevation_scale: f32,
+        base_elevation: f32,
+    },
 }
 
-/// Create a new ultra-realistic fire simulation
+/// The main fire simulation context.
+/// Holds the internal simulation state and manages fire behavior calculations.
 ///
-/// # Parameters
-/// - `width`: World width in meters
-/// - `height`: World height in meters
-/// - `grid_cell_size`: Grid cell size in meters (typically 2-5m)
-/// - `terrain_type`: 0=flat, 1=single_hill, 2=valley
-/// - `out_sim_id`: Pointer to receive simulation ID
+/// # Thread Safety
+/// `FireSimInstance` is fully thread-safe and can be safely shared across multiple threads
+/// in Godot, Unreal Engine, or any other multi-threaded environment.
 ///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_sim_id` set
-/// - `FIRE_SIM_INVALID_TERRAIN` (-4) if terrain_type is invalid
-/// - `FIRE_SIM_NULL_POINTER` (-2) if out_sim_id is null
-/// - `FIRE_SIM_LOCK_ERROR` (-5) if internal lock fails
+/// The internal simulation is protected by an `RwLock`, allowing:
+/// - **Multiple concurrent readers** (queries, state inspections): `.read()` lock
+/// - **Exclusive writer** (simulation updates): `.write()` lock
+/// - **Godot (GDScript/C#)**: Safe calls from main thread, render thread, and worker threads
+/// - **Unreal Engine (C++)**: Safe calls from Game Thread, Render Thread, and async task threads
+/// - **Efficient concurrent reads/writes**: `RwLock` allows multiple readers without blocking
 ///
-/// # Safety
-/// `out_sim_id` must be a valid, non-null pointer
-#[no_mangle]
-pub unsafe extern "C" fn fire_sim_create(
-    width: f32,
-    height: f32,
-    grid_cell_size: f32,
-    terrain_type: u8,
-    out_sim_id: *mut usize,
-) -> i32 {
-    if out_sim_id.is_null() {
-        return FIRE_SIM_NULL_POINTER;
-    }
-
-    if terrain_type > 2 {
-        return FIRE_SIM_INVALID_TERRAIN;
-    }
-
-    let terrain = match terrain_type {
-        1 => TerrainData::single_hill(width, height, 5.0, 0.0, 100.0, width * 0.2),
-        2 => TerrainData::valley_between_hills(width, height, 5.0, 0.0, 80.0),
-        _ => TerrainData::flat(width, height, 5.0, 0.0),
-    };
-
-    let sim = FireSimulation::new(grid_cell_size, terrain);
-    let sim_arc = Arc::new(RwLock::new(sim));
-
-    let id = NEXT_SIM_ID;
-    NEXT_SIM_ID += 1;
-
-    match SIMULATIONS.lock() {
-        Ok(mut sims) => {
-            sims.insert(id, sim_arc);
-            *out_sim_id = id;
-            FIRE_SIM_SUCCESS
-        }
-        Err(_) => FIRE_SIM_LOCK_ERROR,
-    }
+/// # Usage in Game Engines
+///
+/// ## Godot Example
+/// ```gdscript
+/// var fire_sim: int  # Opaque pointer to FireSimInstance
+///
+/// func _ready():
+///     fire_sim = FireSimFFI.fire_sim_new(create_flat_terrain(1000.0, 1000.0))
+///
+/// func _process(delta):
+///     # Safe to call from main thread
+///     FireSimFFI.fire_sim_update(fire_sim, delta)
+///
+/// func _exit_tree():
+///     FireSimFFI.fire_sim_destroy(fire_sim)
+/// ```
+///
+/// ## Unreal Engine Example
+/// ```cpp
+/// // In your actor or component header
+/// void* FireSimPtr = nullptr;
+///
+/// // In BeginPlay or initialization
+/// void AFireSimActor::BeginPlay() {
+///     Terrain terrain = CreateFlatTerrain(1000.0f, 1000.0f);
+///     FireSimPtr = fire_sim_new(terrain);
+/// }
+///
+/// // Safe to call from Game Thread, Render Thread via async tasks, etc.
+/// void AFireSimActor::Tick(float DeltaTime) {
+///     fire_sim_update(FireSimPtr, DeltaTime);
+/// }
+///
+/// // In EndPlay or destructor
+/// void AFireSimActor::EndPlay(const EEndPlayReason::Type EndPlayReason) {
+///     if (FireSimPtr) {
+///         fire_sim_destroy(FireSimPtr);
+///         FireSimPtr = nullptr;
+///     }
+/// }
+/// ```
+///
+/// # Performance Note
+/// `RwLock` allows multiple threads to read state simultaneously without blocking,
+/// while `fire_sim_update()` acquires an exclusive write lock briefly.
+/// This is optimal for game engines where queries (reads) are frequent but updates (writes)
+/// happen once per frame. Overhead is negligible at 60 FPS (16.7ms per frame).
+pub struct FireSimInstance {
+    sim: RwLock<FireSimulation>,
+    /// Cached snapshot of burning elements to avoid per-frame allocations.
+    /// Protected by Mutex for thread-safe access across game engine threads.
+    /// Reused across calls to `fire_sim_get_burning_elements`.
+    burning_snapshot: Mutex<Vec<ElementStats>>,
 }
 
-/// Destroy an ultra-realistic simulation
-///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
-/// - `FIRE_SIM_LOCK_ERROR` (-5) if internal lock fails
-#[no_mangle]
-pub extern "C" fn fire_sim_destroy(sim_id: usize) -> i32 {
-    match SIMULATIONS.lock() {
-        Ok(mut sims) => {
-            if sims.remove(&sim_id).is_some() {
-                FIRE_SIM_SUCCESS
-            } else {
-                FIRE_SIM_INVALID_ID
+impl FireSimInstance {
+    /// Creates a new `FireSim` instance with the specified terrain.
+    #[must_use]
+    pub fn new(terrain: &Terrain) -> Box<Self> {
+        let terrain = match *terrain {
+            Terrain::Flat { width, height } => TerrainData::flat(width, height, 5.0, 0.0),
+
+            Terrain::SingleHill {
+                width,
+                height,
+                resolution,
+                base_elevation,
+                hill_height,
+                hill_radius,
+            } => TerrainData::single_hill(
+                width,
+                height,
+                resolution,
+                base_elevation,
+                hill_height,
+                hill_radius,
+            ),
+
+            Terrain::ValleyBetweenHills {
+                width,
+                height,
+                resolution,
+                base_elevation,
+                hill_height,
+            } => TerrainData::valley_between_hills(
+                width,
+                height,
+                resolution,
+                base_elevation,
+                hill_height,
+            ),
+
+            Terrain::FromHeightmap {
+                width,
+                height,
+                heightmap_ptr,
+                nx,
+                ny,
+                elevation_scale,
+                base_elevation,
+            } => {
+                // Safety: we accept a raw pointer from the caller. Convert to a slice and copy into a Vec.
+                // If the pointer is null or the expected size is zero, fall back to a flat terrain at base_elevation.
+                let len = nx.checked_mul(ny).unwrap_or(0);
+                if heightmap_ptr.is_null() || len == 0 {
+                    TerrainData::flat(width, height, 1.0, base_elevation)
+                } else {
+                    let slice = unsafe { std::slice::from_raw_parts(heightmap_ptr, len) };
+                    TerrainData::from_heightmap(
+                        width,
+                        height,
+                        slice,
+                        nx,
+                        ny,
+                        elevation_scale,
+                        base_elevation,
+                    )
+                }
             }
-        }
-        Err(_) => FIRE_SIM_LOCK_ERROR,
-    }
-}
-
-/// Update the ultra-realistic simulation
-///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
-#[no_mangle]
-pub extern "C" fn fire_sim_update(sim_id: usize, dt: f32) -> i32 {
-    match with_fire_sim_write(&sim_id, |sim| sim.update(dt)) {
-        Some(_) => FIRE_SIM_SUCCESS,
-        None => FIRE_SIM_INVALID_ID,
-    }
-}
-
-/// Add a fuel element to ultra simulation
-///
-/// # Parameters
-/// - `fuel_type`: Fuel type ID (0-7)
-/// - `part_type`: Fuel part type (0-7)
-/// - `parent_id`: Parent element ID, or -1 for none
-/// - `out_element_id`: Pointer to receive new element ID
-///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_element_id` set
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
-/// - `FIRE_SIM_INVALID_FUEL` (-3) if fuel_type is invalid
-/// - `FIRE_SIM_NULL_POINTER` (-2) if out_element_id is null
-///
-/// # Safety
-/// `out_element_id` must be a valid, non-null pointer
-#[no_mangle]
-pub unsafe extern "C" fn fire_sim_add_fuel(
-    sim_id: usize,
-    x: f32,
-    y: f32,
-    z: f32,
-    fuel_type: u8,
-    part_type: u8,
-    mass: f32,
-    parent_id: i32,
-    out_element_id: *mut u32,
-) -> i32 {
-    if out_element_id.is_null() {
-        return FIRE_SIM_NULL_POINTER;
-    }
-
-    if fuel_type > 7 {
-        return FIRE_SIM_INVALID_FUEL;
-    }
-
-    match with_fire_sim_write(&sim_id, |sim| {
-        let position = Vec3::new(x, y, z);
-        let fuel = Fuel::from_id(fuel_type).unwrap_or_else(Fuel::dry_grass);
-
-        let part = match part_type {
-            0 => FuelPart::Root,
-            1 => FuelPart::TrunkLower,
-            2 => FuelPart::TrunkMiddle,
-            3 => FuelPart::TrunkUpper,
-            4 => FuelPart::Crown,
-            5 => FuelPart::GroundLitter,
-            6 => FuelPart::GroundVegetation,
-            _ => FuelPart::Surface,
         };
 
-        let parent = if parent_id >= 0 {
-            Some(parent_id as u32)
-        } else {
-            None
+        let sim = FireSimulation::new(5.0, &terrain);
+
+        Box::new(Self {
+            sim: RwLock::new(sim),
+            burning_snapshot: Mutex::new(Vec::with_capacity(1000)),
+        })
+    }
+}
+
+/// Create a new `FireSim` instance and return a raw pointer to it for use across FFI.
+///
+/// This function allocates a new `FireSim` on the heap and transfers ownership of the
+/// pointer to the caller. The returned pointer must eventually be released by calling
+/// `fire_sim_destroy`.
+///
+/// Parameters
+/// - `terrain`: A `Terrain` value describing the desired terrain configuration.
+///   - For `Terrain::FromHeightmap`, if `heightmap_ptr` is non-null and `nx * ny > 0`,
+///     the heightmap data is read (using `from_raw_parts`) and copied into a Rust-owned
+///     Vec. After this call the caller remains free to deallocate the original heightmap
+///     memory. If the pointer is null or the size is zero, a flat terrain with the provided
+///     base elevation will be used as a fallback.
+///
+/// Returns
+/// - `*mut FireSim` — a raw, heap-allocated pointer owning the newly created `FireSim`.
+///   The pointer is non-null on success (Rust heap allocation failures will abort or panic
+///   according to the global allocator behavior).
+///
+/// Ownership & Safety
+/// - The caller takes ownership of the returned pointer and MUST call `fire_sim_destroy`
+///   exactly once to avoid a memory leak or a double-free.
+/// - The `terrain` value is moved into the Rust function by value; any raw pointers
+///   contained in `Terrain::FromHeightmap` are only read and copied if valid. The function
+///   does not retain references into caller-owned memory — it owns its data after return.
+/// - This function is exposed as `extern "C"` and `#[no_mangle]` for FFI usage. The C-side
+///   representation of `Terrain` must match the Rust `#[repr(C)]` layout used here — ensure
+///   your foreign-language bindings use a compatible representation when constructing
+///   `Terrain` values to pass to this function.
+///
+/// Example (C-like pseudocode)
+/// ```c
+/// // Construct a Terrain value in a way compatible with the Rust #[repr(C)] enum,
+/// // call `fire_sim_new`, then later call `fire_sim_destroy` to free it.
+/// FireSim* sim = fire_sim_new(terrain);
+/// // ... use sim via the rest of the FFI API ...
+/// fire_sim_destroy(sim);
+/// ```
+#[no_mangle]
+pub extern "C" fn fire_sim_new(terrain: Terrain) -> *mut FireSimInstance {
+    Box::into_raw(FireSimInstance::new(&terrain))
+}
+
+/// Destroys a `FireSim` instance previously created by `fire_sim_new`.
+///
+/// This function takes a raw pointer returned by `fire_sim_new` and reclaims ownership
+/// using `Box::from_raw`, which runs the `FireSim` destructor and frees the allocation.
+///
+/// Behavior:
+/// - If `ptr` is null, this function is a no-op.
+/// - If `ptr` points to a `FireSim` allocated by `fire_sim_new` and has not been freed,
+///   this function will free it and drop its resources.
+///
+/// # Safety
+/// - The pointer MUST have been created by `fire_sim_new`.
+/// - The pointer MUST NOT have been freed already, moved, or otherwise invalidated.
+/// - Passing an invalid pointer (e.g., not originating from `fire_sim_new`, a stale pointer,
+///   or a pointer into stack memory) is undefined behavior and can cause memory corruption
+///   or crashes.
+/// - After calling this function, the caller must not use the pointer again (double-free or use-after-free).
+///
+/// FFI notes:
+/// - This is an `extern "C"` (`no_mangle`) function intended for use across language boundaries.
+/// - It is safe to call from C/C++/other languages provided the pointer contract above is respected.
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_destroy(ptr: *mut FireSimInstance) {
+    if ptr.is_null() {
+        return;
+    }
+
+    // SAFETY: The pointer must have been created by `Box::into_raw` in `fire_sim_new`
+    // and not freed or moved elsewhere. We check for null above to avoid UB from
+    // dereferencing a null pointer. Converting back with `Box::from_raw` reclaims
+    // ownership and will run the destructor for `FireSim` when the Box is dropped.
+    unsafe {
+        // Recreate the Box and immediately drop it to free the allocation.
+        drop(Box::from_raw(ptr));
+    }
+}
+
+/// Convert raw pointer to reference, validate it exists, and call callback with the reference.
+/// Returns default value if pointer is null (callback not called).
+///
+/// Safety note: the caller must ensure the pointer originates from `fire_sim_new` and is not dangling.
+#[inline]
+fn instance_from_ptr<R, F>(ptr: *const FireSimInstance, f: F) -> Option<R>
+where
+    F: FnOnce(&FireSimInstance) -> R,
+{
+    if ptr.is_null() {
+        return None;
+    }
+
+    // SAFETY: pointer validity checked above, and caller guarantees it came from fire_sim_new
+    unsafe { Some(f(&*ptr)) }
+}
+
+/// If valid instance, call `f` with a `&FireSimulation` and return the closure result.
+/// Panics if the lock is poisoned (indicates a previous panic during lock acquisition).
+///
+/// Thread-safe: acquires the internal `RwLock` read lock for the duration of the closure.
+///
+/// Safety note: the caller must ensure the reference is valid.
+#[inline]
+fn with_fire_sim<R, F>(instance: &FireSimInstance, f: F) -> R
+where
+    F: FnOnce(&FireSimulation) -> R,
+{
+    // Acquire the read lock for the duration of the closure.
+    // Panic if the lock is poisoned (acceptable for FFI safety - indicates previous panic).
+    let sim = instance.sim.read().expect("FireSimulation RwLock poisoned");
+    f(&sim)
+}
+
+/// If valid instance, call `f` with a `&mut FireSimulation` and return the closure result.
+/// Panics if the lock is poisoned (indicates a previous panic during lock acquisition).
+///
+/// Thread-safe: acquires the internal `RwLock` write lock for the duration of the closure.
+///
+/// Safety note: the caller must ensure the reference is valid.
+#[inline]
+fn with_fire_sim_mut<R, F>(instance: &FireSimInstance, f: F) -> R
+where
+    F: FnOnce(&mut FireSimulation) -> R,
+{
+    // Acquire the write lock for the duration of the closure.
+    // Panic if the lock is poisoned (acceptable for FFI safety - indicates previous panic).
+    let mut sim = instance
+        .sim
+        .write()
+        .expect("FireSimulation RwLock poisoned");
+    f(&mut sim)
+}
+
+/// Advance the simulation by `dt` seconds.
+///
+/// Thread-safe: acquires `RwLock` write lock for simulation update.
+///
+/// Safety:
+/// - `ptr` must be a valid pointer returned by `fire_sim_new`.
+/// - Calling with an invalid pointer is undefined behavior.
+/// - If `ptr` is null or `dt` is non-finite or non-positive this function is a no-op.
+#[no_mangle]
+pub extern "C" fn fire_sim_update(ptr: *const FireSimInstance, dt: f32) {
+    if !dt.is_finite() || dt <= 0.0 {
+        return;
+    }
+
+    instance_from_ptr(ptr, |instance| {
+        with_fire_sim_mut(instance, |sim| {
+            sim.update(dt);
+        });
+    });
+}
+
+#[repr(C)]
+/// FFI-friendly snapshot of an element's runtime statistics.
+/// Keep this layout stable for C/C++/C# consumers.
+pub struct ElementStats {
+    /// Element identifier (index).
+    pub element_id: usize,
+
+    /// Whether this element is currently burning.
+    pub is_burning: bool,
+
+    /// Fuel load remaining (kg).
+    pub fuel_load: f32,
+
+    /// Element temperature (Celsius).
+    pub temperature: f32,
+
+    /// Fuel moisture fraction (0.0 - 1.0).
+    pub moisture: f32,
+
+    /// Rate of spread (m/s).
+    pub rate_of_spread: f32,
+
+    /// Flame length (m).
+    pub flame_length: f32,
+
+    /// Fireline intensity (kW/m).
+    pub intensity: f32,
+}
+
+impl From<(&FuelElement, &FireSimulation)> for ElementStats {
+    fn from((element, sim): (&FuelElement, &FireSimulation)) -> Self {
+        // Get wind at this element's position (m/s)
+        let wind = sim.wind_at_position(*element.position());
+        let wind_speed_ms = wind.magnitude();
+
+        // Get ambient temperature from weather system (°C)
+        let ambient_temp = *sim.get_weather().temperature();
+
+        // Calculate rate of spread using Rothermel model (m/min -> m/s)
+        let spread_rate_m_per_min =
+            fire_sim_core::physics::rothermel_validation::rothermel_spread_rate(
+                element.fuel(),
+                *element.moisture_fraction(),
+                wind_speed_ms,
+                *element.slope_angle(),
+                ambient_temp,
+            );
+        let rate_of_spread = spread_rate_m_per_min / 60.0;
+
+        // Calculate fireline intensity using Byram's formula (kW/m)
+        let intensity = element.byram_fireline_intensity(wind_speed_ms);
+
+        Self {
+            element_id: element.id(),
+            is_burning: element.is_ignited(),
+            fuel_load: *element.fuel_remaining(),
+            temperature: *element.temperature(),
+            moisture: *element.moisture_fraction(),
+            rate_of_spread,
+            flame_length: *element.flame_height(),
+            intensity,
+        }
+    }
+}
+
+#[no_mangle]
+/// Return a borrowed pointer to cached burning elements snapshot.
+///
+/// **PERFORMANCE & THREAD SAFETY**: This function reuses an internal buffer protected by Mutex
+/// to avoid per-frame allocations while remaining thread-safe for Godot and Unreal Engine.
+/// The returned pointer is valid until the next call to this function or `fire_sim_update`.
+///
+/// - Returns a borrowed pointer to `ElementStats` array. **DO NOT FREE THIS POINTER**.
+/// - Returns null on error or when `ptr`/`out_len` are null.
+/// - The pointer is invalidated by the next call to `fire_sim_get_burning_elements` or `fire_sim_update`.
+///
+/// Thread-safe: Acquires Mutex lock on snapshot cache and `RwLock` read lock on simulation state.
+/// Safe to call from multiple threads (e.g., Unreal async tasks, Godot worker threads).
+///
+/// # Safety
+///
+/// - `ptr` must be a valid pointer returned by `fire_sim_new` or null.
+/// - `out_len` must be a valid, non-null pointer to a `usize` that this function will write to.
+///
+/// # Example Usage (C++)
+/// ```cpp
+/// uintptr_t len = 0;
+/// const ElementStats* burning = fire_sim_get_burning_elements(sim, &len);
+/// if (burning) {
+///     for (uintptr_t i = 0; i < len; i++) {
+///         // Use burning[i] - no need to free
+///     }
+/// }
+/// ```
+pub unsafe extern "C" fn fire_sim_get_burning_elements(
+    ptr: *const FireSimInstance,
+    out_len: *mut usize,
+) -> *const ElementStats {
+    if out_len.is_null() {
+        return ptr::null();
+    }
+
+    instance_from_ptr(ptr, |instance| {
+        // Acquire Mutex lock on cached snapshot
+        let mut snapshot = match instance.burning_snapshot.lock() {
+            Ok(guard) => guard,
+            Err(_) => return ptr::null(), // Mutex poisoned, return null
         };
+        snapshot.clear(); // O(1) - keeps capacity
 
-        sim.add_fuel_element(position, fuel, mass, part, parent)
-    }) {
-        Some(id) => {
-            *out_element_id = id;
-            FIRE_SIM_SUCCESS
+        // Populate snapshot from current burning elements
+        with_fire_sim(instance, |sim| {
+            snapshot.extend(
+                sim.get_burning_elements()
+                    .into_iter()
+                    .map(|e| ElementStats::from((e, sim))),
+            );
+        });
+
+        // Set output length
+        unsafe {
+            *out_len = snapshot.len();
         }
-        None => FIRE_SIM_INVALID_ID,
-    }
+
+        // Return borrowed pointer (valid until next call or lock release)
+        snapshot.as_ptr()
+    })
+    .unwrap_or(ptr::null())
 }
 
-/// Ignite a fuel element in ultra simulation
-///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
 #[no_mangle]
-pub extern "C" fn fire_sim_ignite(sim_id: usize, element_id: u32, initial_temp: f32) -> i32 {
-    match with_fire_sim_write(&sim_id, |sim| sim.ignite_element(element_id, initial_temp)) {
-        Some(_) => FIRE_SIM_SUCCESS,
-        None => FIRE_SIM_INVALID_ID,
-    }
+/// Clear the cached burning elements snapshot and free unused memory.
+///
+/// This clears the snapshot and shrinks its capacity to fit the actual data.
+/// Useful for memory-constrained environments or between simulation phases.
+///
+/// Thread-safe: Acquires Mutex lock on snapshot cache.
+///
+/// - `ptr` must be a pointer returned by `fire_sim_new`.
+/// - If `ptr` is null or invalid, this is a no-op.
+/// - This operation may cause an allocation if memory is reclaimed from the OS
+///   (typically negligible, ~microseconds on modern systems).
+///
+/// Returns `true` on success, `false` if the pointer is invalid or the lock is poisoned.
+pub extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) -> bool {
+    instance_from_ptr(ptr, |instance| {
+        match instance.burning_snapshot.lock() {
+            Ok(mut snapshot) => {
+                snapshot.clear();
+                snapshot.shrink_to_fit(); // Free unused capacity
+                true
+            }
+            Err(_) => false, // Mutex poisoned
+        }
+    })
+    .unwrap_or(false)
 }
 
-/// Query elevation at world position
+#[no_mangle]
+/// Fill `out_stats` with a snapshot of the specified element's statistics.
 ///
-/// # Parameters
-/// - `out_elevation`: Pointer to receive elevation value
+/// - `element_id` is the element index to query.
 ///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_elevation` set
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
-/// - `FIRE_SIM_NULL_POINTER` (-2) if out_elevation is null
+/// Returns:
+/// - `true` on success (`out_stats` filled)
+/// - `false` if the pointer is invalid, the element does not exist, or on any error.
 ///
 /// # Safety
-/// `out_elevation` must be a valid, non-null pointer
-#[no_mangle]
-pub unsafe extern "C" fn fire_sim_get_elevation(
-    sim_id: usize,
-    x: f32,
-    y: f32,
-    out_elevation: *mut f32,
-) -> i32 {
-    if out_elevation.is_null() {
-        return FIRE_SIM_NULL_POINTER;
+///
+/// - `ptr` must be a valid pointer returned by `fire_sim_new` or null.
+/// - `out_stats` must be a valid, non-null pointer to a `ElementStats` that this function will write to.
+pub unsafe extern "C" fn fire_sim_get_element_stats(
+    ptr: *const FireSimInstance,
+    element_id: usize,
+    out_stats: *mut ElementStats,
+) -> bool {
+    if out_stats.is_null() {
+        return false;
     }
 
-    match with_fire_sim_read(&sim_id, |sim| sim.terrain().elevation_at(x, y)) {
-        Some(elev) => {
-            *out_elevation = elev;
-            FIRE_SIM_SUCCESS
-        }
-        None => FIRE_SIM_INVALID_ID,
-    }
-}
-
-/// Get grid cell state at world position
-///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success, with `out_cell` populated
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist or cell not found
-/// - `FIRE_SIM_NULL_POINTER` (-2) if out_cell is null
-///
-/// # Safety
-/// `out_cell` must be a valid, non-null pointer
-#[no_mangle]
-pub unsafe extern "C" fn fire_sim_get_cell(
-    sim_id: usize,
-    x: f32,
-    y: f32,
-    z: f32,
-    out_cell: *mut GridCellVisual,
-) -> i32 {
-    if out_cell.is_null() {
-        return FIRE_SIM_NULL_POINTER;
-    }
-
-    match with_fire_sim_read(&sim_id, |sim| {
-        let pos = Vec3::new(x, y, z);
-        if let Some(cell) = sim.get_cell_at_position(pos) {
-            (*out_cell).temperature = cell.temperature();
-            let wind = cell.wind();
-            (*out_cell).wind_x = wind.x;
-            (*out_cell).wind_y = wind.y;
-            (*out_cell).wind_z = wind.z;
-            (*out_cell).humidity = cell.humidity();
-            (*out_cell).oxygen = cell.oxygen();
-            (*out_cell).smoke_particles = cell.smoke_particles();
-            (*out_cell).suppression_agent = cell.suppression_agent();
-            return true;
-        }
-        false
-    }) {
-        Some(true) => FIRE_SIM_SUCCESS,
-        _ => FIRE_SIM_INVALID_ID,
-    }
-}
-
-/// Apply suppression directly at coordinates without physics simulation
-///
-/// This function immediately applies suppression agent at the specified coordinates,
-/// bypassing the physics-based droplet simulation. Useful for direct application
-/// such as ground crews or instant effects.
-///
-/// # Parameters
-/// - `sim_id`: Simulation ID
-/// - `x`, `y`, `z`: World coordinates where suppression is applied
-/// - `mass`: Mass of suppression agent in kg
-/// - `agent_type`: Type of suppression agent (0=Water, 1=ShortTermRetardant, 2=LongTermRetardant, 3=Foam)
-///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
-/// - `FIRE_SIM_INVALID_FUEL` (-3) if agent_type is invalid
-#[no_mangle]
-pub extern "C" fn fire_sim_apply_suppression_direct(
-    sim_id: usize,
-    x: f32,
-    y: f32,
-    z: f32,
-    mass: f32,
-    agent_type: u8,
-) -> i32 {
-    let agent = match agent_type {
-        0 => SuppressionAgent::Water,
-        1 => SuppressionAgent::ShortTermRetardant,
-        2 => SuppressionAgent::LongTermRetardant,
-        3 => SuppressionAgent::Foam,
-        _ => return FIRE_SIM_INVALID_FUEL,
-    };
-
-    match with_fire_sim_write(&sim_id, |sim| {
-        sim.apply_suppression_direct(Vec3::new(x, y, z), mass, agent);
-    }) {
-        Some(_) => FIRE_SIM_SUCCESS,
-        None => FIRE_SIM_INVALID_ID,
-    }
-}
-
-/// Apply water suppression directly at coordinates without physics simulation
-///
-/// Convenience function for water suppression. Same as `fire_sim_apply_suppression_direct`
-/// with agent_type=0 (Water).
-///
-/// # Parameters
-/// - `sim_id`: Simulation ID
-/// - `x`, `y`, `z`: World coordinates where water is applied
-/// - `mass`: Mass of water in kg
-///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
-#[no_mangle]
-pub extern "C" fn fire_sim_apply_water_direct(
-    sim_id: usize,
-    x: f32,
-    y: f32,
-    z: f32,
-    mass: f32,
-) -> i32 {
-    fire_sim_apply_suppression_direct(sim_id, x, y, z, mass, 0)
-}
-
-/// Get ultra simulation statistics
-///
-/// # Returns
-/// - `FIRE_SIM_SUCCESS` (0) on success, with all pointers populated
-/// - `FIRE_SIM_INVALID_ID` (-1) if sim_id doesn't exist
-/// - `FIRE_SIM_NULL_POINTER` (-2) if any pointer is null
-///
-/// # Safety
-/// All pointer parameters must be valid, non-null pointers
-#[no_mangle]
-pub unsafe extern "C" fn fire_sim_get_stats(
-    sim_id: usize,
-    out_burning: *mut u32,
-    out_total: *mut u32,
-    out_active_cells: *mut u32,
-    out_total_cells: *mut u32,
-    out_fuel_consumed: *mut f32,
-) -> i32 {
-    if out_burning.is_null()
-        || out_total.is_null()
-        || out_active_cells.is_null()
-        || out_total_cells.is_null()
-        || out_fuel_consumed.is_null()
-    {
-        return FIRE_SIM_NULL_POINTER;
-    }
-
-    match with_fire_sim_read(&sim_id, |sim| {
-        let stats = sim.get_stats();
-        *out_burning = stats.burning_elements as u32;
-        *out_total = stats.total_elements as u32;
-        *out_active_cells = stats.active_cells as u32;
-        *out_total_cells = stats.total_cells as u32;
-        *out_fuel_consumed = stats.total_fuel_consumed;
-    }) {
-        Some(_) => FIRE_SIM_SUCCESS,
-        None => FIRE_SIM_INVALID_ID,
-    }
+    instance_from_ptr(ptr, |instance| {
+        // Query read-only state
+        with_fire_sim(instance, |sim| match sim.get_element(element_id) {
+            Some(element) => {
+                let stats = ElementStats::from((element, sim));
+                unsafe {
+                    *out_stats = stats;
+                }
+                true
+            }
+            None => false,
+        })
+    })
+    .unwrap_or(false)
 }

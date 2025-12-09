@@ -2,9 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [ main, copilot/** ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:  
 
 env:
   CARGO_TERM_COLOR: always
@@ -121,15 +119,13 @@ jobs:
       - name: Build (dev/debug)
         run: cargo build --all-features
 
-      - name: Upload dev demo binaries (GUI + Headless)
+      - name: Upload dev demo-interactive binary
         uses: actions/upload-artifact@v4
         with:
-          name: demo-binaries-dev-${{ matrix.os }}
+          name: demo-interactive-dev-${{ matrix.os }}
           path: |
-            target/debug/demo-gui
-            target/debug/demo-gui.exe
-            target/debug/demo-headless
-            target/debug/demo-headless.exe
+            target/debug/demo-interactive
+            target/debug/demo-interactive.exe
 
   build-release:
     name: "Build Release"
@@ -167,12 +163,10 @@ jobs:
       - name: Build release
         run: cargo build --release --all-features
 
-      - name: Upload release demo binaries (GUI + Headless)
+      - name: Upload release demo-interactive binary
         uses: actions/upload-artifact@v4
         with:
-          name: demo-binaries-release-${{ matrix.os }}
+          name: demo-interactive-release-${{ matrix.os }}
           path: |
-            target/release/demo-gui
-            target/release/demo-gui.exe
-            target/release/demo-headless
-            target/release/demo-headless.exe
+            target/release/demo-interactive
+            target/release/demo-interactive.exe

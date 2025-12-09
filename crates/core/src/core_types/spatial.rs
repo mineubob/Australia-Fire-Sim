@@ -1,9 +1,9 @@
 use crate::core_types::element::Vec3;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 /// Spatial index using hash-based octree for fast neighbor queries
-pub struct SpatialIndex {
-    octree: FxHashMap<u64, Vec<(u32, Vec3)>>,
+pub(crate) struct SpatialIndex {
+    octree: FxHashMap<u64, Vec<(usize, Vec3)>>,
     cell_size: f32,
     bounds: (Vec3, Vec3),
 }
@@ -12,7 +12,7 @@ impl SpatialIndex {
     /// Create a new spatial index
     pub fn new(bounds: (Vec3, Vec3), cell_size: f32) -> Self {
         SpatialIndex {
-            octree: FxHashMap::with_capacity_and_hasher(1024, Default::default()),
+            octree: FxHashMap::with_capacity_and_hasher(1024, FxBuildHasher),
             cell_size,
             bounds,
         }
@@ -29,39 +29,18 @@ impl SpatialIndex {
     }
 
     /// Insert an element into the spatial index
-    pub fn insert(&mut self, id: u32, position: Vec3) {
+    pub fn insert(&mut self, id: usize, position: Vec3) {
         let hash = self.hash_position(position);
         self.octree.entry(hash).or_default().push((id, position));
     }
 
-    /// Bulk insert elements (more efficient than repeated insert calls)
-    pub fn insert_bulk(&mut self, elements: &[(u32, Vec3)]) {
-        // Pre-compute capacity needed
-        if self.octree.capacity() < self.octree.len() + elements.len() / 10 {
-            self.octree.reserve(elements.len() / 10);
-        }
-
-        for &(id, position) in elements {
-            let hash = self.hash_position(position);
-            self.octree.entry(hash).or_default().push((id, position));
-        }
-    }
-
-    /// Remove an element from the spatial index
-    pub fn remove(&mut self, id: u32, position: Vec3) {
-        let hash = self.hash_position(position);
-        if let Some(cell) = self.octree.get_mut(&hash) {
-            cell.retain(|(elem_id, _)| *elem_id != id);
-            if cell.is_empty() {
-                self.octree.remove(&hash);
-            }
-        }
-    } // Query all elements within a radius
-    pub fn query_radius(&self, pos: Vec3, radius: f32) -> Vec<u32> {
+    /// Query all elements within a radius
+    pub fn query_radius(&self, pos: Vec3, radius: f32) -> Vec<usize> {
         let cells_needed = (radius / self.cell_size).ceil() as i32;
         let radius_sq = radius * radius;
 
         // OPTIMIZATION: Pre-allocate based on expected results to avoid reallocation
+        // Under catastrophic conditions (35m radius), expect ~100-200 results
         // Typical case: 20 elements per cell × cells_to_check, capped at 2000
         let expected_cells = match cells_needed {
             1 => 27,
@@ -70,7 +49,13 @@ impl SpatialIndex {
             4 => 729,
             _ => (2 * cells_needed + 1).pow(3) as usize,
         };
-        let mut results = Vec::with_capacity((expected_cells * 20).min(2000));
+        // Adjust capacity estimate: fewer elements at larger radii due to early exit
+        let capacity_estimate = if cells_needed <= 2 {
+            (expected_cells * 20).min(500)
+        } else {
+            (expected_cells * 10).min(1000)
+        };
+        let mut results = Vec::with_capacity(capacity_estimate);
 
         // CRITICAL OPTIMIZATION: Compute base cell coordinates ONCE
         let base_ix = ((pos.x - self.bounds.0.x) / self.cell_size).floor() as i32;
@@ -186,29 +171,6 @@ impl SpatialIndex {
         }
 
         results
-    }
-
-    /// Clear and rebuild the entire index
-    pub fn rebuild<F>(&mut self, elements: &[u32], position_fn: F)
-    where
-        F: Fn(u32) -> Vec3,
-    {
-        self.octree.clear();
-
-        for &id in elements {
-            let position = position_fn(id);
-            self.insert(id, position);
-        }
-    }
-
-    /// Get number of cells in the index
-    pub fn cell_count(&self) -> usize {
-        self.octree.len()
-    }
-
-    /// Get number of elements in the index
-    pub fn element_count(&self) -> usize {
-        self.octree.values().map(|v| v.len()).sum()
     }
 }
 

@@ -19,7 +19,7 @@ use crate::core_types::element::FuelElement;
 
 /// Crown fire type classification
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum CrownFireType {
+pub(crate) enum CrownFireType {
     /// No crown fire - surface fire only
     Surface,
     /// Passive crown fire - intermittent torching of individual trees
@@ -30,23 +30,37 @@ pub enum CrownFireType {
 
 /// Crown fire behavior parameters
 #[derive(Debug, Clone, Copy)]
-pub struct CrownFireBehavior {
+pub(crate) struct CrownFireBehavior {
     /// Crown fire type
-    pub fire_type: CrownFireType,
-    /// Critical surface fire intensity for crown fire initiation (kW/m)
-    pub critical_surface_intensity: f32,
-    /// Actual surface fire intensity (kW/m)
-    pub surface_intensity: f32,
-    /// Critical crown fire spread rate (m/min)
-    pub critical_crown_spread_rate: f32,
+    fire_type: CrownFireType,
     /// Ratio of active to critical crown spread rate
-    pub crown_fraction_burned: f32,
+    crown_fraction_burned: f32,
+}
+
+impl CrownFireBehavior {
+    /// Create new crown fire behavior
+    pub(crate) fn new(fire_type: CrownFireType, crown_fraction_burned: f32) -> Self {
+        Self {
+            fire_type,
+            crown_fraction_burned,
+        }
+    }
+
+    /// Get the fire type
+    pub(crate) fn fire_type(&self) -> CrownFireType {
+        self.fire_type
+    }
+
+    /// Get crown fraction burned
+    pub(crate) fn crown_fraction_burned(&self) -> f32 {
+        self.crown_fraction_burned
+    }
 }
 
 /// Calculate critical surface fire intensity for crown fire initiation
 ///
 /// Van Wagner (1977) formula:
-/// I_o = (0.01 × CBD × H × (460 + 25.9 × M_c)) / CBH
+/// `I_o` = (0.01 × CBD × H × (460 + 25.9 × `M_c`)) / CBH
 ///
 /// # Arguments
 /// * `crown_bulk_density` - Crown bulk density (kg/m³), typical range 0.05-0.3
@@ -59,6 +73,7 @@ pub struct CrownFireBehavior {
 ///
 /// # References
 /// Van Wagner (1977), Equation 4
+#[must_use]
 pub fn calculate_critical_surface_intensity(
     crown_bulk_density: f32,
     heat_content: f32,
@@ -76,7 +91,7 @@ pub fn calculate_critical_surface_intensity(
 /// Calculate critical crown fire spread rate
 ///
 /// Van Wagner (1977) formula:
-/// R_critical = 3.0 / CBD
+/// `R_critical` = 3.0 / CBD
 ///
 /// # Arguments
 /// * `crown_bulk_density` - Crown bulk density (kg/m³)
@@ -86,6 +101,7 @@ pub fn calculate_critical_surface_intensity(
 ///
 /// # References
 /// Van Wagner (1977), Equation 9
+#[must_use]
 pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
     if crown_bulk_density <= 0.0 {
         return 0.0;
@@ -98,7 +114,7 @@ pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
 /// Calculate crown fraction burned (CFB)
 ///
 /// Cruz & Alexander (2010) formula:
-/// CFB = 1 - exp(-0.23 × (R_active - R_critical))
+/// CFB = 1 - exp(-0.23 × (`R_active` - `R_critical`))
 ///
 /// # Arguments
 /// * `active_spread_rate` - Actual crown fire spread rate (m/min)
@@ -109,7 +125,10 @@ pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
 ///
 /// # References
 /// Cruz & Alexander (2010)
-pub fn calculate_crown_fraction_burned(active_spread_rate: f32, critical_spread_rate: f32) -> f32 {
+pub(crate) fn calculate_crown_fraction_burned(
+    active_spread_rate: f32,
+    critical_spread_rate: f32,
+) -> f32 {
     if active_spread_rate <= critical_spread_rate {
         return 0.0;
     }
@@ -123,13 +142,13 @@ pub fn calculate_crown_fraction_burned(active_spread_rate: f32, critical_spread_
 /// Determine crown fire type based on spread rates and intensity
 ///
 /// Classification:
-/// - Surface: I_surface < I_critical
-/// - Passive: I_surface >= I_critical AND R_active < R_critical
-/// - Active: I_surface >= I_critical AND R_active >= R_critical
+/// - Surface: `I_surface` < `I_critical`
+/// - Passive: `I_surface` >= `I_critical` AND `R_active` < `R_critical`
+/// - Active: `I_surface` >= `I_critical` AND `R_active` >= `R_critical`
 ///
 /// # References
 /// Van Wagner (1977, 1993)
-pub fn determine_crown_fire_type(
+pub(crate) fn determine_crown_fire_type(
     surface_intensity: f32,
     critical_surface_intensity: f32,
     active_spread_rate: f32,
@@ -152,7 +171,7 @@ pub fn determine_crown_fire_type(
 /// For Australian fuels, uses the minimum of Van Wagner threshold and fuel-specific
 /// threshold, as Van Wagner was calibrated for Canadian conifers and may overestimate
 /// crown fire resistance in eucalyptus forests with volatile oils and ladder fuels.
-pub fn calculate_crown_fire_behavior(
+pub(crate) fn calculate_crown_fire_behavior(
     element: &FuelElement,
     crown_bulk_density: f32,
     crown_base_height: f32,
@@ -163,7 +182,7 @@ pub fn calculate_crown_fire_behavior(
     // Calculate critical surface intensity (Van Wagner 1977)
     let van_wagner_threshold = calculate_critical_surface_intensity(
         crown_bulk_density,
-        element.fuel.heat_content,
+        *element.fuel.heat_content,
         foliar_moisture_content,
         crown_base_height,
     );
@@ -193,40 +212,7 @@ pub fn calculate_crown_fire_behavior(
         0.0
     };
 
-    CrownFireBehavior {
-        fire_type,
-        critical_surface_intensity,
-        surface_intensity,
-        critical_crown_spread_rate,
-        crown_fraction_burned,
-    }
-}
-
-/// Apply crown fire effects to fuel element
-///
-/// Increases burn rate and intensity when crown fire conditions are met
-pub fn apply_crown_fire_effects(
-    _element: &mut FuelElement,
-    crown_behavior: &CrownFireBehavior,
-) -> f32 {
-    match crown_behavior.fire_type {
-        CrownFireType::Surface => {
-            // No crown fire enhancement
-            1.0
-        }
-        CrownFireType::Passive => {
-            // Passive crown fire - intermittent torching
-            // Multiply burn rate by 1.5-2.0 based on intensity ratio
-            let intensity_ratio =
-                crown_behavior.surface_intensity / crown_behavior.critical_surface_intensity;
-            1.0 + (intensity_ratio - 1.0) * 0.5
-        }
-        CrownFireType::Active => {
-            // Active crown fire - full crown involvement
-            // Multiply burn rate by 2.0-4.0 based on crown fraction burned
-            2.0 + crown_behavior.crown_fraction_burned * 2.0
-        }
-    }
+    CrownFireBehavior::new(fire_type, crown_fraction_burned)
 }
 
 #[cfg(test)]
@@ -251,8 +237,7 @@ mod tests {
         // = 30 × 3050 / 5.0 = 91500 / 5.0 = 18300 kW/m
         assert!(
             (i_critical - 18300.0).abs() < 100.0,
-            "I_critical was {}",
-            i_critical
+            "I_critical was {i_critical}"
         );
     }
 
@@ -266,8 +251,7 @@ mod tests {
         // Expected: 3.0 / 0.15 = 20 m/min
         assert!(
             (r_critical - 20.0).abs() < 0.1,
-            "R_critical was {}",
-            r_critical
+            "R_critical was {r_critical}"
         );
     }
 
@@ -281,7 +265,7 @@ mod tests {
         // Should be between 0 and 1
         assert!(cfb > 0.0 && cfb <= 1.0);
         // CFB = 1 - exp(-0.23 × (30-20)) = 1 - exp(-2.3) ≈ 0.9
-        assert!((cfb - 0.9).abs() < 0.1, "CFB was {}", cfb);
+        assert!((cfb - 0.9).abs() < 0.1, "CFB was {cfb}");
     }
 
     #[test]
@@ -325,9 +309,7 @@ mod tests {
         // But in practice, lower CBH means fire reaches crown sooner
         assert!(
             stringybark_i > smooth_bark_i,
-            "Stringybark I_critical: {}, Smooth bark: {}",
-            stringybark_i,
-            smooth_bark_i
+            "Stringybark I_critical: {stringybark_i}, Smooth bark: {smooth_bark_i}"
         );
 
         // Both should be reasonable values (thousands of kW/m)
@@ -336,15 +318,16 @@ mod tests {
 
     #[test]
     fn test_crown_fire_behavior_integration() {
+        use crate::core_types::units::{Celsius, Kilograms};
+
         let mut element = FuelElement::new(
             0,
             Vec3::new(0.0, 0.0, 0.0),
             Fuel::eucalyptus_stringybark(),
-            5.0,
+            Kilograms::new(5.0),
             FuelPart::TrunkUpper,
-            None,
         );
-        element.temperature = 800.0;
+        element.temperature = Celsius::new(800.0);
         element.ignited = true;
 
         let behavior = calculate_crown_fire_behavior(
@@ -356,7 +339,7 @@ mod tests {
         );
 
         // Should classify as some type of crown fire behavior
-        assert!(behavior.critical_surface_intensity > 0.0);
-        assert!(behavior.critical_crown_spread_rate > 0.0);
+        // crown_fraction_burned is the output we can verify
+        assert!(behavior.crown_fraction_burned() >= 0.0);
     }
 }

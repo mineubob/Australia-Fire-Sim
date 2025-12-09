@@ -40,14 +40,14 @@ pub enum CombustionPhase {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SmolderingState {
     /// Current combustion phase
-    pub phase: CombustionPhase,
+    phase: CombustionPhase,
     /// Heat release rate multiplier (relative to flaming)
     /// Flaming = 1.0, Smoldering = 0.01-0.1
-    pub heat_release_multiplier: f32,
+    heat_release_multiplier: f32,
     /// Burn rate multiplier (slower in smoldering)
-    pub burn_rate_multiplier: f32,
+    burn_rate_multiplier: f32,
     /// Time spent in current phase (seconds)
-    pub phase_duration: f32,
+    phase_duration: f32,
 }
 
 impl SmolderingState {
@@ -59,6 +59,34 @@ impl SmolderingState {
             burn_rate_multiplier: 0.0,
             phase_duration: 0.0,
         }
+    }
+
+    /// Create new flaming state (for explicit ignition)
+    /// Use this when an element is directly ignited (e.g., by user action or ember)
+    /// to bypass the Unignited phase
+    pub(crate) fn new_flaming() -> Self {
+        SmolderingState {
+            phase: CombustionPhase::Flaming,
+            heat_release_multiplier: 1.0,
+            burn_rate_multiplier: 1.0,
+            phase_duration: 0.0,
+        }
+    }
+
+    /// Get the current combustion phase
+    #[must_use]
+    pub fn phase(&self) -> CombustionPhase {
+        self.phase
+    }
+
+    /// Get the heat release multiplier
+    pub(crate) fn heat_release_multiplier(&self) -> f32 {
+        self.heat_release_multiplier
+    }
+
+    /// Get the burn rate multiplier
+    pub(crate) fn burn_rate_multiplier(&self) -> f32 {
+        self.burn_rate_multiplier
     }
 }
 
@@ -73,7 +101,10 @@ impl Default for SmolderingState {
 /// Transition occurs when:
 /// - Temperature drops below flaming threshold but above smoldering minimum
 /// - Oxygen concentration is low (but not zero)
-/// - Fuel has been burning for some time
+/// - Fuel has been burning for some time (allows initial flame establishment)
+///
+/// CRITICAL: A fire should only transition to smoldering when oxygen-limited.
+/// Time alone is NOT sufficient - a well-ventilated fire will keep flaming!
 ///
 /// # Arguments
 /// * `temperature` - Current fuel temperature (°C)
@@ -85,7 +116,7 @@ impl Default for SmolderingState {
 ///
 /// # References
 /// Rein (2009), Drysdale (2011)
-pub fn should_transition_to_smoldering(
+pub(crate) fn should_transition_to_smoldering(
     temperature: f32,
     oxygen_fraction: f32,
     time_burning: f32,
@@ -93,13 +124,16 @@ pub fn should_transition_to_smoldering(
     // Temperature in smoldering range (200-700°C)
     let in_smoldering_temp_range = (200.0..700.0).contains(&temperature);
 
-    // Oxygen limited (but not depleted)
+    // Oxygen limited (but not depleted) - PRIMARY condition for smoldering transition
     let oxygen_limited = oxygen_fraction < 0.15 && oxygen_fraction > 0.05;
 
-    // Has been burning for at least 30 seconds (fuel well-established)
+    // Has been burning long enough for transition to be possible
+    // (initial 30s allows flame establishment before checking oxygen)
     let sufficient_duration = time_burning > 30.0;
 
-    in_smoldering_temp_range && (oxygen_limited || sufficient_duration)
+    // CRITICAL: Require BOTH conditions - oxygen must be limited!
+    // Previously used || which caused fires to smolder after 30s regardless of oxygen
+    in_smoldering_temp_range && oxygen_limited && sufficient_duration
 }
 
 /// Calculate smoldering heat release rate multiplier
@@ -117,7 +151,7 @@ pub fn should_transition_to_smoldering(
 ///
 /// # References
 /// Rein (2009) - Smoldering heat release is 10-100x lower than flaming
-pub fn calculate_smoldering_heat_multiplier(temperature: f32, oxygen_fraction: f32) -> f32 {
+pub(crate) fn calculate_smoldering_heat_multiplier(temperature: f32, oxygen_fraction: f32) -> f32 {
     if temperature < 200.0 {
         return 0.0; // Too cold for smoldering
     }
@@ -152,7 +186,7 @@ pub fn calculate_smoldering_heat_multiplier(temperature: f32, oxygen_fraction: f
 ///
 /// # References
 /// Ohlemiller (1985)
-pub fn calculate_smoldering_burn_rate_multiplier(temperature: f32) -> f32 {
+pub(crate) fn calculate_smoldering_burn_rate_multiplier(temperature: f32) -> f32 {
     if temperature < 200.0 {
         0.0 // No smoldering
     } else if temperature < 400.0 {
@@ -177,7 +211,7 @@ pub fn calculate_smoldering_burn_rate_multiplier(temperature: f32) -> f32 {
 ///
 /// # Returns
 /// Updated smoldering state
-pub fn update_smoldering_state(
+pub(crate) fn update_smoldering_state(
     mut state: SmolderingState,
     temperature: f32,
     oxygen_fraction: f32,
@@ -268,17 +302,24 @@ mod tests {
 
     #[test]
     fn test_transition_criteria() {
-        // Should transition: low temp, normal oxygen, long duration
-        assert!(should_transition_to_smoldering(400.0, 0.21, 60.0));
+        // Should NOT transition: normal oxygen - fire stays flaming even with long duration
+        // A well-ventilated fire will continue flaming, not smolder
+        assert!(!should_transition_to_smoldering(400.0, 0.21, 60.0));
 
-        // Should transition: normal temp, low oxygen
-        assert!(should_transition_to_smoldering(500.0, 0.10, 10.0));
+        // Should transition: oxygen limited (< 0.15) AND long duration
+        assert!(should_transition_to_smoldering(400.0, 0.10, 60.0));
 
-        // Should NOT transition: high temp
-        assert!(!should_transition_to_smoldering(800.0, 0.21, 60.0));
+        // Should NOT transition: oxygen limited but short duration
+        assert!(!should_transition_to_smoldering(400.0, 0.10, 10.0));
 
-        // Should NOT transition: too cold
-        assert!(!should_transition_to_smoldering(150.0, 0.21, 60.0));
+        // Should NOT transition: high temp (above smoldering range)
+        assert!(!should_transition_to_smoldering(800.0, 0.10, 60.0));
+
+        // Should NOT transition: too cold (below smoldering range)
+        assert!(!should_transition_to_smoldering(150.0, 0.10, 60.0));
+
+        // Should NOT transition: oxygen too depleted (below 0.05)
+        assert!(!should_transition_to_smoldering(400.0, 0.03, 60.0));
     }
 
     #[test]
