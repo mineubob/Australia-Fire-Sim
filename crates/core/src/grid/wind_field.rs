@@ -626,8 +626,10 @@ impl WindField {
             for iz in 0..self.config.nz {
                 for iy in iy_min..iy_max {
                     for ix in ix_min..ix_max {
-                        let x = usize_to_f32(ix) * self.config.cell_size + self.config.cell_size * 0.5;
-                        let y = usize_to_f32(iy) * self.config.cell_size + self.config.cell_size * 0.5;
+                        let x =
+                            usize_to_f32(ix) * self.config.cell_size + self.config.cell_size * 0.5;
+                        let y =
+                            usize_to_f32(iy) * self.config.cell_size + self.config.cell_size * 0.5;
                         let terrain_z = self.terrain_height[self.index_2d(ix, iy)];
                         let z = usize_to_f32(iz) * self.config.cell_size_z
                             + self.config.cell_size_z * 0.5
