@@ -1103,12 +1103,12 @@ impl WeatherSystem {
         // If using a preset, calculate weather from preset
         if let Some(preset) = &self.preset {
             // Update targets from preset
-            *self.target_temperature = preset.get_temperature(
+            *self.target_temperature = Celsius::from(preset.get_temperature(
                 self.day_of_year,
                 12.0, // Base temperature at noon
                 self.climate_pattern,
                 self.is_heatwave,
-            );
+            ));
             *self.target_humidity = preset.get_humidity(
                 self.day_of_year,
                 f32::from(*self.target_temperature),
@@ -1123,8 +1123,9 @@ impl WeatherSystem {
                 self.climate_pattern,
                 self.is_heatwave,
             );
-            let temp_diff = temperature - *self.temperature;
-            *self.temperature += f64::from(temp_diff * (dt / 3600.0).min(0.1));
+            let temperature_f64 = f64::from(temperature);
+            let temp_diff = temperature_f64 - *self.temperature;
+            *self.temperature += temp_diff * (f64::from(dt) / 3600.0).min(0.1);
 
             // Humidity varies with temperature
             let humidity =
@@ -1152,7 +1153,7 @@ impl WeatherSystem {
 
             let target_with_diurnal = *self.target_temperature + f64::from(diurnal_variation);
             let temp_diff = target_with_diurnal - *self.temperature;
-            *self.temperature += f64::from(temp_diff * (dt / 3600.0).min(0.1));
+            *self.temperature += temp_diff * (f64::from(dt) / 3600.0).min(0.1);
 
             // Humidity varies inversely with temperature
             let humidity_variation = 15.0 * hour_offset.cos();
@@ -1245,7 +1246,7 @@ impl WeatherSystem {
         new_wind_speed: f32,
         new_wind_dir: f32,
     ) {
-        self.target_temperature = Celsius::new(new_temp);
+        self.target_temperature = Celsius::from(new_temp);
         self.target_humidity = Percent::new(new_humidity);
         self.target_wind_speed = KilometersPerHour::new(new_wind_speed);
         self.target_wind_direction = Degrees::new(new_wind_dir);
@@ -1337,7 +1338,7 @@ impl WeatherSystem {
         // Simplified fuel moisture calculation
         // Higher humidity increases moisture, higher temperature decreases it
         let humidity_factor = *self.humidity / 100.0;
-        let temp_factor = (30.0 / (*self.temperature).max(10.0)).min(2.0);
+        let temp_factor = (30.0 / f32::from(*self.temperature).max(10.0)).min(2.0);
 
         (base_moisture * humidity_factor * temp_factor).clamp(0.0, 1.0)
     }
