@@ -1014,7 +1014,7 @@ impl WeatherSystem {
         // - T=45°C, H=10%, V=60km/h, D=10 → FFDI=172.3 (reference: 173.5)
         // https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest
         let exponent = -0.45 + 0.987 * df.ln() - 0.0345 * *self.humidity
-            + 0.0338 * f32::from(*self.temperature)
+            + 0.0338 * (*self.temperature as f32)
             + 0.0234 * *self.wind_speed;
 
         let ffdi = 2.11 * exponent.exp();

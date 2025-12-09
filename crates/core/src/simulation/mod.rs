@@ -751,7 +751,7 @@ impl FireSimulation {
                             // handles all timelag classes and calculates weighted average
                             moisture_state.update(
                                 &element.fuel,
-                                weather_temp,
+                                f32::from(weather_temp),
                                 weather_humidity / 100.0,
                                 dt_hours,
                             );
@@ -1172,7 +1172,7 @@ impl FireSimulation {
                         // Cell should not exceed element temp (can't be hotter than source)
                         // and must respect physical limits for wildfire air temperatures
                         let target_temp = (cell.temperature + temp_rise)
-                            .min(temp * atm_efficiency) // Fuel-specific max transfer (grass=0.85, forest=0.70)
+                            .min(f32::from(temp * f64::from(atm_efficiency))) // Fuel-specific max transfer (grass=0.85, forest=0.70)
                             .min(800.0); // Physical cap for wildfire plume air
 
                         cell.temperature = target_temp;
@@ -1360,7 +1360,7 @@ impl FireSimulation {
         // Atmospheric stability changes over minutes, not seconds
         if self.current_frame.is_multiple_of(5) {
             self.atmospheric_profile = AtmosphericProfile::from_surface_conditions(
-                *self.weather.temperature,
+                f32::from(*self.weather.temperature),
                 *self.weather.humidity,
                 wind_vector.magnitude(),
                 self.weather.is_daytime(),
@@ -1422,7 +1422,7 @@ impl FireSimulation {
 
         // 6e. Generate embers with Albini spotting physics (enhanced by pyrocumulus)
         // Collect ember data first to avoid borrow conflicts (ember generation requires mutable push)
-        let new_embers: Vec<(Vec3, Vec3, f32, u8)> = self
+        let new_embers: Vec<(Vec3, Vec3, f64, u8)> = self
             .burning_elements
             .iter()
             .filter_map(|&element_id| {
@@ -1470,7 +1470,7 @@ impl FireSimulation {
                 new_ember_id,
                 position,
                 velocity,
-                Celsius::new(temperature),
+                Celsius(temperature),
                 Kilograms::new(ember_mass),
                 fuel_id,
             );
