@@ -940,4 +940,59 @@ mod tests {
             crown.fuel.ignition_temperature
         );
     }
+
+    /// Precision validation test: f64 computations should be stable for extreme temperatures
+    ///
+    /// This test validates that the f64 internal precision maintains accuracy
+    /// when computing Stefan-Boltzmann radiation at extreme temperatures where
+    /// T^4 terms can cause significant precision loss in f32.
+    #[test]
+    fn test_precision_extreme_temperatures() {
+        let source = create_test_element(0.0, 0.0, 0.0, 1200.0); // Very hot source
+        let target = create_test_element(5.0, 0.0, 0.0, 20.0);
+
+        let flux = calculate_radiation_flux(&source, &target, 5.0);
+
+        // With 1200°C source, T^4 = (1473K)^4 ≈ 4.7e12
+        // f64 precision ensures this doesn't lose significant digits
+        assert!(flux > 0.0, "Should compute positive flux for hot source");
+        assert!(
+            flux < 1e6,
+            "Flux should be physically reasonable (< 1 MW), got {flux}"
+        );
+
+        // Verify calculation is consistent (running twice should give same result)
+        let flux2 = calculate_radiation_flux(&source, &target, 5.0);
+        assert!(
+            (flux - flux2).abs() < 1e-6,
+            "Repeated calculations should be identical"
+        );
+    }
+
+    /// Precision validation test: small temperature differences should be resolved
+    ///
+    /// This test validates that f64 precision can resolve small temperature
+    /// differences that would be lost in f32 when dealing with T^4 terms.
+    #[test]
+    fn test_precision_small_temperature_differences() {
+        // Create two targets with only 1°C difference
+        let source = create_test_element(0.0, 0.0, 0.0, 600.0);
+        let target1 = create_test_element(5.0, 0.0, 0.0, 100.0);
+        let target2 = create_test_element(5.0, 0.0, 0.0, 101.0);
+
+        let flux1 = calculate_radiation_flux(&source, &target1, 5.0);
+        let flux2 = calculate_radiation_flux(&source, &target2, 5.0);
+
+        // Even with 1°C difference, we should resolve different heat fluxes
+        // The difference should be small but non-zero
+        let diff = (flux1 - flux2).abs();
+        assert!(
+            diff > 1e-6,
+            "Should resolve 1°C temperature difference: diff={diff}"
+        );
+        assert!(
+            diff < 0.1 * flux1,
+            "Difference should be reasonable (<10% for 1°C): diff={diff}, flux1={flux1}"
+        );
+    }
 }

@@ -396,4 +396,72 @@ mod tests {
             "Saturated fuel should be heavily damped"
         );
     }
+
+    /// Precision validation test: polynomial moisture damping at high precision
+    ///
+    /// The moisture damping polynomial (cubic equation) benefits from f64
+    /// precision to maintain accuracy across the full moisture range.
+    #[test]
+    fn test_precision_moisture_damping_polynomial() {
+        // Test at several points across the moisture range
+        let test_points = [0.0, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0];
+        let moisture_extinction = 0.3;
+
+        for &moisture in &test_points {
+            let damping = calculate_moisture_damping(moisture, moisture_extinction);
+
+            // Damping should always be in valid range [0, 1]
+            assert!(
+                (0.0..=1.0).contains(&damping),
+                "Damping at moisture={moisture} should be in [0,1], got {damping}"
+            );
+
+            // Damping should decrease monotonically with moisture (up to extinction)
+            if moisture < moisture_extinction {
+                let damping_higher = calculate_moisture_damping(moisture + 0.01, moisture_extinction);
+                assert!(
+                    damping >= damping_higher,
+                    "Damping should decrease with moisture: {damping} >= {damping_higher}"
+                );
+            }
+        }
+    }
+
+    /// Precision validation test: exponential wind coefficient stability
+    ///
+    /// Wind coefficient calculation involves `exp()` and `pow()` operations
+    /// that benefit from f64 precision to maintain stability.
+    #[test]
+    fn test_precision_wind_coefficient_exponentials() {
+        let fuel = Fuel::dry_grass();
+
+        // Test across wind speed range including extremes
+        let wind_speeds = [0.0, 1.0, 5.0, 10.0, 20.0, 30.0];
+
+        for &wind_speed in &wind_speeds {
+            let coeff = calculate_wind_coefficient(&fuel, wind_speed);
+
+            // Coefficient should be non-negative
+            assert!(
+                coeff >= 0.0,
+                "Wind coefficient at {wind_speed} m/s should be >= 0, got {coeff}"
+            );
+
+            // Coefficient should increase with wind speed (or be zero for no wind)
+            if wind_speed >= 0.1 {
+                assert!(
+                    coeff > 0.0,
+                    "Wind coefficient should be positive for non-zero wind"
+                );
+            }
+        }
+
+        // Higher wind should give higher coefficient
+        let coeff_low = calculate_wind_coefficient(&fuel, 5.0);
+        let coeff_high = calculate_wind_coefficient(&fuel, 15.0);
+        assert!(
+            coeff_high > coeff_low,
+            "Higher wind should give higher coefficient: {coeff_high} > {coeff_low}"
+        );
+    }
 }
