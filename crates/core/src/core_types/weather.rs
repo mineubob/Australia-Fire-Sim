@@ -870,7 +870,7 @@ impl WeatherSystem {
         drought_factor: f32,
     ) -> Self {
         WeatherSystem {
-            temperature: Celsius::new(temperature),
+            temperature: Celsius::from(temperature),
             humidity: Percent::new(humidity),
             wind_speed: KilometersPerHour::new(wind_speed),
             wind_direction: Degrees::new(wind_direction),
@@ -878,7 +878,7 @@ impl WeatherSystem {
             time_of_day: Hours::new(12.0),
             day_of_year: 180,
             weather_front_progress: 0.0,
-            target_temperature: Celsius::new(temperature),
+            target_temperature: Celsius::from(temperature),
             target_humidity: Percent::new(humidity),
             target_wind_speed: KilometersPerHour::new(wind_speed),
             target_wind_direction: Degrees::new(wind_direction),
@@ -906,7 +906,7 @@ impl WeatherSystem {
         let base_drought = if drought_rate > 0.0 { 6.0 } else { 3.0 };
 
         WeatherSystem {
-            temperature: Celsius::new(temperature),
+            temperature: Celsius::from(temperature),
             humidity: Percent::new(humidity),
             wind_speed: KilometersPerHour::new(wind_speed),
             wind_direction: Degrees::new(0.0),
@@ -914,7 +914,7 @@ impl WeatherSystem {
             time_of_day: Hours::new(time_of_day),
             day_of_year,
             weather_front_progress: 0.0,
-            target_temperature: Celsius::new(temperature),
+            target_temperature: Celsius::from(temperature),
             target_humidity: Percent::new(humidity),
             target_wind_speed: KilometersPerHour::new(wind_speed),
             target_wind_direction: Degrees::new(0.0),
@@ -1014,7 +1014,7 @@ impl WeatherSystem {
         // - T=45°C, H=10%, V=60km/h, D=10 → FFDI=172.3 (reference: 173.5)
         // https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest
         let exponent = -0.45 + 0.987 * df.ln() - 0.0345 * *self.humidity
-            + 0.0338 * *self.temperature
+            + 0.0338 * f32::from(*self.temperature)
             + 0.0234 * *self.wind_speed;
 
         let ffdi = 2.11 * exponent.exp();
@@ -1111,7 +1111,7 @@ impl WeatherSystem {
             );
             *self.target_humidity = preset.get_humidity(
                 self.day_of_year,
-                *self.target_temperature,
+                f32::from(*self.target_temperature),
                 self.climate_pattern,
             );
             *self.target_wind_speed = preset.get_wind_speed(self.day_of_year);
@@ -1124,11 +1124,11 @@ impl WeatherSystem {
                 self.is_heatwave,
             );
             let temp_diff = temperature - *self.temperature;
-            *self.temperature += temp_diff * (dt / 3600.0).min(0.1);
+            *self.temperature += f64::from(temp_diff * (dt / 3600.0).min(0.1));
 
             // Humidity varies with temperature
             let humidity =
-                preset.get_humidity(self.day_of_year, *self.temperature, self.climate_pattern);
+                preset.get_humidity(self.day_of_year, f32::from(*self.temperature), self.climate_pattern);
             let humidity_diff = humidity - *self.humidity;
             *self.humidity =
                 (*self.humidity + humidity_diff * (dt / 1800.0).min(0.1)).clamp(5.0, 95.0);
@@ -1150,9 +1150,9 @@ impl WeatherSystem {
             let hour_offset = (*self.time_of_day - 14.0) * std::f32::consts::PI / 12.0;
             let diurnal_variation = -8.0 * hour_offset.cos();
 
-            let target_with_diurnal = *self.target_temperature + diurnal_variation;
+            let target_with_diurnal = *self.target_temperature + f64::from(diurnal_variation);
             let temp_diff = target_with_diurnal - *self.temperature;
-            *self.temperature += temp_diff * (dt / 3600.0).min(0.1);
+            *self.temperature += f64::from(temp_diff * (dt / 3600.0).min(0.1));
 
             // Humidity varies inversely with temperature
             let humidity_variation = 15.0 * hour_offset.cos();
@@ -1204,7 +1204,7 @@ impl WeatherSystem {
 
     /// Set temperature target (°C) - will smoothly transition
     pub fn set_temperature(&mut self, temperature: f32) {
-        self.target_temperature = Celsius::new(temperature);
+        self.target_temperature = Celsius::from(temperature);
     }
 
     /// Set humidity target (%) - will smoothly transition
