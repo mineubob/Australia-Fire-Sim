@@ -1,0 +1,175 @@
+# Australia Fire Simulation - Development Guidelines
+
+Scientifically accurate wildfire simulation. **Extreme realism is paramount.**
+
+**Status:** Phase 1-3 Complete — Rothermel, Van Wagner, Albini, Nelson, Rein models integrated. 83 unit tests passing.
+
+---
+
+## CORE RULES
+
+### 1. NEVER SIMPLIFY PHYSICS
+- Implement formulas exactly as published in fire science literature
+- Stefan-Boltzmann uses full `(T_source^4 - T_target^4)` — no approximations
+- Moisture evaporation (2260 kJ/kg latent heat) happens BEFORE temperature rise
+- Wind creates extreme asymmetry: 26x faster downwind, 0.05x upwind
+- Fire climbs 2.5x+ faster than horizontal spread
+
+### 2. NEVER HARDCODE DYNAMIC VALUES
+Values that vary by context MUST come from the appropriate struct:
+
+| Category | Example Wrong | Example Correct |
+|----------|---------------|-----------------|
+| Fuel | `let cooling_rate = 0.1;` | `fuel.cooling_rate` |
+| Weather | `let wind_speed = 10.0;` | `weather.wind_speed` |
+| Grid | `let oxygen = 0.21;` | `cell.oxygen` |
+| Time | `let change = 0.01;` | `rate * dt` |
+
+**Exception:** Universal physical constants (e.g., `STEFAN_BOLTZMANN = 5.67e-8`, `GRAVITY = 9.81`) CAN be hardcoded.
+
+### 3. AUSTRALIAN-SPECIFIC BEHAVIORS
+- Eucalyptus oil explosions (vaporizes 170°C, autoignites 232°C, 43 MJ/kg)
+- Stringybark ladder fuels dramatically lower crown fire thresholds
+- Ember spotting up to 25km (validated against Black Saturday data)
+
+### 4. PUBLIC CODE SHOULD BE COMMENTED
+- Public-facing APIs (public crates, modules, types, and functions) MUST include at least minimal documentation/comments explaining purpose and expected usage.
+- Keep comments concise and factual: a one-line summary for each public item plus any important invariants, side-effects, or usage notes is sufficient.
+
+---
+
+## IMPLEMENTED PHYSICS MODELS
+
+| Model | Source | Purpose |
+|-------|--------|---------|
+| Rothermel (1972) | USDA INT-115 | Surface fire spread rate |
+| Van Wagner (1977) | Can. J. For. Res. | Crown fire initiation |
+| Albini (1979, 1983) | USDA Research Papers | Ember spotting/lofting |
+| Nelson (2000) | USDA Southern Station | Fuel moisture timelag |
+| Rein (2009) | Int. Rev. Chem. Eng. | Smoldering combustion |
+| McArthur FFDI Mk5 | BoM Australia | Fire danger rating |
+| Byram (1959) | Fire intensity | Flame height: L = 0.0775 × I^0.46 |
+
+---
+
+## CODEBASE STRUCTURE
+
+```
+crates/core/src/
+├── core_types/    # Fuel, FuelElement, Ember, Weather, SpatialIndex
+├── physics/       # Rothermel, Albini, crown fire, combustion, suppression
+├── grid/          # 3D atmospheric grid with terrain
+└── simulation/    # Main loop integrating all systems
+```
+
+**Key files to reference:**
+- `core_types/fuel.rs` — 8 fuel types with 30+ properties each
+- `physics/element_heat_transfer.rs` — Stefan-Boltzmann radiation, wind/slope effects
+- `core_types/weather.rs` — FFDI calculation, 6 WA regional presets
+
+---
+
+## RUNNING THE DEMO NON-INTERACTIVELY
+
+The interactive demo (`demo-interactive`) can be driven non-interactively using a heredoc. Example (run from the repo root):
+
+**Building with symbols for profiling:**
+```bash
+CARGO_PROFILE_RELEASE_DEBUG=true CARGO_PROFILE_RELEASE_STRIP=false cargo build --release --bin demo-interactive
+```
+
+```bash
+./target/release/demo-interactive <<'HEREDOC'
+1000
+1000
+p perth
+i 7
+s 100
+q
+HEREDOC
+```
+
+Annotated: what each line in the heredoc is doing
+
+- 1000 — terrain width (meters). The demo **expects** a width value — provide a number here.
+- 1000 — terrain height (meters). The demo **expects** a height value — provide a number here.
+- p perth — select a weather preset ("p" is the demo command to choose a preset, then the preset name). This line is optional — if omitted the demo will use its default preset.
+- i 7 — ignite element id 7 ("i" is the demo command to ignite the specified fuel element ID). The demo **expects** an ignite command when you want to start a fire.
+- s 100 — step the simulation 100 times ("s" steps forwards in time; each step is one internal physics timestep). The demo **expects** a step count to advance the simulation.
+- q - quit the demo ("q" is the demo command to quit). The demo **expects** a quit command when you want to stop the simulation.
+
+
+### Wind field behaviour
+
+The demo uses the advanced 3D mass-consistent wind field (Sherman 1978 model) by default.
+There is no startup toggle or runtime command to disable it — the wind field is always enabled.
+
+When enabled, the wind field provides:
+- Spatially-varying wind based on terrain (logarithmic profile, slope effects)
+- Fire-atmosphere coupling (plume updrafts, entrainment)
+- Mass conservation via Poisson solver (∇·u = 0)
+
+Notes:
+- You can change these numbers to other values or leave a prompt blank in the heredoc to accept demo defaults.
+- Use quoted heredoc (<<'HEREDOC') to prevent shell expansion and ensure the demo receives the lines exactly as shown.
+
+---
+
+## AI AGENT RULES
+
+### Completion Rule
+AI agents MUST NOT stop, pause, or ask permission until the user's request is fully implemented. Continue working until done or genuinely blocked.
+
+### Always View Full Output
+Use `--no-pager`, `--no-truncate`, or redirect to file. Truncated output causes incorrect conclusions.
+
+**NEVER PIPE TO PAGERS OR TRUNCATORS.** Do not use `head`, `tail`, `less`, `more`, `grep | head`, or any pipeline that truncates or limits output. These commands hide critical information and lead to incomplete conclusions. **Always:**
+- Use full untruncated output (use `wc -l` to count lines first if needed)
+- Redirect to files: `command > output.txt` then read the file
+- Use explicit flags: `git --no-pager`, `cargo --color never`
+- Read everything before making decisions
+
+### Validate Rust Code Before Submitting
+```bash
+cargo clippy --all-targets --all-features
+cargo fmt --all -v --check
+```
+**CRITICAL:** Fix ALL warnings by changing code — NEVER use `#[allow(...)]` macros. Workspace `Cargo.toml` denies both rustc and clippy warnings (equivalent to `-D warnings`), so any warning will fail the build.
+
+---
+
+## COMMON PITFALLS
+
+| ❌ Don't | ✅ Do |
+|----------|-------|
+| Skip moisture evaporation | Heat → evaporation FIRST, then temperature |
+| Use simplified Stefan-Boltzmann | Full T^4 formula with emissivity |
+| Hardcode fuel properties | Use `fuel.property` |
+| Assume uniform grid conditions | Query `cell.oxygen`, `cell.temperature` |
+| Suppress clippy warnings | Fix the code |
+| Simplify for performance | Profile first, then optimize |
+| Simplify scientific formulas | Implement exactly as published in literature |
+
+---
+
+## KEY TAKEAWAYS
+
+1. This is a **simulation, not a game** — extreme realism is the goal
+2. **Never simplify formulas** — implement exactly as published
+3. **Australian fire behavior is unique** — eucalyptus oils, stringybark, 25km spotting
+4. **Moisture evaporation is critical** — 2260 kJ/kg latent heat FIRST
+5. **Wind effects are extreme** — 26x downwind is realistic
+6. **Validation is mandatory** — tests against known values
+7. **User's mantra:** "I want it as realistic as possible — NEVER simplify"
+
+---
+
+## REFERENCES
+
+- Rothermel (1972) — USDA Forest Service Research Paper INT-115
+- Van Wagner (1977) — Canadian Journal of Forest Research
+- Albini (1979, 1983) — USDA Forest Service Research Papers
+- Nelson (2000) — Forest Service Southern Research Station
+- Rein (2009) — International Review of Chemical Engineering
+- McArthur FFDI Mk5 — Bureau of Meteorology, Australia
+- WA Fire Behaviour Calculator — https://aurora.landgate.wa.gov.au/fbc/

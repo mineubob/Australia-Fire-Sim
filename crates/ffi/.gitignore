@@ -1,0 +1,2 @@
+# Ignore auto-generated C header produced by cbindgen/build.rs
+FireSimFFI.h

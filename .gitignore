@@ -1,0 +1,16 @@
+/target
+**/*.rs.bk
+Cargo.lock
+*.swp
+*.swo
+*~
+.DS_Store
+*.dylib
+*.so
+*.dll
+*.a
+*.lib
+*.exe
+
+# Profiling data.
+profile.json*
