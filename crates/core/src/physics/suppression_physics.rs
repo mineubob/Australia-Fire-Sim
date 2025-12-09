@@ -113,7 +113,7 @@ pub(crate) fn apply_suppression_direct(
             // At 20°C: ~17 g/m³, at 30°C: ~30 g/m³, at 40°C: ~51 g/m³
             let temp_celsius = cell.temperature.max(Celsius::new(0.0));
             let max_vapor = 0.017 * (1.0 + (*temp_celsius - 20.0) * 0.07); // Temperature-dependent saturation
-            let vapor_fraction = (cell.water_vapor / max_vapor as f32).min(1.0);
+            let vapor_fraction = (f64::from(cell.water_vapor) / max_vapor).min(1.0) as f32;
             cell.humidity = cell.humidity.max(vapor_fraction);
         }
     }

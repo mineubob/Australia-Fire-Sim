@@ -1162,7 +1162,7 @@ impl FireSimulation {
                         // Fuel-specific convective heat transfer (grass=600, forest=400)
                         let h = h_conv; // W/(m²·K)
                         let area = surface_area * fuel_remaining.sqrt();
-                        let heat_kj = f64::from(h * area * (*temp_diff as f32) * dt * 0.001);
+                        let heat_kj = f64::from(h * area * dt * 0.001) * *temp_diff;
 
                         let air_mass = cell.air_density() * cell_volume;
                         const SPECIFIC_HEAT_AIR: f32 = 1.005; // kJ/(kg·K) - physical constant

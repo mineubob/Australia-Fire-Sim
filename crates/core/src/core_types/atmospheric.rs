@@ -39,7 +39,8 @@ pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &
             if source_temp > grid.ambient_temperature + Celsius::new(50.0) {
                 // Calculate plume rise velocity
                 let temp_excess = source_temp - grid.ambient_temperature;
-                let buoyancy_vel = ((2.0 * 9.81 * *temp_excess) / *grid.ambient_temperature).sqrt();
+                const GRAVITY: f64 = 9.81; // m/s² - gravitational acceleration
+                let buoyancy_vel = ((2.0 * GRAVITY * *temp_excess) / *grid.ambient_temperature).sqrt();
 
                 // Transport to cells above
                 let rise_distance = buoyancy_vel * f64::from(dt);
