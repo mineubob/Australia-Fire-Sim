@@ -69,23 +69,24 @@ pub fn rothermel_spread_rate(
         return 0.0;
     }
 
-    // 1. Calculate reaction intensity (I_R)
-    let reaction_intensity = calculate_reaction_intensity(fuel, moisture_fraction);
+    // 1. Calculate reaction intensity (I_R) in f64 for precision
+    let reaction_intensity_f64 = calculate_reaction_intensity(fuel, moisture_fraction);
 
     // 2. Calculate propagating flux ratio (ξ)
-    let propagating_flux = calculate_propagating_flux(fuel);
+    let propagating_flux_f64 = calculate_propagating_flux(fuel);
 
     // 3. Calculate wind coefficient (Φ_w)
-    let wind_coefficient = calculate_wind_coefficient(fuel, wind_speed_ms);
+    let wind_coefficient_f64 = calculate_wind_coefficient(fuel, wind_speed_ms);
 
     // 4. Calculate slope coefficient (Φ_s)
-    let slope_coefficient = calculate_slope_coefficient(slope_angle);
+    let slope_coefficient_f64 = calculate_slope_coefficient(slope_angle);
 
     // 5. Calculate heat of pre-ignition (Q_ig)
-    let heat_preignition = calculate_heat_preignition(fuel, moisture_fraction, ambient_temp);
+    let heat_preignition_f64 = calculate_heat_preignition(fuel, moisture_fraction, ambient_temp);
 
     // 6. Effective heating number (from fuel properties)
-    let effective_heating = *fuel.effective_heating;
+    let effective_heating_f64 = f64::from(*fuel.effective_heating);
+    let bulk_density_f64 = f64::from(*fuel.bulk_density);
 
     // 7. Rothermel spread rate formula
     // R = I_R × ξ × (1 + Φ_w + Φ_s) / (ρ_b × ε × Q_ig)
@@ -94,14 +95,16 @@ pub fn rothermel_spread_rate(
     // Calibration factor of 0.05 brings results in line with observed Australian grassfire spread rates
     // This matches the 10-20% rule (Alexander & Cruz 2019) where spread ≈ 10-20% of wind speed
     // Combined with realistic σ=3500 for fine grass, this produces correct wind-dependent spread
-    let australian_calibration = 0.05;
+    let australian_calibration: f64 = 0.05;
 
-    let spread_rate =
-        (reaction_intensity * propagating_flux * (1.0 + wind_coefficient + slope_coefficient))
-            / (*fuel.bulk_density * effective_heating * heat_preignition)
+    let spread_rate_f64 =
+        (reaction_intensity_f64 * propagating_flux_f64 * (1.0 + wind_coefficient_f64 + slope_coefficient_f64))
+            / (bulk_density_f64 * effective_heating_f64 * heat_preignition_f64)
             * australian_calibration;
 
-    spread_rate.max(0.0)
+    #[allow(clippy::cast_precision_loss)]
+    let result = spread_rate_f64.max(0.0) as f32;
+    result
 }
 
 /// Calculate reaction intensity (kJ/(m²·min))
@@ -119,29 +122,32 @@ pub fn rothermel_spread_rate(
 /// - **h** = Heat content (kJ/kg)
 /// - **`η_M`** = Moisture damping coefficient (0-1)
 /// - **`η_s`** = Mineral damping coefficient (0-1, typically 0.41 for wood)
-fn calculate_reaction_intensity(fuel: &Fuel, moisture_fraction: f32) -> f32 {
+fn calculate_reaction_intensity(fuel: &Fuel, moisture_fraction: f32) -> f64 {
     // Optimum reaction velocity (empirical, depends on surface-area-to-volume ratio)
     // Γ'_max = σ^1.5 / (495 + 0.0594 × σ^1.5)
-    let sigma = *fuel.surface_area_to_volume;
-    let sigma_15 = sigma.powf(1.5);
+    let sigma_f64 = f64::from(*fuel.surface_area_to_volume);
+    let sigma_15 = sigma_f64.powf(1.5);
     let gamma_max = sigma_15 / (495.0 + 0.0594 * sigma_15);
 
     // Ratio of actual to optimum packing ratio (from fuel properties)
-    let beta_ratio = *fuel.packing_ratio;
-    let reaction_velocity = gamma_max * beta_ratio;
+    let beta_ratio_f64 = f64::from(*fuel.packing_ratio);
+    let reaction_velocity = gamma_max * beta_ratio_f64;
 
     // Net fuel loading (kg/m²)
-    let fuel_loading = *fuel.bulk_density * *fuel.fuel_bed_depth;
+    let bulk_density_f64 = f64::from(*fuel.bulk_density);
+    let fuel_bed_depth_f64 = f64::from(*fuel.fuel_bed_depth);
+    let fuel_loading = bulk_density_f64 * fuel_bed_depth_f64;
 
     // Moisture damping coefficient
-    let moisture_damping =
+    let moisture_damping_f64 =
         calculate_moisture_damping(moisture_fraction, *fuel.moisture_of_extinction);
 
     // Mineral damping coefficient (from fuel properties)
     // Varies by fuel type: grass=0.7-0.9, wood=0.41, dead=0.3-0.4
-    let mineral_damping = *fuel.mineral_damping;
+    let mineral_damping_f64 = f64::from(*fuel.mineral_damping);
+    let heat_content_f64 = f64::from(*fuel.heat_content);
 
-    reaction_velocity * fuel_loading * *fuel.heat_content * moisture_damping * mineral_damping
+    reaction_velocity * fuel_loading * heat_content_f64 * moisture_damping_f64 * mineral_damping_f64
 }
 
 /// Calculate moisture damping coefficient (`η_M`)
@@ -156,15 +162,15 @@ fn calculate_reaction_intensity(fuel: &Fuel, moisture_fraction: f32) -> f32 {
 /// Where:
 /// - **`M_f`** = Fuel moisture content (fraction)
 /// - **`M_x`** = Moisture of extinction (fraction)
-fn calculate_moisture_damping(moisture_fraction: f32, moisture_extinction: f32) -> f32 {
+fn calculate_moisture_damping(moisture_fraction: f32, moisture_extinction: f32) -> f64 {
     if moisture_extinction <= 0.0 {
         return 1.0;
     }
 
-    let ratio = (moisture_fraction / moisture_extinction).min(1.0);
+    let ratio_f64 = f64::from((moisture_fraction / moisture_extinction).min(1.0));
 
     // Rothermel moisture damping equation
-    let damping = 1.0 - 2.59 * ratio + 5.11 * ratio.powi(2) - 3.52 * ratio.powi(3);
+    let damping = 1.0 - 2.59 * ratio_f64 + 5.11 * ratio_f64.powi(2) - 3.52 * ratio_f64.powi(3);
 
     damping.clamp(0.0, 1.0)
 }
@@ -181,16 +187,18 @@ fn calculate_moisture_damping(moisture_fraction: f32, moisture_extinction: f32) 
 /// Where:
 /// - **σ** = Surface-area-to-volume ratio (m²/m³)
 /// - **β** = Packing ratio (fraction of fuel bed volume occupied by fuel)
-fn calculate_propagating_flux(fuel: &Fuel) -> f32 {
-    let sigma = *fuel.surface_area_to_volume;
+fn calculate_propagating_flux(fuel: &Fuel) -> f64 {
+    let sigma_f64 = f64::from(*fuel.surface_area_to_volume);
 
     // Packing ratio from fuel properties
     // β = ρ_b / ρ_p, where ρ_p is particle density (varies by fuel type)
-    let beta = (*fuel.bulk_density / *fuel.particle_density).min(1.0);
+    let bulk_density_f64 = f64::from(*fuel.bulk_density);
+    let particle_density_f64 = f64::from(*fuel.particle_density);
+    let beta_f64 = (bulk_density_f64 / particle_density_f64).min(1.0);
 
     // Rothermel propagating flux equation
-    let numerator = ((0.792 + 0.681 * sigma.sqrt()) * (beta + 0.1)).exp();
-    let denominator = 192.0 + 0.2595 * sigma;
+    let numerator = ((0.792 + 0.681 * sigma_f64.sqrt()) * (beta_f64 + 0.1)).exp();
+    let denominator = 192.0 + 0.2595 * sigma_f64;
 
     (numerator / denominator).clamp(0.0, 1.0)
 }
@@ -213,34 +221,36 @@ fn calculate_propagating_flux(fuel: &Fuel) -> f32 {
 /// - **E** = Packing ratio exponent
 ///
 /// Simplified for Australian conditions based on `McArthur` and Cruz et al. (2015)
-fn calculate_wind_coefficient(fuel: &Fuel, wind_speed_ms: f32) -> f32 {
+fn calculate_wind_coefficient(fuel: &Fuel, wind_speed_ms: f32) -> f64 {
     if wind_speed_ms < 0.1 {
         return 0.0; // No wind effect
     }
 
-    let sigma = *fuel.surface_area_to_volume;
+    let sigma_f64 = f64::from(*fuel.surface_area_to_volume);
 
     // Convert wind speed to m/min
-    let wind_speed_m_per_min = wind_speed_ms * 60.0;
+    let wind_speed_m_per_min_f64 = f64::from(wind_speed_ms * 60.0);
 
     // Wind coefficient constant (function of surface-area-to-volume ratio)
     // C = 7.47 × exp(-0.133 × σ^0.55)
-    let c_coeff = 7.47 * (-0.133 * sigma.powf(0.55)).exp();
+    let c_coeff = 7.47 * (-0.133 * sigma_f64.powf(0.55)).exp();
 
     // Wind exponent (function of surface-area-to-volume ratio)
     // B = 0.02526 × σ^0.54
-    let b_exp = 0.02526 * sigma.powf(0.54);
+    let b_exp = 0.02526 * sigma_f64.powf(0.54);
 
     // Packing ratio effects (from fuel properties)
-    let beta = (*fuel.bulk_density / *fuel.particle_density).min(1.0);
-    let beta_op = *fuel.optimum_packing_ratio; // Fuel-specific optimal compaction (grass=0.35, shrub=0.30, forest=0.25)
-    let packing_effect = if beta > 0.01 && beta_op > 0.01 {
-        (beta / beta_op).powf(-0.3) // E = 0.3 (typical exponent)
+    let bulk_density_f64 = f64::from(*fuel.bulk_density);
+    let particle_density_f64 = f64::from(*fuel.particle_density);
+    let beta_f64 = (bulk_density_f64 / particle_density_f64).min(1.0);
+    let beta_op_f64 = f64::from(*fuel.optimum_packing_ratio); // Fuel-specific optimal compaction (grass=0.35, shrub=0.30, forest=0.25)
+    let packing_effect = if beta_f64 > 0.01 && beta_op_f64 > 0.01 {
+        (beta_f64 / beta_op_f64).powf(-0.3) // E = 0.3 (typical exponent)
     } else {
         1.0
     };
 
-    c_coeff * wind_speed_m_per_min.powf(b_exp) * packing_effect
+    c_coeff * wind_speed_m_per_min_f64.powf(b_exp) * packing_effect
 }
 
 /// Calculate slope coefficient (`Φ_s`)
@@ -259,7 +269,7 @@ fn calculate_wind_coefficient(fuel: &Fuel, wind_speed_ms: f32) -> f32 {
 /// # References
 /// - Rothermel (1972) slope factor
 /// - Butler et al. (2004) "Fire behavior on slopes"
-fn calculate_slope_coefficient(slope_angle: f32) -> f32 {
+fn calculate_slope_coefficient(slope_angle: f32) -> f64 {
     if slope_angle.abs() < 0.1 {
         return 0.0; // No slope effect
     }
@@ -269,8 +279,8 @@ fn calculate_slope_coefficient(slope_angle: f32) -> f32 {
         return 0.0;
     }
 
-    let slope_radians = slope_angle.to_radians();
-    let tan_slope = slope_radians.tan();
+    let slope_radians_f64 = f64::from(slope_angle.to_radians());
+    let tan_slope = slope_radians_f64.tan();
 
     // Rothermel slope coefficient
     // Φ_s = 5.275 × β^(-0.3) × tan²(θ)
@@ -294,12 +304,16 @@ fn calculate_slope_coefficient(slope_angle: f32) -> f32 {
 /// - **`T_a`** = Ambient temperature (°C)
 /// - **`M_f`** = Moisture fraction (kg/kg)
 /// - **2260** = Latent heat of vaporization for water (kJ/kg)
-fn calculate_heat_preignition(fuel: &Fuel, moisture_fraction: f32, ambient_temp: f32) -> f32 {
+fn calculate_heat_preignition(fuel: &Fuel, moisture_fraction: f32, ambient_temp: f32) -> f64 {
     // Sensible heat to raise fuel to ignition
-    let sensible_heat = *fuel.specific_heat * (*fuel.ignition_temperature - ambient_temp);
+    let specific_heat_f64 = f64::from(*fuel.specific_heat);
+    let ignition_temp_f64 = f64::from(*fuel.ignition_temperature);
+    let ambient_temp_f64 = f64::from(ambient_temp);
+    let sensible_heat = specific_heat_f64 * (ignition_temp_f64 - ambient_temp_f64);
 
     // Latent heat to evaporate moisture
-    let latent_heat = moisture_fraction * 2260.0;
+    let moisture_fraction_f64 = f64::from(moisture_fraction);
+    let latent_heat = moisture_fraction_f64 * 2260.0;
 
     sensible_heat + latent_heat
 }
