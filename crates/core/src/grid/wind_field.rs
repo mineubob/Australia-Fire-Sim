@@ -543,10 +543,16 @@ impl WindField {
                         // since we're using ground-relative coordinates)
                         let z_above = z_layer;
 
-                        // 1. Logarithmic wind profile
-                        let z_safe = z_above.max(z0 + 0.1);
-                        let log_ratio = (z_safe / z0).ln() / (z_ref / z0).ln();
-                        let wind_factor = log_ratio.clamp(0.3, 3.0);
+                        // 1. Logarithmic wind profile (use f64 for precision in log ratio)
+                        let z_above_f64 = f64::from(z_above);
+                        let z0_f64 = f64::from(z0);
+                        let z_ref_f64 = f64::from(z_ref);
+                        
+                        let z_safe_f64 = (z_above_f64).max(z0_f64 + 0.1);
+                        let log_ratio_f64 = (z_safe_f64 / z0_f64).ln() / (z_ref_f64 / z0_f64).ln();
+                        
+                        #[allow(clippy::cast_precision_loss)]
+                        let wind_factor = (log_ratio_f64.clamp(0.3, 3.0)) as f32;
 
                         // 2. Terrain slope/aspect effects (USE CACHED VALUES)
                         let slope = terrain_slope[idx_2d];
@@ -597,9 +603,16 @@ impl WindField {
         for plume in plumes {
             // Calculate plume parameters from fire intensity
             // Byram's plume rise: w = 2.25 * (I / (ρ * cp * T))^(1/3) * z^(-1/3)
-            let intensity_factor = (plume.intensity
-                / (constants::AIR_DENSITY * constants::CP_AIR * constants::T_AMBIENT))
+            let intensity_f64 = f64::from(plume.intensity);
+            let air_density_f64 = f64::from(constants::AIR_DENSITY);
+            let cp_air_f64 = f64::from(constants::CP_AIR);
+            let t_ambient_f64 = f64::from(constants::T_AMBIENT);
+            
+            let intensity_factor_f64 = (intensity_f64 / (air_density_f64 * cp_air_f64 * t_ambient_f64))
                 .powf(1.0 / 3.0);
+
+            #[allow(clippy::cast_precision_loss)]
+            let intensity_factor = intensity_factor_f64 as f32;
 
             // Plume radius grows with height (Morton-Taylor-Turner plume theory)
             let entrainment_coefficient = 0.12; // Typical for fire plumes
