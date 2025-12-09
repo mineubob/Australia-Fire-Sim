@@ -105,6 +105,7 @@ pub(crate) fn calculate_convection_heat(
     if temp_diff <= 0.0 {
         return 0.0;
     }
+    let temp_diff_f32 = temp_diff as f32;
 
     // Natural convection coefficient for wildfire conditions (W/(m²·K))
     // h ≈ 1.32 * (ΔT/L)^0.25 for natural convection
@@ -124,7 +125,7 @@ pub(crate) fn calculate_convection_heat(
         .clamp(0.2, 1.5);
 
     // Convert W/m² to kW (kJ/s)
-    convection_coeff * temp_diff * absorption_efficiency * distance_attenuation * 0.001
+    convection_coeff * temp_diff_f32 * absorption_efficiency * distance_attenuation * 0.001
 }
 
 /// Wind direction multiplier for heat transfer

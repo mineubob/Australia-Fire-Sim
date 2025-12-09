@@ -327,7 +327,7 @@ impl FuelElement {
         // 0.003 gives ~0.3% per second at max temp_factor
         // Scales with FFDI for extreme conditions
         let base_coefficient = 0.003;
-        let ignition_prob = f64::from(moisture_factor * temp_factor * dt * base_coefficient * ffdi_multiplier);
+        let ignition_prob = (moisture_factor * temp_factor * dt * base_coefficient * ffdi_multiplier) as f64;
 
         // GUARANTEED IGNITION: Elements above ignition temp for sufficient time
         // This ensures elements that have been hot for extended periods ignite
@@ -340,7 +340,7 @@ impl FuelElement {
 
         let guaranteed_ignition = self.time_above_ignition >= time_threshold_f64;
 
-        if guaranteed_ignition || rand::random::<f32>() < ignition_prob {
+        if guaranteed_ignition || rand::random::<f64>() < ignition_prob {
             self.ignited = true;
         }
     }
@@ -370,7 +370,7 @@ impl FuelElement {
         // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
         self.fuel.burn_rate_coefficient
             * moisture_factor
-            * temp_factor
+            * f64::from(temp_factor)
             * (*self.fuel_remaining).sqrt()
             * 0.1
     }
