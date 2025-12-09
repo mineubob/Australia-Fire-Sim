@@ -51,7 +51,7 @@ pub struct FuelElement {
     pub(crate) elevation: Meters,     // Height above ground
     pub(crate) slope_angle: Degrees,  // Local terrain slope
     pub(crate) aspect_angle: Degrees, // Local terrain aspect (0-360)
-    pub(crate) neighbors: Vec<u32>,   // Cached nearby fuel IDs (within 15m)
+    pub(crate) neighbors: Vec<usize>, // Cached nearby fuel IDs (within 15m)
 
     // Advanced physics state (Phase 1-3 enhancements)
     /// Fuel moisture state by timelag class (Nelson 2000)
@@ -64,8 +64,9 @@ pub struct FuelElement {
     // Ignition timing tracking
     /// Cumulative time spent above ignition temperature (seconds)
     /// Used for realistic ignition behavior: elements that have been hot
-    /// for extended periods should ignite deterministically
-    pub(crate) time_above_ignition: f32,
+    /// for extended periods should ignite deterministically.
+    /// Using f64 for accumulated time to prevent drift in long simulations.
+    pub(crate) time_above_ignition: f64,
 
     /// Flag indicating this element received heat this frame
     /// Used to prevent Nelson moisture model from overwriting evaporated moisture
@@ -166,7 +167,7 @@ impl FuelElement {
 
     /// Get neighboring element IDs
     #[must_use]
-    pub fn neighbors(&self) -> &[u32] {
+    pub fn neighbors(&self) -> &[usize] {
         &self.neighbors
     }
 
@@ -306,9 +307,9 @@ impl FuelElement {
             return;
         }
 
-        // Track time above ignition temperature
+        // Track time above ignition temperature with f64 precision
         if *self.temperature > *ignition_temp {
-            self.time_above_ignition += dt;
+            self.time_above_ignition += f64::from(dt);
         } else {
             // Reset timer if cooled below ignition
             self.time_above_ignition = 0.0;
@@ -337,7 +338,8 @@ impl FuelElement {
         // Does NOT scale with FFDI - heat transfer controls spread rate instead
         let time_threshold = 60.0 / (1.0 + temp_excess / 200.0);
 
-        let guaranteed_ignition = self.time_above_ignition >= time_threshold;
+        #[allow(clippy::cast_possible_truncation)] // Deliberate: time_threshold is within f32 range
+        let guaranteed_ignition = self.time_above_ignition >= f64::from(time_threshold);
 
         if guaranteed_ignition || rand::random::<f32>() < ignition_prob {
             self.ignited = true;

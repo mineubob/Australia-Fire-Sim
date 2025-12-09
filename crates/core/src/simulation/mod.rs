@@ -1797,8 +1797,8 @@ mod tests {
         let mut fuel_ids = Vec::new();
         for i in 0..5 {
             for j in 0..5 {
-                let x = 20.0 + i as f32 * 3.0;
-                let y = 20.0 + j as f32 * 3.0;
+                let x = 20.0 + f32::from(i) * 3.0;
+                let y = 20.0 + f32::from(j) * 3.0;
                 let fuel = Fuel::dry_grass();
                 let id = sim.add_fuel_element(
                     Vec3::new(x, y, 0.5),
@@ -1858,8 +1858,8 @@ mod tests {
         let mut fuel_ids = Vec::new();
         for i in 0..5 {
             for j in 0..5 {
-                let x = 20.0 + i as f32 * 2.0;
-                let y = 20.0 + j as f32 * 2.0;
+                let x = 20.0 + f32::from(i) * 2.0;
+                let y = 20.0 + f32::from(j) * 2.0;
                 let fuel = Fuel::dry_grass();
                 let id = sim.add_fuel_element(
                     Vec3::new(x, y, 0.5),
@@ -1920,7 +1920,7 @@ mod tests {
         // This ensures all elements are downwind from the ignition point
         let mut fuel_ids = Vec::new();
         for i in 0..20 {
-            let x = 20.0 + i as f32 * 1.5;
+            let x = 20.0 + f32::from(i) * 1.5;
             let y = 25.0;
             let fuel = Fuel::dry_grass();
             let id = sim.add_fuel_element(
@@ -2041,7 +2041,7 @@ mod tests {
         // Elements at x=20, 21.5, 23, 24.5, 26, 27.5, 29, 30.5, 32, 33.5
         let mut fuel_ids = Vec::new();
         for i in 0..10 {
-            let x = 20.0 + i as f32 * 1.5;
+            let x = 20.0 + f32::from(i) * 1.5;
             let fuel = Fuel::dry_grass();
             let id = sim.add_fuel_element(
                 Vec3::new(x, 25.0, 0.5),

@@ -26,7 +26,7 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
     // Trunk middle (1m - half height)
     let trunk_mid_height = tree_height * 0.5;
     for i in 1..5 {
-        let height = (trunk_mid_height / 5.0) * i as f32;
+        let height = (trunk_mid_height / 5.0) * f32::from(i);
         let trunk_id = sim.add_fuel_element(
             Vec3::new(center.x, center.y, center.z + height),
             Fuel::eucalyptus_stringybark(),
@@ -39,7 +39,7 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
     // Trunk upper (half height to crown base)
     let crown_base = tree_height * 0.6;
     for i in 0..3 {
-        let height = trunk_mid_height + (crown_base - trunk_mid_height) / 3.0 * i as f32;
+        let height = trunk_mid_height + (crown_base - trunk_mid_height) / 3.0 * f32::from(i);
         let trunk_id = sim.add_fuel_element(
             Vec3::new(center.x, center.y, center.z + height),
             Fuel::eucalyptus_stringybark(),
@@ -52,11 +52,12 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
     // Crown/foliage (crown base to top)
     let crown_levels = 4;
     for i in 0..crown_levels {
-        let height = crown_base + (tree_height - crown_base) / crown_levels as f32 * i as f32;
+        #[allow(clippy::cast_precision_loss)] // Deliberate: converting layer count to height
+        let height = crown_base + (tree_height - crown_base) / f32::from(crown_levels) * f32::from(i);
         // Create multiple crown elements in a circle at each level
-        let radius = 2.0 + (i as f32 * 0.5);
+        let radius = 2.0 + (f32::from(i) * 0.5);
         for angle_idx in 0..4 {
-            let angle = (angle_idx as f32) * std::f32::consts::PI / 2.0;
+            let angle = f32::from(angle_idx) * std::f32::consts::PI / 2.0;
             let offset_x = radius * angle.cos();
             let offset_y = radius * angle.sin();
             let crown_id = sim.add_fuel_element(
@@ -71,8 +72,8 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
 
     // Add some branches
     for i in 0..6 {
-        let height = crown_base - 2.0 + i as f32 * 0.8;
-        let angle = (i as f32) * std::f32::consts::PI / 3.0;
+        let height = crown_base - 2.0 + f32::from(i) * 0.8;
+        let angle = f32::from(i) * std::f32::consts::PI / 3.0;
         let offset_x = 1.5 * angle.cos();
         let offset_y = 1.5 * angle.sin();
         let branch_id = sim.add_fuel_element(
@@ -261,7 +262,7 @@ fn test_multiple_trees_fire_spread() {
     // Create a line of 5 trees from east to west (fire spreads westward)
     let mut tree_sets = Vec::new();
     for i in 0..5 {
-        let x = 20.0 + i as f32 * 12.0; // 12m spacing
+        let x = 20.0 + f32::from(i) * 12.0; // 12m spacing
         let y = 50.0;
         let tree_center = Vec3::new(x, y, 0.0);
         let tree_elements = create_eucalyptus_tree(&mut sim, tree_center, 12.0);
@@ -570,7 +571,7 @@ fn test_weather_conditions_spread_rate() {
         for x in 0..5 {
             for y in 0..5 {
                 let id = sim.add_fuel_element(
-                    Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
+                    Vec3::new(46.0 + f32::from(x) * 2.0, 46.0 + f32::from(y) * 2.0, 0.5),
                     Fuel::dry_grass(),
                     Kilograms::new(2.0),
                     FuelPart::GroundVegetation,
@@ -663,7 +664,8 @@ fn test_weather_conditions_spread_rate() {
     // REALISTIC EXPECTATION: Early transient phase (t<15s) can have complex dynamics
     // due to turbulent wind effects, heat distribution patterns, and fuel moisture.
     // The key validation is OVERALL rapid spread, not exact element count at one timestep.
-    let catastrophic_multiplier = catastrophic_t11 as f32 / severe_t11.max(1) as f32;
+    #[allow(clippy::cast_precision_loss)] // Deliberate: comparing test counts as ratio
+    let catastrophic_multiplier = f64::from(catastrophic_t11) / f64::from(severe_t11.max(1));
     println!("✓ Catastrophic spread multiplier vs Severe: {catastrophic_multiplier:.2}x at t=11s");
 
     // Validate that catastrophic conditions show rapid spread

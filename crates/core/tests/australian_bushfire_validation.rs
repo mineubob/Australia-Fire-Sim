@@ -626,7 +626,7 @@ fn test_full_simulation_moderate_conditions() {
     for x in 0..5 {
         for y in 0..5 {
             let id = sim.add_fuel_element(
-                Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
+                Vec3::new(46.0 + f32::from(x) * 2.0, 46.0 + f32::from(y) * 2.0, 0.5),
                 Fuel::dry_grass(),
                 Kilograms::new(2.0),
                 FuelPart::GroundVegetation,
@@ -677,7 +677,7 @@ fn test_full_simulation_catastrophic_conditions() {
     for x in 0..5 {
         for y in 0..5 {
             let id = sim.add_fuel_element(
-                Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
+                Vec3::new(46.0 + f32::from(x) * 2.0, 46.0 + f32::from(y) * 2.0, 0.5),
                 Fuel::dry_grass(),
                 Kilograms::new(2.0),
                 FuelPart::GroundVegetation,
