@@ -327,7 +327,7 @@ impl FuelElement {
         // 0.003 gives ~0.3% per second at max temp_factor
         // Scales with FFDI for extreme conditions
         let base_coefficient = 0.003;
-        let ignition_prob = (moisture_factor * (temp_factor as f32) * dt * base_coefficient * ffdi_multiplier) as f64;
+        let ignition_prob = f64::from(moisture_factor * (temp_factor as f32) * dt * base_coefficient * ffdi_multiplier);
 
         // GUARANTEED IGNITION: Elements above ignition temp for sufficient time
         // This ensures elements that have been hot for extended periods ignite
@@ -336,7 +336,7 @@ impl FuelElement {
         //   - 500°C: 60s / 2.1 = 29s threshold
         //   - 758°C: 60s / 3.4 = 18s threshold
         // Does NOT scale with FFDI - heat transfer controls spread rate instead
-        let time_threshold_f64 = f64::from(60.0 / (1.0 + temp_excess / 200.0));
+        let time_threshold_f64 = 60.0 / (1.0 + temp_excess / 200.0);
 
         let guaranteed_ignition = self.time_above_ignition >= time_threshold_f64;
 
@@ -368,11 +368,11 @@ impl FuelElement {
             ((*self.temperature - *self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
 
         // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
-        (self.fuel.burn_rate_coefficient
+        self.fuel.burn_rate_coefficient
             * moisture_factor
             * (temp_factor as f32)
             * (*self.fuel_remaining).sqrt()
-            * 0.1) as f32
+            * 0.1
     }
 
     /// Calculate Byram's fireline intensity in kW/m

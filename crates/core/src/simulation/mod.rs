@@ -1115,7 +1115,7 @@ impl FireSimulation {
                         // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
                         let crown_temp =
                             base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
-                        element.temperature = element.temperature.max(Celsius::from(crown_temp as f64));
+                        element.temperature = element.temperature.max(Celsius::from(f64::from(crown_temp)));
                     }
                 }
             }

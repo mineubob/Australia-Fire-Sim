@@ -43,8 +43,8 @@ pub(crate) fn calculate_radiation_flux(
     }
 
     // Convert to Kelvin for Stefan-Boltzmann and compute in f64 for stability
-    let temp_source_k = f64::from(*source.temperature + 273.15);
-    let temp_target_k = f64::from(*target.temperature + 273.15);
+    let temp_source_k = *source.temperature + 273.15;
+    let temp_target_k = *target.temperature + 273.15;
 
     // FULL FORMULA: σ * ε * (T_source^4 - T_target^4)
     // NO SIMPLIFICATIONS per repository guidelines
@@ -52,7 +52,6 @@ pub(crate) fn calculate_radiation_flux(
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
 
     // cast back to f32 for the rest of this API boundary
-    #[expect(clippy::cast_precision_loss, reason = "f64 T^4 calculation result fits in f32 range for physical temperatures - 1500K^4 = ~5e12, within f32 range")]
     let radiant_power = radiant_power_f64 as f32;
 
     // Only transfer heat if source is hotter
@@ -320,7 +319,6 @@ pub(crate) fn calculate_heat_transfer_raw(
     let radiant_power_f64 =
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
 
-    #[expect(clippy::cast_precision_loss, reason = "f64 T^4 calculation result fits in f32 range for physical temperatures - 1500K^4 = ~5e12, within f32 range")]
     let radiant_power = radiant_power_f64 as f32;
 
     if radiant_power <= 0.0 {
@@ -654,11 +652,11 @@ mod tests {
 
         let vert = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             target_v.position,
-            *target_v.temperature,
+            *target_v.temperature as f32,
             *target_v.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
@@ -770,33 +768,33 @@ mod tests {
         // Calculate heat transfer from ground fire to each tree part (1 second dt)
         let heat_to_trunk = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             trunk_lower.position,
-            *trunk_lower.temperature,
+            *trunk_lower.temperature as f32,
             *trunk_lower.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
         let heat_to_branch = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             branch.position,
-            *branch.temperature,
+            *branch.temperature as f32,
             *branch.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
         let heat_to_crown = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             crown.position,
-            *crown.temperature,
+            *crown.temperature as f32,
             *crown.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,

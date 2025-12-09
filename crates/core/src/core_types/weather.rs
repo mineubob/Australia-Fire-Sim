@@ -1109,7 +1109,7 @@ impl WeatherSystem {
                 self.climate_pattern,
                 self.is_heatwave,
             );
-            self.target_temperature = Celsius::new(preset_temp as f64);
+            self.target_temperature = Celsius::new(f64::from(preset_temp));
             *self.target_humidity = preset.get_humidity(
                 self.day_of_year,
                 *self.target_temperature as f32,
