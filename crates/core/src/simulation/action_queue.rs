@@ -273,7 +273,7 @@ mod tests {
 
         // Add 7 actions to test history trimming
         for i in 0..7 {
-            let action = PlayerAction::ignite(1, f32::from(i), Vec3::new(f32::from(i), 0.0, 0.0), 600.0);
+            let action = PlayerAction::ignite(1, i as f32, Vec3::new(i as f32, 0.0, 0.0), 600.0);
             queue.mark_executed(action);
         }
 
