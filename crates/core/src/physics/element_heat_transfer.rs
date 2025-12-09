@@ -52,7 +52,7 @@ pub(crate) fn calculate_radiation_flux(
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
 
     // cast back to f32 for the rest of this API boundary
-    #[expect(clippy::cast_precision_loss, reason = "f64 T^4 calculation result fits in f32 range for physical temperatures - max ~1e15 for 1500K")]
+    #[expect(clippy::cast_precision_loss, reason = "f64 T^4 calculation result fits in f32 range for physical temperatures - 1500K^4 = ~5e12, within f32 range")]
     let radiant_power = radiant_power_f64 as f32;
 
     // Only transfer heat if source is hotter
@@ -319,7 +319,7 @@ pub(crate) fn calculate_heat_transfer_raw(
     let radiant_power_f64 =
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
 
-    #[expect(clippy::cast_precision_loss, reason = "f64 T^4 calculation result fits in f32 range for physical temperatures - max ~1e15 for 1500K")]
+    #[expect(clippy::cast_precision_loss, reason = "f64 T^4 calculation result fits in f32 range for physical temperatures - 1500K^4 = ~5e12, within f32 range")]
     let radiant_power = radiant_power_f64 as f32;
 
     if radiant_power <= 0.0 {
