@@ -18,11 +18,12 @@ use crate::core_types::units::Kilograms;
 
 /// Stefan-Boltzmann constant (W/(m²·K⁴))
 /// Reference: Fundamental physics constant (Stefan 1879, Boltzmann 1884)
-const STEFAN_BOLTZMANN: f32 = 5.67e-8;
+/// Use f64 internally for better numerical stability in T^4 operations
+const STEFAN_BOLTZMANN: f64 = 5.67e-8;
 
 /// Flame emissivity (dimensionless, 0-1)
 /// Reference: Typical wildfire flame emissivity from Butler & Cohen (1998)
-const EMISSIVITY: f32 = 0.95;
+const EMISSIVITY: f64 = 0.95;
 
 /// Calculate radiant heat flux from source element to target element
 /// Uses full Stefan-Boltzmann law: σ * ε * (`T_source^4` - `T_target^4`)
@@ -41,14 +42,18 @@ pub(crate) fn calculate_radiation_flux(
         return 0.0;
     }
 
-    // Convert to Kelvin for Stefan-Boltzmann
-    let temp_source_k = *source.temperature + 273.15;
-    let temp_target_k = *target.temperature + 273.15;
+    // Convert to Kelvin for Stefan-Boltzmann and compute in f64 for stability
+    let temp_source_k = f64::from(*source.temperature + 273.15);
+    let temp_target_k = f64::from(*target.temperature + 273.15);
 
     // FULL FORMULA: σ * ε * (T_source^4 - T_target^4)
     // NO SIMPLIFICATIONS per repository guidelines
-    let radiant_power =
+    let radiant_power_f64 =
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
+
+    // cast back to f32 for the rest of this API boundary
+    #[allow(clippy::cast_precision_loss)]
+    let radiant_power = radiant_power_f64 as f32;
 
     // Only transfer heat if source is hotter
     if radiant_power <= 0.0 {
@@ -307,11 +312,15 @@ pub(crate) fn calculate_heat_transfer_raw(
     }
 
     // === RADIATION CALCULATION (Stefan-Boltzmann) ===
-    let temp_source_k = source_temp + 273.15;
-    let temp_target_k = target_temp + 273.15;
+    // Use f64 for the T^4 computation, then downcast for the hot path performance
+    let temp_source_k = f64::from(source_temp + 273.15);
+    let temp_target_k = f64::from(target_temp + 273.15);
 
-    let radiant_power =
+    let radiant_power_f64 =
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
+
+    #[allow(clippy::cast_precision_loss)]
+    let radiant_power = radiant_power_f64 as f32;
 
     if radiant_power <= 0.0 {
         return 0.0;
