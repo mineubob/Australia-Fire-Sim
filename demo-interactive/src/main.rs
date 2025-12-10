@@ -38,7 +38,7 @@
 //! - `quit` - Exit the simulation
 
 use fire_sim_core::{
-    core_types::{Celsius, Degrees, Kilograms, Meters},
+    core_types::{Celsius, Degrees, Kilograms, KilometersPerHour, Meters, Percent},
     ClimatePattern, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherPreset,
     WeatherSystem,
 };
@@ -887,9 +887,9 @@ fn set_preset(sim: &mut FireSimulation, name: &str) {
                 ClimatePattern::ElNino,
             );
 
-            w.set_temperature(38.0);
-            w.set_humidity(20.0);
-            w.set_wind_speed(35.0);
+            w.set_temperature(Celsius::new(38.0));
+            w.set_humidity(Percent::new(20.0));
+            w.set_wind_speed(KilometersPerHour::new(35.0));
             w.set_drought_factor(8.0);
 
             w
