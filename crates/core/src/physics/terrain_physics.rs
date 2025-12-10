@@ -70,7 +70,7 @@ pub(crate) fn slope_spread_multiplier_terrain(
 
     // Calculate alignment between spread direction and upslope direction
     // Aspect points downslope, so upslope = aspect + 180°
-    let upslope_direction = (aspect + 180.0) % 360.0;
+    let upslope_direction = (*aspect + 180.0) % 360.0;
 
     // Angular difference between spread and upslope direction
     let angle_diff = (spread_direction - upslope_direction).abs();
@@ -83,7 +83,7 @@ pub(crate) fn slope_spread_multiplier_terrain(
     // Effective slope angle based on direction alignment
     // 0° = spreading directly uphill, 180° = spreading directly downhill
     let alignment = (180.0 - angle_diff) / 180.0; // -1 to 1
-    let effective_slope = slope_angle * alignment;
+    let effective_slope = *slope_angle * alignment;
 
     if effective_slope > 0.0 {
         // Uphill: exponential effect based on Rothermel (1972)
@@ -117,7 +117,7 @@ pub(crate) fn aspect_wind_multiplier(
     let slope = terrain.slope_at_horn(position.x, position.y);
 
     // Skip if terrain is flat
-    if slope < 1.0 {
+    if *slope < 1.0 {
         return 1.0;
     }
 
@@ -130,7 +130,7 @@ pub(crate) fn aspect_wind_multiplier(
     };
 
     // Upslope direction (opposite of aspect)
-    let upslope_direction = (aspect + 180.0) % 360.0;
+    let upslope_direction = (*aspect + 180.0) % 360.0;
 
     // Alignment between wind and upslope direction
     let alignment_diff = (wind_direction - upslope_direction).abs();
@@ -147,12 +147,12 @@ pub(crate) fn aspect_wind_multiplier(
         // Wind blowing upslope - enhanced spread
         // Effect increases with slope steepness
         let alignment_factor = (90.0 - alignment_diff) / 90.0;
-        1.0 + (slope / 45.0) * alignment_factor * 0.5
+        1.0 + (*slope / 45.0) * alignment_factor * 0.5
     } else {
         // Wind blowing downslope - reduced spread
         // Wind may overcome gravity effect on flat slopes
         let opposition_factor = (alignment_diff - 90.0) / 90.0;
-        1.0 - (slope / 45.0) * opposition_factor * 0.3
+        1.0 - (*slope / 45.0) * opposition_factor * 0.3
     }
 }
 

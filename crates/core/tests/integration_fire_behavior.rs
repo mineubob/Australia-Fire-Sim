@@ -52,7 +52,10 @@ fn create_eucalyptus_tree(sim: &mut FireSimulation, center: Vec3, tree_height: f
     // Crown/foliage (crown base to top)
     let crown_levels = 4;
     for i in 0..crown_levels {
-        #[expect(clippy::cast_precision_loss, reason = "Converting small layer count (0-4) to height - precision loss acceptable for tree structure")]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "Converting small layer count (0-4) to height - precision loss acceptable for tree structure"
+        )]
         let height = crown_base + (tree_height - crown_base) / (crown_levels as f32) * (i as f32);
         // Create multiple crown elements in a circle at each level
         let radius = 2.0 + ((i as f32) * 0.5);
@@ -136,7 +139,7 @@ fn test_single_tree_complete_burnout() {
         let mut burning_count = 0;
         let mut smoldering_count = 0;
         let mut crown_fire_active = false;
-        let mut max_temp = 0.0f32;
+        let mut max_temp = 0.0f64;
         let mut total_fuel_remaining = 0.0f32;
 
         for elem_id in &tree_elements {
@@ -214,7 +217,7 @@ fn test_single_tree_complete_burnout() {
     let max_temp = stats
         .iter()
         .map(|(_, _, _, _, t, _)| *t)
-        .fold(0.0f32, f32::max);
+        .fold(0.0f64, f64::max);
     println!("✓ Maximum temperature: {max_temp:.0}°C");
     assert!(
         max_temp > 600.0 && max_temp < 1500.0,
@@ -290,7 +293,7 @@ fn test_multiple_trees_fire_spread() {
             for (tree_idx, _tree_center, tree_elements) in &tree_sets {
                 let mut burning = 0;
                 let mut smoldering = 0;
-                let mut max_temp = 0.0f32;
+                let mut max_temp = 0.0f64;
                 let mut fuel_remaining = 0.0f32;
                 let mut crown_fire = false;
 
@@ -664,10 +667,9 @@ fn test_weather_conditions_spread_rate() {
     // REALISTIC EXPECTATION: Early transient phase (t<15s) can have complex dynamics
     // due to turbulent wind effects, heat distribution patterns, and fuel moisture.
     // The key validation is OVERALL rapid spread, not exact element count at one timestep.
-    #[expect(clippy::cast_precision_loss, reason = "Converting small element counts to f64 for ratio calculation - counts are < 100")]
-    let catastrophic_multiplier = f64::from(catastrophic_t11) / f64::from(severe_t11.max(1));
-    #[expect(clippy::cast_possible_truncation, reason = "f64 ratio always in valid f32 range for display - multipliers are small values")]
-    println!("✓ Catastrophic spread multiplier vs Severe: {:.2}x at t=11s", catastrophic_multiplier as f32);
+    // Convert counts (usize) into f64 for a ratio — counts are small so direct casts are safe.
+    let catastrophic_multiplier = catastrophic_t11 as f64 / (severe_t11.max(1) as f64);
+    println!("✓ Catastrophic spread multiplier vs Severe: {catastrophic_multiplier:.2}x at t=11s");
 
     // Validate that catastrophic conditions show rapid spread
     // Check at t=60s for comparison with 2m element spacing

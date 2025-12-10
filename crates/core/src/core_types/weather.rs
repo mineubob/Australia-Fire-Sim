@@ -4,7 +4,9 @@
 //! Weather parameters are based on real meteorological data and fire science principles.
 
 use crate::core_types::element::Vec3;
-use crate::core_types::units::{Celsius, Degrees, Hours, KilometersPerHour, Percent};
+use crate::core_types::units::{
+    Celsius, Degrees, Hours, KilometersPerHour, MetersPerSecond, Percent,
+};
 use serde::{Deserialize, Serialize};
 
 /// Climate pattern types affecting weather
@@ -607,7 +609,7 @@ impl WeatherPreset {
         time_of_day: f32,
         climate: ClimatePattern,
         is_heatwave: bool,
-    ) -> f32 {
+    ) -> Celsius {
         let month = ((day_of_year - 1) / 30).min(11) as usize;
         let (min_temp, max_temp) = self.monthly_temps[month];
 
@@ -634,12 +636,17 @@ impl WeatherPreset {
             .max(0.0);
 
         let base_temp = min_temp + (max_temp - min_temp) * hour_factor;
-        base_temp + climate_mod + heatwave_mod
+        Celsius::from(base_temp + climate_mod + heatwave_mod)
     }
 
     /// Get humidity for specific season with modifiers
     #[must_use]
-    pub fn get_humidity(&self, day_of_year: u16, temperature: f32, climate: ClimatePattern) -> f32 {
+    pub fn get_humidity(
+        &self,
+        day_of_year: u16,
+        temperature: Celsius,
+        climate: ClimatePattern,
+    ) -> Percent {
         let season_humidity = match (day_of_year - 1) / 91 {
             0 => self.summer_humidity, // Dec-Feb
             1 => self.autumn_humidity, // Mar-May
@@ -655,20 +662,21 @@ impl WeatherPreset {
         };
 
         // Temperature affects humidity (inverse relationship)
-        let temp_adjustment = -(temperature - 25.0) * 0.5;
+        let temp_adjustment = -(*temperature as f32 - 25.0) * 0.5;
 
-        (season_humidity + climate_mod + temp_adjustment).clamp(5.0, 95.0)
+        Percent::new((season_humidity + climate_mod + temp_adjustment).clamp(5.0, 95.0))
     }
 
     /// Get wind speed for specific season
     #[must_use]
-    pub fn get_wind_speed(&self, day_of_year: u16) -> f32 {
-        match (day_of_year - 1) / 91 {
+    pub fn get_wind_speed(&self, day_of_year: u16) -> KilometersPerHour {
+        let speed = match (day_of_year - 1) / 91 {
             0 => self.summer_wind,
             1 => self.autumn_wind,
             2 => self.winter_wind,
             _ => self.spring_wind,
-        }
+        };
+        KilometersPerHour::new(speed)
     }
 
     /// Get drought rate for specific season with climate modifier
@@ -692,13 +700,14 @@ impl WeatherPreset {
 
     /// Get fuel curing percentage (dryness) for specific season
     #[must_use]
-    pub fn get_curing(&self, day_of_year: u16) -> f32 {
-        match (day_of_year - 1) / 91 {
+    pub fn get_curing(&self, day_of_year: u16) -> Percent {
+        let curing = match (day_of_year - 1) / 91 {
             0 => self.summer_curing,
             1 => self.autumn_curing,
             2 => self.winter_curing,
             _ => self.spring_curing,
-        }
+        };
+        Percent::new(curing)
     }
 
     /// Get solar radiation for specific season and time
@@ -906,17 +915,17 @@ impl WeatherSystem {
         let base_drought = if drought_rate > 0.0 { 6.0 } else { 3.0 };
 
         WeatherSystem {
-            temperature: Celsius::from(temperature),
-            humidity: Percent::new(humidity),
-            wind_speed: KilometersPerHour::new(wind_speed),
+            temperature,
+            humidity,
+            wind_speed,
             wind_direction: Degrees::new(0.0),
             drought_factor: base_drought,
             time_of_day: Hours::new(time_of_day),
             day_of_year,
             weather_front_progress: 0.0,
-            target_temperature: Celsius::from(temperature),
-            target_humidity: Percent::new(humidity),
-            target_wind_speed: KilometersPerHour::new(wind_speed),
+            target_temperature: temperature,
+            target_humidity: humidity,
+            target_wind_speed: wind_speed,
             target_wind_direction: Degrees::new(0.0),
             preset: Some(preset),
             climate_pattern,
@@ -1069,15 +1078,15 @@ impl WeatherSystem {
     #[must_use]
     pub fn wind_vector(&self) -> Vec3 {
         let wind_ms = *self.wind_speed / 3.6; // Convert km/h to m/s
-        let angle_rad = *self.wind_direction.to_radians();
+        let angle_rad = self.wind_direction.to_radians();
 
         Vec3::new(angle_rad.sin() * wind_ms, angle_rad.cos() * wind_ms, 0.0)
     }
 
     /// Get wind speed in m/s
     #[must_use]
-    pub fn wind_speed_ms(&self) -> f32 {
-        *self.wind_speed / 3.6
+    pub fn wind_speed_ms(&self) -> MetersPerSecond {
+        self.wind_speed.to_mps()
     }
 
     /// Update weather (for dynamic simulations)
@@ -1109,13 +1118,13 @@ impl WeatherSystem {
                 self.climate_pattern,
                 self.is_heatwave,
             );
-            self.target_temperature = Celsius::new(f64::from(preset_temp));
-            *self.target_humidity = preset.get_humidity(
+            self.target_temperature = preset_temp;
+            self.target_humidity = preset.get_humidity(
                 self.day_of_year,
-                *self.target_temperature as f32,
+                self.target_temperature,
                 self.climate_pattern,
             );
-            *self.target_wind_speed = preset.get_wind_speed(self.day_of_year);
+            self.target_wind_speed = preset.get_wind_speed(self.day_of_year);
 
             // Diurnal temperature cycle from preset
             let temperature = preset.get_temperature(
@@ -1124,21 +1133,20 @@ impl WeatherSystem {
                 self.climate_pattern,
                 self.is_heatwave,
             );
-            let temperature_f64 = f64::from(temperature);
-            let temp_diff = temperature_f64 - *self.temperature;
-            *self.temperature += temp_diff * (f64::from(dt) / 3600.0).min(0.1);
+            let temp_diff = temperature - self.temperature;
+            *self.temperature += *temp_diff * (f64::from(dt) / 3600.0).min(0.1);
 
             // Humidity varies with temperature
             let humidity =
-                preset.get_humidity(self.day_of_year, *self.temperature as f32, self.climate_pattern);
-            let humidity_diff = humidity - *self.humidity;
+                preset.get_humidity(self.day_of_year, self.temperature, self.climate_pattern);
+            let humidity_diff = humidity - self.humidity;
             *self.humidity =
-                (*self.humidity + humidity_diff * (dt / 1800.0).min(0.1)).clamp(5.0, 95.0);
+                (*self.humidity + *humidity_diff * (dt / 1800.0).min(0.1)).clamp(5.0, 95.0);
 
             // Wind speed variations (wind typically picks up during day)
             let wind_hour_offset = (*self.time_of_day - 15.0) * std::f32::consts::PI / 12.0;
             let wind_variation = 5.0 * wind_hour_offset.cos(); // ±5 km/h variation
-            let target_wind = preset.get_wind_speed(self.day_of_year) - wind_variation;
+            let target_wind = *preset.get_wind_speed(self.day_of_year) - wind_variation;
             let wind_diff = target_wind - *self.wind_speed;
             *self.wind_speed = (*self.wind_speed + wind_diff * (dt / 1800.0).min(0.1)).max(0.0);
 
@@ -1152,23 +1160,23 @@ impl WeatherSystem {
             let hour_offset = (*self.time_of_day - 14.0) * std::f32::consts::PI / 12.0;
             let diurnal_variation = -8.0 * hour_offset.cos();
 
-            let target_with_diurnal = *self.target_temperature + f64::from(diurnal_variation);
-            let temp_diff = target_with_diurnal - *self.temperature;
-            *self.temperature += temp_diff * (f64::from(dt) / 3600.0).min(0.1);
+            let target_with_diurnal = self.target_temperature + Celsius::new(f64::from(diurnal_variation));
+            let temp_diff = target_with_diurnal - self.temperature;
+            *self.temperature += *temp_diff * (f64::from(dt) / 3600.0).min(0.1);
 
             // Humidity varies inversely with temperature
             let humidity_variation = 15.0 * hour_offset.cos();
-            let target_with_variation = *self.target_humidity + humidity_variation;
-            let humidity_diff = target_with_variation - *self.humidity;
+            let target_with_variation = self.target_humidity + Percent::new(humidity_variation);
+            let humidity_diff = target_with_variation - self.humidity;
             *self.humidity =
-                (*self.humidity + humidity_diff * (dt / 1800.0).min(0.1)).clamp(5.0, 95.0);
+                (*self.humidity + *humidity_diff * (dt / 1800.0).min(0.1)).clamp(5.0, 95.0);
 
             // Wind speed variations
             let wind_hour_offset = (*self.time_of_day - 15.0) * std::f32::consts::PI / 12.0;
             let wind_variation = 5.0 * wind_hour_offset.cos();
-            let target_wind_with_variation = *self.target_wind_speed - wind_variation;
-            let wind_diff = target_wind_with_variation - *self.wind_speed;
-            *self.wind_speed = (*self.wind_speed + wind_diff * (dt / 1800.0).min(0.1)).max(0.0);
+            let target_wind_with_variation = self.target_wind_speed - KilometersPerHour::new(wind_variation);
+            let wind_diff = target_wind_with_variation - self.wind_speed;
+            *self.wind_speed = (*self.wind_speed + *wind_diff * (dt / 1800.0).min(0.1)).max(0.0);
 
             // Drought factor slowly increases without rain
             if *self.temperature > 35.0 && *self.humidity < 20.0 {
@@ -1205,52 +1213,60 @@ impl WeatherSystem {
     // Setter methods for updating weather without replacement
 
     /// Set temperature target (°C) - will smoothly transition
-    pub fn set_temperature(&mut self, temperature: f32) {
-        self.target_temperature = Celsius::from(temperature);
+    pub fn set_temperature(&mut self, temperature: Celsius) {
+        self.target_temperature = temperature;
     }
 
     /// Set humidity target (%) - will smoothly transition
-    pub fn set_humidity(&mut self, humidity: f32) {
-        self.target_humidity = Percent::new(humidity.clamp(0.0, 100.0));
+    pub fn set_humidity(&mut self, humidity: Percent) {
+        self.target_humidity = humidity;
     }
 
     /// Set wind speed target (km/h) - will smoothly transition
-    pub fn set_wind_speed(&mut self, wind_speed: f32) {
-        self.target_wind_speed = KilometersPerHour::new(wind_speed.max(0.0));
+    pub fn set_wind_speed(&mut self, wind_speed: KilometersPerHour) {
+        self.target_wind_speed = wind_speed;
     }
 
     /// Set wind direction target (degrees) - will smoothly transition
-    pub fn set_wind_direction(&mut self, direction: f32) {
-        self.target_wind_direction = Degrees::new(direction % 360.0);
+    pub fn set_wind_direction(&mut self, direction: Degrees) {
+        self.target_wind_direction = direction;
     }
 
     /// Set drought factor directly (0-10)
     pub fn set_drought_factor(&mut self, drought: f32) {
-        self.drought_factor = drought.clamp(0.0, 10.0);
+        assert!(
+            (0.0..=10.0).contains(&drought),
+            "Drought factor must be in range 0.0-10.0, got {drought}"
+        );
+        self.drought_factor = drought;
     }
 
     /// Set time of day (hours since midnight)
-    pub fn set_time_of_day(&mut self, hours: f32) {
-        self.time_of_day = Hours::new(hours % 24.0);
+    pub fn set_time_of_day(&mut self, hours: Hours) {
+        self.time_of_day = hours;
     }
 
     /// Set day of year (1-365)
     pub fn set_day_of_year(&mut self, day: u16) {
-        self.day_of_year = day.clamp(1, 365);
+        assert!(
+            (1..=365).contains(&day),
+            "Day of year must be in range 1-365, got {day}"
+        );
+        self.day_of_year = day;
     }
 
     /// Trigger a weather front passage (causes rapid changes)
     pub fn trigger_weather_front(
         &mut self,
-        new_temp: f32,
-        new_humidity: f32,
-        new_wind_speed: f32,
-        new_wind_dir: f32,
+        new_temp: Celsius,
+        new_humidity: Percent,
+        new_wind_speed: KilometersPerHour,
+        new_wind_dir: Degrees,
     ) {
-        self.target_temperature = Celsius::from(new_temp);
-        self.target_humidity = Percent::new(new_humidity);
-        self.target_wind_speed = KilometersPerHour::new(new_wind_speed);
-        self.target_wind_direction = Degrees::new(new_wind_dir);
+        self.target_temperature = new_temp;
+        self.target_humidity = new_humidity;
+        self.target_wind_speed = new_wind_speed;
+        self.target_wind_direction = new_wind_dir;
         self.weather_front_progress = 1.0;
     }
 
@@ -1306,18 +1322,19 @@ impl WeatherSystem {
 
     /// Get fuel curing percentage (0-100%) based on preset and season
     #[must_use]
-    pub fn fuel_curing(&self) -> f32 {
+    pub fn fuel_curing(&self) -> Percent {
         if let Some(preset) = &self.preset {
             preset.get_curing(self.day_of_year)
         } else {
             // Fallback: higher in summer, lower in winter
             let season = (self.day_of_year - 1) / 91;
-            match season {
+            let curing = match season {
                 0 => 95.0, // Summer
                 1 => 80.0, // Autumn
                 2 => 50.0, // Winter
                 _ => 70.0, // Spring
-            }
+            };
+            Percent::new(curing)
         }
     }
 
@@ -1336,6 +1353,11 @@ impl WeatherSystem {
     /// Calculate fuel moisture based on weather
     #[must_use]
     pub fn calculate_fuel_moisture(&self, base_moisture: f32) -> f32 {
+        assert!(
+            (0.0..=1.0).contains(&base_moisture),
+            "Base moisture must be in range 0.0-1.0, got {base_moisture}"
+        );
+
         // Simplified fuel moisture calculation
         // Higher humidity increases moisture, higher temperature decreases it
         let humidity_factor = *self.humidity / 100.0;
@@ -1360,7 +1382,7 @@ impl WeatherSystem {
             fire_danger_rating: self.fire_danger_rating().to_string(),
             spread_rate_multiplier: self.spread_rate_multiplier(),
             solar_radiation: self.solar_radiation(),
-            fuel_curing: self.fuel_curing(),
+            fuel_curing: *self.fuel_curing(),
             climate_pattern: self.climate_pattern,
             is_heatwave: self.is_heatwave,
             heatwave_days_remaining: self.heatwave_days_remaining,
@@ -1382,7 +1404,7 @@ pub struct WeatherStats {
     /// Wind direction
     pub wind_direction: Degrees,
     /// Wind speed in m/s
-    pub wind_speed_ms: f32,
+    pub wind_speed_ms: MetersPerSecond,
     /// Drought factor (0-10)
     pub drought_factor: f32,
     /// Time of day

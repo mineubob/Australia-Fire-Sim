@@ -1,5 +1,5 @@
 use crate::core_types::fuel::Fuel;
-use crate::core_types::units::{Celsius, Degrees, Fraction, Kilograms, Meters};
+use crate::core_types::units::{Celsius, Degrees, Fraction, Kilograms, Meters, Percent};
 use crate::suppression::SuppressionCoverage;
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
@@ -327,7 +327,9 @@ impl FuelElement {
         // 0.003 gives ~0.3% per second at max temp_factor
         // Scales with FFDI for extreme conditions
         let base_coefficient = 0.003;
-        let ignition_prob = f64::from(moisture_factor * (temp_factor as f32) * dt * base_coefficient * ffdi_multiplier);
+        let ignition_prob = f64::from(
+            moisture_factor * (temp_factor as f32) * dt * base_coefficient * ffdi_multiplier,
+        );
 
         // GUARANTEED IGNITION: Elements above ignition temp for sufficient time
         // This ensures elements that have been hot for extended periods ignite
@@ -549,8 +551,8 @@ impl FuelElement {
     /// Update suppression coverage state over time
     pub(crate) fn update_suppression(
         &mut self,
-        temperature: f32,
-        humidity: f32,
+        temperature: Celsius,
+        humidity: Percent,
         wind_speed: f32,
         solar_radiation: f32,
         dt: f32,

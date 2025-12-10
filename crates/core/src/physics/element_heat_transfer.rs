@@ -275,7 +275,10 @@ pub(crate) fn calculate_total_heat_transfer(
 /// Eliminates 500,000+ temporary structure allocations per frame at 12.5k burning elements
 /// Inline attribute ensures this hot function is optimized (called millions of times per frame)
 #[inline(always)]
-#[expect(clippy::too_many_arguments, reason = "Performance-critical hot path - struct allocation would add 500k+ allocations/frame overhead")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Performance-critical hot path - struct allocation would add 500k+ allocations/frame overhead"
+)]
 pub(crate) fn calculate_heat_transfer_raw(
     source_pos: Vec3,
     source_temp: f32,
@@ -506,7 +509,7 @@ mod tests {
     use crate::core_types::element::FuelPart;
     use crate::core_types::fuel::Fuel;
 
-    fn create_test_element(x: f32, y: f32, z: f32, temp: f32) -> FuelElement {
+    fn create_test_element(x: f32, y: f32, z: f32, temp: f64) -> FuelElement {
         use crate::core_types::units::{Celsius, Kilograms};
         FuelElement::new(
             0,
@@ -515,7 +518,7 @@ mod tests {
             Kilograms::new(5.0),
             FuelPart::GroundVegetation,
         )
-        .with_temperature(Celsius::new(temp as f64))
+        .with_temperature(Celsius::new(temp))
     }
 
     #[test]

@@ -19,6 +19,7 @@
 //! - Heat release rate is 10-100x lower than flaming
 //! - Burning duration extends significantly (hours vs minutes)
 
+use crate::core_types::units::Celsius;
 use serde::{Deserialize, Serialize};
 
 /// Combustion phase classification
@@ -143,7 +144,7 @@ pub(crate) fn should_transition_to_smoldering(
 /// - Smoldering: 0.01-0.1 (1-10% of flaming)
 ///
 /// # Arguments
-/// * `temperature` - Current temperature (°C)
+/// * `temperature` - Current temperature
 /// * `oxygen_fraction` - Oxygen concentration (fraction 0-1)
 ///
 /// # Returns
@@ -151,27 +152,31 @@ pub(crate) fn should_transition_to_smoldering(
 ///
 /// # References
 /// Rein (2009) - Smoldering heat release is 10-100x lower than flaming
-pub(crate) fn calculate_smoldering_heat_multiplier(temperature: f32, oxygen_fraction: f32) -> f32 {
-    if temperature < 200.0 {
+pub(crate) fn calculate_smoldering_heat_multiplier(
+    temperature: Celsius,
+    oxygen_fraction: f32,
+) -> f32 {
+    let temp = *temperature;
+    if temp < 200.0 {
         return 0.0; // Too cold for smoldering
     }
 
     // Base multiplier depends on temperature
-    let temp_factor = if temperature < 400.0 {
+    let temp_factor = if temp < 400.0 {
         // Low temp smoldering: 1-3% of flaming
-        0.01 + (temperature - 200.0) / 200.0 * 0.02
-    } else if temperature < 700.0 {
+        0.01 + (temp - 200.0) / 200.0 * 0.02
+    } else if temp < 700.0 {
         // High temp smoldering: 3-10% of flaming
-        0.03 + (temperature - 400.0) / 300.0 * 0.07
+        0.03 + (temp - 400.0) / 300.0 * 0.07
     } else {
         // Approaching flaming
         0.1
     };
 
     // Oxygen availability factor
-    let oxygen_factor = (oxygen_fraction / 0.21).min(1.0);
+    let oxygen_factor = (f64::from(oxygen_fraction) / 0.21).min(1.0);
 
-    temp_factor * oxygen_factor
+    (temp_factor * oxygen_factor) as f32
 }
 
 /// Calculate smoldering burn rate multiplier
@@ -179,22 +184,23 @@ pub(crate) fn calculate_smoldering_heat_multiplier(temperature: f32, oxygen_frac
 /// Smoldering burns 5-20x slower than flaming
 ///
 /// # Arguments
-/// * `temperature` - Current temperature (°C)
+/// * `temperature` - Current temperature
 ///
 /// # Returns
 /// Burn rate multiplier (0-1)
 ///
 /// # References
 /// Ohlemiller (1985)
-pub(crate) fn calculate_smoldering_burn_rate_multiplier(temperature: f32) -> f32 {
-    if temperature < 200.0 {
+pub(crate) fn calculate_smoldering_burn_rate_multiplier(temperature: Celsius) -> f32 {
+    let temp = *temperature;
+    if temp < 200.0 {
         0.0 // No smoldering
-    } else if temperature < 400.0 {
+    } else if temp < 400.0 {
         // Very slow: 5-10% of flaming rate
-        0.05 + (temperature - 200.0) / 200.0 * 0.05
-    } else if temperature < 700.0 {
+        (0.05 + (temp - 200.0) / 200.0 * 0.05) as f32
+    } else if temp < 700.0 {
         // Faster smoldering: 10-20% of flaming rate
-        0.10 + (temperature - 400.0) / 300.0 * 0.10
+        (0.10 + (temp - 400.0) / 300.0 * 0.10) as f32
     } else {
         // Near flaming transition
         0.20
@@ -258,9 +264,12 @@ pub(crate) fn update_smoldering_state(
 
         CombustionPhase::Smoldering => {
             // Calculate smoldering parameters
-            state.heat_release_multiplier =
-                calculate_smoldering_heat_multiplier(temperature, oxygen_fraction);
-            state.burn_rate_multiplier = calculate_smoldering_burn_rate_multiplier(temperature);
+            state.heat_release_multiplier = calculate_smoldering_heat_multiplier(
+                Celsius::new(f64::from(temperature)),
+                oxygen_fraction,
+            );
+            state.burn_rate_multiplier =
+                calculate_smoldering_burn_rate_multiplier(Celsius::new(f64::from(temperature)));
 
             // Check for extinction
             if temperature < 200.0 || oxygen_fraction < 0.05 {
@@ -325,26 +334,26 @@ mod tests {
     #[test]
     fn test_smoldering_heat_multiplier() {
         // Low temp smoldering (1-3% of flaming)
-        let mult_low = calculate_smoldering_heat_multiplier(300.0, 0.21);
+        let mult_low = calculate_smoldering_heat_multiplier(Celsius::new(300.0), 0.21);
         assert!(mult_low > 0.01 && mult_low < 0.03);
 
         // High temp smoldering (3-10% of flaming)
-        let mult_high = calculate_smoldering_heat_multiplier(600.0, 0.21);
+        let mult_high = calculate_smoldering_heat_multiplier(Celsius::new(600.0), 0.21);
         assert!(mult_high > 0.03 && mult_high < 0.10);
 
         // With low oxygen, should be reduced
-        let mult_low_oxygen = calculate_smoldering_heat_multiplier(600.0, 0.10);
+        let mult_low_oxygen = calculate_smoldering_heat_multiplier(Celsius::new(600.0), 0.10);
         assert!(mult_low_oxygen < mult_high);
     }
 
     #[test]
     fn test_smoldering_burn_rate() {
         // Low temp: 5-10% of flaming
-        let rate_low = calculate_smoldering_burn_rate_multiplier(300.0);
+        let rate_low = calculate_smoldering_burn_rate_multiplier(Celsius::new(300.0));
         assert!(rate_low > 0.05 && rate_low < 0.10);
 
         // High temp: 10-20% of flaming
-        let rate_high = calculate_smoldering_burn_rate_multiplier(600.0);
+        let rate_high = calculate_smoldering_burn_rate_multiplier(Celsius::new(600.0));
         assert!(rate_high > 0.10 && rate_high < 0.20);
     }
 
@@ -379,7 +388,7 @@ mod tests {
     fn test_smoldering_extends_burn_duration() {
         // Smoldering burn rate should be much lower than flaming
         let flaming_rate = 1.0;
-        let smoldering_rate = calculate_smoldering_burn_rate_multiplier(400.0);
+        let smoldering_rate = calculate_smoldering_burn_rate_multiplier(Celsius::new(400.0));
 
         // At least 5x slower (up to 20x slower)
         assert!(smoldering_rate < flaming_rate / 5.0);

@@ -15,6 +15,7 @@
 //!   International Journal of Wildland Fire, 15(2), 155-168
 
 use crate::core_types::fuel::Fuel;
+use crate::core_types::units::{Celsius, Percent};
 use serde::{Deserialize, Serialize};
 
 /// Calculate equilibrium moisture content based on temperature and humidity
@@ -25,8 +26,8 @@ use serde::{Deserialize, Serialize};
 /// Where coefficients depend on whether fuel is adsorbing or desorbing
 ///
 /// # Arguments
-/// * `temperature` - Air temperature (°C)
-/// * `humidity` - Relative humidity (%)
+/// * `temperature` - Air temperature
+/// * `humidity` - Relative humidity
 /// * `is_adsorbing` - true if fuel is gaining moisture, false if losing
 ///
 /// # Returns
@@ -35,8 +36,8 @@ use serde::{Deserialize, Serialize};
 /// # References
 /// Simard (1968), Nelson (2000)
 pub(crate) fn calculate_equilibrium_moisture(
-    temperature: f32,
-    humidity: f32,
+    temperature: Celsius,
+    humidity: Percent,
     is_adsorbing: bool,
 ) -> f32 {
     // Simard (1968) coefficients for adsorption and desorption
@@ -44,18 +45,20 @@ pub(crate) fn calculate_equilibrium_moisture(
     let (a, b, c, d) = if is_adsorbing {
         // Adsorption (fuel gaining moisture)
         // Coefficients adjusted so temperature has negative effect
-        (0.0, 0.00253, -0.000116, -0.0000158)
+        (0.0_f64, 0.00253, -0.000116, -0.0000158)
     } else {
         // Desorption (fuel losing moisture)
-        (0.0, 0.00282, -0.000176, -0.0000201)
+        (0.0_f64, 0.00282, -0.000176, -0.0000201)
     };
 
     // Simard equation: EMC = a + b×H + c×T + d×H×T
     // With negative d, higher temperature reduces the humidity effect
-    let emc = a + b * humidity + c * temperature + d * humidity * temperature;
+    let temp = *temperature; // f64 from Celsius
+    let hum = f64::from(*humidity); // Convert f32 Percent to f64 for calculation
+    let emc = a + b * hum + c * temp + d * hum * temp;
 
-    // Clamp to reasonable range
-    emc.clamp(0.01, 0.40)
+    // Clamp to reasonable range and convert to f32 for return
+    (emc.clamp(0.01, 0.40)) as f32
 }
 
 /// Calculate moisture timelag rate constant
@@ -180,7 +183,13 @@ impl FuelMoistureState {
     }
 
     /// Update all moisture classes based on weather
-    pub(crate) fn update(&mut self, fuel: &Fuel, temperature: f32, humidity: f32, dt_hours: f32) {
+    pub(crate) fn update(
+        &mut self,
+        fuel: &Fuel,
+        temperature: Celsius,
+        humidity: Percent,
+        dt_hours: f32,
+    ) {
         // Determine if fuel is adsorbing (gaining) or desorbing (losing) moisture
         let emc = calculate_equilibrium_moisture(temperature, humidity, false);
         let is_adsorbing = self.average_moisture < emc;
@@ -219,7 +228,7 @@ mod tests {
     #[test]
     fn test_equilibrium_moisture_calculation() {
         // Test at moderate conditions
-        let emc = calculate_equilibrium_moisture(25.0, 50.0, false);
+        let emc = calculate_equilibrium_moisture(Celsius::new(25.0), Percent::new(50.0), false);
 
         // EMC should be between 5% and 20% for these conditions
         assert!(emc > 0.05 && emc < 0.20, "EMC was {emc}");
@@ -228,8 +237,9 @@ mod tests {
     #[test]
     fn test_equilibrium_moisture_humidity_effect() {
         // Higher humidity should give higher EMC
-        let emc_low = calculate_equilibrium_moisture(20.0, 30.0, false);
-        let emc_high = calculate_equilibrium_moisture(20.0, 70.0, false);
+        let emc_low = calculate_equilibrium_moisture(Celsius::new(20.0), Percent::new(30.0), false);
+        let emc_high =
+            calculate_equilibrium_moisture(Celsius::new(20.0), Percent::new(70.0), false);
 
         assert!(emc_high > emc_low, "EMC should increase with humidity");
     }
@@ -237,8 +247,9 @@ mod tests {
     #[test]
     fn test_equilibrium_moisture_temperature_effect() {
         // Higher temperature should give lower EMC (drying effect)
-        let emc_cool = calculate_equilibrium_moisture(10.0, 50.0, false);
-        let emc_hot = calculate_equilibrium_moisture(40.0, 50.0, false);
+        let emc_cool =
+            calculate_equilibrium_moisture(Celsius::new(10.0), Percent::new(50.0), false);
+        let emc_hot = calculate_equilibrium_moisture(Celsius::new(40.0), Percent::new(50.0), false);
 
         assert!(emc_hot < emc_cool, "EMC should decrease with temperature");
     }
@@ -304,7 +315,7 @@ mod tests {
         let mut state = FuelMoistureState::new(0.15, 0.15, 0.15, 0.15);
 
         // Update with dry, hot conditions
-        state.update(&fuel, 35.0, 20.0, 1.0);
+        state.update(&fuel, Celsius::new(35.0), Percent::new(20.0), 1.0);
 
         // Moisture should decrease
         assert!(
@@ -320,13 +331,13 @@ mod tests {
 
         // Simulate day: hot and dry (should lose moisture)
         for _ in 0..12 {
-            state.update(&fuel, 35.0, 25.0, 0.5); // 30-min steps
+            state.update(&fuel, Celsius::new(35.0), Percent::new(25.0), 0.5); // 30-min steps
         }
         let day_moisture = state.average_moisture;
 
         // Simulate night: cool and humid (should gain moisture)
         for _ in 0..12 {
-            state.update(&fuel, 15.0, 70.0, 0.5);
+            state.update(&fuel, Celsius::new(15.0), Percent::new(70.0), 0.5);
         }
         let night_moisture = state.average_moisture;
 

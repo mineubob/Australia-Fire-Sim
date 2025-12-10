@@ -5,7 +5,7 @@
 //! elements interact with cells for extreme realism.
 
 use crate::core_types::element::Vec3;
-use crate::core_types::units::Celsius;
+use crate::core_types::units::{Celsius, Fraction, Meters};
 use crate::grid::{TerrainCache, TerrainData};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -149,8 +149,8 @@ impl GridCell {
 
     /// Get air temperature (°C)
     #[must_use]
-    pub fn temperature(&self) -> f32 {
-        *self.temperature as f32
+    pub fn temperature(&self) -> Celsius {
+        self.temperature
     }
 
     /// Get wind velocity vector (m/s) - returns reference for zero-copy access
@@ -161,8 +161,8 @@ impl GridCell {
 
     /// Get relative humidity (0-1)
     #[must_use]
-    pub fn humidity(&self) -> f32 {
-        self.humidity
+    pub fn humidity(&self) -> Fraction {
+        Fraction::new(self.humidity)
     }
 
     /// Get oxygen concentration (kg/m³)
@@ -203,8 +203,8 @@ impl GridCell {
 
     /// Get cell elevation (m)
     #[must_use]
-    pub fn elevation(&self) -> f32 {
-        self.elevation
+    pub fn elevation(&self) -> Meters {
+        Meters::new(self.elevation)
     }
 
     /// Check if cell is active
@@ -274,7 +274,7 @@ impl SimulationGrid {
                     let y = usize_to_f32(iy) * cell_size + cell_size / 2.0;
                     let elevation = terrain.elevation_at(x, y);
 
-                    cells.push(GridCell::new(elevation));
+                    cells.push(GridCell::new(*elevation));
                 }
             }
         }

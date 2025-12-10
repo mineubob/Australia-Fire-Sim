@@ -36,16 +36,17 @@ const FOAM_COOLING: f32 = 3000.0; // kJ/kg - high effectiveness due to coverage
 ///
 /// # Parameters
 /// - `agent_type`: Type of suppression agent
-/// - `temperature`: Current temperature of the agent in °C
+/// - `temperature`: Current temperature of the agent
 ///
 /// # Returns
 /// Cooling capacity in kJ per kg
-fn calculate_cooling_capacity(agent_type: SuppressionAgent, temperature: f32) -> f32 {
+fn calculate_cooling_capacity(agent_type: SuppressionAgent, temperature: Celsius) -> f32 {
     match agent_type {
         SuppressionAgent::Water => {
             // Latent heat of vaporization + sensible heat to reach boiling point
-            let sensible = WATER_SPECIFIC_HEAT * (WATER_BOILING_POINT - temperature);
-            WATER_LATENT_HEAT + sensible
+            let sensible =
+                f64::from(WATER_SPECIFIC_HEAT) * (f64::from(WATER_BOILING_POINT) - *temperature);
+            (f64::from(WATER_LATENT_HEAT) + sensible) as f32
         }
         SuppressionAgent::ShortTermRetardant => {
             // Similar to water but with fire-retarding chemicals
@@ -91,7 +92,7 @@ pub(crate) fn apply_suppression_direct(
         // Cooling effect based on agent type
         // Typical suppression agent delivery temperature (°C)
         // Water from trucks: 15-25°C, aerial drops: 10-20°C
-        let agent_temp = 20.0;
+        let agent_temp = Celsius::new(20.0);
         let cooling_capacity = calculate_cooling_capacity(agent_type, agent_temp);
 
         let cooling_kj = mass * cooling_capacity;
@@ -198,10 +199,10 @@ mod tests {
     #[test]
     fn test_cooling_capacity() {
         // Test that different agents have appropriate cooling capacities
-        let water_cooling = calculate_cooling_capacity(SuppressionAgent::Water, 20.0);
-        let foam_cooling = calculate_cooling_capacity(SuppressionAgent::Foam, 20.0);
+        let water_cooling = calculate_cooling_capacity(SuppressionAgent::Water, Celsius::new(20.0));
+        let foam_cooling = calculate_cooling_capacity(SuppressionAgent::Foam, Celsius::new(20.0));
         let retardant_cooling =
-            calculate_cooling_capacity(SuppressionAgent::LongTermRetardant, 20.0);
+            calculate_cooling_capacity(SuppressionAgent::LongTermRetardant, Celsius::new(20.0));
 
         // Water: ~2600 kJ/kg (2260 + 4.18*(100-20))
         assert!(water_cooling > 2500.0 && water_cooling < 2700.0);

@@ -9,6 +9,7 @@
 //! - ICAO Standard Atmosphere (1993)
 //! - Holton, J.R. (2004). "An Introduction to Dynamic Meteorology"
 
+use crate::core_types::units::{Celsius, Percent};
 use serde::{Deserialize, Serialize};
 
 /// Atmospheric stability profile for fire weather calculations
@@ -113,40 +114,41 @@ impl AtmosphericProfile {
     /// and standard atmospheric lapse rates.
     ///
     /// # Parameters
-    /// - `surface_temp`: Surface temperature (°C)
-    /// - `surface_humidity`: Surface relative humidity (0-1)
+    /// - `surface_temp`: Surface temperature
+    /// - `surface_humidity`: Surface relative humidity
     /// - `surface_wind_speed`: Surface wind speed (m/s)
     /// - `is_daytime`: Whether sun is up (affects mixing height)
     pub fn from_surface_conditions(
-        surface_temp: f32,
-        surface_humidity: f32,
+        surface_temp: Celsius,
+        surface_humidity: Percent,
         surface_wind_speed: f32,
         is_daytime: bool,
     ) -> Self {
         // Calculate dewpoint from temperature and humidity
         let surface_dewpoint = Self::calculate_dewpoint(surface_temp, surface_humidity);
 
+        let surface_temp_f32 = *surface_temp as f32;
         // Standard lapse rate - slightly modified by temperature
         // Hot days tend to be more unstable
         let base_lapse = 6.5; // °C/km (standard)
-        let lapse_rate = if surface_temp > 35.0 {
-            base_lapse + (surface_temp - 35.0) * 0.1 // More unstable when hot
+        let lapse_rate = if surface_temp_f32 > 35.0 {
+            base_lapse + (surface_temp_f32 - 35.0) * 0.1 // More unstable when hot
         } else {
             base_lapse
         };
 
         // Estimate upper-level temperatures
         // 850 hPa is approximately 1500m above sea level
-        let temp_850 = surface_temp - lapse_rate * 1.5;
-        let temp_700 = surface_temp - lapse_rate * 3.0;
-        let temp_500 = surface_temp - lapse_rate * 5.5;
+        let temp_850 = surface_temp_f32 - lapse_rate * 1.5;
+        let temp_700 = surface_temp_f32 - lapse_rate * 3.0;
+        let temp_500 = surface_temp_f32 - lapse_rate * 5.5;
 
         // Dewpoint decreases with altitude (drying rate ~2°C/km)
         let dewpoint_850 = surface_dewpoint - 3.0;
         let dewpoint_700 = surface_dewpoint - 6.0;
 
         // Calculate stability indices
-        let lifted_index = Self::calculate_lifted_index(surface_temp, surface_dewpoint, temp_500);
+        let lifted_index = Self::calculate_lifted_index(surface_temp_f32, surface_dewpoint, temp_500);
         let k_index =
             Self::calculate_k_index(temp_850, temp_700, temp_500, dewpoint_850, dewpoint_700);
         let haines_index = Self::calculate_haines_index_low(temp_850, temp_700, dewpoint_850);
@@ -154,7 +156,7 @@ impl AtmosphericProfile {
         // Mixing height - depends on surface heating and stability
         let mixing_height = if is_daytime {
             // Daytime: convective boundary layer
-            let base_height = 500.0 + (surface_temp - 20.0) * 50.0;
+            let base_height = 500.0 + (surface_temp_f32 - 20.0) * 50.0;
             let stability_factor = if lifted_index < 0.0 {
                 1.0 + (-lifted_index * 0.1).min(0.5)
             } else {
@@ -167,7 +169,7 @@ impl AtmosphericProfile {
         };
 
         // Check for inversion
-        let (inversion_altitude, inversion_strength) = if !is_daytime || surface_temp < 20.0 {
+        let (inversion_altitude, inversion_strength) = if !is_daytime || surface_temp_f32 < 20.0 {
             // Nighttime or cool conditions may have inversion
             if lapse_rate < 5.0 {
                 (Some(mixing_height), 5.0 - lapse_rate)
@@ -182,7 +184,7 @@ impl AtmosphericProfile {
         let wind_shear = surface_wind_speed * 0.5; // Simple approximation
 
         Self {
-            surface_temperature: surface_temp,
+            surface_temperature: surface_temp_f32,
             lapse_rate,
             temp_850,
             temp_700,
@@ -208,14 +210,15 @@ impl AtmosphericProfile {
     /// # Scientific Reference
     /// Alduchov, O.A. and Eskridge, R.E. (1996). "Improved Magnus Form Approximation
     /// of Saturation Vapor Pressure." Journal of Applied Meteorology, 35(4), 601-609.
-    fn calculate_dewpoint(temp: f32, humidity: f32) -> f32 {
+    fn calculate_dewpoint(temp: Celsius, humidity: Percent) -> f32 {
         // Magnus-Tetens constants (Alduchov & Eskridge 1996)
         const MAGNUS_A: f32 = 17.27; // Dimensionless coefficient
         const MAGNUS_B: f32 = 237.7; // °C - temperature offset
         const MIN_HUMIDITY: f32 = 0.01; // Minimum humidity to avoid log(0)
 
-        let humidity = humidity.clamp(MIN_HUMIDITY, 1.0);
-        let gamma = (MAGNUS_A * temp / (MAGNUS_B + temp)) + humidity.ln();
+        let temp_f32 = *temp as f32;
+        let humidity_fraction = (*humidity.to_fraction()).clamp(MIN_HUMIDITY, 1.0);
+        let gamma = (MAGNUS_A * temp_f32 / (MAGNUS_B + temp_f32)) + humidity_fraction.ln();
         MAGNUS_B * gamma / (MAGNUS_A - gamma)
     }
 
@@ -433,10 +436,10 @@ impl Default for AtmosphericProfile {
     /// Default: Neutral atmosphere typical of mild conditions
     fn default() -> Self {
         Self::from_surface_conditions(
-            25.0, // 25°C surface temp
-            0.5,  // 50% humidity
-            5.0,  // 5 m/s wind
-            true, // daytime
+            Celsius::new(25.0), // 25°C surface temp
+            Percent::new(50.0), // 50% humidity
+            5.0,                // 5 m/s wind
+            true,               // daytime
         )
     }
 }
@@ -447,7 +450,7 @@ mod tests {
 
     #[test]
     fn test_atmospheric_profile_creation() {
-        let profile = AtmosphericProfile::from_surface_conditions(30.0, 0.3, 10.0, true);
+        let profile = AtmosphericProfile::from_surface_conditions(Celsius::new(30.0), Percent::new(30.0), 10.0, true);
 
         assert!(profile.temp_850 < profile.surface_temperature);
         assert!(profile.temp_700 < profile.temp_850);
@@ -457,7 +460,7 @@ mod tests {
     #[test]
     fn test_haines_index_range() {
         // Low Haines Index - cool, moist
-        let low = AtmosphericProfile::from_surface_conditions(15.0, 0.8, 2.0, true);
+        let low = AtmosphericProfile::from_surface_conditions(Celsius::new(15.0), Percent::new(80.0), 2.0, true);
         assert!(
             low.haines_index <= 5,
             "Cool/moist should have moderate or lower Haines, got {}",
@@ -465,7 +468,7 @@ mod tests {
         );
 
         // High Haines Index - hot, dry
-        let high = AtmosphericProfile::from_surface_conditions(42.0, 0.15, 15.0, true);
+        let high = AtmosphericProfile::from_surface_conditions(Celsius::new(42.0), Percent::new(15.0), 15.0, true);
         // Very hot and dry will have high Haines, but the simplified model may not reach 6
         assert!(
             high.haines_index >= 4,
@@ -485,7 +488,7 @@ mod tests {
     #[test]
     fn test_lifted_index_instability() {
         // Test that LI calculation produces reasonable values
-        let profile = AtmosphericProfile::from_surface_conditions(30.0, 0.4, 10.0, true);
+        let profile = AtmosphericProfile::from_surface_conditions(Celsius::new(30.0), Percent::new(40.0), 10.0, true);
 
         // LI can range from about -10 (extremely unstable) to +10 (very stable)
         assert!(
@@ -496,8 +499,8 @@ mod tests {
 
         // Test that lower humidity leads to different LI
         // (affects dewpoint and therefore LCL and parcel trajectory)
-        let dry = AtmosphericProfile::from_surface_conditions(30.0, 0.2, 10.0, true);
-        let moist = AtmosphericProfile::from_surface_conditions(30.0, 0.8, 10.0, true);
+        let dry = AtmosphericProfile::from_surface_conditions(Celsius::new(30.0), Percent::new(20.0), 10.0, true);
+        let moist = AtmosphericProfile::from_surface_conditions(Celsius::new(30.0), Percent::new(80.0), 10.0, true);
 
         // Both should be in valid range
         assert!(
@@ -573,14 +576,14 @@ mod tests {
     #[test]
     fn test_dewpoint_calculation() {
         // At 100% humidity, dewpoint = temperature
-        let dp_100 = AtmosphericProfile::calculate_dewpoint(20.0, 0.99);
+        let dp_100 = AtmosphericProfile::calculate_dewpoint(Celsius::new(20.0), Percent::new(99.0));
         assert!(
             (dp_100 - 20.0).abs() < 1.0,
             "At near 100% RH, dewpoint ≈ temp"
         );
 
         // At low humidity, dewpoint << temperature
-        let dp_low = AtmosphericProfile::calculate_dewpoint(30.0, 0.2);
+        let dp_low = AtmosphericProfile::calculate_dewpoint(Celsius::new(30.0), Percent::new(20.0));
         assert!(dp_low < 10.0, "At 20% RH, dewpoint should be much lower");
     }
 

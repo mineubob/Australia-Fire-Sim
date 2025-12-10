@@ -195,7 +195,10 @@ pub fn calculate_maximum_spotting_distance(
 ///
 /// # References
 /// Tarifa et al. (1965), Albini (1983)
-#[expect(clippy::too_many_arguments, reason = "Scientific calculation requires all atmospheric and trajectory parameters - struct would reduce clarity")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Scientific calculation requires all atmospheric and trajectory parameters - struct would reduce clarity"
+)]
 #[must_use]
 pub fn calculate_ember_trajectory(
     initial_position: Vec3,
