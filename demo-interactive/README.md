@@ -1,4 +1,4 @@
-# Ratatui Terminal UI Demo
+# Terminal UI Demo
 
 ## Overview
 
@@ -10,19 +10,19 @@ The Australia Fire Simulation now features a rich terminal UI powered by ratatui
 ┌─────────────────────────────────────────────────────────────────────┐
 │ Fire Simulation | Step: 0 | Time: 0.0s | Elements: 2564 | Burning: 0│
 └─────────────────────────────────────────────────────────────────────┘
-┌─ Messages ──────────────────────────────────┐┌─ 🔥 Burning (0) ────┐
-│ Welcome to Australia Fire Simulation!       ││                     │
-│ Created simulation with 2564 elements...    ││ (List of burning    │
-│ Type 'help' for available commands.         ││  elements with      │
+┌─ Messages ───────────────────────────────────┐┌─ 🔥 Burning (0) ────┐
+│ Welcome to Australia Fire Simulation!        ││                     │
+│ Created simulation with 2564 elements...     ││ (List of burning    │
+│ Type 'help' for available commands.          ││  elements with      │
 │                                              ││  temperatures)      │
-│ Command outputs appear here...              ││                     │
+│ Command outputs appear here...               ││                     │
 │                                              ││ Color-coded:        │
 │                                              ││ - Red: > 800°C      │
 │                                              ││ - Yellow: > 400°C   │
 │                                              ││ - White: < 400°C    │
 └──────────────────────────────────────────────┘└─────────────────────┘
-┌─ Command Input (F1 for help) ──────────────────────────────────────┐
-│ fire> _                                                              │
+┌─ Command Input (F1 for help) ───────────────────────────────────────┐
+│ fire> _                                                             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -143,28 +143,3 @@ s 10
 q
 HEREDOC
 ```
-
-## Technical Details
-
-- **Framework**: ratatui 0.28
-- **Backend**: crossterm 0.29
-- **Terminal Requirements**: Any ANSI-compatible terminal
-- **Resizing**: Automatically responsive to terminal size changes
-- **Color Support**: 16-color minimum, 256-color recommended
-
-## Comparison with Old REPL
-
-### Before (rustyline)
-- Simple line-by-line output
-- No persistent status display
-- Manual scrolling required
-- Single view mode
-
-### After (ratatui)
-- Multi-panel layout
-- Real-time status header
-- Auto-scrolling messages
-- Color-coded information
-- Multiple view modes
-- Responsive to terminal size
-- Enhanced visual hierarchy
