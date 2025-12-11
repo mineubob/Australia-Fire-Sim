@@ -63,6 +63,15 @@ use std::{
 const DEFAULT_WIDTH: f32 = 150.0;
 const DEFAULT_HEIGHT: f32 = 150.0;
 
+/// Burning list sort mode
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BurningSortMode {
+    /// Sort by temperature (descending)
+    Temperature,
+    /// Sort by time since ignition (oldest first)
+    TimeSinceIgnition,
+}
+
 /// Application state
 struct App {
     /// The fire simulation
@@ -99,6 +108,10 @@ struct App {
     steps_total: u32,
     /// Headless mode (no UI)
     headless: bool,
+    /// Burning list sort mode
+    burning_sort_mode: BurningSortMode,
+    /// Ignition times (`element_id` -> `step_count` when ignited)
+    ignition_times: std::collections::HashMap<usize, u32>,
 }
 
 /// UI view modes
@@ -152,6 +165,8 @@ impl App {
             steps_remaining: 0,
             steps_total: 0,
             headless,
+            burning_sort_mode: BurningSortMode::Temperature,
+            ignition_times: std::collections::HashMap::new(),
         }
     }
 
@@ -301,9 +316,29 @@ impl App {
         let embers_before = self.sim.ember_count();
         let start = Instant::now();
 
+        // Track which elements were burning before
+        let burning_ids_before: std::collections::HashSet<_> = self
+            .sim
+            .get_burning_elements()
+            .iter()
+            .map(|e| e.get_stats().id)
+            .collect();
+
         self.sim.update(dt);
         self.step_count += 1;
         self.elapsed_time += dt;
+
+        // Track newly ignited elements
+        let burning_ids_after: std::collections::HashSet<_> = self
+            .sim
+            .get_burning_elements()
+            .iter()
+            .map(|e| e.get_stats().id)
+            .collect();
+
+        for id in burning_ids_after.difference(&burning_ids_before) {
+            self.ignition_times.insert(*id, self.step_count);
+        }
 
         let burning_after = self.sim.get_burning_elements().len();
         let embers_after = self.sim.ember_count();
@@ -452,6 +487,8 @@ impl App {
             let stats = e.get_stats();
             let initial_temp = Celsius::new(600.0).max(Celsius::from(stats.ignition_temperature));
             self.sim.ignite_element(id, initial_temp);
+            // Track ignition time
+            self.ignition_times.insert(id, self.step_count);
             self.add_message(format!(
                 "Ignited element {id} at ({:.1}, {:.1}, {:.1})",
                 stats.position.x, stats.position.y, stats.position.z
@@ -942,6 +979,18 @@ fn run_app<B: ratatui::backend::Backend>(
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         app.should_quit = true;
                     }
+                    KeyCode::Char('t' | 'T') => {
+                        // Toggle burning list sort mode
+                        app.burning_sort_mode = match app.burning_sort_mode {
+                            BurningSortMode::Temperature => BurningSortMode::TimeSinceIgnition,
+                            BurningSortMode::TimeSinceIgnition => BurningSortMode::Temperature,
+                        };
+                        let mode_name = match app.burning_sort_mode {
+                            BurningSortMode::Temperature => "Temperature (descending)",
+                            BurningSortMode::TimeSinceIgnition => "Time Since Ignition",
+                        };
+                        app.add_message(format!("Burning list sort mode: {mode_name}"));
+                    }
                     KeyCode::Char(c) => {
                         app.input.push(c);
                     }
@@ -1128,7 +1177,31 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
 
 /// Draw burning elements list
 fn draw_burning_list(f: &mut Frame, app: &App, area: Rect) {
-    let burning_elements = app.sim.get_burning_elements();
+    let mut burning_elements = app.sim.get_burning_elements();
+
+    // Sort based on current sort mode
+    match app.burning_sort_mode {
+        BurningSortMode::Temperature => {
+            // Sort by temperature descending
+            burning_elements.sort_by(|a, b| {
+                let temp_a = a.get_stats().temperature;
+                let temp_b = b.get_stats().temperature;
+                temp_b
+                    .partial_cmp(&temp_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        BurningSortMode::TimeSinceIgnition => {
+            // Sort by time since ignition (oldest first)
+            burning_elements.sort_by(|a, b| {
+                let id_a = a.get_stats().id;
+                let id_b = b.get_stats().id;
+                let time_a = app.ignition_times.get(&id_a).unwrap_or(&u32::MAX);
+                let time_b = app.ignition_times.get(&id_b).unwrap_or(&u32::MAX);
+                time_a.cmp(time_b)
+            });
+        }
+    }
 
     let items: Vec<ListItem> = burning_elements
         .iter()
@@ -1143,19 +1216,40 @@ fn draw_burning_list(f: &mut Frame, app: &App, area: Rect) {
                 Color::White
             };
 
+            let time_info = if let Some(&ignition_step) = app.ignition_times.get(&stats.id) {
+                let steps_burning = app.step_count.saturating_sub(ignition_step);
+                format!(" | {steps_burning}s")
+            } else {
+                String::new()
+            };
+
             let text = format!(
-                "ID {:>4} | {:.0}°C | ({:.0}, {:.0}, {:.0})",
-                stats.id, stats.temperature, stats.position.x, stats.position.y, stats.position.z
+                "ID {:>4} | {:.0}°C{} | ({:.0}, {:.0}, {:.0})",
+                stats.id,
+                stats.temperature,
+                time_info,
+                stats.position.x,
+                stats.position.y,
+                stats.position.z
             );
 
             ListItem::new(text).style(Style::default().fg(temp_color))
         })
         .collect();
 
+    let sort_indicator = match app.burning_sort_mode {
+        BurningSortMode::Temperature => "↓Temp",
+        BurningSortMode::TimeSinceIgnition => "Time",
+    };
+
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!(" 🔥 Burning ({}) ", burning_elements.len()))
+            .title(format!(
+                " 🔥 Burning ({}) [{}] ",
+                burning_elements.len(),
+                sort_indicator
+            ))
             .style(Style::default().fg(Color::White)),
     );
 
@@ -1317,6 +1411,7 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from(Span::styled("Controls:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
         Line::from("  Ctrl+C, quit, q          - Exit simulation"),
         Line::from("  Up/Down arrows           - Navigate command history"),
+        Line::from("  T                        - Toggle burning list sort (Temperature/Time)"),
         Line::from(""),
         Line::from(Span::styled("Press ESC to return to dashboard", Style::default().fg(Color::Yellow))),
     ];
