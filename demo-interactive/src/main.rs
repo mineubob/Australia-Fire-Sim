@@ -694,14 +694,14 @@ fn show_status(sim: &FireSimulation) {
 fn show_weather(sim: &FireSimulation) {
     let w = sim.get_weather().get_stats();
     println!("\n═══════════════ WEATHER CONDITIONS ═══════════════");
-    println!("Temperature:     {:.1}°C", w.temperature);
-    println!("Humidity:        {:.1}%", w.humidity);
+    println!("Temperature:     {:.1}", w.temperature);
+    println!("Humidity:        {:.1}", w.humidity);
     println!(
-        "Wind Speed:      {:.1} km/h ({:.1} m/s)",
+        "Wind Speed:      {:.1} ({:.1})",
         w.wind_speed,
-        w.wind_speed / 3.6
+        w.wind_speed.to_mps()
     );
-    println!("Wind Direction:  {:.0}°", w.wind_direction);
+    println!("Wind Direction:  {:.0}", w.wind_direction);
     println!("Drought Factor:  {:.1}", w.drought_factor);
     println!();
     println!("FFDI:            {:.1}", w.ffdi);
@@ -898,7 +898,7 @@ fn set_preset(sim: &mut FireSimulation, current_weather: &mut WeatherPreset, nam
         14.0, // 2pm
         ClimatePattern::Neutral,
     ));
-    println!("Weather preset changed to '{name}'");
+    println!("Weather preset changed to '{}'", current_weather.name);
     show_weather(sim);
 }
 
