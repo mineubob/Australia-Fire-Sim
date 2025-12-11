@@ -884,23 +884,19 @@ fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
     // Set up panic hook to restore terminal on panic
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
-        // Attempt to restore terminal state
+        // Restore terminal state before printing panic info
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
-        // Call the original panic hook
+        
+        // Call the original panic hook to print full backtrace
         original_hook(panic_info);
     }));
 
     // Create app
     let mut app = App::new(width, height);
 
-    // Run app with panic catching
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_app(&mut terminal, &mut app)
-    }));
-
-    // Restore panic hook
-    let _ = std::panic::take_hook();
+    // Run app (let panics propagate naturally for full backtrace)
+    let res = run_app(&mut terminal, &mut app);
 
     // Restore terminal
     disable_raw_mode()?;
@@ -911,26 +907,10 @@ fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     terminal.show_cursor()?;
 
-    // Handle result
-    match res {
-        Ok(Ok(())) => {
-            println!("Goodbye!");
-            Ok(())
-        }
-        Ok(Err(err)) => {
-            println!("Error: {err:?}");
-            Err(Box::new(err))
-        }
-        Err(panic) => {
-            println!("Application panicked!");
-            if let Some(s) = panic.downcast_ref::<&str>() {
-                println!("Panic message: {s}");
-            } else if let Some(s) = panic.downcast_ref::<String>() {
-                println!("Panic message: {s}");
-            }
-            Err("Application panicked".into())
-        }
-    }
+    res?;
+
+    println!("Goodbye!");
+    Ok(())
 }
 
 /// Run the application event loop
