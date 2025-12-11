@@ -231,12 +231,12 @@ pub struct WeatherPreset {
 
 impl WeatherPreset {
     /// Catastrophic preset - Extreme fire weather (Code Red)
-    /// 
+    ///
     /// Based on historical catastrophic fire events:
     /// - Black Saturday (Victoria, 7 Feb 2009): 46°C, 6% humidity, 70 km/h winds
     /// - Ash Wednesday (Victoria/SA, 16 Feb 1983): 43°C, 8% humidity, 70 km/h winds
     /// - Perth Hills (WA, 6 Feb 2011): 44°C, 5% humidity, 65 km/h winds
-    /// 
+    ///
     /// Produces FFDI 200-260+ (Code Red threshold is 150+)
     #[must_use]
     pub fn catastrophic() -> Self {
@@ -258,13 +258,13 @@ impl WeatherPreset {
             ],
             el_nino_temp_mod: Celsius::new(0.0),
             la_nina_temp_mod: Celsius::new(0.0),
-            summer_humidity: Percent::new(6.0),  // Black Saturday level
+            summer_humidity: Percent::new(6.0), // Black Saturday level
             autumn_humidity: Percent::new(8.0),
             winter_humidity: Percent::new(10.0),
             spring_humidity: Percent::new(8.0),
             el_nino_humidity_mod: Percent::new(0.0),
             la_nina_humidity_mod: Percent::new(0.0),
-            summer_wind: KilometersPerHour::new(70.0),  // Black Saturday level
+            summer_wind: KilometersPerHour::new(70.0), // Black Saturday level
             autumn_wind: KilometersPerHour::new(65.0),
             winter_wind: KilometersPerHour::new(60.0),
             spring_wind: KilometersPerHour::new(65.0),
@@ -277,7 +277,7 @@ impl WeatherPreset {
             autumn_solar_max: 1200.0,
             winter_solar_max: 1200.0,
             spring_solar_max: 1200.0,
-            summer_drought_rate: 0.3,  // Rapid drought buildup
+            summer_drought_rate: 0.3, // Rapid drought buildup
             autumn_drought_rate: 0.2,
             winter_drought_rate: 0.0,
             spring_drought_rate: 0.2,
@@ -1539,7 +1539,7 @@ mod tests {
     fn test_fire_danger_ratings() {
         // Test all fire danger rating thresholds
         // Using realistic Australian bushfire conditions
-        
+
         // Low: FFDI < 5
         let low = WeatherSystem::new(18.0, 75.0, 10.0, 0.0, 2.0);
         let ffdi_low = low.calculate_ffdi();
@@ -1549,40 +1549,82 @@ mod tests {
         // Moderate: FFDI 5-12
         let moderate = WeatherSystem::new(28.0, 45.0, 25.0, 0.0, 6.0);
         let ffdi_mod = moderate.calculate_ffdi();
-        assert_eq!(moderate.fire_danger_rating(), "Moderate", "Moderate FFDI was {ffdi_mod}");
-        assert!(ffdi_mod >= 5.0 && ffdi_mod < 12.0, "Moderate FFDI was {ffdi_mod}");
+        assert_eq!(
+            moderate.fire_danger_rating(),
+            "Moderate",
+            "Moderate FFDI was {ffdi_mod}"
+        );
+        assert!(
+            (5.0..12.0).contains(&ffdi_mod),
+            "Moderate FFDI was {ffdi_mod}"
+        );
 
         // High: FFDI 12-24
         let high = WeatherSystem::new(32.0, 30.0, 30.0, 0.0, 7.0);
         let ffdi_high = high.calculate_ffdi();
-        assert_eq!(high.fire_danger_rating(), "High", "High FFDI was {ffdi_high}");
-        assert!(ffdi_high >= 12.0 && ffdi_high < 24.0, "High FFDI was {ffdi_high}");
+        assert_eq!(
+            high.fire_danger_rating(),
+            "High",
+            "High FFDI was {ffdi_high}"
+        );
+        assert!(
+            (12.0..24.0).contains(&ffdi_high),
+            "High FFDI was {ffdi_high}"
+        );
 
         // Very High: FFDI 24-50
         let very_high = WeatherSystem::new(36.0, 22.0, 38.0, 0.0, 8.0);
         let ffdi_vh = very_high.calculate_ffdi();
-        assert_eq!(very_high.fire_danger_rating(), "Very High", "Very High FFDI was {ffdi_vh}");
-        assert!(ffdi_vh >= 24.0 && ffdi_vh < 50.0, "Very High FFDI was {ffdi_vh}");
+        assert_eq!(
+            very_high.fire_danger_rating(),
+            "Very High",
+            "Very High FFDI was {ffdi_vh}"
+        );
+        assert!(
+            (24.0..50.0).contains(&ffdi_vh),
+            "Very High FFDI was {ffdi_vh}"
+        );
 
         // Severe: FFDI 50-100
         let severe = WeatherSystem::new(40.0, 18.0, 45.0, 0.0, 10.0);
         let ffdi_sev = severe.calculate_ffdi();
-        assert_eq!(severe.fire_danger_rating(), "Severe", "Severe FFDI was {ffdi_sev}");
-        assert!(ffdi_sev >= 50.0 && ffdi_sev < 100.0, "Severe FFDI was {ffdi_sev}");
+        assert_eq!(
+            severe.fire_danger_rating(),
+            "Severe",
+            "Severe FFDI was {ffdi_sev}"
+        );
+        assert!(
+            (50.0..100.0).contains(&ffdi_sev),
+            "Severe FFDI was {ffdi_sev}"
+        );
 
         // Extreme: FFDI 100-150
         let extreme = WeatherSystem::new(42.0, 12.0, 55.0, 0.0, 10.0);
         let ffdi_ext = extreme.calculate_ffdi();
-        assert_eq!(extreme.fire_danger_rating(), "Extreme", "Extreme FFDI was {ffdi_ext}");
-        assert!(ffdi_ext >= 100.0 && ffdi_ext < 150.0, "Extreme FFDI was {ffdi_ext}");
+        assert_eq!(
+            extreme.fire_danger_rating(),
+            "Extreme",
+            "Extreme FFDI was {ffdi_ext}"
+        );
+        assert!(
+            (100.0..150.0).contains(&ffdi_ext),
+            "Extreme FFDI was {ffdi_ext}"
+        );
 
         // CATASTROPHIC: FFDI >= 150 (Code Red)
         // Based on Black Saturday conditions: 46°C, 6% humidity, 70 km/h winds
         let catastrophic = WeatherSystem::new(46.0, 6.0, 70.0, 0.0, 10.0);
         let ffdi_cat = catastrophic.calculate_ffdi();
-        assert_eq!(catastrophic.fire_danger_rating(), "CATASTROPHIC", "CATASTROPHIC FFDI was {ffdi_cat}");
-        assert!(ffdi_cat >= 150.0, "CATASTROPHIC FFDI was {ffdi_cat}, expected >= 150");
-        
+        assert_eq!(
+            catastrophic.fire_danger_rating(),
+            "CATASTROPHIC",
+            "CATASTROPHIC FFDI was {ffdi_cat}"
+        );
+        assert!(
+            ffdi_cat >= 150.0,
+            "CATASTROPHIC FFDI was {ffdi_cat}, expected >= 150"
+        );
+
         // Test catastrophic preset produces CATASTROPHIC rating
         let catastrophic_preset = WeatherSystem::from_preset(
             WeatherPreset::catastrophic(),
@@ -1591,8 +1633,15 @@ mod tests {
             ClimatePattern::Neutral,
         );
         let ffdi_preset = catastrophic_preset.calculate_ffdi();
-        assert_eq!(catastrophic_preset.fire_danger_rating(), "CATASTROPHIC", "Catastrophic preset rating incorrect");
-        assert!(ffdi_preset >= 150.0, "Catastrophic preset FFDI was {ffdi_preset}, expected >= 150");
+        assert_eq!(
+            catastrophic_preset.fire_danger_rating(),
+            "CATASTROPHIC",
+            "Catastrophic preset rating incorrect"
+        );
+        assert!(
+            ffdi_preset >= 150.0,
+            "Catastrophic preset FFDI was {ffdi_preset}, expected >= 150"
+        );
     }
 
     #[test]
@@ -1601,14 +1650,20 @@ mod tests {
         // Conditions: 46°C, 6% humidity, 70+ km/h winds
         let black_saturday = WeatherSystem::new(46.0, 6.0, 70.0, 0.0, 10.0);
         let ffdi = black_saturday.calculate_ffdi();
-        assert!(ffdi >= 200.0, "Black Saturday FFDI was {ffdi}, expected ~260");
+        assert!(
+            ffdi >= 200.0,
+            "Black Saturday FFDI was {ffdi}, expected ~260"
+        );
         assert_eq!(black_saturday.fire_danger_rating(), "CATASTROPHIC");
 
         // Ash Wednesday (Victoria/SA, 16 Feb 1983)
         // Conditions: 43°C, 8% humidity, 70 km/h winds
         let ash_wednesday = WeatherSystem::new(43.0, 8.0, 70.0, 0.0, 10.0);
         let ffdi = ash_wednesday.calculate_ffdi();
-        assert!(ffdi >= 150.0, "Ash Wednesday FFDI was {ffdi}, expected ~220");
+        assert!(
+            ffdi >= 150.0,
+            "Ash Wednesday FFDI was {ffdi}, expected ~220"
+        );
         assert_eq!(ash_wednesday.fire_danger_rating(), "CATASTROPHIC");
 
         // Perth Hills Fire (WA, 6 Feb 2011)

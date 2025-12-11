@@ -381,7 +381,7 @@ impl FireSimulation {
     /// ```
     pub fn update_weather_preset(&mut self, preset: crate::core_types::weather::WeatherPreset) {
         self.weather.update_preset(preset);
-        
+
         // Update grid ambient conditions to match new weather
         self.grid.ambient_temperature = self.weather.temperature;
         self.grid.ambient_humidity = *self.weather.humidity;
