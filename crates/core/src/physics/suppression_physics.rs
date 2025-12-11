@@ -19,6 +19,36 @@ pub enum SuppressionAgent {
     Foam,
 }
 
+// Typical delivery temperatures for suppression agents with controlled storage
+// Water temperature is dynamic (based on ambient conditions)
+const FOAM_DELIVERY_TEMP: Celsius = Celsius::new(20.0); // Foam systems: slightly warmer due to equipment
+const SHORT_TERM_RETARDANT_TEMP: Celsius = Celsius::new(22.0); // Mixed on-site, often slightly warmer
+const LONG_TERM_RETARDANT_TEMP: Celsius = Celsius::new(25.0); // Pre-mixed, stored at controlled temperature for viscosity
+
+impl SuppressionAgent {
+    /// Get typical delivery temperature for this suppression agent
+    ///
+    /// Different agents are delivered at different temperatures:
+    /// - Water: Tracks ambient temperature (from environment/weather)
+    /// - Foam/Retardants: Stored at controlled temperatures for optimal viscosity/mixing
+    ///
+    /// # Parameters
+    /// - `ambient_temp`: Current ambient temperature (used for water)
+    ///
+    /// # Returns
+    /// Typical delivery temperature in Celsius
+    pub(crate) fn delivery_temperature(self, ambient_temp: Celsius) -> Celsius {
+        match self {
+            // Water temperature tracks ambient (from lakes, rivers, or stored tanks)
+            Self::Water => ambient_temp,
+            // Other agents stored at controlled temperatures
+            Self::Foam => FOAM_DELIVERY_TEMP,
+            Self::ShortTermRetardant => SHORT_TERM_RETARDANT_TEMP,
+            Self::LongTermRetardant => LONG_TERM_RETARDANT_TEMP,
+        }
+    }
+}
+
 /// Physical constants for suppression
 const WATER_LATENT_HEAT: f32 = 2260.0; // kJ/kg - latent heat of vaporization
 const WATER_SPECIFIC_HEAT: f32 = 4.18; // kJ/(kg·K)
@@ -90,9 +120,8 @@ pub(crate) fn apply_suppression_direct(
         cell.suppression_agent += concentration_increase;
 
         // Cooling effect based on agent type
-        // Typical suppression agent delivery temperature (°C)
-        // Water from trucks: 15-25°C, aerial drops: 10-20°C
-        let agent_temp = Celsius::new(20.0);
+        // Agent temperature varies: water tracks ambient, others are temperature-controlled
+        let agent_temp = agent_type.delivery_temperature(ambient_temp);
         let cooling_capacity = calculate_cooling_capacity(agent_type, agent_temp);
 
         let cooling_kj = mass * cooling_capacity;

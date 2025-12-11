@@ -41,6 +41,32 @@ use crate::core_types::element::Vec3;
 use crate::core_types::units::{Celsius, Kilograms};
 use serde::{Deserialize, Serialize};
 
+// ============================================================================
+// EMBER PHYSICS CONSTANTS
+// ============================================================================
+
+/// Ember activity threshold - embers below this temperature are considered inactive (200°C)
+///
+/// Below this temperature, embers have cooled sufficiently that they no longer pose
+/// an ignition risk and can be removed from the simulation.
+pub const EMBER_ACTIVE_THRESHOLD: Celsius = Celsius::new(200.0);
+
+/// Ember ignition threshold - embers must be above this to ignite receptive fuel (250°C)
+///
+/// This is the minimum temperature at which landed embers can successfully ignite
+/// dry fuel. Based on typical ignition temperatures for fine fuels.
+pub const EMBER_IGNITION_THRESHOLD: Celsius = Celsius::new(250.0);
+
+/// Ember buoyancy threshold - hot embers above this temperature experience significant buoyant lift (300°C)
+///
+/// At temperatures above 300°C, the thermal differential with ambient air creates
+/// strong buoyancy forces that can loft embers high into the air, enabling long-distance transport.
+pub const EMBER_BUOYANCY_THRESHOLD: Celsius = Celsius::new(300.0);
+
+// ============================================================================
+// EMBER TYPES
+// ============================================================================
+
 /// Ember particle with physics simulation
 ///
 /// Represents a single burning ember that has been lofted from a fire.
@@ -138,7 +164,7 @@ impl Ember {
         let ember_volume = *self.mass / 400.0; // ~400 kg/m³ for char
 
         // 1. Buoyancy (hot embers rise)
-        let buoyancy = if self.temperature > Celsius::new(300.0) {
+        let buoyancy = if self.temperature > EMBER_BUOYANCY_THRESHOLD {
             let temp_ratio = *self.temperature / 300.0;
             AIR_DENSITY * 9.81 * ember_volume * (temp_ratio as f32)
         } else {
@@ -190,7 +216,7 @@ impl Ember {
     /// Check if ember is still active (hot and airborne)
     #[must_use]
     pub fn is_active(&self) -> bool {
-        self.temperature > Celsius::new(200.0) && self.position.z > 0.0
+        self.temperature > EMBER_ACTIVE_THRESHOLD && self.position.z > 0.0
     }
 
     /// Check if ember has landed on the ground
@@ -206,7 +232,7 @@ impl Ember {
     /// - Landed on surface (z < 1m)
     #[must_use]
     pub fn can_ignite(&self) -> bool {
-        self.has_landed() && self.temperature > Celsius::new(250.0)
+        self.has_landed() && self.temperature > EMBER_IGNITION_THRESHOLD
     }
 
     /// Get current temperature

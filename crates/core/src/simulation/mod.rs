@@ -1598,8 +1598,9 @@ impl FireSimulation {
         }
 
         // Remove inactive embers (cooled below 200°C or fallen below ground)
-        self.embers
-            .retain(|e| e.temperature > Celsius::new(200.0) && e.position.z > 0.0);
+        self.embers.retain(|e| {
+            e.temperature > crate::core_types::ember::EMBER_ACTIVE_THRESHOLD && e.position.z > 0.0
+        });
 
         // OPTIMIZATION: Update active_spreading_elements by removing interior elements
         // An element becomes 'interior' when all its neighbors are already burning or depleted
