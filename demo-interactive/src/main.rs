@@ -790,8 +790,7 @@ impl App {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Check for headless mode flag
-    let args: Vec<String> = std::env::args().collect();
-    let headless = args.iter().any(|arg| arg == "--headless" || arg == "-h");
+    let headless = std::env::args().any(|arg| arg == "--headless" || arg == "-h");
 
     if headless {
         run_headless()
@@ -886,8 +885,13 @@ fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
     std::panic::set_hook(Box::new(move |panic_info| {
         // Restore terminal state before printing panic info
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
-        
+        let _ = execute!(
+            io::stdout(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            crossterm::cursor::Show
+        );
+
         // Call the original panic hook to print full backtrace
         original_hook(panic_info);
     }));
