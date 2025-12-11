@@ -73,6 +73,8 @@ struct App {
     history_pos: usize,
     /// Messages to display
     messages: Vec<String>,
+    /// Message scroll offset
+    message_scroll: usize,
     /// Simulation step count
     step_count: u32,
     /// Total elapsed simulation time
@@ -81,6 +83,8 @@ struct App {
     should_quit: bool,
     /// Current view mode
     view_mode: ViewMode,
+    /// Heatmap grid size
+    heatmap_size: usize,
 }
 
 /// UI view modes
@@ -94,6 +98,8 @@ enum ViewMode {
     Weather,
     /// Help view
     Help,
+    /// Heatmap view
+    Heatmap,
 }
 
 impl App {
@@ -118,10 +124,12 @@ impl App {
                 ),
                 "Type 'help' for available commands.".to_string(),
             ],
+            message_scroll: 0,
             step_count: 0,
             elapsed_time: 0.0,
             should_quit: false,
             view_mode: ViewMode::Dashboard,
+            heatmap_size: 30,
         }
     }
 
@@ -227,7 +235,9 @@ impl App {
             }
             "heatmap" | "hm" => {
                 let grid_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
-                self.show_heatmap(grid_size);
+                self.heatmap_size = grid_size;
+                self.view_mode = ViewMode::Heatmap;
+                self.add_message("Switched to Heatmap view".to_string());
             }
             "help" | "?" => {
                 self.view_mode = ViewMode::Help;
@@ -625,111 +635,6 @@ impl App {
             height
         ));
     }
-
-    /// Show heatmap
-    fn show_heatmap(&mut self, grid_size: usize) {
-        self.add_message("═══════════════ TEMPERATURE HEATMAP ═══════════════".to_string());
-
-        let cell_width = self.terrain_width / usize_to_f32(grid_size);
-        let cell_height = self.terrain_height / usize_to_f32(grid_size);
-
-        let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
-        let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
-        let mut burning_grid: Vec<Vec<bool>> = vec![vec![false; grid_size]; grid_size];
-
-        for e in self.sim.get_all_elements() {
-            let stats = e.get_stats();
-            let x = (stats.position.x / cell_width).floor() as i32;
-            let y = (stats.position.y / cell_height).floor() as i32;
-
-            if x >= 0 && x < grid_size as i32 && y >= 0 && y < grid_size as i32 {
-                let ix = x as usize;
-                let iy = y as usize;
-                grid[iy][ix] += stats.temperature;
-                counts[iy][ix] += 1;
-                if stats.ignited {
-                    burning_grid[iy][ix] = true;
-                }
-            }
-        }
-
-        for y in 0..grid_size {
-            for x in 0..grid_size {
-                if counts[y][x] > 0 {
-                    grid[y][x] /= u32_to_f32(counts[y][x]);
-                }
-            }
-        }
-
-        let mut min_temp = f32::MAX;
-        let mut max_temp = f32::MIN;
-        for y in 0..grid_size {
-            for x in 0..grid_size {
-                if counts[y][x] > 0 {
-                    let temp = grid[y][x];
-                    min_temp = min_temp.min(temp);
-                    max_temp = max_temp.max(temp);
-                }
-            }
-        }
-
-        if min_temp == f32::MAX {
-            min_temp = 0.0;
-            max_temp = 0.0;
-        }
-
-        const MIN_TEMP_COOL: f32 = 50.0;
-        const MIN_TEMP_WARM: f32 = 100.0;
-        const MIN_TEMP_HOT: f32 = 200.0;
-        const MIN_TEMP_VERY_HOT: f32 = 350.0;
-
-        let temp_range = max_temp - min_temp;
-        let threshold_very_hot = (min_temp + temp_range * 0.75).max(MIN_TEMP_VERY_HOT);
-        let threshold_hot = (min_temp + temp_range * 0.50).max(MIN_TEMP_HOT);
-        let threshold_warm = (min_temp + temp_range * 0.25).max(MIN_TEMP_WARM);
-        let threshold_cool = MIN_TEMP_COOL;
-
-        self.add_message("Legend: · = empty/ambient  🔥 = burning (ignited)".to_string());
-        self.add_message(format!(
-            "        ░ >{threshold_cool:.0}°C  ▒ >{threshold_warm:.0}°C  ▓ >{threshold_hot:.0}°C  █ >{threshold_very_hot:.0}°C"
-        ));
-        self.add_message(format!(
-            "Temperature range: {min_temp:.0}°C - {max_temp:.0}°C"
-        ));
-
-        for y in (0..grid_size).rev() {
-            let mut line = format!("{:3} │ ", (usize_to_f32(y) * cell_height) as i32);
-            for x in 0..grid_size {
-                if counts[y][x] == 0 {
-                    line.push_str("· ");
-                } else if burning_grid[y][x] {
-                    line.push('🔥');
-                } else {
-                    let temp = grid[y][x];
-                    let c = if temp >= threshold_very_hot {
-                        '█'
-                    } else if temp >= threshold_hot {
-                        '▓'
-                    } else if temp >= threshold_warm {
-                        '▒'
-                    } else if temp >= threshold_cool {
-                        '░'
-                    } else {
-                        '·'
-                    };
-                    line.push(c);
-                    line.push(' ');
-                }
-            }
-            self.add_message(line);
-        }
-
-        let burning_cells: usize = burning_grid.iter().flatten().filter(|&&b| b).count();
-        if burning_cells > 0 {
-            let total_cells = grid_size * grid_size;
-            self.add_message(format!("Burning cells: {burning_cells} / {total_cells}"));
-        }
-    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -815,8 +720,23 @@ fn run_app<B: ratatui::backend::Backend>(
                             app.input.clear();
                         }
                     }
+                    KeyCode::PageUp => {
+                        if app.message_scroll < app.messages.len().saturating_sub(1) {
+                            app.message_scroll = app.message_scroll.saturating_add(10);
+                        }
+                    }
+                    KeyCode::PageDown => {
+                        app.message_scroll = app.message_scroll.saturating_sub(10);
+                    }
+                    KeyCode::Home => {
+                        app.message_scroll = app.messages.len().saturating_sub(1);
+                    }
+                    KeyCode::End => {
+                        app.message_scroll = 0;
+                    }
                     KeyCode::Esc => {
                         app.view_mode = ViewMode::Dashboard;
+                        app.message_scroll = 0; // Reset scroll when returning to dashboard
                     }
                     KeyCode::F(1) => {
                         app.view_mode = ViewMode::Help;
@@ -850,6 +770,7 @@ fn ui(f: &mut Frame, app: &App) {
         ViewMode::Status => draw_status(f, app, chunks[1]),
         ViewMode::Weather => draw_weather(f, app, chunks[1]),
         ViewMode::Help => draw_help(f, chunks[1]),
+        ViewMode::Heatmap => draw_heatmap(f, app, chunks[1]),
     }
 
     // Input area
@@ -898,12 +819,22 @@ fn draw_dashboard(f: &mut Frame, app: &App, area: Rect) {
 
 /// Draw messages
 fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let total_messages = app.messages.len();
+
+    // Calculate which messages to show based on scroll offset
+    let start_idx = if app.message_scroll >= total_messages {
+        0
+    } else {
+        total_messages.saturating_sub(app.message_scroll + visible_height)
+    };
+    let end_idx = total_messages.saturating_sub(app.message_scroll);
+
     let messages: Vec<ListItem> = app
         .messages
         .iter()
-        .rev()
-        .take(area.height.saturating_sub(2) as usize)
-        .rev()
+        .skip(start_idx)
+        .take(end_idx.saturating_sub(start_idx))
         .map(|m| {
             let style = if m.contains("Error") || m.contains("not found") {
                 Style::default().fg(Color::Red)
@@ -920,10 +851,16 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
+    let scroll_indicator = if app.message_scroll > 0 {
+        format!(" Messages (↑{}) ", app.message_scroll)
+    } else {
+        " Messages ".to_string()
+    };
+
     let messages_list = List::new(messages).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" Messages ")
+            .title(scroll_indicator)
             .style(Style::default().fg(Color::White)),
     );
 
@@ -1097,9 +1034,12 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from("  dashboard, d             - Switch to dashboard view"),
         Line::from("  status, st               - Show simulation status"),
         Line::from("  weather, w               - Show weather conditions"),
+        Line::from("  heatmap [size], hm       - Show temperature heatmap view (default size: 30)"),
         Line::from("  help, ?                  - Show this help"),
         Line::from("  F1                       - Quick help access"),
         Line::from("  ESC                      - Return to dashboard"),
+        Line::from("  PageUp/PageDown          - Scroll messages up/down"),
+        Line::from("  Home/End                 - Jump to oldest/newest messages"),
         Line::from(""),
         Line::from(Span::styled("Element Commands:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
         Line::from("  element <id>, e          - Show element details"),
@@ -1114,9 +1054,6 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from("                           - Ignite elements in an XY circle"),
         Line::from("  heat_position <x> <y> <temp> [radius] [amount] [filters]"),
         Line::from("                           - Heat elements to target temperature"),
-        Line::from(""),
-        Line::from(Span::styled("Visualization:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
-        Line::from("  heatmap [size], hm       - Show temperature heatmap (default size: 30)"),
         Line::from(""),
         Line::from(Span::styled("Controls:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
         Line::from("  Ctrl+C, quit, q          - Exit simulation"),
@@ -1137,16 +1074,149 @@ fn draw_help(f: &mut Frame, area: Rect) {
     f.render_widget(paragraph, area);
 }
 
-/// Draw the input area
-fn draw_input(f: &mut Frame, app: &App, area: Rect) {
-    let input_text = format!("fire> {}", app.input);
-    let input = Paragraph::new(input_text)
-        .style(Style::default().fg(Color::Yellow))
+/// Draw the heatmap view
+fn draw_heatmap(f: &mut Frame, app: &App, area: Rect) {
+    let grid_size = app.heatmap_size;
+    let cell_width = app.terrain_width / usize_to_f32(grid_size);
+    let cell_height = app.terrain_height / usize_to_f32(grid_size);
+
+    let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
+    let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
+    let mut burning_grid: Vec<Vec<bool>> = vec![vec![false; grid_size]; grid_size];
+
+    for e in app.sim.get_all_elements() {
+        let stats = e.get_stats();
+        let x = (stats.position.x / cell_width).floor() as i32;
+        let y = (stats.position.y / cell_height).floor() as i32;
+
+        if x >= 0 && x < grid_size as i32 && y >= 0 && y < grid_size as i32 {
+            let ix = x as usize;
+            let iy = y as usize;
+            grid[iy][ix] += stats.temperature;
+            counts[iy][ix] += 1;
+            if stats.ignited {
+                burning_grid[iy][ix] = true;
+            }
+        }
+    }
+
+    for y in 0..grid_size {
+        for x in 0..grid_size {
+            if counts[y][x] > 0 {
+                grid[y][x] /= u32_to_f32(counts[y][x]);
+            }
+        }
+    }
+
+    let mut min_temp = f32::MAX;
+    let mut max_temp = f32::MIN;
+    for y in 0..grid_size {
+        for x in 0..grid_size {
+            if counts[y][x] > 0 {
+                let temp = grid[y][x];
+                min_temp = min_temp.min(temp);
+                max_temp = max_temp.max(temp);
+            }
+        }
+    }
+
+    if min_temp == f32::MAX {
+        min_temp = 0.0;
+        max_temp = 0.0;
+    }
+
+    const MIN_TEMP_COOL: f32 = 50.0;
+    const MIN_TEMP_WARM: f32 = 100.0;
+    const MIN_TEMP_HOT: f32 = 200.0;
+    const MIN_TEMP_VERY_HOT: f32 = 350.0;
+
+    let temp_range = max_temp - min_temp;
+    let threshold_very_hot = (min_temp + temp_range * 0.75).max(MIN_TEMP_VERY_HOT);
+    let threshold_hot = (min_temp + temp_range * 0.50).max(MIN_TEMP_HOT);
+    let threshold_warm = (min_temp + temp_range * 0.25).max(MIN_TEMP_WARM);
+    let threshold_cool = MIN_TEMP_COOL;
+
+    let mut text = vec![
+        Line::from(Span::styled(
+            "═══════════════ TEMPERATURE HEATMAP ═══════════════",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("Legend: · = empty/ambient  🔥 = burning (ignited)"),
+        Line::from(format!(
+            "        ░ >{threshold_cool:.0}°C  ▒ >{threshold_warm:.0}°C  ▓ >{threshold_hot:.0}°C  █ >{threshold_very_hot:.0}°C"
+        )),
+        Line::from(format!(
+            "Temperature range: {min_temp:.0}°C - {max_temp:.0}°C"
+        )),
+        Line::from(""),
+    ];
+
+    for y in (0..grid_size).rev() {
+        let mut line_text = format!("{:3} │ ", (usize_to_f32(y) * cell_height) as i32);
+        for x in 0..grid_size {
+            if counts[y][x] == 0 {
+                line_text.push_str("· ");
+            } else if burning_grid[y][x] {
+                line_text.push('🔥');
+            } else {
+                let temp = grid[y][x];
+                let c = if temp >= threshold_very_hot {
+                    '█'
+                } else if temp >= threshold_hot {
+                    '▓'
+                } else if temp >= threshold_warm {
+                    '▒'
+                } else if temp >= threshold_cool {
+                    '░'
+                } else {
+                    '·'
+                };
+                line_text.push(c);
+                line_text.push(' ');
+            }
+        }
+        text.push(Line::from(line_text));
+    }
+
+    let burning_cells: usize = burning_grid.iter().flatten().filter(|&&b| b).count();
+    if burning_cells > 0 {
+        let total_cells = grid_size * grid_size;
+        text.push(Line::from(""));
+        text.push(Line::from(format!(
+            "Burning cells: {burning_cells} / {total_cells}"
+        )));
+    }
+
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "Press ESC to return to dashboard",
+        Style::default().fg(Color::Yellow),
+    )));
+
+    let paragraph = Paragraph::new(text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Command Input (F1 for help) "),
-        );
+                .title(" Heatmap View ")
+                .style(Style::default().fg(Color::White)),
+        )
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
+/// Draw the input area
+fn draw_input(f: &mut Frame, app: &App, area: Rect) {
+    let input_text = format!("fire> {}", app.input);
+    let title = if app.message_scroll > 0 {
+        " Command Input (F1 for help | PgUp/PgDn to scroll) "
+    } else {
+        " Command Input (F1 for help) "
+    };
+    let input = Paragraph::new(input_text)
+        .style(Style::default().fg(Color::Yellow))
+        .block(Block::default().borders(Borders::ALL).title(title));
 
     f.render_widget(input, area);
 }
