@@ -85,6 +85,10 @@ struct App {
     view_mode: ViewMode,
     /// Heatmap grid size
     heatmap_size: usize,
+    /// Steps remaining to process (for non-blocking stepping)
+    steps_remaining: u32,
+    /// Total steps in current batch
+    steps_total: u32,
 }
 
 /// UI view modes
@@ -130,6 +134,8 @@ impl App {
             should_quit: false,
             view_mode: ViewMode::Dashboard,
             heatmap_size: 30,
+            steps_remaining: 0,
+            steps_total: 0,
         }
     }
 
@@ -255,38 +261,56 @@ impl App {
         }
     }
 
-    /// Step the simulation forward
+    /// Step the simulation forward (sets up stepping state)
     fn step_simulation(&mut self, count: u32) {
-        let dt = 1.0;
         self.add_message(format!("Stepping {count} timestep(s)..."));
+        self.steps_remaining = count;
+        self.steps_total = count;
+    }
 
-        for i in 0..count {
-            let burning_before = self.sim.get_burning_elements().len();
-            let embers_before = self.sim.ember_count();
-            let start = Instant::now();
-
-            self.sim.update(dt);
-            self.step_count += 1;
-            self.elapsed_time += dt;
-
-            let burning_after = self.sim.get_burning_elements().len();
-            let embers_after = self.sim.ember_count();
-            let time = start.elapsed();
-
-            if i == count - 1 || burning_after != burning_before || embers_after != embers_before {
-                self.add_message(format!(
-                    "Step {}: Burning: {} → {}, Embers: {} → {}, Time: {}ms",
-                    i + 1,
-                    burning_before,
-                    burning_after,
-                    embers_before,
-                    embers_after,
-                    time.as_millis()
-                ));
-            }
+    /// Process one simulation step (called from event loop)
+    fn process_one_step(&mut self) {
+        if self.steps_remaining == 0 {
+            return;
         }
 
-        self.add_message("Done.".to_string());
+        let dt = 1.0;
+        let burning_before = self.sim.get_burning_elements().len();
+        let embers_before = self.sim.ember_count();
+        let start = Instant::now();
+
+        self.sim.update(dt);
+        self.step_count += 1;
+        self.elapsed_time += dt;
+
+        let burning_after = self.sim.get_burning_elements().len();
+        let embers_after = self.sim.ember_count();
+        let time = start.elapsed();
+
+        let current_step = self.steps_total - self.steps_remaining + 1;
+
+        // Log significant changes or every 10th step or the last step
+        if current_step == self.steps_total
+            || current_step.is_multiple_of(10)
+            || burning_after != burning_before
+            || embers_after != embers_before
+        {
+            self.add_message(format!(
+                "Step {}: Burning: {} → {}, Embers: {} → {}, Time: {}ms",
+                current_step,
+                burning_before,
+                burning_after,
+                embers_before,
+                embers_after,
+                time.as_millis()
+            ));
+        }
+
+        self.steps_remaining -= 1;
+
+        if self.steps_remaining == 0 {
+            self.add_message("Done.".to_string());
+        }
     }
 
     /// Show element details
@@ -688,6 +712,13 @@ fn run_app<B: ratatui::backend::Backend>(
             break;
         }
 
+        // Process one simulation step if stepping is in progress
+        if app.steps_remaining > 0 {
+            app.process_one_step();
+            // Don't wait for input, immediately redraw to show progress
+            continue;
+        }
+
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
@@ -779,7 +810,7 @@ fn ui(f: &mut Frame, app: &App) {
 
 /// Draw the header
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
-    let header_text = format!(
+    let mut header_text = format!(
         " Fire Simulation | Step: {} | Time: {:.1}s | Elements: {} | Burning: {} | Embers: {} ",
         app.step_count,
         app.elapsed_time,
@@ -787,6 +818,17 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         app.sim.get_burning_elements().len(),
         app.sim.ember_count()
     );
+
+    // Add stepping progress indicator
+    if app.steps_remaining > 0 {
+        let progress = app.steps_total - app.steps_remaining + 1;
+        use std::fmt::Write;
+        let _ = write!(
+            header_text,
+            " | Stepping: {}/{} ",
+            progress, app.steps_total
+        );
+    }
 
     let header = Paragraph::new(header_text)
         .style(
