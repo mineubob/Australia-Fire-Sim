@@ -62,10 +62,13 @@ fn main() {
     // Ask for terrain dimensions
     let (width, height) = prompt_terrain_dimensions();
 
-    // Create simulation with user-specified dimensions
-    let mut sim = create_test_simulation(width, height);
+    // Default properties
     let mut current_width = width;
     let mut current_height = height;
+    let mut current_weather = WeatherPreset::perth_metro();
+
+    // Create simulation with user-specified dimensions
+    let mut sim = create_test_simulation(width, height, current_weather.clone());
 
     println!(
         "Created simulation with {} elements on {}x{} terrain",
@@ -313,7 +316,7 @@ fn main() {
                     }
                     "preset" | "p" => {
                         if let Some(name) = parts.get(1) {
-                            set_preset(&mut sim, name);
+                            set_preset(&mut sim, &mut current_weather, name);
                         } else {
                             println!("Usage: preset <perth|catastrophic|goldfields|wheatbelt>");
                         }
@@ -330,7 +333,8 @@ fn main() {
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(current_height);
 
-                        sim = create_test_simulation(new_width, new_height);
+                        sim =
+                            create_test_simulation(new_width, new_height, current_weather.clone());
                         current_width = new_width;
                         current_height = new_height;
 
@@ -536,7 +540,11 @@ fn filter_elements_in_circle(
         .collect()
 }
 
-fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
+fn create_test_simulation(
+    width: f32,
+    height: f32,
+    weather_preset: WeatherPreset,
+) -> FireSimulation {
     let mut sim = FireSimulation::new(5.0, &TerrainData::flat(width, height, 5.0, 0.0));
 
     // Wind field is always initialized by the simulation itself; no reconfiguration call required.
@@ -570,9 +578,9 @@ fn create_test_simulation(width: f32, height: f32) -> FireSimulation {
         }
     }
 
-    // Set to Perth Metro conditions
+    // Set to conditions
     let weather = WeatherSystem::from_preset(
-        WeatherPreset::perth_metro(),
+        weather_preset,
         3,    // January 3
         14.0, // 2pm
         ClimatePattern::Neutral,
@@ -861,39 +869,20 @@ fn heat_element_to_temp(sim: &mut FireSimulation, id: usize, target_temp: f32) {
     }
 }
 
-fn set_preset(sim: &mut FireSimulation, name: &str) {
-    let weather = match name.to_lowercase().as_str() {
-        "perth" | "perth_metro" => WeatherSystem::from_preset(
-            WeatherPreset::perth_metro(),
-            3,
-            14.0,
-            ClimatePattern::Neutral,
+fn set_preset(sim: &mut FireSimulation, current_weather: &mut WeatherPreset, name: &str) {
+    let preset = match name.to_lowercase().as_str() {
+        "perth" | "perth_metro" => WeatherPreset::perth_metro(),
+        "catastrophic" | "cat" => WeatherPreset::catastrophic(),
+        "goldfields" => WeatherPreset::goldfields(),
+        "wheatbelt" => WeatherPreset::wheatbelt(),
+        "hot" => WeatherPreset::basic(
+            "Hot",
+            Celsius::new(38.0),
+            Celsius::new(38.0),
+            Percent::new(20.0),
+            KilometersPerHour::new(35.0),
+            0.15,
         ),
-        "catastrophic" | "cat" => WeatherSystem::catastrophic(),
-        "goldfields" => WeatherSystem::from_preset(
-            WeatherPreset::goldfields(),
-            15,
-            14.0,
-            ClimatePattern::ElNino,
-        ),
-        "wheatbelt" => {
-            WeatherSystem::from_preset(WeatherPreset::wheatbelt(), 15, 14.0, ClimatePattern::ElNino)
-        }
-        "hot" => {
-            let mut w = WeatherSystem::from_preset(
-                WeatherPreset::perth_metro(),
-                15,
-                14.0,
-                ClimatePattern::ElNino,
-            );
-
-            w.set_temperature(Celsius::new(38.0));
-            w.set_humidity(Percent::new(20.0));
-            w.set_wind_speed(KilometersPerHour::new(35.0));
-            w.set_drought_factor(8.0);
-
-            w
-        }
         _ => {
             println!(
                 "Unknown preset: {name}. Available: perth, catastrophic, goldfields, wheatbelt, hot"
@@ -901,8 +890,14 @@ fn set_preset(sim: &mut FireSimulation, name: &str) {
             return;
         }
     };
+    *current_weather = preset.clone();
 
-    sim.set_weather(weather);
+    sim.set_weather(WeatherSystem::from_preset(
+        preset,
+        3,    // January 3
+        14.0, // 2pm
+        ClimatePattern::Neutral,
+    ));
     println!("Weather preset changed to '{name}'");
     show_weather(sim);
 }
