@@ -693,7 +693,14 @@ fn show_status(sim: &FireSimulation) {
 
 fn show_weather(sim: &FireSimulation) {
     let w = sim.get_weather().get_stats();
+    
+    // Convert day_of_year to month and day
+    let (month, day) = day_of_year_to_month_day(w.day_of_year);
+    let time_hours = (*w.time_of_day) as u32;
+    let time_minutes = ((*w.time_of_day - u32_to_f32(time_hours)) * 60.0) as u32;
+    
     println!("\n═══════════════ WEATHER CONDITIONS ═══════════════");
+    println!("Date & Time:     {} {} {:02}:{:02}", month, day, time_hours, time_minutes);
     println!("Temperature:     {:.1}", w.temperature);
     println!("Humidity:        {:.1}", w.humidity);
     println!(
@@ -708,6 +715,36 @@ fn show_weather(sim: &FireSimulation) {
     println!("Fire Danger:     {}", w.fire_danger_rating);
     println!("Spread Mult:     {:.2}x", w.spread_rate_multiplier);
     println!("══════════════════════════════════════════════════\n");
+}
+
+/// Convert day of year (1-365) to month name and day
+fn day_of_year_to_month_day(day_of_year: u16) -> (&'static str, u16) {
+    // Days in each month (non-leap year)
+    const DAYS_IN_MONTHS: [(u16, &str); 12] = [
+        (31, "January"),
+        (28, "February"),
+        (31, "March"),
+        (30, "April"),
+        (31, "May"),
+        (30, "June"),
+        (31, "July"),
+        (31, "August"),
+        (30, "September"),
+        (31, "October"),
+        (30, "November"),
+        (31, "December"),
+    ];
+    
+    let mut remaining_days = day_of_year;
+    for (days_in_month, month_name) in &DAYS_IN_MONTHS {
+        if remaining_days <= *days_in_month {
+            return (month_name, remaining_days);
+        }
+        remaining_days -= days_in_month;
+    }
+    
+    // Fallback for day 366 (leap year edge case)
+    ("December", 31)
 }
 
 fn show_element(sim: &FireSimulation, id: usize) {
