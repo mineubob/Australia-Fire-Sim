@@ -296,7 +296,7 @@ fn calculate_slope_coefficient(slope_angle: f32) -> f32 {
 /// - **2260** = Latent heat of vaporization for water (kJ/kg)
 fn calculate_heat_preignition(fuel: &Fuel, moisture_fraction: f32, ambient_temp: f32) -> f32 {
     // Sensible heat to raise fuel to ignition
-    let sensible_heat = *fuel.specific_heat * (*fuel.ignition_temperature - ambient_temp);
+    let sensible_heat = *fuel.specific_heat * ((*fuel.ignition_temperature as f32) - ambient_temp);
 
     // Latent heat to evaporate moisture
     let latent_heat = moisture_fraction * 2260.0;

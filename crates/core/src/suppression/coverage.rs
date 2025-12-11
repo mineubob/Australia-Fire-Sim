@@ -10,6 +10,7 @@
 //! - Penman-Monteith equation (FAO Paper 56)
 
 use super::agent::{SuppressionAgentProperties, SuppressionAgentType};
+use crate::core_types::units::{Celsius, Percent};
 use serde::{Deserialize, Serialize};
 
 /// Represents suppression agent coverage on a fuel element
@@ -142,7 +143,7 @@ impl SuppressionCoverage {
 
         // Calculate cooling capacity at typical ambient temperature (20°C)
         // This is more scientifically accurate than just using latent heat
-        let cooling_capacity_per_kg = props.cooling_capacity(20.0);
+        let cooling_capacity_per_kg = props.cooling_capacity(Celsius::new(20.0));
 
         // Maximum evaporation rate per timestep
         // Empirical limit: ~10% of agent mass can evaporate per second
@@ -181,15 +182,15 @@ impl SuppressionCoverage {
     /// Update coverage state over time (evaporation, degradation)
     ///
     /// # Parameters
-    /// - `temperature`: Air temperature (°C)
-    /// - `humidity`: Relative humidity (0-1)
+    /// - `temperature`: Air temperature
+    /// - `humidity`: Relative humidity
     /// - `wind_speed`: Wind speed (m/s)
     /// - `solar_radiation`: Solar radiation (W/m²)
     /// - `dt`: Time step (seconds)
     pub(crate) fn update(
         &mut self,
-        temperature: f32,
-        humidity: f32,
+        temperature: Celsius,
+        humidity: Percent,
         wind_speed: f32,
         solar_radiation: f32,
         dt: f32,
@@ -386,11 +387,11 @@ mod tests {
         // Simulate hot, dry conditions for 60 seconds
         for _ in 0..60 {
             coverage.update(
-                35.0,  // 35°C
-                0.2,   // 20% humidity
-                5.0,   // 5 m/s wind
-                800.0, // Bright sun
-                1.0,   // 1 second
+                Celsius::new(35.0), // 35°C
+                Percent::new(20.0), // 20% humidity
+                5.0,                // 5 m/s wind
+                800.0,              // Bright sun
+                1.0,                // 1 second
             );
         }
 
@@ -483,7 +484,7 @@ mod tests {
 
         // Evaporate rapidly
         for _ in 0..100 {
-            coverage.update(45.0, 0.1, 10.0, 1000.0, 1.0);
+            coverage.update(Celsius::new(45.0), Percent::new(10.0), 10.0, 1000.0, 1.0);
         }
 
         // Should be deactivated

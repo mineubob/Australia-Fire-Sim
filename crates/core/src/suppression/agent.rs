@@ -6,6 +6,7 @@
 //! - USFS MTDC: Long-Term Fire Retardant Effectiveness Studies (2019)
 //! - FAO Irrigation Paper 56: Penman-Monteith evaporation equation
 
+use crate::core_types::units::{Celsius, Percent};
 use serde::{Deserialize, Serialize};
 
 /// Types of suppression agents with different physical properties
@@ -286,8 +287,8 @@ impl SuppressionAgentProperties {
     /// # Scientific Reference
     /// NFPA 1145: Guide for the Use of Class A Foams in Fire Fighting
     #[must_use]
-    pub fn cooling_capacity(&self, agent_temp: f32) -> f32 {
-        let sensible = self.specific_heat * (self.boiling_point - agent_temp).max(0.0);
+    pub fn cooling_capacity(&self, agent_temp: Celsius) -> f32 {
+        let sensible = self.specific_heat * (self.boiling_point - *agent_temp as f32).max(0.0);
         self.latent_heat_vaporization + sensible
     }
 
@@ -296,8 +297,8 @@ impl SuppressionAgentProperties {
     /// Returns evaporation rate in kg/(m²·s)
     ///
     /// # Parameters
-    /// - `temperature`: Air temperature (°C)
-    /// - `humidity`: Relative humidity (0-1)
+    /// - `temperature`: Air temperature
+    /// - `humidity`: Relative humidity
     /// - `wind_speed`: Wind speed (m/s)
     /// - `solar_radiation`: Solar radiation (W/m²)
     ///
@@ -305,22 +306,25 @@ impl SuppressionAgentProperties {
     /// FAO Irrigation and Drainage Paper 56 (1998)
     pub(crate) fn evaporation_rate(
         &self,
-        temperature: f32,
-        humidity: f32,
+        temperature: Celsius,
+        humidity: Percent,
         wind_speed: f32,
         solar_radiation: f32,
     ) -> f32 {
         // Simplified Penman-Monteith for water evaporation
         // Based on FAO-56 reference evapotranspiration
 
+        let temp = *temperature;
+        let humidity_fraction = *humidity.to_fraction();
+
         // Saturation vapor pressure (kPa) at temperature
-        let e_sat = 0.6108 * ((17.27 * temperature) / (temperature + 237.3)).exp();
+        let e_sat = 0.6108 * ((17.27 * temp) / (temp + 237.3)).exp();
 
         // Actual vapor pressure (kPa)
-        let e_act = e_sat * humidity;
+        let e_act = e_sat * f64::from(humidity_fraction);
 
         // Vapor pressure deficit (kPa)
-        let vpd = (e_sat - e_act).max(0.0);
+        let vpd = (e_sat - e_act).max(0.0) as f32;
 
         // Base evaporation rate (kg/(m²·s))
         // Calibrated to give ~1-5 mm/hour under typical conditions
@@ -340,7 +344,7 @@ mod tests {
     #[test]
     fn test_water_cooling_capacity() {
         let water = SuppressionAgentProperties::WATER;
-        let cooling = water.cooling_capacity(20.0);
+        let cooling = water.cooling_capacity(Celsius::new(20.0));
 
         // Water at 20°C: 4.18 × 80 + 2260 = 2594.4 kJ/kg
         assert!((cooling - 2594.4).abs() < 1.0);
@@ -353,8 +357,8 @@ mod tests {
 
         // Foam should have higher cooling capacity due to better properties
         // (Though cooling_capacity is similar, the oxygen displacement makes foam more effective)
-        let foam_cooling = foam.cooling_capacity(20.0);
-        let water_cooling = water.cooling_capacity(20.0);
+        let foam_cooling = foam.cooling_capacity(Celsius::new(20.0));
+        let water_cooling = water.cooling_capacity(Celsius::new(20.0));
         // Water and foam have similar latent heat, so cooling capacity is similar
         assert!((foam_cooling - water_cooling).abs() < 500.0);
 
@@ -378,10 +382,10 @@ mod tests {
         let water = SuppressionAgentProperties::WATER;
 
         // Low humidity = high evaporation
-        let evap_dry = water.evaporation_rate(30.0, 0.2, 2.0, 500.0);
+        let evap_dry = water.evaporation_rate(Celsius::new(30.0), Percent::new(20.0), 2.0, 500.0);
 
         // High humidity = low evaporation
-        let evap_humid = water.evaporation_rate(30.0, 0.8, 2.0, 500.0);
+        let evap_humid = water.evaporation_rate(Celsius::new(30.0), Percent::new(80.0), 2.0, 500.0);
 
         assert!(
             evap_dry > evap_humid * 3.0,

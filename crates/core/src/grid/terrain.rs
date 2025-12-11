@@ -4,6 +4,7 @@
 //! solar radiation based on terrain, and efficient height queries.
 
 use crate::core_types::element::Vec3;
+use crate::core_types::units::{Degrees, Meters};
 use serde::{Deserialize, Serialize};
 
 // Small helper to centralize intentional usize -> f32 conversions in terrain code
@@ -246,7 +247,7 @@ impl TerrainData {
 
     /// Query elevation at world position (x, y) using bilinear interpolation
     #[must_use]
-    pub fn elevation_at(&self, x: f32, y: f32) -> f32 {
+    pub fn elevation_at(&self, x: f32, y: f32) -> Meters {
         // Clamp to terrain bounds
         let x_clamped = x.max(0.0).min(self.width);
         let y_clamped = y.max(0.0).min(self.height);
@@ -274,7 +275,7 @@ impl TerrainData {
         // Bilinear interpolation
         let e0 = e00 * (1.0 - fx) + e10 * fx;
         let e1 = e01 * (1.0 - fx) + e11 * fx;
-        e0 * (1.0 - fy) + e1 * fy
+        Meters::new(e0 * (1.0 - fy) + e1 * fy)
     }
 
     /// Calculate slope angle at position in degrees using simple 4-point gradient
@@ -282,14 +283,14 @@ impl TerrainData {
     /// This is a fast approximation suitable for most use cases.
     /// For more accurate results, use `slope_at_horn()` which uses Horn's method.
     #[must_use]
-    pub fn slope_at(&self, x: f32, y: f32) -> f32 {
+    pub fn slope_at(&self, x: f32, y: f32) -> Degrees {
         let delta = self.resolution;
 
         // Sample elevations around point
-        let z_east = self.elevation_at(x + delta, y);
-        let z_west = self.elevation_at(x - delta, y);
-        let z_north = self.elevation_at(x, y + delta);
-        let z_south = self.elevation_at(x, y - delta);
+        let z_east = *self.elevation_at(x + delta, y);
+        let z_west = *self.elevation_at(x - delta, y);
+        let z_north = *self.elevation_at(x, y + delta);
+        let z_south = *self.elevation_at(x, y - delta);
 
         // Calculate gradients
         let dz_dx = (z_east - z_west) / (2.0 * delta);
@@ -297,7 +298,7 @@ impl TerrainData {
 
         // Slope magnitude
         let slope_rad = (dz_dx * dz_dx + dz_dy * dz_dy).sqrt().atan();
-        slope_rad.to_degrees()
+        Degrees::new(slope_rad.to_degrees())
     }
 
     /// Calculate slope angle using Horn's method (3x3 kernel)
@@ -312,7 +313,7 @@ impl TerrainData {
     /// # Returns
     /// Slope angle in degrees (0° = flat, 90° = vertical)
     #[must_use]
-    pub fn slope_at_horn(&self, x: f32, y: f32) -> f32 {
+    pub fn slope_at_horn(&self, x: f32, y: f32) -> Degrees {
         let d = self.resolution;
 
         // Sample 3x3 neighborhood
@@ -320,15 +321,15 @@ impl TerrainData {
         // z[3] z[4] z[5]   (W)  (C) (E)
         // z[6] z[7] z[8]   (SW) (S) (SE)
         let z = [
-            self.elevation_at(x - d, y + d), // NW (0)
-            self.elevation_at(x, y + d),     // N  (1)
-            self.elevation_at(x + d, y + d), // NE (2)
-            self.elevation_at(x - d, y),     // W  (3)
-            self.elevation_at(x, y),         // C  (4)
-            self.elevation_at(x + d, y),     // E  (5)
-            self.elevation_at(x - d, y - d), // SW (6)
-            self.elevation_at(x, y - d),     // S  (7)
-            self.elevation_at(x + d, y - d), // SE (8)
+            *self.elevation_at(x - d, y + d), // NW (0)
+            *self.elevation_at(x, y + d),     // N  (1)
+            *self.elevation_at(x + d, y + d), // NE (2)
+            *self.elevation_at(x - d, y),     // W  (3)
+            *self.elevation_at(x, y),         // C  (4)
+            *self.elevation_at(x + d, y),     // E  (5)
+            *self.elevation_at(x - d, y - d), // SW (6)
+            *self.elevation_at(x, y - d),     // S  (7)
+            *self.elevation_at(x + d, y - d), // SE (8)
         ];
 
         // Horn's method gradient calculation
@@ -339,7 +340,7 @@ impl TerrainData {
 
         // Slope magnitude
         let slope_rad = (dz_dx * dz_dx + dz_dy * dz_dy).sqrt().atan();
-        slope_rad.to_degrees()
+        Degrees::new(slope_rad.to_degrees())
     }
 
     /// Calculate aspect using Horn's method (3x3 kernel)
@@ -350,20 +351,20 @@ impl TerrainData {
     /// # Returns
     /// Aspect in degrees (0° = North, 90° = East, 180° = South, 270° = West)
     #[must_use]
-    pub fn aspect_at_horn(&self, x: f32, y: f32) -> f32 {
+    pub fn aspect_at_horn(&self, x: f32, y: f32) -> Degrees {
         let d = self.resolution;
 
         // Sample 3x3 neighborhood
         let z = [
-            self.elevation_at(x - d, y + d), // NW (0)
-            self.elevation_at(x, y + d),     // N  (1)
-            self.elevation_at(x + d, y + d), // NE (2)
-            self.elevation_at(x - d, y),     // W  (3)
-            self.elevation_at(x, y),         // C  (4)
-            self.elevation_at(x + d, y),     // E  (5)
-            self.elevation_at(x - d, y - d), // SW (6)
-            self.elevation_at(x, y - d),     // S  (7)
-            self.elevation_at(x + d, y - d), // SE (8)
+            *self.elevation_at(x - d, y + d), // NW (0)
+            *self.elevation_at(x, y + d),     // N  (1)
+            *self.elevation_at(x + d, y + d), // NE (2)
+            *self.elevation_at(x - d, y),     // W  (3)
+            *self.elevation_at(x, y),         // C  (4)
+            *self.elevation_at(x + d, y),     // E  (5)
+            *self.elevation_at(x - d, y - d), // SW (6)
+            *self.elevation_at(x, y - d),     // S  (7)
+            *self.elevation_at(x + d, y - d), // SE (8)
         ];
 
         // Horn's method gradient calculation
@@ -377,22 +378,22 @@ impl TerrainData {
 
         // Convert to 0-360 range with N=0
         if aspect_deg < 0.0 {
-            aspect_deg + 360.0
+            Degrees::new(aspect_deg + 360.0)
         } else {
-            aspect_deg
+            Degrees::new(aspect_deg)
         }
     }
 
     /// Calculate aspect (direction of slope) at position in degrees (0-360)
     /// 0° = North, 90° = East, 180° = South, 270° = West
     #[must_use]
-    pub fn aspect_at(&self, x: f32, y: f32) -> f32 {
+    pub fn aspect_at(&self, x: f32, y: f32) -> Degrees {
         let delta = self.resolution;
 
-        let z_east = self.elevation_at(x + delta, y);
-        let z_west = self.elevation_at(x - delta, y);
-        let z_north = self.elevation_at(x, y + delta);
-        let z_south = self.elevation_at(x, y - delta);
+        let z_east = *self.elevation_at(x + delta, y);
+        let z_west = *self.elevation_at(x - delta, y);
+        let z_north = *self.elevation_at(x, y + delta);
+        let z_south = *self.elevation_at(x, y - delta);
 
         let dz_dx = (z_east - z_west) / (2.0 * delta);
         let dz_dy = (z_north - z_south) / (2.0 * delta);
@@ -404,9 +405,9 @@ impl TerrainData {
 
         // Convert to 0-360 range
         if aspect_deg < 0.0 {
-            aspect_deg + 360.0
+            Degrees::new(aspect_deg + 360.0)
         } else {
-            aspect_deg
+            Degrees::new(aspect_deg)
         }
     }
 
@@ -456,8 +457,8 @@ impl TerrainData {
                 let x = usize_to_f32(ix) * cell_size + cell_size / 2.0;
                 let y = usize_to_f32(iy) * cell_size + cell_size / 2.0;
 
-                slope.push(self.slope_at(x, y));
-                aspect.push(self.aspect_at(x, y));
+                slope.push(*self.slope_at(x, y));
+                aspect.push(*self.aspect_at(x, y));
             }
         }
 
@@ -482,7 +483,7 @@ impl TerrainData {
         let dz_dx = (z_east - z_west) / (2.0 * delta);
         let dz_dy = (z_north - z_south) / (2.0 * delta);
 
-        Vec3::new(dz_dx, dz_dy, 1.0).normalize()
+        Vec3::new(*dz_dx, *dz_dy, 1.0).normalize()
     }
 
     /// Get terrain width in meters
@@ -525,9 +526,9 @@ mod tests {
     fn test_flat_terrain() {
         let terrain = TerrainData::flat(100.0, 100.0, 5.0, 50.0);
 
-        assert_eq!(terrain.elevation_at(25.0, 25.0), 50.0);
-        assert_eq!(terrain.elevation_at(75.0, 75.0), 50.0);
-        assert_relative_eq!(terrain.slope_at(50.0, 50.0), 0.0, epsilon = 0.1);
+        assert_eq!(terrain.elevation_at(25.0, 25.0), Meters::new(50.0));
+        assert_eq!(terrain.elevation_at(75.0, 75.0), Meters::new(50.0));
+        assert_relative_eq!(*terrain.slope_at(50.0, 50.0), 0.0, epsilon = 0.1);
     }
 
     #[test]
@@ -536,21 +537,21 @@ mod tests {
 
         // Peak should be at center
         let peak_elevation = terrain.elevation_at(100.0, 100.0);
-        assert!(peak_elevation > 140.0);
+        assert!(peak_elevation > Meters::new(140.0));
         // Allow for realistic Gaussian peak
-        assert!(peak_elevation <= 150.0);
+        assert!(peak_elevation <= Meters::new(150.0));
 
         // Edges should be close to base
         let edge_elevation = terrain.elevation_at(10.0, 10.0);
-        assert!(edge_elevation < 60.0);
+        assert!(edge_elevation < Meters::new(60.0));
 
         // Slope at peak should be near zero
         let slope_at_peak = terrain.slope_at(100.0, 100.0);
-        assert!(slope_at_peak < 1.0);
+        assert!(slope_at_peak < Degrees::new(1.0));
 
         // Slope on hillside should be significant
         let slope_on_side = terrain.slope_at(100.0, 130.0);
-        assert!(slope_on_side > 5.0);
+        assert!(slope_on_side > Degrees::new(5.0));
     }
 
     #[test]
@@ -560,8 +561,8 @@ mod tests {
         // Hills should be higher than base
         let hill1 = terrain.elevation_at(100.0, 100.0);
         let hill2 = terrain.elevation_at(300.0, 100.0);
-        assert!(hill1 > 80.0);
-        assert!(hill2 > 80.0);
+        assert!(hill1 > Meters::new(80.0));
+        assert!(hill2 > Meters::new(80.0));
 
         // Valley center should be lower
         let valley = terrain.elevation_at(200.0, 100.0);
@@ -619,6 +620,6 @@ mod tests {
 
         // Check center is highest
         let center_elev = terrain.elevation_at(50.0, 50.0);
-        assert!(center_elev > 55.0); // Should be close to 60
+        assert!(center_elev > Meters::new(55.0)); // Should be close to 60
     }
 }

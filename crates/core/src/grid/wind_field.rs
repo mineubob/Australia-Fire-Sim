@@ -261,9 +261,9 @@ impl WindField {
             for ix in 0..config.nx {
                 let x = usize_to_f32(ix) * config.cell_size + config.cell_size * 0.5;
                 let y = usize_to_f32(iy) * config.cell_size + config.cell_size * 0.5;
-                terrain_height.push(terrain.elevation_at(x, y));
-                terrain_slope.push(terrain.slope_at_horn(x, y).to_radians());
-                terrain_aspect.push(terrain.aspect_at_horn(x, y).to_radians());
+                terrain_height.push(*terrain.elevation_at(x, y));
+                terrain_slope.push(*terrain.slope_at_horn(x, y).to_radians());
+                terrain_aspect.push(*terrain.aspect_at_horn(x, y).to_radians());
             }
         }
 
@@ -743,7 +743,7 @@ impl WindField {
                         let upwind_y = y - 50.0 * wind_sin;
 
                         let upwind_z = terrain.elevation_at(upwind_x, upwind_y);
-                        let z_diff = upwind_z - local_terrain_z;
+                        let z_diff = *upwind_z - local_terrain_z;
 
                         // If upwind terrain is higher, we're in wind shadow
                         if z_diff > 0.0 && z_above < z_diff * 2.0 {

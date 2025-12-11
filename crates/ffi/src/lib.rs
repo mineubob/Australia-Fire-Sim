@@ -390,7 +390,7 @@ impl From<(&FuelElement, &FireSimulation)> for ElementStats {
                 *element.moisture_fraction(),
                 wind_speed_ms,
                 *element.slope_angle(),
-                ambient_temp,
+                ambient_temp as f32,
             );
         let rate_of_spread = spread_rate_m_per_min / 60.0;
 
@@ -401,7 +401,7 @@ impl From<(&FuelElement, &FireSimulation)> for ElementStats {
             element_id: element.id(),
             is_burning: element.is_ignited(),
             fuel_load: *element.fuel_remaining(),
-            temperature: *element.temperature(),
+            temperature: *element.temperature() as f32,
             moisture: *element.moisture_fraction(),
             rate_of_spread,
             flame_length: *element.flame_height(),

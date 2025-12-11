@@ -22,6 +22,7 @@
 //! Run tests with: cargo test --test `australian_bushfire_validation`
 
 use fire_sim_core::{
+    core_types::Celsius,
     core_types::Kilograms,
     physics::{
         albini_spotting_validation::{
@@ -565,11 +566,11 @@ fn test_regional_weather_temperature_ranges() {
     let perth = WeatherPreset::perth_metro();
     let (summer_min, summer_max) = perth.monthly_temps[0]; // January
     assert!(
-        (17.0..=19.0).contains(&summer_min),
+        (Celsius::new(17.0)..=Celsius::new(19.0)).contains(&summer_min),
         "Perth summer min {summer_min:.1}°C outside expected 17-19°C range"
     );
     assert!(
-        (30.0..=32.0).contains(&summer_max),
+        (Celsius::new(30.0)..=Celsius::new(32.0)).contains(&summer_max),
         "Perth summer max {summer_max:.1}°C outside expected 30-32°C range"
     );
 
@@ -577,7 +578,7 @@ fn test_regional_weather_temperature_ranges() {
     let goldfields = WeatherPreset::goldfields();
     let (_gold_summer_min, gold_summer_max) = goldfields.monthly_temps[0];
     assert!(
-        gold_summer_max >= 35.0,
+        gold_summer_max >= Celsius::new(35.0),
         "Goldfields summer should be very hot (>35°C), got {gold_summer_max:.0}°C"
     );
 }
@@ -590,21 +591,21 @@ fn test_el_nino_la_nina_effects() {
 
     // El Niño should increase temperature and decrease humidity
     assert!(
-        preset.el_nino_temp_mod > 1.0,
+        preset.el_nino_temp_mod > Celsius::new(1.0),
         "El Niño should increase temperature"
     );
     assert!(
-        preset.el_nino_humidity_mod < 0.0,
+        *preset.el_nino_humidity_mod < 0.0,
         "El Niño should decrease humidity"
     );
 
     // La Niña should decrease temperature and increase humidity
     assert!(
-        preset.la_nina_temp_mod < 0.0,
+        preset.la_nina_temp_mod < Celsius::new(0.0),
         "La Niña should decrease temperature"
     );
     assert!(
-        preset.la_nina_humidity_mod > 0.0,
+        *preset.la_nina_humidity_mod > 0.0,
         "La Niña should increase humidity"
     );
 }
@@ -626,7 +627,7 @@ fn test_full_simulation_moderate_conditions() {
     for x in 0..5 {
         for y in 0..5 {
             let id = sim.add_fuel_element(
-                Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
+                Vec3::new(46.0 + (x as f32) * 2.0, 46.0 + (y as f32) * 2.0, 0.5),
                 Fuel::dry_grass(),
                 Kilograms::new(2.0),
                 FuelPart::GroundVegetation,
@@ -677,7 +678,7 @@ fn test_full_simulation_catastrophic_conditions() {
     for x in 0..5 {
         for y in 0..5 {
             let id = sim.add_fuel_element(
-                Vec3::new(46.0 + x as f32 * 2.0, 46.0 + y as f32 * 2.0, 0.5),
+                Vec3::new(46.0 + (x as f32) * 2.0, 46.0 + (y as f32) * 2.0, 0.5),
                 Fuel::dry_grass(),
                 Kilograms::new(2.0),
                 FuelPart::GroundVegetation,

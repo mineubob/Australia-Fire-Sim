@@ -43,16 +43,15 @@ pub(crate) fn calculate_radiation_flux(
     }
 
     // Convert to Kelvin for Stefan-Boltzmann and compute in f64 for stability
-    let temp_source_k = f64::from(*source.temperature + 273.15);
-    let temp_target_k = f64::from(*target.temperature + 273.15);
+    let temp_source_k = source.temperature.to_kelvin();
+    let temp_target_k = target.temperature.to_kelvin();
 
     // FULL FORMULA: σ * ε * (T_source^4 - T_target^4)
     // NO SIMPLIFICATIONS per repository guidelines
     let radiant_power_f64 =
-        STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
+        STEFAN_BOLTZMANN * EMISSIVITY * ((*temp_source_k).powi(4) - (*temp_target_k).powi(4));
 
     // cast back to f32 for the rest of this API boundary
-    #[allow(clippy::cast_precision_loss)]
     let radiant_power = radiant_power_f64 as f32;
 
     // Only transfer heat if source is hotter
@@ -101,10 +100,11 @@ pub(crate) fn calculate_convection_heat(
         return 0.0;
     }
 
-    let temp_diff = *source.temperature - *target.temperature;
-    if temp_diff <= 0.0 {
+    let temp_diff = source.temperature - target.temperature;
+    if *temp_diff <= 0.0 {
         return 0.0;
     }
+    let temp_diff_f32 = *temp_diff as f32;
 
     // Natural convection coefficient for wildfire conditions (W/(m²·K))
     // h ≈ 1.32 * (ΔT/L)^0.25 for natural convection
@@ -124,7 +124,7 @@ pub(crate) fn calculate_convection_heat(
         .clamp(0.2, 1.5);
 
     // Convert W/m² to kW (kJ/s)
-    convection_coeff * temp_diff * absorption_efficiency * distance_attenuation * 0.001
+    convection_coeff * temp_diff_f32 * absorption_efficiency * distance_attenuation * 0.001
 }
 
 /// Wind direction multiplier for heat transfer
@@ -275,7 +275,10 @@ pub(crate) fn calculate_total_heat_transfer(
 /// Eliminates 500,000+ temporary structure allocations per frame at 12.5k burning elements
 /// Inline attribute ensures this hot function is optimized (called millions of times per frame)
 #[inline(always)]
-#[allow(clippy::too_many_arguments)] // Performance-critical: avoids 500k+ allocations/frame
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Performance-critical hot path - struct allocation would add 500k+ allocations/frame overhead"
+)]
 pub(crate) fn calculate_heat_transfer_raw(
     source_pos: Vec3,
     source_temp: f32,
@@ -319,7 +322,6 @@ pub(crate) fn calculate_heat_transfer_raw(
     let radiant_power_f64 =
         STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
 
-    #[allow(clippy::cast_precision_loss)]
     let radiant_power = radiant_power_f64 as f32;
 
     if radiant_power <= 0.0 {
@@ -507,7 +509,7 @@ mod tests {
     use crate::core_types::element::FuelPart;
     use crate::core_types::fuel::Fuel;
 
-    fn create_test_element(x: f32, y: f32, z: f32, temp: f32) -> FuelElement {
+    fn create_test_element(x: f32, y: f32, z: f32, temp: f64) -> FuelElement {
         use crate::core_types::units::{Celsius, Kilograms};
         FuelElement::new(
             0,
@@ -641,11 +643,11 @@ mod tests {
 
         let horiz = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             target_h.position,
-            *target_h.temperature,
+            *target_h.temperature as f32,
             *target_h.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
@@ -653,11 +655,11 @@ mod tests {
 
         let vert = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             target_v.position,
-            *target_v.temperature,
+            *target_v.temperature as f32,
             *target_v.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
@@ -769,33 +771,33 @@ mod tests {
         // Calculate heat transfer from ground fire to each tree part (1 second dt)
         let heat_to_trunk = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             trunk_lower.position,
-            *trunk_lower.temperature,
+            *trunk_lower.temperature as f32,
             *trunk_lower.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
         let heat_to_branch = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             branch.position,
-            *branch.temperature,
+            *branch.temperature as f32,
             *branch.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
         let heat_to_crown = calculate_heat_transfer_raw(
             src_pos,
-            src_temp,
+            src_temp as f32,
             src_remain,
             src_sav,
             crown.position,
-            *crown.temperature,
+            *crown.temperature as f32,
             *crown.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
@@ -861,7 +863,7 @@ mod tests {
         let specific_heat = *crown.fuel.specific_heat;
         let crown_mass = *crown.fuel_remaining;
         let delta_t = *crown.fuel.ignition_temperature - *crown.temperature;
-        let energy_to_ignite_kj = specific_heat * crown_mass * delta_t;
+        let energy_to_ignite_kj = specific_heat * crown_mass * (delta_t as f32);
         let estimated_time_to_crown_ignition = energy_to_ignite_kj / heat_to_crown;
 
         // PHYSICAL REALITY: Direct ground-to-crown (8m) heating is SLOW

@@ -5,7 +5,8 @@
 //! meters with kilograms).
 //!
 //! # Design Philosophy
-//! - Each type wraps f32 for performance (sufficient for fire simulation precision)
+//! - Temperature types use f64 for high-precision T^4 calculations (Stefan-Boltzmann)
+//! - Spatial/Mass/Angle types use f32 for performance where precision is adequate
 //! - Implements common traits (Add, Sub, Mul, Div, Ord, Display, etc.)
 //! - Provides explicit conversion methods between related types
 //! - Serde support for serialization
@@ -32,7 +33,7 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
 
 // ============================================================================
-// HELPER FUNCTION FOR TOTAL ORDERING OF F32
+// HELPER FUNCTIONS FOR TOTAL ORDERING
 // ============================================================================
 
 /// Compare f32 values with total ordering using Rust's built-in `total_cmp`
@@ -42,14 +43,22 @@ fn f32_total_cmp(a: f32, b: f32) -> Ordering {
     a.total_cmp(&b)
 }
 
+/// Compare f64 values with total ordering using Rust's built-in `total_cmp`
+/// Used for high-precision temperature types
+#[inline]
+fn f64_total_cmp(a: f64, b: f64) -> Ordering {
+    a.total_cmp(&b)
+}
+
 // ============================================================================
-// TEMPERATURE TYPES
+// TEMPERATURE TYPES (f64 for high-precision T^4 calculations)
 // ============================================================================
 
 /// Temperature in degrees Celsius
+/// Uses f64 for Stefan-Boltzmann law (T^4) calculations
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Celsius(f32);
+pub struct Celsius(f64);
 
 impl Eq for Celsius {}
 
@@ -61,21 +70,21 @@ impl PartialOrd for Celsius {
 
 impl Ord for Celsius {
     fn cmp(&self, other: &Self) -> Ordering {
-        f32_total_cmp(self.0, other.0)
+        f64_total_cmp(self.0, other.0)
     }
 }
 
 impl Deref for Celsius {
-    type Target = f32;
+    type Target = f64;
     #[inline]
-    fn deref(&self) -> &f32 {
+    fn deref(&self) -> &f64 {
         &self.0
     }
 }
 
 impl DerefMut for Celsius {
     #[inline]
-    fn deref_mut(&mut self) -> &mut f32 {
+    fn deref_mut(&mut self) -> &mut f64 {
         &mut self.0
     }
 }
@@ -93,10 +102,10 @@ impl Celsius {
     /// Create a new Celsius temperature. Asserts value >= absolute zero (-273.15°C).
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f64) -> Self {
         assert!(
             value >= -273.15,
-            "Celsius::new: value {value} is below absolute zero (-273.15°C)"
+            "Celsius::new: value is below absolute zero (-273.15°C)"
         );
         Celsius(value)
     }
@@ -106,14 +115,14 @@ impl Celsius {
     /// Caller must ensure value >= -273.15 (absolute zero).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f64) -> Self {
         Celsius(value)
     }
 
-    /// Get the raw f32 value
+    /// Get the raw f64 value
     #[inline]
     #[must_use]
-    pub fn value(self) -> f32 {
+    pub fn value(self) -> f64 {
         self.0
     }
 
@@ -131,14 +140,20 @@ impl From<Celsius> for Kelvin {
     }
 }
 
-impl From<f32> for Celsius {
-    fn from(v: f32) -> Self {
+impl From<f64> for Celsius {
+    fn from(v: f64) -> Self {
         Celsius(v)
     }
 }
 
-impl From<Celsius> for f32 {
-    fn from(c: Celsius) -> f32 {
+impl From<f32> for Celsius {
+    fn from(v: f32) -> Self {
+        Celsius(f64::from(v))
+    }
+}
+
+impl From<Celsius> for f64 {
+    fn from(c: Celsius) -> f64 {
         c.0
     }
 }
@@ -157,16 +172,16 @@ impl Sub for Celsius {
     }
 }
 
-impl Mul<f32> for Celsius {
+impl Mul<f64> for Celsius {
     type Output = Celsius;
-    fn mul(self, rhs: f32) -> Celsius {
+    fn mul(self, rhs: f64) -> Celsius {
         Celsius(self.0 * rhs)
     }
 }
 
-impl Div<f32> for Celsius {
+impl Div<f64> for Celsius {
     type Output = Celsius;
-    fn div(self, rhs: f32) -> Celsius {
+    fn div(self, rhs: f64) -> Celsius {
         Celsius(self.0 / rhs)
     }
 }
@@ -178,9 +193,10 @@ impl fmt::Display for Celsius {
 }
 
 /// Temperature in Kelvin (absolute scale)
+/// Uses f64 for Stefan-Boltzmann law (T^4) calculations
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct Kelvin(f32);
+pub struct Kelvin(f64);
 
 impl Eq for Kelvin {}
 
@@ -192,21 +208,21 @@ impl PartialOrd for Kelvin {
 
 impl Ord for Kelvin {
     fn cmp(&self, other: &Self) -> Ordering {
-        f32_total_cmp(self.0, other.0)
+        f64_total_cmp(self.0, other.0)
     }
 }
 
 impl Deref for Kelvin {
-    type Target = f32;
+    type Target = f64;
     #[inline]
-    fn deref(&self) -> &f32 {
+    fn deref(&self) -> &f64 {
         &self.0
     }
 }
 
 impl DerefMut for Kelvin {
     #[inline]
-    fn deref_mut(&mut self) -> &mut f32 {
+    fn deref_mut(&mut self) -> &mut f64 {
         &mut self.0
     }
 }
@@ -218,10 +234,10 @@ impl Kelvin {
     /// Create a new Kelvin temperature. Asserts value >= absolute zero (0 K).
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f64) -> Self {
         assert!(
             value >= 0.0,
-            "Kelvin::new: value {value} is below absolute zero (0 K)"
+            "Kelvin::new: value is below absolute zero (0 K)"
         );
         Kelvin(value)
     }
@@ -231,7 +247,7 @@ impl Kelvin {
     /// Caller must ensure value >= 0 (absolute zero).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f64) -> Self {
         Kelvin(value)
     }
 
@@ -242,10 +258,10 @@ impl Kelvin {
         Celsius::new(self.0 - 273.15)
     }
 
-    /// Get the raw f32 value
+    /// Get the raw f64 value
     #[inline]
     #[must_use]
-    pub fn value(self) -> f32 {
+    pub fn value(self) -> f64 {
         self.0
     }
 }
@@ -256,14 +272,20 @@ impl From<Kelvin> for Celsius {
     }
 }
 
-impl From<f32> for Kelvin {
-    fn from(v: f32) -> Self {
+impl From<f64> for Kelvin {
+    fn from(v: f64) -> Self {
         Kelvin::new(v)
     }
 }
 
-impl From<Kelvin> for f32 {
-    fn from(k: Kelvin) -> f32 {
+impl From<f32> for Kelvin {
+    fn from(v: f32) -> Self {
+        Kelvin::new(f64::from(v))
+    }
+}
+
+impl From<Kelvin> for f64 {
+    fn from(k: Kelvin) -> f64 {
         k.0
     }
 }
@@ -282,16 +304,16 @@ impl Sub for Kelvin {
     }
 }
 
-impl Mul<f32> for Kelvin {
+impl Mul<f64> for Kelvin {
     type Output = Kelvin;
-    fn mul(self, rhs: f32) -> Kelvin {
+    fn mul(self, rhs: f64) -> Kelvin {
         Kelvin(self.0 * rhs)
     }
 }
 
-impl Div<f32> for Kelvin {
+impl Div<f64> for Kelvin {
     type Output = Kelvin;
-    fn div(self, rhs: f32) -> Kelvin {
+    fn div(self, rhs: f64) -> Kelvin {
         Kelvin(self.0 / rhs)
     }
 }
@@ -344,11 +366,8 @@ impl Meters {
     /// Create a new distance in meters
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
-        assert!(
-            value >= 0.0,
-            "Meters::new: negative distance {value} is invalid"
-        );
+    pub const fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Meters::new: negative distance is invalid");
         Meters(value)
     }
 
@@ -357,7 +376,7 @@ impl Meters {
     /// Caller must ensure value >= 0 (non-negative distance).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         Meters(value)
     }
 
@@ -468,10 +487,10 @@ impl Kilometers {
     /// Create a new Kilometers value.
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "Kilometers::new: negative distance {value} is invalid"
+            "Kilometers::new: negative distance is invalid"
         );
         Kilometers(value)
     }
@@ -481,7 +500,7 @@ impl Kilometers {
     /// Caller must ensure value >= 0 (non-negative distance).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         Kilometers(value)
     }
 
@@ -590,11 +609,8 @@ impl Kilograms {
     /// Create a new mass in kilograms. Asserts value >= 0 (non-negative mass).
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
-        assert!(
-            value >= 0.0,
-            "Kilograms::new: negative mass {value} is invalid"
-        );
+    pub const fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Kilograms::new: negative mass is invalid");
         Kilograms(value)
     }
 
@@ -603,7 +619,7 @@ impl Kilograms {
     /// Caller must ensure value >= 0 (non-negative mass).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         Kilograms(value)
     }
 
@@ -724,10 +740,10 @@ impl KgPerCubicMeter {
     /// Create a new density. Asserts value >= 0 (non-negative density).
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "KgPerCubicMeter::new: negative density {value} is invalid"
+            "KgPerCubicMeter::new: negative density is invalid"
         );
         KgPerCubicMeter(value)
     }
@@ -737,7 +753,7 @@ impl KgPerCubicMeter {
     /// Caller must ensure value >= 0 (non-negative density).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         KgPerCubicMeter(value)
     }
 
@@ -809,11 +825,8 @@ impl Seconds {
     /// Create a new duration in seconds
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
-        assert!(
-            value >= 0.0,
-            "Seconds::new: negative duration {value} is invalid"
-        );
+    pub const fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Seconds::new: negative duration is invalid");
         Seconds(value)
     }
 
@@ -822,7 +835,7 @@ impl Seconds {
     /// Caller must ensure value >= 0 (non-negative duration).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         Seconds(value)
     }
 
@@ -925,11 +938,8 @@ impl Hours {
     /// Create a new Hours value.
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
-        assert!(
-            value >= 0.0,
-            "Hours::new: negative duration {value} is invalid"
-        );
+    pub const fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Hours::new: negative duration is invalid");
         Hours(value)
     }
 
@@ -938,7 +948,7 @@ impl Hours {
     /// No validation required for time.
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         Hours(value)
     }
 
@@ -1017,7 +1027,7 @@ impl MetersPerSecond {
     /// Create a new velocity
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         MetersPerSecond(value)
     }
 
@@ -1136,7 +1146,7 @@ impl KilometersPerHour {
     /// Create a new `KilometersPerHour` value.
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         KilometersPerHour(value)
     }
 
@@ -1259,11 +1269,8 @@ impl Kilojoules {
     /// Create a new energy value
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
-        assert!(
-            value >= 0.0,
-            "Kilojoules::new: negative energy {value} is invalid"
-        );
+    pub const fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Kilojoules::new: negative energy is invalid");
         Kilojoules(value)
     }
 
@@ -1272,7 +1279,7 @@ impl Kilojoules {
     /// No validation required for energy.
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         Kilojoules(value)
     }
 
@@ -1371,10 +1378,10 @@ impl KjPerKg {
     /// Create a new heat content value
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "KjPerKg::new: negative heat content {value} is invalid"
+            "KjPerKg::new: negative heat content is invalid"
         );
         KjPerKg(value)
     }
@@ -1384,7 +1391,7 @@ impl KjPerKg {
     /// No validation required for specific energy.
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         KjPerKg(value)
     }
 
@@ -1482,10 +1489,10 @@ impl KwPerMeter {
     /// Create a new fire intensity value. Asserts value >= 0 (non-negative intensity).
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "KwPerMeter::new: negative intensity {value} is invalid"
+            "KwPerMeter::new: negative intensity is invalid"
         );
         KwPerMeter(value)
     }
@@ -1495,7 +1502,7 @@ impl KwPerMeter {
     /// Caller must ensure value >= 0 (non-negative intensity).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         KwPerMeter(value)
     }
 
@@ -1588,10 +1595,10 @@ impl KjPerKgK {
     /// Create a new specific heat value. Asserts value >= 0 (non-negative specific heat).
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "KjPerKgK::new: negative specific heat {value} is invalid"
+            "KjPerKgK::new: negative specific heat is invalid"
         );
         KjPerKgK(value)
     }
@@ -1601,7 +1608,7 @@ impl KjPerKgK {
     /// Caller must ensure value >= 0 (non-negative specific heat).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         KjPerKgK(value)
     }
 
@@ -1694,19 +1701,11 @@ impl Fraction {
     /// Create a new fraction. Asserts value is within [0, 1].
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         assert!(
-            (0.0..=1.0).contains(&value),
-            "Fraction::new: value {value} not in [0, 1]"
+            value >= 0.0 && value <= 1.0,
+            "Fraction::new: value not in [0, 1]"
         );
-        Fraction(value)
-    }
-
-    /// Create a fraction at compile time (const context).
-    /// Value must be in [0, 1] - not validated at compile time.
-    #[inline]
-    #[must_use]
-    pub const fn new_const(value: f32) -> Self {
         Fraction(value)
     }
 
@@ -1715,7 +1714,7 @@ impl Fraction {
     /// Caller must ensure value is in [0, 1].
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         Fraction(value)
     }
 
@@ -1832,7 +1831,7 @@ impl Percent {
     /// Create a new percentage
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         Percent(value)
     }
 
@@ -1951,7 +1950,7 @@ impl Degrees {
     /// Create a new angle in degrees
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         Degrees(value)
     }
 
@@ -2032,7 +2031,7 @@ impl Radians {
     /// Create a new angle in radians
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         Radians(value)
     }
 
@@ -2154,10 +2153,10 @@ impl SurfaceAreaToVolume {
     /// Create a new surface area to volume ratio. Asserts value >= 0 (non-negative SAV).
     #[inline]
     #[must_use]
-    pub fn new(value: f32) -> Self {
+    pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
-            "SurfaceAreaToVolume::new: negative SAV {value} is invalid"
+            "SurfaceAreaToVolume::new: negative SAV is invalid"
         );
         SurfaceAreaToVolume(value)
     }
@@ -2167,7 +2166,7 @@ impl SurfaceAreaToVolume {
     /// Caller must ensure value >= 0 (non-negative SAV).
     #[inline]
     #[must_use]
-    pub unsafe fn new_unchecked(value: f32) -> Self {
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
         SurfaceAreaToVolume(value)
     }
 
@@ -2241,13 +2240,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Fraction::new: value 1.5 not in [0, 1]")]
+    #[should_panic(expected = "Fraction::new: value not in [0, 1]")]
     fn test_fraction_new_panics_on_too_large() {
         let _ = Fraction::new(1.5);
     }
 
     #[test]
-    #[should_panic(expected = "Fraction::new: value -0.5 not in [0, 1]")]
+    #[should_panic(expected = "Fraction::new: value not in [0, 1]")]
     fn test_fraction_new_panics_on_negative() {
         let _ = Fraction::new(-0.5);
     }

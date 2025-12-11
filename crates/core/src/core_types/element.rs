@@ -1,5 +1,5 @@
 use crate::core_types::fuel::Fuel;
-use crate::core_types::units::{Celsius, Degrees, Fraction, Kilograms, Meters};
+use crate::core_types::units::{Celsius, Degrees, Fraction, Kilograms, Meters, Percent};
 use crate::suppression::SuppressionCoverage;
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
@@ -51,7 +51,7 @@ pub struct FuelElement {
     pub(crate) elevation: Meters,     // Height above ground
     pub(crate) slope_angle: Degrees,  // Local terrain slope
     pub(crate) aspect_angle: Degrees, // Local terrain aspect (0-360)
-    pub(crate) neighbors: Vec<u32>,   // Cached nearby fuel IDs (within 15m)
+    pub(crate) neighbors: Vec<usize>, // Cached nearby fuel IDs (within 15m)
 
     // Advanced physics state (Phase 1-3 enhancements)
     /// Fuel moisture state by timelag class (Nelson 2000)
@@ -64,8 +64,9 @@ pub struct FuelElement {
     // Ignition timing tracking
     /// Cumulative time spent above ignition temperature (seconds)
     /// Used for realistic ignition behavior: elements that have been hot
-    /// for extended periods should ignite deterministically
-    pub(crate) time_above_ignition: f32,
+    /// for extended periods should ignite deterministically.
+    /// Using f64 for accumulated time to prevent drift in long simulations.
+    pub(crate) time_above_ignition: f64,
 
     /// Flag indicating this element received heat this frame
     /// Used to prevent Nelson moisture model from overwriting evaporated moisture
@@ -166,7 +167,7 @@ impl FuelElement {
 
     /// Get neighboring element IDs
     #[must_use]
-    pub fn neighbors(&self) -> &[u32] {
+    pub fn neighbors(&self) -> &[usize] {
         &self.neighbors
     }
 
@@ -252,16 +253,16 @@ impl FuelElement {
             let remaining_heat = effective_heat - heat_for_evaporation;
             if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
                 let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-                self.temperature = Celsius::new(*self.temperature + temp_rise);
+                self.temperature = Celsius::new(*self.temperature + f64::from(temp_rise));
             }
         } else {
             // No moisture, all heat goes to temperature rise
             let temp_rise = effective_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-            self.temperature = Celsius::new(*self.temperature + temp_rise);
+            self.temperature = Celsius::new(*self.temperature + f64::from(temp_rise));
         }
 
         // STEP 3: Cap at fuel-specific maximum (prevents thermal runaway)
-        let max_temp = Celsius::new(
+        let max_temp = Celsius::from(
             self.fuel
                 .calculate_max_flame_temperature(*self.moisture_fraction),
         );
@@ -302,13 +303,13 @@ impl FuelElement {
         }
 
         // OPTIMIZATION: Early exit for cold fuel (far from ignition temp)
-        if *self.temperature < *ignition_temp - 50.0 {
+        if self.temperature < ignition_temp - Celsius::new(50.0) {
             return;
         }
 
-        // Track time above ignition temperature
-        if *self.temperature > *ignition_temp {
-            self.time_above_ignition += dt;
+        // Track time above ignition temperature with f64 precision
+        if self.temperature > ignition_temp {
+            self.time_above_ignition += f64::from(dt);
         } else {
             // Reset timer if cooled below ignition
             self.time_above_ignition = 0.0;
@@ -319,14 +320,16 @@ impl FuelElement {
             (1.0 - *self.moisture_fraction / *self.fuel.moisture_of_extinction).max(0.0);
 
         // Temperature above ignition increases probability (capped at 1.0)
-        let temp_excess = (*self.temperature - *ignition_temp).max(0.0);
-        let temp_factor = (temp_excess / 50.0).min(1.0);
+        let temp_excess = (self.temperature - ignition_temp).max(Celsius::new(0.0));
+        let temp_factor = (*temp_excess / 50.0).min(1.0);
 
         // Base coefficient for probabilistic ignition
         // 0.003 gives ~0.3% per second at max temp_factor
         // Scales with FFDI for extreme conditions
         let base_coefficient = 0.003;
-        let ignition_prob = moisture_factor * temp_factor * dt * base_coefficient * ffdi_multiplier;
+        let ignition_prob = f64::from(
+            moisture_factor * (temp_factor as f32) * dt * base_coefficient * ffdi_multiplier,
+        );
 
         // GUARANTEED IGNITION: Elements above ignition temp for sufficient time
         // This ensures elements that have been hot for extended periods ignite
@@ -335,11 +338,11 @@ impl FuelElement {
         //   - 500°C: 60s / 2.1 = 29s threshold
         //   - 758°C: 60s / 3.4 = 18s threshold
         // Does NOT scale with FFDI - heat transfer controls spread rate instead
-        let time_threshold = 60.0 / (1.0 + temp_excess / 200.0);
+        let time_threshold_f64 = 60.0 / (1.0 + *temp_excess / 200.0);
 
-        let guaranteed_ignition = self.time_above_ignition >= time_threshold;
+        let guaranteed_ignition = self.time_above_ignition >= time_threshold_f64;
 
-        if guaranteed_ignition || rand::random::<f32>() < ignition_prob {
+        if guaranteed_ignition || rand::random::<f64>() < ignition_prob {
             self.ignited = true;
         }
     }
@@ -356,7 +359,7 @@ impl FuelElement {
         }
 
         // OPTIMIZATION: Early exit for cold fuel (not hot enough to burn)
-        if *self.temperature < *self.fuel.ignition_temperature {
+        if self.temperature < self.fuel.ignition_temperature {
             return 0.0;
         }
 
@@ -364,12 +367,12 @@ impl FuelElement {
         let moisture_factor =
             (1.0 - *self.moisture_fraction / *self.fuel.moisture_of_extinction).max(0.0);
         let temp_factor =
-            ((*self.temperature - *self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
+            (*(self.temperature - self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
 
         // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
         self.fuel.burn_rate_coefficient
             * moisture_factor
-            * temp_factor
+            * (temp_factor as f32)
             * (*self.fuel_remaining).sqrt()
             * 0.1
     }
@@ -548,8 +551,8 @@ impl FuelElement {
     /// Update suppression coverage state over time
     pub(crate) fn update_suppression(
         &mut self,
-        temperature: f32,
-        humidity: f32,
+        temperature: Celsius,
+        humidity: Percent,
         wind_speed: f32,
         solar_radiation: f32,
         dt: f32,
@@ -570,7 +573,7 @@ impl FuelElement {
         FuelElementStats {
             id: self.id,
             position: self.position,
-            temperature: *self.temperature,
+            temperature: *self.temperature as f32,
             moisture_fraction: *self.moisture_fraction,
             fuel_remaining: *self.fuel_remaining,
             ignited: self.ignited,
@@ -580,7 +583,7 @@ impl FuelElement {
             slope_angle: *self.slope_angle,
             crown_fire_active: self.crown_fire_active,
             fuel_type_name: self.fuel.name.clone(),
-            ignition_temperature: *self.fuel.ignition_temperature,
+            ignition_temperature: *self.fuel.ignition_temperature as f32,
             heat_content: *self.fuel.heat_content,
         }
     }

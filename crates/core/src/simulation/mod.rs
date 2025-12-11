@@ -21,7 +21,7 @@ use crate::core_types::element::{FuelElement, FuelPart, Vec3};
 use crate::core_types::ember::Ember;
 use crate::core_types::fuel::Fuel;
 use crate::core_types::spatial::SpatialIndex;
-use crate::core_types::units::{Celsius, Kilograms};
+use crate::core_types::units::{Celsius, Kilograms, Percent};
 use crate::core_types::weather::WeatherSystem;
 use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise};
 use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField, WindFieldConfig};
@@ -123,10 +123,10 @@ impl FireSimulation {
 
         // Initialize atmospheric profile with default conditions
         let atmospheric_profile = AtmosphericProfile::from_surface_conditions(
-            25.0, // temperature °C
-            50.0, // humidity %
-            10.0, // wind speed km/h
-            true, // is_daytime
+            Celsius::new(25.0), // temperature
+            Percent::new(50.0), // humidity
+            10.0,               // wind speed m/s
+            true,               // is_daytime
         );
 
         FireSimulation {
@@ -213,8 +213,6 @@ impl FireSimulation {
         mass: Kilograms,
         part_type: FuelPart,
     ) -> usize {
-        use crate::core_types::units::Degrees;
-
         let id = self.next_element_id;
         self.next_element_id += 1;
 
@@ -223,9 +221,8 @@ impl FireSimulation {
         // OPTIMIZATION: Cache terrain properties once at creation
         // Uses Horn's method (3x3 kernel) for accurate slope/aspect
         // Eliminates 10,000-20,000 terrain lookups per frame during heat transfer
-        element.slope_angle = Degrees::new(self.grid.terrain.slope_at_horn(position.x, position.y));
-        element.aspect_angle =
-            Degrees::new(self.grid.terrain.aspect_at_horn(position.x, position.y));
+        element.slope_angle = self.grid.terrain.slope_at_horn(position.x, position.y);
+        element.aspect_angle = self.grid.terrain.aspect_at_horn(position.x, position.y);
 
         // Add to spatial index
         self.spatial_index.insert(id, position);
@@ -366,6 +363,29 @@ impl FireSimulation {
 
         // Now move weather
         self.weather = weather;
+    }
+
+    /// Update weather preset while preserving current time and day
+    ///
+    /// This updates the weather conditions to match a new regional preset
+    /// without resetting the simulation time or date. Useful for switching
+    /// between different weather scenarios during an active simulation.
+    ///
+    /// # Parameters
+    /// - `preset`: New weather preset to apply
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Switch to catastrophic conditions at current time
+    /// sim.update_weather_preset(WeatherPreset::catastrophic());
+    /// ```
+    pub fn update_weather_preset(&mut self, preset: crate::core_types::weather::WeatherPreset) {
+        self.weather.update_preset(preset);
+
+        // Update grid ambient conditions to match new weather
+        self.grid.ambient_temperature = self.weather.temperature;
+        self.grid.ambient_humidity = *self.weather.humidity;
+        self.grid.ambient_wind = self.weather.wind_vector();
     }
 
     /// Get reference to weather system (read-only)
@@ -703,8 +723,8 @@ impl FireSimulation {
         // Previously: two separate iterations over ALL elements (~600k+ elements each)
         // Now: one iteration with both operations (50% reduction in memory scans)
         let _equilibrium_moisture = crate::physics::calculate_equilibrium_moisture(
-            *self.weather.temperature,
-            *self.weather.humidity,
+            self.weather.temperature,
+            self.weather.humidity,
             false, // is_adsorbing - false for typical drying conditions
         );
         let ambient_temp = self.grid.ambient_temperature;
@@ -731,7 +751,7 @@ impl FireSimulation {
                         // Newton's law of cooling: dT/dt = -k(T - T_ambient)
                         let cooling_rate = element.fuel.cooling_rate; // Fuel-specific (grass=0.15, forest=0.05)
                         let temp_diff = *element.temperature - *ambient_temp;
-                        let temp_change = temp_diff * cooling_rate * dt;
+                        let temp_change = temp_diff * f64::from(cooling_rate * dt);
                         element.temperature = Celsius::new(*element.temperature - temp_change);
                         element.temperature = element.temperature.max(ambient_temp);
                     }
@@ -751,8 +771,8 @@ impl FireSimulation {
                             // handles all timelag classes and calculates weighted average
                             moisture_state.update(
                                 &element.fuel,
-                                weather_temp,
-                                weather_humidity / 100.0,
+                                Celsius::new(weather_temp),
+                                Percent::new(weather_humidity),
                                 dt_hours,
                             );
 
@@ -764,8 +784,8 @@ impl FireSimulation {
 
                     // Update suppression coverage evaporation/degradation (Phase 1)
                     element.update_suppression(
-                        weather_temp,
-                        weather_humidity,
+                        Celsius::new(weather_temp),
+                        Percent::new(weather_humidity),
                         weather_wind,
                         solar_radiation,
                         dt,
@@ -915,8 +935,9 @@ impl FireSimulation {
                         let cooling_rate = grid_data.suppression_agent * 1000.0;
                         let mass = *element.fuel_remaining;
                         let temp_drop = cooling_rate / (mass * *element.fuel.specific_heat);
-                        element.temperature = Celsius::new(*element.temperature - temp_drop)
-                            .max(Celsius::new(grid_data.temperature));
+                        element.temperature =
+                            Celsius::new(*element.temperature - f64::from(temp_drop))
+                                .max(grid_data.temperature);
                     }
                 }
             }
@@ -937,7 +958,7 @@ impl FireSimulation {
                 if let Some(element) = self.get_element_mut(element_id) {
                     element.smoldering_state = Some(crate::physics::update_smoldering_state(
                         smold_state,
-                        temp,
+                        temp as f32,
                         oxygen,
                         dt,
                     ));
@@ -1017,7 +1038,7 @@ impl FireSimulation {
                     let self_heating = combustion_heat * *element.fuel.self_heating_fraction;
                     let temp_rise =
                         self_heating / (*element.fuel_remaining * *element.fuel.specific_heat);
-                    element.temperature = Celsius::new(*element.temperature + temp_rise)
+                    element.temperature = Celsius::new(*element.temperature + f64::from(temp_rise))
                         .min(element.fuel.max_flame_temperature);
                 }
 
@@ -1048,7 +1069,7 @@ impl FireSimulation {
                         *element.moisture_fraction,
                         wind_vector.norm(),
                         *element.slope_angle,
-                        *ambient_temperature,
+                        *ambient_temperature as f32,
                     );
 
                     // Use fuel properties for crown fire calculation
@@ -1110,12 +1131,14 @@ impl FireSimulation {
                         let ladder_boost = 1.0
                             + element.fuel.canopy_structure.ladder_fuel_factor()
                                 * LADDER_FUEL_TEMP_BOOST_FACTOR;
-                        let base_crown_temp = *element.fuel.max_flame_temperature
+                        let base_crown_temp = (*element.fuel.max_flame_temperature as f32)
                             * *element.fuel.crown_fire_temp_multiplier;
                         // Scale temperature by crown fraction: passive crown = 70-80% of max, active = 100%
                         let crown_temp =
                             base_crown_temp * (0.7 + 0.3 * crown_intensity_factor) * ladder_boost;
-                        element.temperature = element.temperature.max(Celsius::new(crown_temp));
+                        element.temperature = element
+                            .temperature
+                            .max(Celsius::from(f64::from(crown_temp)));
                     }
                 }
             }
@@ -1157,23 +1180,24 @@ impl FireSimulation {
                 // Now we can safely borrow grid mutably
                 if let Some(cell) = self.grid.cell_at_position_mut(pos) {
                     // Enhanced heat transfer - fires need to heat air more effectively
-                    let temp_diff = temp - cell.temperature;
-                    if temp_diff > 0.0 {
+                    let temp_diff = Celsius::new(f64::from(temp as f32)) - cell.temperature;
+                    if *temp_diff > 0.0 {
                         // Fuel-specific convective heat transfer (grass=600, forest=400)
                         let h = h_conv; // W/(m²·K)
                         let area = surface_area * fuel_remaining.sqrt();
-                        let heat_kj = h * area * temp_diff * dt * 0.001;
+                        let heat_kj = f64::from(h * area * dt * 0.001) * *temp_diff;
 
                         let air_mass = cell.air_density() * cell_volume;
                         const SPECIFIC_HEAT_AIR: f32 = 1.005; // kJ/(kg·K) - physical constant
-                        let temp_rise = heat_kj / (air_mass * SPECIFIC_HEAT_AIR);
+                        let temp_rise =
+                            Celsius::new(heat_kj / f64::from(air_mass * SPECIFIC_HEAT_AIR));
 
                         // Fuel-specific atmospheric heat efficiency (how much heat transfers to air)
                         // Cell should not exceed element temp (can't be hotter than source)
                         // and must respect physical limits for wildfire air temperatures
                         let target_temp = (cell.temperature + temp_rise)
-                            .min(temp * atm_efficiency) // Fuel-specific max transfer (grass=0.85, forest=0.70)
-                            .min(800.0); // Physical cap for wildfire plume air
+                            .min(Celsius::new(f64::from(temp as f32 * atm_efficiency))) // Fuel-specific max transfer (grass=0.85, forest=0.70)
+                            .min(Celsius::new(800.0)); // Physical cap for wildfire plume air
 
                         cell.temperature = target_temp;
                     }
@@ -1250,11 +1274,11 @@ impl FireSimulation {
                         let base_heat =
                             crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
                                 source_pos,
-                                source_temp,
+                                source_temp as f32,
                                 source_fuel_remaining,
                                 *source_surface_area_vol,
                                 target.position,
-                                *target.temperature,
+                                *target.temperature as f32,
                                 *target.fuel.surface_area_to_volume,
                                 wind_vector,
                                 dt,
@@ -1360,8 +1384,8 @@ impl FireSimulation {
         // Atmospheric stability changes over minutes, not seconds
         if self.current_frame.is_multiple_of(5) {
             self.atmospheric_profile = AtmosphericProfile::from_surface_conditions(
-                *self.weather.temperature,
-                *self.weather.humidity,
+                self.weather.temperature,
+                self.weather.humidity,
                 wind_vector.magnitude(),
                 self.weather.is_daytime(),
             );
@@ -1422,7 +1446,7 @@ impl FireSimulation {
 
         // 6e. Generate embers with Albini spotting physics (enhanced by pyrocumulus)
         // Collect ember data first to avoid borrow conflicts (ember generation requires mutable push)
-        let new_embers: Vec<(Vec3, Vec3, f32, u8)> = self
+        let new_embers: Vec<(Vec3, Vec3, f64, u8)> = self
             .burning_elements
             .iter()
             .filter_map(|&element_id| {
@@ -1597,8 +1621,9 @@ impl FireSimulation {
         }
 
         // Remove inactive embers (cooled below 200°C or fallen below ground)
-        self.embers
-            .retain(|e| *e.temperature > 200.0 && e.position.z > 0.0);
+        self.embers.retain(|e| {
+            e.temperature > crate::core_types::ember::EMBER_ACTIVE_THRESHOLD && e.position.z > 0.0
+        });
 
         // OPTIMIZATION: Update active_spreading_elements by removing interior elements
         // An element becomes 'interior' when all its neighbors are already burning or depleted
@@ -1709,13 +1734,15 @@ pub struct SimulationStats {
 
 // Small helper to convert usize -> f32 in deliberate, documented places
 #[inline]
-#[expect(clippy::cast_precision_loss)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Explicit, documented conversion of small counts to f32 for stats/printing; intentionally accepting precision loss for these measurements"
+)]
 fn usize_to_f32(v: usize) -> f32 {
     v as f32
 }
 
 #[cfg(test)]
-#[expect(clippy::cast_precision_loss)]
 mod tests {
     use super::*;
 
@@ -1773,7 +1800,7 @@ mod tests {
         let cell = sim
             .get_cell_at_position(Vec3::new(50.0, 50.0, 1.0))
             .unwrap();
-        assert!(cell.temperature > 20.0);
+        assert!(*cell.temperature > 20.0);
     }
 
     /// Test fire spread under LOW fire danger conditions (cool, humid, calm)
@@ -1795,10 +1822,18 @@ mod tests {
 
         // Add fuel elements in a wider grid (3m spacing - less dense)
         let mut fuel_ids = Vec::new();
-        for i in 0..5 {
-            for j in 0..5 {
-                let x = 20.0 + i as f32 * 3.0;
-                let y = 20.0 + j as f32 * 3.0;
+        for i in 0..5_i32 {
+            for j in 0..5_i32 {
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "Small integer (0-5) to position - precision loss acceptable for spatial coordinates"
+                )]
+                let x = 20.0 + (i as f32) * 3.0;
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "Small integer (0-5) to position - precision loss acceptable for spatial coordinates"
+                )]
+                let y = 20.0 + (j as f32) * 3.0;
                 let fuel = Fuel::dry_grass();
                 let id = sim.add_fuel_element(
                     Vec3::new(x, y, 0.5),
@@ -1856,10 +1891,18 @@ mod tests {
 
         // Add fuel elements with moderate spacing
         let mut fuel_ids = Vec::new();
-        for i in 0..5 {
-            for j in 0..5 {
-                let x = 20.0 + i as f32 * 2.0;
-                let y = 20.0 + j as f32 * 2.0;
+        for i in 0..5_i32 {
+            for j in 0..5_i32 {
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "Small integer (0-5) to position - precision loss acceptable for spatial coordinates"
+                )]
+                let x = 20.0 + (i as f32) * 2.0;
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "Small integer (0-5) to position - precision loss acceptable for spatial coordinates"
+                )]
+                let y = 20.0 + (j as f32) * 2.0;
                 let fuel = Fuel::dry_grass();
                 let id = sim.add_fuel_element(
                     Vec3::new(x, y, 0.5),
@@ -1919,8 +1962,12 @@ mod tests {
         // Add fuel elements in a LINE along the +X axis (downwind direction)
         // This ensures all elements are downwind from the ignition point
         let mut fuel_ids = Vec::new();
-        for i in 0..20 {
-            let x = 20.0 + i as f32 * 1.5;
+        for i in 0..20_i32 {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "Small integer (0-20) to position - precision loss acceptable for spatial coordinates"
+            )]
+            let x = 20.0 + (i as f32) * 1.5;
             let y = 25.0;
             let fuel = Fuel::dry_grass();
             let id = sim.add_fuel_element(
@@ -2040,8 +2087,12 @@ mod tests {
         // Create line of fuel elements along X axis (west to east)
         // Elements at x=20, 21.5, 23, 24.5, 26, 27.5, 29, 30.5, 32, 33.5
         let mut fuel_ids = Vec::new();
-        for i in 0..10 {
-            let x = 20.0 + i as f32 * 1.5;
+        for i in 0..10_i32 {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "Small integer (0-10) to position - precision loss acceptable for spatial coordinates"
+            )]
+            let x = 20.0 + (i as f32) * 1.5;
             let fuel = Fuel::dry_grass();
             let id = sim.add_fuel_element(
                 Vec3::new(x, 25.0, 0.5),

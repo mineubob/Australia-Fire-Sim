@@ -6,6 +6,7 @@
 //! - Support for multiple agent types
 
 use crate::core_types::element::Vec3;
+use crate::core_types::units::Celsius;
 use crate::grid::SimulationGrid;
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +17,36 @@ pub enum SuppressionAgent {
     ShortTermRetardant,
     LongTermRetardant,
     Foam,
+}
+
+// Typical delivery temperatures for suppression agents with controlled storage
+// Water temperature is dynamic (based on ambient conditions)
+const FOAM_DELIVERY_TEMP: Celsius = Celsius::new(20.0); // Foam systems: slightly warmer due to equipment
+const SHORT_TERM_RETARDANT_TEMP: Celsius = Celsius::new(22.0); // Mixed on-site, often slightly warmer
+const LONG_TERM_RETARDANT_TEMP: Celsius = Celsius::new(25.0); // Pre-mixed, stored at controlled temperature for viscosity
+
+impl SuppressionAgent {
+    /// Get typical delivery temperature for this suppression agent
+    ///
+    /// Different agents are delivered at different temperatures:
+    /// - Water: Tracks ambient temperature (from environment/weather)
+    /// - Foam/Retardants: Stored at controlled temperatures for optimal viscosity/mixing
+    ///
+    /// # Parameters
+    /// - `ambient_temp`: Current ambient temperature (used for water)
+    ///
+    /// # Returns
+    /// Typical delivery temperature in Celsius
+    pub(crate) fn delivery_temperature(self, ambient_temp: Celsius) -> Celsius {
+        match self {
+            // Water temperature tracks ambient (from lakes, rivers, or stored tanks)
+            Self::Water => ambient_temp,
+            // Other agents stored at controlled temperatures
+            Self::Foam => FOAM_DELIVERY_TEMP,
+            Self::ShortTermRetardant => SHORT_TERM_RETARDANT_TEMP,
+            Self::LongTermRetardant => LONG_TERM_RETARDANT_TEMP,
+        }
+    }
 }
 
 /// Physical constants for suppression
@@ -35,16 +66,17 @@ const FOAM_COOLING: f32 = 3000.0; // kJ/kg - high effectiveness due to coverage
 ///
 /// # Parameters
 /// - `agent_type`: Type of suppression agent
-/// - `temperature`: Current temperature of the agent in °C
+/// - `temperature`: Current temperature of the agent
 ///
 /// # Returns
 /// Cooling capacity in kJ per kg
-fn calculate_cooling_capacity(agent_type: SuppressionAgent, temperature: f32) -> f32 {
+fn calculate_cooling_capacity(agent_type: SuppressionAgent, temperature: Celsius) -> f32 {
     match agent_type {
         SuppressionAgent::Water => {
             // Latent heat of vaporization + sensible heat to reach boiling point
-            let sensible = WATER_SPECIFIC_HEAT * (WATER_BOILING_POINT - temperature);
-            WATER_LATENT_HEAT + sensible
+            let sensible =
+                f64::from(WATER_SPECIFIC_HEAT) * (f64::from(WATER_BOILING_POINT) - *temperature);
+            (f64::from(WATER_LATENT_HEAT) + sensible) as f32
         }
         SuppressionAgent::ShortTermRetardant => {
             // Similar to water but with fire-retarding chemicals
@@ -88,17 +120,16 @@ pub(crate) fn apply_suppression_direct(
         cell.suppression_agent += concentration_increase;
 
         // Cooling effect based on agent type
-        // Typical suppression agent delivery temperature (°C)
-        // Water from trucks: 15-25°C, aerial drops: 10-20°C
-        let agent_temp = 20.0;
+        // Agent temperature varies: water tracks ambient, others are temperature-controlled
+        let agent_temp = agent_type.delivery_temperature(ambient_temp);
         let cooling_capacity = calculate_cooling_capacity(agent_type, agent_temp);
 
         let cooling_kj = mass * cooling_capacity;
         let air_mass = cell.air_density() * cell_volume;
         const SPECIFIC_HEAT_AIR: f32 = 1.005; // kJ/(kg·K) - physical constant
-        let temp_drop = cooling_kj / (air_mass * SPECIFIC_HEAT_AIR);
+        let temp_drop = Celsius::new(f64::from(cooling_kj / (air_mass * SPECIFIC_HEAT_AIR)));
 
-        cell.temperature = (cell.temperature - temp_drop).max(*ambient_temp);
+        cell.temperature = (cell.temperature - temp_drop).max(ambient_temp);
 
         // Increase humidity (water vapor)
         if matches!(agent_type, SuppressionAgent::Water | SuppressionAgent::Foam) {
@@ -110,9 +141,9 @@ pub(crate) fn apply_suppression_direct(
             // Humidity increases
             // Max vapor capacity depends on temperature (Clausius-Clapeyron)
             // At 20°C: ~17 g/m³, at 30°C: ~30 g/m³, at 40°C: ~51 g/m³
-            let temp_celsius = cell.temperature.max(0.0);
-            let max_vapor = 0.017 * (1.0 + (temp_celsius - 20.0) * 0.07); // Temperature-dependent saturation
-            let vapor_fraction = (cell.water_vapor / max_vapor).min(1.0);
+            let temp_celsius = cell.temperature.max(Celsius::new(0.0));
+            let max_vapor = 0.017 * (1.0 + (*temp_celsius - 20.0) * 0.07); // Temperature-dependent saturation
+            let vapor_fraction = (f64::from(cell.water_vapor) / max_vapor).min(1.0) as f32;
             cell.humidity = cell.humidity.max(vapor_fraction);
         }
     }
@@ -197,10 +228,10 @@ mod tests {
     #[test]
     fn test_cooling_capacity() {
         // Test that different agents have appropriate cooling capacities
-        let water_cooling = calculate_cooling_capacity(SuppressionAgent::Water, 20.0);
-        let foam_cooling = calculate_cooling_capacity(SuppressionAgent::Foam, 20.0);
+        let water_cooling = calculate_cooling_capacity(SuppressionAgent::Water, Celsius::new(20.0));
+        let foam_cooling = calculate_cooling_capacity(SuppressionAgent::Foam, Celsius::new(20.0));
         let retardant_cooling =
-            calculate_cooling_capacity(SuppressionAgent::LongTermRetardant, 20.0);
+            calculate_cooling_capacity(SuppressionAgent::LongTermRetardant, Celsius::new(20.0));
 
         // Water: ~2600 kJ/kg (2260 + 4.18*(100-20))
         assert!(water_cooling > 2500.0 && water_cooling < 2700.0);

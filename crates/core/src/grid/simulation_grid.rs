@@ -5,7 +5,7 @@
 //! elements interact with cells for extreme realism.
 
 use crate::core_types::element::Vec3;
-use crate::core_types::units::Celsius;
+use crate::core_types::units::{Celsius, Fraction, Meters};
 use crate::grid::{TerrainCache, TerrainData};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ const MARK_ACTIVE_OFFSETS: [(i32, i32, i32); 125] = {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GridCell {
     /// Air temperature (°C)
-    pub(crate) temperature: f32,
+    pub(crate) temperature: Celsius,
     /// Wind velocity vector (m/s)
     pub(crate) wind: Vec3,
     /// Relative humidity (0-1)
@@ -79,7 +79,7 @@ impl GridCell {
     #[must_use]
     pub fn new(elevation: f32) -> Self {
         GridCell {
-            temperature: 20.0, // Ambient 20°C
+            temperature: Celsius::new(20.0), // Ambient 20°C
             wind: Vec3::zeros(),
             humidity: 0.4, // 40% RH
             oxygen: 0.273, // Normal air: 21% O2 by volume ≈ 0.273 kg/m³
@@ -101,7 +101,7 @@ impl GridCell {
     #[must_use]
     pub fn air_density(&self) -> f32 {
         const R_SPECIFIC_AIR: f32 = 287.05; // J/(kg·K)
-        let temp_k = self.temperature + 273.15;
+        let temp_k = *self.temperature as f32 + 273.15;
         self.pressure / (R_SPECIFIC_AIR * temp_k)
     }
 
@@ -111,8 +111,8 @@ impl GridCell {
     pub fn buoyancy_force(&self, ambient_temp: Celsius) -> f32 {
         // Calculate ambient air density from temperature using ideal gas law
         const R_SPECIFIC_AIR: f32 = 287.05; // J/(kg·K)
-        let ambient_temp_k = *ambient_temp + 273.15;
-        let ambient_density = self.pressure / (R_SPECIFIC_AIR * ambient_temp_k);
+        let ambient_temp_k = ambient_temp.to_kelvin();
+        let ambient_density = self.pressure / (R_SPECIFIC_AIR * (*ambient_temp_k as f32));
 
         let current_density = self.air_density();
         (ambient_density - current_density) * 9.81 // g = 9.81 m/s²
@@ -149,7 +149,7 @@ impl GridCell {
 
     /// Get air temperature (°C)
     #[must_use]
-    pub fn temperature(&self) -> f32 {
+    pub fn temperature(&self) -> Celsius {
         self.temperature
     }
 
@@ -161,8 +161,8 @@ impl GridCell {
 
     /// Get relative humidity (0-1)
     #[must_use]
-    pub fn humidity(&self) -> f32 {
-        self.humidity
+    pub fn humidity(&self) -> Fraction {
+        Fraction::new(self.humidity)
     }
 
     /// Get oxygen concentration (kg/m³)
@@ -203,8 +203,8 @@ impl GridCell {
 
     /// Get cell elevation (m)
     #[must_use]
-    pub fn elevation(&self) -> f32 {
-        self.elevation
+    pub fn elevation(&self) -> Meters {
+        Meters::new(self.elevation)
     }
 
     /// Check if cell is active
@@ -274,7 +274,7 @@ impl SimulationGrid {
                     let y = usize_to_f32(iy) * cell_size + cell_size / 2.0;
                     let elevation = terrain.elevation_at(x, y);
 
-                    cells.push(GridCell::new(elevation));
+                    cells.push(GridCell::new(*elevation));
                 }
             }
         }
@@ -387,11 +387,14 @@ impl SimulationGrid {
 
         // Trilinear interpolation helper
         let lerp = |a: f32, b: f32, t: f32| a * (1.0 - t) + b * t;
+        let lerp_celsius = |a: Celsius, b: Celsius, t: f32| {
+            Celsius::new(*a * (1.0 - f64::from(t)) + *b * f64::from(t))
+        };
         let lerp_vec = |a: Vec3, b: Vec3, t: f32| a * (1.0 - t) + b * t;
 
         // Interpolate along x
         let c00 = GridCell {
-            temperature: lerp(c000.temperature, c100.temperature, fx),
+            temperature: lerp_celsius(c000.temperature, c100.temperature, fx),
             wind: lerp_vec(c000.wind, c100.wind, fx),
             humidity: lerp(c000.humidity, c100.humidity, fx),
             oxygen: lerp(c000.oxygen, c100.oxygen, fx),
@@ -407,7 +410,7 @@ impl SimulationGrid {
             suppression_agent: lerp(c000.suppression_agent, c100.suppression_agent, fx),
         };
         let c10 = GridCell {
-            temperature: lerp(c010.temperature, c110.temperature, fx),
+            temperature: lerp_celsius(c010.temperature, c110.temperature, fx),
             wind: lerp_vec(c010.wind, c110.wind, fx),
             humidity: lerp(c010.humidity, c110.humidity, fx),
             oxygen: lerp(c010.oxygen, c110.oxygen, fx),
@@ -423,7 +426,7 @@ impl SimulationGrid {
             suppression_agent: lerp(c010.suppression_agent, c110.suppression_agent, fx),
         };
         let c01 = GridCell {
-            temperature: lerp(c001.temperature, c101.temperature, fx),
+            temperature: lerp_celsius(c001.temperature, c101.temperature, fx),
             wind: lerp_vec(c001.wind, c101.wind, fx),
             humidity: lerp(c001.humidity, c101.humidity, fx),
             oxygen: lerp(c001.oxygen, c101.oxygen, fx),
@@ -439,7 +442,7 @@ impl SimulationGrid {
             suppression_agent: lerp(c001.suppression_agent, c101.suppression_agent, fx),
         };
         let c11 = GridCell {
-            temperature: lerp(c011.temperature, c111.temperature, fx),
+            temperature: lerp_celsius(c011.temperature, c111.temperature, fx),
             wind: lerp_vec(c011.wind, c111.wind, fx),
             humidity: lerp(c011.humidity, c111.humidity, fx),
             oxygen: lerp(c011.oxygen, c111.oxygen, fx),
@@ -457,7 +460,7 @@ impl SimulationGrid {
 
         // Interpolate along y
         let c0 = GridCell {
-            temperature: lerp(c00.temperature, c10.temperature, fy),
+            temperature: lerp_celsius(c00.temperature, c10.temperature, fy),
             wind: lerp_vec(c00.wind, c10.wind, fy),
             humidity: lerp(c00.humidity, c10.humidity, fy),
             oxygen: lerp(c00.oxygen, c10.oxygen, fy),
@@ -473,7 +476,7 @@ impl SimulationGrid {
             suppression_agent: lerp(c00.suppression_agent, c10.suppression_agent, fy),
         };
         let c1 = GridCell {
-            temperature: lerp(c01.temperature, c11.temperature, fy),
+            temperature: lerp_celsius(c01.temperature, c11.temperature, fy),
             wind: lerp_vec(c01.wind, c11.wind, fy),
             humidity: lerp(c01.humidity, c11.humidity, fy),
             oxygen: lerp(c01.oxygen, c11.oxygen, fy),
@@ -491,7 +494,7 @@ impl SimulationGrid {
 
         // Final interpolation along z
         GridCell {
-            temperature: lerp(c0.temperature, c1.temperature, fz),
+            temperature: lerp_celsius(c0.temperature, c1.temperature, fz),
             wind: lerp_vec(c0.wind, c1.wind, fz),
             humidity: lerp(c0.humidity, c1.humidity, fz),
             oxygen: lerp(c0.oxygen, c1.oxygen, fz),
@@ -605,7 +608,7 @@ impl SimulationGrid {
         let cells_vec = cells_to_process;
 
         // Cache ambient temperature
-        let ambient_temp = *self.ambient_temperature;
+        let ambient_temp = self.ambient_temperature;
         let grid_dims = (nx, ny, nz, ny_nx);
         let params = (ambient_temp, diffusion_factor, dt);
 
@@ -613,7 +616,7 @@ impl SimulationGrid {
         // For <16000 cells, sequential is faster (eliminates 12.4% Rayon overhead)
         const PARALLEL_THRESHOLD: usize = 16000;
 
-        let temp_updates: Vec<(usize, f32)> = if cells_vec.len() < PARALLEL_THRESHOLD {
+        let temp_updates: Vec<(usize, Celsius)> = if cells_vec.len() < PARALLEL_THRESHOLD {
             // Sequential processing for small/medium workloads
             cells_vec
                 .iter()
@@ -654,8 +657,8 @@ impl SimulationGrid {
         &self,
         idx: usize,
         grid_dims: (usize, usize, usize, usize), // (nx, ny, nz, ny_nx)
-        params: (f32, f32, f32),                 // (ambient_temp, diffusion_factor, dt)
-    ) -> Option<(usize, f32)> {
+        params: (Celsius, f32, f32),             // (ambient_temp, diffusion_factor, dt)
+    ) -> Option<(usize, Celsius)> {
         let (nx, ny, nz, ny_nx) = grid_dims;
         let (ambient_temp, diffusion_factor, dt) = params;
 
@@ -677,7 +680,7 @@ impl SimulationGrid {
 
         // OPTIMIZATION: Compute all neighbors with fewer branches
         // Use conditional addition instead of if statements for better branch prediction
-        let mut laplacian = 0.0;
+        let mut laplacian = Celsius::new(0.0);
 
         // X neighbors (most likely to exist - interior cells)
         let has_x_minus = ix > 0;
@@ -685,12 +688,14 @@ impl SimulationGrid {
         if has_x_minus {
             // SAFETY: has_x_minus guarantees ix > 0, so idx - 1 is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian += unsafe { self.cells.get_unchecked(idx - 1).temperature } - cell_temp;
+            laplacian =
+                laplacian + unsafe { self.cells.get_unchecked(idx - 1).temperature } - cell_temp;
         }
         if has_x_plus {
             // SAFETY: has_x_plus guarantees ix < nx - 1, so idx + 1 is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian += unsafe { self.cells.get_unchecked(idx + 1).temperature } - cell_temp;
+            laplacian =
+                laplacian + unsafe { self.cells.get_unchecked(idx + 1).temperature } - cell_temp;
         }
 
         // Y neighbors
@@ -699,12 +704,14 @@ impl SimulationGrid {
         if has_y_minus {
             // SAFETY: has_y_minus guarantees iy > 0, so idx - nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian += unsafe { self.cells.get_unchecked(idx - nx).temperature } - cell_temp;
+            laplacian =
+                laplacian + unsafe { self.cells.get_unchecked(idx - nx).temperature } - cell_temp;
         }
         if has_y_plus {
             // SAFETY: has_y_plus guarantees iy < ny - 1, so idx + nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian += unsafe { self.cells.get_unchecked(idx + nx).temperature } - cell_temp;
+            laplacian =
+                laplacian + unsafe { self.cells.get_unchecked(idx + nx).temperature } - cell_temp;
         }
 
         // Z neighbors
@@ -713,12 +720,14 @@ impl SimulationGrid {
         if has_z_minus {
             // SAFETY: has_z_minus guarantees iz > 0, so idx - ny_nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian += unsafe { self.cells.get_unchecked(idx - ny_nx).temperature } - cell_temp;
+            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx - ny_nx).temperature }
+                - cell_temp;
         }
         if has_z_plus {
             // SAFETY: has_z_plus guarantees iz < nz - 1, so idx + ny_nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian += unsafe { self.cells.get_unchecked(idx + ny_nx).temperature } - cell_temp;
+            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx + ny_nx).temperature }
+                - cell_temp;
         }
 
         // Most cells have all 6 neighbors (interior cells), early exit rare
@@ -733,16 +742,18 @@ impl SimulationGrid {
             return None;
         }
 
-        let temp_change = diffusion_factor * laplacian;
+        let temp_change = laplacian * f64::from(diffusion_factor);
         let mut new_temp = cell_temp + temp_change;
 
         // OPTIMIZATION: Combine cooling and clamping into single branch
-        if new_temp > 100.0 {
+        if *new_temp > 100.0 {
             // Natural cooling increases with temperature (0.5% per second above ambient)
-            let cooling = (new_temp - ambient_temp) * 0.005 * dt;
-            new_temp = (new_temp - cooling).max(ambient_temp).min(800.0);
+            let cooling = (new_temp - ambient_temp) * f64::from(0.005 * dt);
+            new_temp = (new_temp - cooling)
+                .max(ambient_temp)
+                .min(Celsius::new(800.0));
         } else {
-            new_temp = new_temp.min(800.0);
+            new_temp = new_temp.min(Celsius::new(800.0));
         }
 
         Some((idx, new_temp))
@@ -767,13 +778,15 @@ impl SimulationGrid {
 
                         let temp_diff =
                             cell_below.temperature - self.cells[idx_current].temperature;
-                        if temp_diff > 0.0 {
-                            let heat_transfer = temp_diff * transfer_fraction;
-                            self.cells[idx_current].temperature += heat_transfer;
+                        if *temp_diff > 0.0 {
+                            let heat_transfer = temp_diff * f64::from(transfer_fraction);
+                            self.cells[idx_current].temperature =
+                                self.cells[idx_current].temperature + heat_transfer;
                             // Cap at realistic maximum for wildfire air temperatures
                             self.cells[idx_current].temperature =
-                                self.cells[idx_current].temperature.min(800.0);
-                            self.cells[idx_below].temperature -= heat_transfer;
+                                self.cells[idx_current].temperature.min(Celsius::new(800.0));
+                            self.cells[idx_below].temperature =
+                                self.cells[idx_below].temperature - heat_transfer;
                         }
                     }
                 }
@@ -928,11 +941,11 @@ mod tests {
         // Grid is 10x10x5 cells (100/10, 100/10, 50/10)
         // Get cell and modify
         if let Some(cell) = grid.cell_at_mut(5, 5, 2) {
-            cell.temperature = 100.0;
+            cell.temperature = Celsius::new(100.0);
         }
 
         // Verify change
-        assert_eq!(grid.cell_at(5, 5, 2).unwrap().temperature, 100.0);
+        assert_eq!(*grid.cell_at(5, 5, 2).unwrap().temperature, 100.0);
     }
 
     #[test]
@@ -942,17 +955,17 @@ mod tests {
 
         let pos = Vec3::new(55.0, 55.0, 25.0);
         if let Some(cell) = grid.cell_at_position_mut(pos) {
-            cell.temperature = 200.0;
+            cell.temperature = Celsius::new(200.0);
         }
 
-        assert_eq!(grid.cell_at_position(pos).unwrap().temperature, 200.0);
+        assert_eq!(*grid.cell_at_position(pos).unwrap().temperature, 200.0);
     }
 
     #[test]
     fn test_air_density() {
         let cell_cold = GridCell::new(0.0);
         let mut cell_hot = GridCell::new(0.0);
-        cell_hot.temperature = 500.0;
+        cell_hot.temperature = Celsius::new(500.0);
 
         // Hot air is less dense
         assert!(cell_hot.air_density() < cell_cold.air_density());
@@ -963,7 +976,7 @@ mod tests {
         use crate::core_types::units::Celsius;
 
         let mut cell_hot = GridCell::new(0.0);
-        cell_hot.temperature = 300.0;
+        cell_hot.temperature = Celsius::new(300.0);
 
         let buoyancy = cell_hot.buoyancy_force(Celsius::new(20.0));
 
