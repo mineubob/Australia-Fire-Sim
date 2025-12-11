@@ -5,8 +5,16 @@
 //!
 //! # Usage
 //!
+//! ## Interactive Mode (default)
 //! ```bash
 //! cargo run --package demo-interactive
+//! ```
+//!
+//! ## Headless Mode
+//! ```bash
+//! cargo run --package demo-interactive -- --headless
+//! # or
+//! echo "50\n50\ni 100\ns 10\nq" | cargo run --package demo-interactive -- --headless
 //! ```
 //!
 //! # Commands
@@ -89,6 +97,8 @@ struct App {
     steps_remaining: u32,
     /// Total steps in current batch
     steps_total: u32,
+    /// Headless mode (no UI)
+    headless: bool,
 }
 
 /// UI view modes
@@ -109,6 +119,11 @@ enum ViewMode {
 impl App {
     /// Create a new application
     fn new(width: f32, height: f32) -> Self {
+        Self::new_with_mode(width, height, false)
+    }
+
+    /// Create a new application with specified mode
+    fn new_with_mode(width: f32, height: f32, headless: bool) -> Self {
         let weather = WeatherPreset::perth_metro();
         let sim = create_test_simulation(width, height, weather.clone());
         let element_count = sim.get_all_elements().len();
@@ -136,6 +151,7 @@ impl App {
             heatmap_size: 30,
             steps_remaining: 0,
             steps_total: 0,
+            headless,
         }
     }
 
@@ -242,8 +258,14 @@ impl App {
             "heatmap" | "hm" => {
                 let grid_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
                 self.heatmap_size = grid_size;
-                self.view_mode = ViewMode::Heatmap;
-                self.add_message("Switched to Heatmap view".to_string());
+                if self.headless {
+                    // In headless mode, output heatmap as text
+                    self.show_heatmap_text(grid_size);
+                } else {
+                    // In interactive mode, switch to heatmap view
+                    self.view_mode = ViewMode::Heatmap;
+                    self.add_message("Switched to Heatmap view".to_string());
+                }
             }
             "help" | "?" => {
                 self.view_mode = ViewMode::Help;
@@ -659,9 +681,191 @@ impl App {
             height
         ));
     }
+
+    /// Show heatmap as text (for headless mode)
+    fn show_heatmap_text(&mut self, grid_size: usize) {
+        self.add_message("═══════════════ TEMPERATURE HEATMAP ═══════════════".to_string());
+
+        let cell_width = self.terrain_width / usize_to_f32(grid_size);
+        let cell_height = self.terrain_height / usize_to_f32(grid_size);
+
+        let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
+        let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
+        let mut burning_grid: Vec<Vec<bool>> = vec![vec![false; grid_size]; grid_size];
+
+        for e in self.sim.get_all_elements() {
+            let stats = e.get_stats();
+            let x = (stats.position.x / cell_width).floor() as i32;
+            let y = (stats.position.y / cell_height).floor() as i32;
+
+            if x >= 0 && x < grid_size as i32 && y >= 0 && y < grid_size as i32 {
+                let ix = x as usize;
+                let iy = y as usize;
+                grid[iy][ix] += stats.temperature;
+                counts[iy][ix] += 1;
+                if stats.ignited {
+                    burning_grid[iy][ix] = true;
+                }
+            }
+        }
+
+        for y in 0..grid_size {
+            for x in 0..grid_size {
+                if counts[y][x] > 0 {
+                    grid[y][x] /= u32_to_f32(counts[y][x]);
+                }
+            }
+        }
+
+        let mut min_temp = f32::MAX;
+        let mut max_temp = f32::MIN;
+        for y in 0..grid_size {
+            for x in 0..grid_size {
+                if counts[y][x] > 0 {
+                    let temp = grid[y][x];
+                    min_temp = min_temp.min(temp);
+                    max_temp = max_temp.max(temp);
+                }
+            }
+        }
+
+        if min_temp == f32::MAX {
+            min_temp = 0.0;
+            max_temp = 0.0;
+        }
+
+        const MIN_TEMP_COOL: f32 = 50.0;
+        const MIN_TEMP_WARM: f32 = 100.0;
+        const MIN_TEMP_HOT: f32 = 200.0;
+        const MIN_TEMP_VERY_HOT: f32 = 350.0;
+
+        let temp_range = max_temp - min_temp;
+        let threshold_very_hot = (min_temp + temp_range * 0.75).max(MIN_TEMP_VERY_HOT);
+        let threshold_hot = (min_temp + temp_range * 0.50).max(MIN_TEMP_HOT);
+        let threshold_warm = (min_temp + temp_range * 0.25).max(MIN_TEMP_WARM);
+        let threshold_cool = MIN_TEMP_COOL;
+
+        self.add_message("Legend: · = empty/ambient  🔥 = burning (ignited)".to_string());
+        self.add_message(format!(
+            "        ░ >{threshold_cool:.0}°C  ▒ >{threshold_warm:.0}°C  ▓ >{threshold_hot:.0}°C  █ >{threshold_very_hot:.0}°C"
+        ));
+        self.add_message(format!(
+            "Temperature range: {min_temp:.0}°C - {max_temp:.0}°C"
+        ));
+
+        for y in (0..grid_size).rev() {
+            let mut line = format!("{:3} │ ", (usize_to_f32(y) * cell_height) as i32);
+            for x in 0..grid_size {
+                if counts[y][x] == 0 {
+                    line.push_str("· ");
+                } else if burning_grid[y][x] {
+                    line.push('🔥');
+                } else {
+                    let temp = grid[y][x];
+                    let c = if temp >= threshold_very_hot {
+                        '█'
+                    } else if temp >= threshold_hot {
+                        '▓'
+                    } else if temp >= threshold_warm {
+                        '▒'
+                    } else if temp >= threshold_cool {
+                        '░'
+                    } else {
+                        '·'
+                    };
+                    line.push(c);
+                    line.push(' ');
+                }
+            }
+            self.add_message(line);
+        }
+
+        let burning_cells: usize = burning_grid.iter().flatten().filter(|&&b| b).count();
+        if burning_cells > 0 {
+            let total_cells = grid_size * grid_size;
+            self.add_message(format!("Burning cells: {burning_cells} / {total_cells}"));
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Check for headless mode flag
+    let args: Vec<String> = std::env::args().collect();
+    let headless = args.iter().any(|arg| arg == "--headless" || arg == "-h");
+
+    if headless {
+        run_headless()
+    } else {
+        run_interactive()
+    }
+}
+
+/// Run in headless mode (no UI, just command processing and log output)
+fn run_headless() -> Result<(), Box<dyn std::error::Error>> {
+    println!("╔═══════════════════════════════════════════════════════════╗");
+    println!("║      Australia Fire Simulation - Headless Mode            ║");
+    println!("╚═══════════════════════════════════════════════════════════╝");
+    println!();
+
+    // Read terrain dimensions from stdin
+    let (width, height) = prompt_terrain_dimensions();
+
+    // Create app in headless mode
+    let mut app = App::new_with_mode(width, height, true);
+
+    println!(
+        "Created simulation with {} elements on {width}x{height} terrain",
+        app.sim.get_all_elements().len()
+    );
+    println!("Enter commands (type 'help' for available commands, 'quit' to exit):");
+    println!();
+
+    // Process commands from stdin
+    let stdin = io::stdin();
+    for line in stdin.lines() {
+        let line = line?;
+        let line = line.trim();
+
+        if line.is_empty() {
+            continue;
+        }
+
+        // Execute command
+        app.execute_command(line);
+
+        // Print all new messages
+        for msg in &app.messages {
+            if !msg.is_empty() {
+                println!("{msg}");
+            }
+        }
+        // Clear messages after printing
+        app.messages.clear();
+
+        // Process any pending steps
+        while app.steps_remaining > 0 {
+            app.process_one_step();
+            // Print step messages
+            for msg in &app.messages {
+                if !msg.is_empty() {
+                    println!("{msg}");
+                }
+            }
+            app.messages.clear();
+        }
+
+        if app.should_quit {
+            break;
+        }
+    }
+
+    println!();
+    println!("Goodbye!");
+    Ok(())
+}
+
+/// Run in interactive mode with TUI
+fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
     // Prompt for terrain dimensions before entering TUI mode
     println!("╔═══════════════════════════════════════════════════════════╗");
     println!("║      Australia Fire Simulation - Interactive Debugger     ║");
