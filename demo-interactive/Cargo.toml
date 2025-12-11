@@ -15,4 +15,5 @@ path = "src/main.rs"
 [dependencies]
 fire-sim-core = { path = "../crates/core" }
 nalgebra.workspace = true
-rustyline = "17.0"
+ratatui = "0.28"
+crossterm = "0.29"
