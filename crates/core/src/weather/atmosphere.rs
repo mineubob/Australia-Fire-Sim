@@ -148,7 +148,8 @@ impl AtmosphericProfile {
         let dewpoint_700 = surface_dewpoint - 6.0;
 
         // Calculate stability indices
-        let lifted_index = Self::calculate_lifted_index(surface_temp_f32, surface_dewpoint, temp_500);
+        let lifted_index =
+            Self::calculate_lifted_index(surface_temp_f32, surface_dewpoint, temp_500);
         let k_index =
             Self::calculate_k_index(temp_850, temp_700, temp_500, dewpoint_850, dewpoint_700);
         let haines_index = Self::calculate_haines_index_low(temp_850, temp_700, dewpoint_850);
@@ -450,7 +451,12 @@ mod tests {
 
     #[test]
     fn test_atmospheric_profile_creation() {
-        let profile = AtmosphericProfile::from_surface_conditions(Celsius::new(30.0), Percent::new(30.0), 10.0, true);
+        let profile = AtmosphericProfile::from_surface_conditions(
+            Celsius::new(30.0),
+            Percent::new(30.0),
+            10.0,
+            true,
+        );
 
         assert!(profile.temp_850 < profile.surface_temperature);
         assert!(profile.temp_700 < profile.temp_850);
@@ -460,7 +466,12 @@ mod tests {
     #[test]
     fn test_haines_index_range() {
         // Low Haines Index - cool, moist
-        let low = AtmosphericProfile::from_surface_conditions(Celsius::new(15.0), Percent::new(80.0), 2.0, true);
+        let low = AtmosphericProfile::from_surface_conditions(
+            Celsius::new(15.0),
+            Percent::new(80.0),
+            2.0,
+            true,
+        );
         assert!(
             low.haines_index <= 5,
             "Cool/moist should have moderate or lower Haines, got {}",
@@ -468,7 +479,12 @@ mod tests {
         );
 
         // High Haines Index - hot, dry
-        let high = AtmosphericProfile::from_surface_conditions(Celsius::new(42.0), Percent::new(15.0), 15.0, true);
+        let high = AtmosphericProfile::from_surface_conditions(
+            Celsius::new(42.0),
+            Percent::new(15.0),
+            15.0,
+            true,
+        );
         // Very hot and dry will have high Haines, but the simplified model may not reach 6
         assert!(
             high.haines_index >= 4,
@@ -488,7 +504,12 @@ mod tests {
     #[test]
     fn test_lifted_index_instability() {
         // Test that LI calculation produces reasonable values
-        let profile = AtmosphericProfile::from_surface_conditions(Celsius::new(30.0), Percent::new(40.0), 10.0, true);
+        let profile = AtmosphericProfile::from_surface_conditions(
+            Celsius::new(30.0),
+            Percent::new(40.0),
+            10.0,
+            true,
+        );
 
         // LI can range from about -10 (extremely unstable) to +10 (very stable)
         assert!(
@@ -499,8 +520,18 @@ mod tests {
 
         // Test that lower humidity leads to different LI
         // (affects dewpoint and therefore LCL and parcel trajectory)
-        let dry = AtmosphericProfile::from_surface_conditions(Celsius::new(30.0), Percent::new(20.0), 10.0, true);
-        let moist = AtmosphericProfile::from_surface_conditions(Celsius::new(30.0), Percent::new(80.0), 10.0, true);
+        let dry = AtmosphericProfile::from_surface_conditions(
+            Celsius::new(30.0),
+            Percent::new(20.0),
+            10.0,
+            true,
+        );
+        let moist = AtmosphericProfile::from_surface_conditions(
+            Celsius::new(30.0),
+            Percent::new(80.0),
+            10.0,
+            true,
+        );
 
         // Both should be in valid range
         assert!(

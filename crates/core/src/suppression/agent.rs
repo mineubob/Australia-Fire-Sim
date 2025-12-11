@@ -316,7 +316,7 @@ impl SuppressionAgentProperties {
 
         let temp = *temperature;
         let humidity_fraction = *humidity.to_fraction();
-        
+
         // Saturation vapor pressure (kPa) at temperature
         let e_sat = 0.6108 * ((17.27 * temp) / (temp + 237.3)).exp();
 

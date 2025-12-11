@@ -688,12 +688,14 @@ impl SimulationGrid {
         if has_x_minus {
             // SAFETY: has_x_minus guarantees ix > 0, so idx - 1 is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx - 1).temperature } - cell_temp;
+            laplacian =
+                laplacian + unsafe { self.cells.get_unchecked(idx - 1).temperature } - cell_temp;
         }
         if has_x_plus {
             // SAFETY: has_x_plus guarantees ix < nx - 1, so idx + 1 is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx + 1).temperature } - cell_temp;
+            laplacian =
+                laplacian + unsafe { self.cells.get_unchecked(idx + 1).temperature } - cell_temp;
         }
 
         // Y neighbors
@@ -702,12 +704,14 @@ impl SimulationGrid {
         if has_y_minus {
             // SAFETY: has_y_minus guarantees iy > 0, so idx - nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx - nx).temperature } - cell_temp;
+            laplacian =
+                laplacian + unsafe { self.cells.get_unchecked(idx - nx).temperature } - cell_temp;
         }
         if has_y_plus {
             // SAFETY: has_y_plus guarantees iy < ny - 1, so idx + nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx + nx).temperature } - cell_temp;
+            laplacian =
+                laplacian + unsafe { self.cells.get_unchecked(idx + nx).temperature } - cell_temp;
         }
 
         // Z neighbors
@@ -716,12 +720,14 @@ impl SimulationGrid {
         if has_z_minus {
             // SAFETY: has_z_minus guarantees iz > 0, so idx - ny_nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx - ny_nx).temperature } - cell_temp;
+            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx - ny_nx).temperature }
+                - cell_temp;
         }
         if has_z_plus {
             // SAFETY: has_z_plus guarantees iz < nz - 1, so idx + ny_nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx + ny_nx).temperature } - cell_temp;
+            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx + ny_nx).temperature }
+                - cell_temp;
         }
 
         // Most cells have all 6 neighbors (interior cells), early exit rare
@@ -743,7 +749,9 @@ impl SimulationGrid {
         if *new_temp > 100.0 {
             // Natural cooling increases with temperature (0.5% per second above ambient)
             let cooling = (new_temp - ambient_temp) * f64::from(0.005 * dt);
-            new_temp = (new_temp - cooling).max(ambient_temp).min(Celsius::new(800.0));
+            new_temp = (new_temp - cooling)
+                .max(ambient_temp)
+                .min(Celsius::new(800.0));
         } else {
             new_temp = new_temp.min(Celsius::new(800.0));
         }
@@ -772,11 +780,13 @@ impl SimulationGrid {
                             cell_below.temperature - self.cells[idx_current].temperature;
                         if *temp_diff > 0.0 {
                             let heat_transfer = temp_diff * f64::from(transfer_fraction);
-                            self.cells[idx_current].temperature = self.cells[idx_current].temperature + heat_transfer;
+                            self.cells[idx_current].temperature =
+                                self.cells[idx_current].temperature + heat_transfer;
                             // Cap at realistic maximum for wildfire air temperatures
                             self.cells[idx_current].temperature =
                                 self.cells[idx_current].temperature.min(Celsius::new(800.0));
-                            self.cells[idx_below].temperature = self.cells[idx_below].temperature - heat_transfer;
+                            self.cells[idx_below].temperature =
+                                self.cells[idx_below].temperature - heat_transfer;
                         }
                     }
                 }

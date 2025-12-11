@@ -37,14 +37,14 @@ pub enum ClimatePattern {
 ///
 /// # Example
 /// ```
-/// use fire_sim_core::WeatherPreset;
+/// use fire_sim_core::{WeatherPreset, core_types::Percent};
 ///
 /// // Create Perth Metro weather preset
 /// let weather = WeatherPreset::perth_metro();
 ///
 /// // Hot, dry summer conditions perfect for fire spread
-/// assert!(weather.summer_humidity < 45.0);
-/// assert!(weather.summer_curing > 90.0);
+/// assert!(weather.summer_humidity < Percent::new(45.0));
+/// assert!(weather.summer_curing > Percent::new(90.0));
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeatherPreset {
@@ -61,79 +61,79 @@ pub struct WeatherPreset {
     /// - Coldest at 6am (min temp)
     /// - Hottest at 2pm (max temp)  
     /// - Smooth sinusoidal transition between
-    pub monthly_temps: [(f32, f32); 12],
+    pub monthly_temps: [(Celsius, Celsius); 12],
 
     /// Temperature modification during El Niño events (°C)
     ///
     /// El Niño typically adds 1.5-3.0°C to Australian temperatures
     /// Applied additively to monthly base temperatures
-    pub el_nino_temp_mod: f32,
+    pub el_nino_temp_mod: Celsius,
 
     /// Temperature modification during La Niña events (°C)
     ///
     /// La Niña typically reduces temperatures by 0.5-1.5°C
     /// Applied additively to monthly base temperatures (negative value)
-    pub la_nina_temp_mod: f32,
+    pub la_nina_temp_mod: Celsius,
 
     /// Base relative humidity for summer (%)
     ///
     /// Summer (Dec-Feb in Southern Hemisphere)
     /// Lower humidity increases fire danger significantly
     /// Typical range: 20-50% for Australian regions
-    pub summer_humidity: f32,
+    pub summer_humidity: Percent,
 
     /// Base relative humidity for autumn (%)
     ///
     /// Autumn (Mar-May)
     /// Transitional season with moderate humidity
-    pub autumn_humidity: f32,
+    pub autumn_humidity: Percent,
 
     /// Base relative humidity for winter (%)
     ///
     /// Winter (Jun-Aug)\
     /// Highest humidity season, reduced fire risk
     /// Typical range: 45-75% for Australian regions
-    pub winter_humidity: f32,
+    pub winter_humidity: Percent,
 
     /// Base relative humidity for spring (%)
     ///
     /// Spring (Sep-Nov)
     /// Fire season begins, humidity decreases
-    pub spring_humidity: f32,
+    pub spring_humidity: Percent,
 
     /// Humidity modification during El Niño (% points)
     ///
     /// El Niño reduces humidity by 8-15% points
     /// Dramatically increases fire danger
-    pub el_nino_humidity_mod: f32,
+    pub el_nino_humidity_mod: Percent,
 
     /// Humidity modification during La Niña (% points)
     ///
     /// La Niña increases humidity by 3-8% points
     /// Reduces fire danger
-    pub la_nina_humidity_mod: f32,
+    pub la_nina_humidity_mod: Percent,
 
     /// Base wind speed for summer (km/h)
     ///
     /// Higher wind speeds increase fire spread rate exponentially
     /// Wind affects: rate of spread, spotting distance, ember transport
-    pub summer_wind: f32,
+    pub summer_wind: KilometersPerHour,
 
     /// Base wind speed for autumn (km/h)
-    pub autumn_wind: f32,
+    pub autumn_wind: KilometersPerHour,
 
     /// Base wind speed for winter (km/h)
-    pub winter_wind: f32,
+    pub winter_wind: KilometersPerHour,
 
     /// Base wind speed for spring (km/h)
-    pub spring_wind: f32,
+    pub spring_wind: KilometersPerHour,
 
     /// Temperature increase during heatwave events (°C)
     ///
     /// Heatwaves add to base temperature, creating extreme fire conditions
     /// Typical values: 6-12°C above normal
     /// Combined with low pressure and humidity for catastrophic fire danger
-    pub heatwave_temp_bonus: f32,
+    pub heatwave_temp_bonus: Celsius,
 
     /// Base atmospheric pressure (hPa or millibars)
     ///
@@ -214,19 +214,19 @@ pub struct WeatherPreset {
     /// - 95%+: Fully cured (explosive fire spread)
     ///
     /// Summer typically 90-100% cured in fire-prone regions
-    pub summer_curing: f32,
+    pub summer_curing: Percent,
 
     /// Fuel curing percentage in autumn (%)
-    pub autumn_curing: f32,
+    pub autumn_curing: Percent,
 
     /// Fuel curing percentage in winter (%)
     ///
     /// Lowest curing due to rainfall and growth
     /// Typical: 40-75% depending on rainfall
-    pub winter_curing: f32,
+    pub winter_curing: Percent,
 
     /// Fuel curing percentage in spring (%)
-    pub spring_curing: f32,
+    pub spring_curing: Percent,
 }
 
 impl WeatherPreset {
@@ -236,32 +236,32 @@ impl WeatherPreset {
         WeatherPreset {
             name: "Catastrophic".to_string(),
             monthly_temps: [
-                (42.0, 46.0), // Jan
-                (42.0, 46.0), // Feb
-                (41.0, 45.0), // Mar
-                (40.0, 44.0), // Apr
-                (40.0, 42.0), // May
-                (40.0, 41.0), // Jun
-                (40.0, 41.0), // Jul
-                (40.0, 41.0), // Aug
-                (40.0, 42.0), // Sep
-                (41.0, 44.0), // Oct
-                (41.0, 45.0), // Nov
-                (42.0, 46.0), // Dec
+                (Celsius::new(42.0), Celsius::new(46.0)), // Jan
+                (Celsius::new(42.0), Celsius::new(46.0)), // Feb
+                (Celsius::new(41.0), Celsius::new(45.0)), // Mar
+                (Celsius::new(40.0), Celsius::new(44.0)), // Apr
+                (Celsius::new(40.0), Celsius::new(42.0)), // May
+                (Celsius::new(40.0), Celsius::new(41.0)), // Jun
+                (Celsius::new(40.0), Celsius::new(41.0)), // Jul
+                (Celsius::new(40.0), Celsius::new(41.0)), // Aug
+                (Celsius::new(40.0), Celsius::new(42.0)), // Sep
+                (Celsius::new(41.0), Celsius::new(44.0)), // Oct
+                (Celsius::new(41.0), Celsius::new(45.0)), // Nov
+                (Celsius::new(42.0), Celsius::new(46.0)), // Dec
             ],
-            el_nino_temp_mod: 0.0,
-            la_nina_temp_mod: 0.0,
-            summer_humidity: 10.0,
-            autumn_humidity: 10.0,
-            winter_humidity: 10.0,
-            spring_humidity: 10.0,
-            el_nino_humidity_mod: 0.0,
-            la_nina_humidity_mod: 0.0,
-            summer_wind: 60.0,
-            autumn_wind: 60.0,
-            winter_wind: 60.0,
-            spring_wind: 60.0,
-            heatwave_temp_bonus: 0.0,
+            el_nino_temp_mod: Celsius::new(0.0),
+            la_nina_temp_mod: Celsius::new(0.0),
+            summer_humidity: Percent::new(10.0),
+            autumn_humidity: Percent::new(10.0),
+            winter_humidity: Percent::new(10.0),
+            spring_humidity: Percent::new(10.0),
+            el_nino_humidity_mod: Percent::new(0.0),
+            la_nina_humidity_mod: Percent::new(0.0),
+            summer_wind: KilometersPerHour::new(60.0),
+            autumn_wind: KilometersPerHour::new(60.0),
+            winter_wind: KilometersPerHour::new(60.0),
+            spring_wind: KilometersPerHour::new(60.0),
+            heatwave_temp_bonus: Celsius::new(0.0),
             base_pressure: 1005.0,
             heatwave_pressure_drop: 0.0,
             summer_pressure_mod: 0.0,
@@ -276,10 +276,10 @@ impl WeatherPreset {
             spring_drought_rate: 0.0,
             el_nino_drought_mod: 0.0,
             la_nina_drought_mod: 0.0,
-            summer_curing: 100.0,
-            autumn_curing: 100.0,
-            winter_curing: 100.0,
-            spring_curing: 100.0,
+            summer_curing: Percent::new(100.0),
+            autumn_curing: Percent::new(100.0),
+            winter_curing: Percent::new(100.0),
+            spring_curing: Percent::new(100.0),
         }
     }
     /// Perth Metro preset - Mediterranean climate with hot dry summers
@@ -289,32 +289,32 @@ impl WeatherPreset {
             name: "Perth Metro".to_string(),
             // Perth temperatures: hot summer (Dec-Feb), mild winter (Jun-Aug)
             monthly_temps: [
-                (18.0, 31.0), // Jan
-                (18.0, 31.0), // Feb
-                (16.0, 28.0), // Mar
-                (13.0, 24.0), // Apr
-                (10.0, 20.0), // May
-                (8.0, 17.0),  // Jun
-                (7.0, 17.0),  // Jul
-                (8.0, 18.0),  // Aug
-                (9.0, 20.0),  // Sep
-                (11.0, 23.0), // Oct
-                (14.0, 26.0), // Nov
-                (16.0, 29.0), // Dec
+                (Celsius::new(18.0), Celsius::new(31.0)), // Jan
+                (Celsius::new(18.0), Celsius::new(31.0)), // Feb
+                (Celsius::new(16.0), Celsius::new(28.0)), // Mar
+                (Celsius::new(13.0), Celsius::new(24.0)), // Apr
+                (Celsius::new(10.0), Celsius::new(20.0)), // May
+                (Celsius::new(8.0), Celsius::new(17.0)),  // Jun
+                (Celsius::new(7.0), Celsius::new(17.0)),  // Jul
+                (Celsius::new(8.0), Celsius::new(18.0)),  // Aug
+                (Celsius::new(9.0), Celsius::new(20.0)),  // Sep
+                (Celsius::new(11.0), Celsius::new(23.0)), // Oct
+                (Celsius::new(14.0), Celsius::new(26.0)), // Nov
+                (Celsius::new(16.0), Celsius::new(29.0)), // Dec
             ],
-            el_nino_temp_mod: 2.0,
-            la_nina_temp_mod: -1.5,
-            summer_humidity: 40.0,
-            autumn_humidity: 50.0,
-            winter_humidity: 65.0,
-            spring_humidity: 50.0,
-            el_nino_humidity_mod: -10.0,
-            la_nina_humidity_mod: 5.0,
-            summer_wind: 25.0,
-            autumn_wind: 20.0,
-            winter_wind: 20.0,
-            spring_wind: 22.0,
-            heatwave_temp_bonus: 8.0,
+            el_nino_temp_mod: Celsius::new(2.0),
+            la_nina_temp_mod: Celsius::new(-1.5),
+            summer_humidity: Percent::new(40.0),
+            autumn_humidity: Percent::new(50.0),
+            winter_humidity: Percent::new(65.0),
+            spring_humidity: Percent::new(50.0),
+            el_nino_humidity_mod: Percent::new(-10.0),
+            la_nina_humidity_mod: Percent::new(5.0),
+            summer_wind: KilometersPerHour::new(25.0),
+            autumn_wind: KilometersPerHour::new(20.0),
+            winter_wind: KilometersPerHour::new(20.0),
+            spring_wind: KilometersPerHour::new(22.0),
+            heatwave_temp_bonus: Celsius::new(8.0),
             base_pressure: 1013.0,
             heatwave_pressure_drop: 8.0,
             summer_pressure_mod: -2.0,
@@ -329,10 +329,63 @@ impl WeatherPreset {
             spring_drought_rate: 0.0,
             el_nino_drought_mod: 0.1,
             la_nina_drought_mod: -0.1,
-            summer_curing: 95.0,
-            autumn_curing: 80.0,
-            winter_curing: 50.0,
-            spring_curing: 70.0,
+            summer_curing: Percent::new(95.0),
+            autumn_curing: Percent::new(80.0),
+            winter_curing: Percent::new(50.0),
+            spring_curing: Percent::new(70.0),
+        }
+    }
+
+    /// Create a basic custom preset using uniform monthly temperatures with
+    /// the supplied values and sensible default values for other parameters.
+    ///
+    /// This constructor is intended for quick synthetic presets used for
+    /// demos and tests where only temperature/humidity/wind/drought are
+    /// required to be customized.
+    #[must_use]
+    pub fn basic(
+        name: impl Into<String>,
+        min_temp: Celsius,
+        max_temp: Celsius,
+        humidity: Percent,
+        wind_speed: KilometersPerHour,
+        drought_rate: f32,
+    ) -> Self {
+        let name = name.into();
+        WeatherPreset {
+            name,
+            monthly_temps: [(min_temp, max_temp); 12],
+            el_nino_temp_mod: Celsius::new(0.0),
+            la_nina_temp_mod: Celsius::new(0.0),
+            summer_humidity: humidity,
+            autumn_humidity: humidity,
+            winter_humidity: humidity,
+            spring_humidity: humidity,
+            el_nino_humidity_mod: Percent::new(0.0),
+            la_nina_humidity_mod: Percent::new(0.0),
+            summer_wind: wind_speed,
+            autumn_wind: wind_speed,
+            winter_wind: wind_speed,
+            spring_wind: wind_speed,
+            heatwave_temp_bonus: Celsius::new(0.0),
+            base_pressure: 1013.0,
+            heatwave_pressure_drop: 0.0,
+            summer_pressure_mod: 0.0,
+            winter_pressure_mod: 0.0,
+            summer_solar_max: 900.0,
+            autumn_solar_max: 700.0,
+            winter_solar_max: 500.0,
+            spring_solar_max: 800.0,
+            summer_drought_rate: drought_rate,
+            autumn_drought_rate: drought_rate,
+            winter_drought_rate: drought_rate,
+            spring_drought_rate: drought_rate,
+            el_nino_drought_mod: 0.0,
+            la_nina_drought_mod: 0.0,
+            summer_curing: Percent::new(70.0),
+            autumn_curing: Percent::new(60.0),
+            winter_curing: Percent::new(50.0),
+            spring_curing: Percent::new(65.0),
         }
     }
 
@@ -342,32 +395,32 @@ impl WeatherPreset {
         WeatherPreset {
             name: "South West".to_string(),
             monthly_temps: [
-                (16.0, 28.0), // Jan
-                (16.0, 28.0), // Feb
-                (14.0, 25.0), // Mar
-                (11.0, 21.0), // Apr
-                (9.0, 18.0),  // May
-                (7.0, 15.0),  // Jun
-                (6.0, 14.0),  // Jul
-                (7.0, 15.0),  // Aug
-                (8.0, 17.0),  // Sep
-                (10.0, 20.0), // Oct
-                (12.0, 23.0), // Nov
-                (14.0, 26.0), // Dec
+                (Celsius::new(16.0), Celsius::new(28.0)), // Jan
+                (Celsius::new(16.0), Celsius::new(28.0)), // Feb
+                (Celsius::new(14.0), Celsius::new(25.0)), // Mar
+                (Celsius::new(11.0), Celsius::new(21.0)), // Apr
+                (Celsius::new(9.0), Celsius::new(18.0)),  // May
+                (Celsius::new(7.0), Celsius::new(15.0)),  // Jun
+                (Celsius::new(6.0), Celsius::new(14.0)),  // Jul
+                (Celsius::new(7.0), Celsius::new(15.0)),  // Aug
+                (Celsius::new(8.0), Celsius::new(17.0)),  // Sep
+                (Celsius::new(10.0), Celsius::new(20.0)), // Oct
+                (Celsius::new(12.0), Celsius::new(23.0)), // Nov
+                (Celsius::new(14.0), Celsius::new(26.0)), // Dec
             ],
-            el_nino_temp_mod: 1.5,
-            la_nina_temp_mod: -1.0,
-            summer_humidity: 50.0,
-            autumn_humidity: 60.0,
-            winter_humidity: 75.0,
-            spring_humidity: 60.0,
-            el_nino_humidity_mod: -8.0,
-            la_nina_humidity_mod: 8.0,
-            summer_wind: 22.0,
-            autumn_wind: 18.0,
-            winter_wind: 20.0,
-            spring_wind: 20.0,
-            heatwave_temp_bonus: 6.0,
+            el_nino_temp_mod: Celsius::new(1.5),
+            la_nina_temp_mod: Celsius::new(-1.0),
+            summer_humidity: Percent::new(50.0),
+            autumn_humidity: Percent::new(60.0),
+            winter_humidity: Percent::new(75.0),
+            spring_humidity: Percent::new(60.0),
+            el_nino_humidity_mod: Percent::new(-8.0),
+            la_nina_humidity_mod: Percent::new(8.0),
+            summer_wind: KilometersPerHour::new(22.0),
+            autumn_wind: KilometersPerHour::new(18.0),
+            winter_wind: KilometersPerHour::new(20.0),
+            spring_wind: KilometersPerHour::new(20.0),
+            heatwave_temp_bonus: Celsius::new(6.0),
             base_pressure: 1015.0,
             heatwave_pressure_drop: 6.0,
             summer_pressure_mod: -1.5,
@@ -382,10 +435,10 @@ impl WeatherPreset {
             spring_drought_rate: -0.05,
             el_nino_drought_mod: 0.08,
             la_nina_drought_mod: -0.15,
-            summer_curing: 90.0,
-            autumn_curing: 70.0,
-            winter_curing: 40.0,
-            spring_curing: 65.0,
+            summer_curing: Percent::new(90.0),
+            autumn_curing: Percent::new(70.0),
+            winter_curing: Percent::new(40.0),
+            spring_curing: Percent::new(65.0),
         }
     }
 
@@ -395,32 +448,32 @@ impl WeatherPreset {
         WeatherPreset {
             name: "Wheatbelt".to_string(),
             monthly_temps: [
-                (18.0, 33.0), // Jan
-                (18.0, 33.0), // Feb
-                (15.0, 29.0), // Mar
-                (12.0, 24.0), // Apr
-                (9.0, 19.0),  // May
-                (7.0, 16.0),  // Jun
-                (6.0, 15.0),  // Jul
-                (7.0, 17.0),  // Aug
-                (8.0, 20.0),  // Sep
-                (11.0, 24.0), // Oct
-                (14.0, 28.0), // Nov
-                (16.0, 31.0), // Dec
+                (Celsius::new(18.0), Celsius::new(33.0)), // Jan
+                (Celsius::new(18.0), Celsius::new(33.0)), // Feb
+                (Celsius::new(15.0), Celsius::new(29.0)), // Mar
+                (Celsius::new(12.0), Celsius::new(24.0)), // Apr
+                (Celsius::new(9.0), Celsius::new(19.0)),  // May
+                (Celsius::new(7.0), Celsius::new(16.0)),  // Jun
+                (Celsius::new(6.0), Celsius::new(15.0)),  // Jul
+                (Celsius::new(7.0), Celsius::new(17.0)),  // Aug
+                (Celsius::new(8.0), Celsius::new(20.0)),  // Sep
+                (Celsius::new(11.0), Celsius::new(24.0)), // Oct
+                (Celsius::new(14.0), Celsius::new(28.0)), // Nov
+                (Celsius::new(16.0), Celsius::new(31.0)), // Dec
             ],
-            el_nino_temp_mod: 2.5,
-            la_nina_temp_mod: -1.0,
-            summer_humidity: 30.0,
-            autumn_humidity: 40.0,
-            winter_humidity: 60.0,
-            spring_humidity: 40.0,
-            el_nino_humidity_mod: -12.0,
-            la_nina_humidity_mod: 5.0,
-            summer_wind: 28.0,
-            autumn_wind: 22.0,
-            winter_wind: 18.0,
-            spring_wind: 24.0,
-            heatwave_temp_bonus: 10.0,
+            el_nino_temp_mod: Celsius::new(2.5),
+            la_nina_temp_mod: Celsius::new(-1.0),
+            summer_humidity: Percent::new(30.0),
+            autumn_humidity: Percent::new(40.0),
+            winter_humidity: Percent::new(60.0),
+            spring_humidity: Percent::new(40.0),
+            el_nino_humidity_mod: Percent::new(-12.0),
+            la_nina_humidity_mod: Percent::new(5.0),
+            summer_wind: KilometersPerHour::new(28.0),
+            autumn_wind: KilometersPerHour::new(22.0),
+            winter_wind: KilometersPerHour::new(18.0),
+            spring_wind: KilometersPerHour::new(24.0),
+            heatwave_temp_bonus: Celsius::new(10.0),
             base_pressure: 1011.0,
             heatwave_pressure_drop: 10.0,
             summer_pressure_mod: -3.0,
@@ -435,10 +488,10 @@ impl WeatherPreset {
             spring_drought_rate: 0.02,
             el_nino_drought_mod: 0.15,
             la_nina_drought_mod: -0.08,
-            summer_curing: 98.0,
-            autumn_curing: 85.0,
-            winter_curing: 60.0,
-            spring_curing: 75.0,
+            summer_curing: Percent::new(98.0),
+            autumn_curing: Percent::new(85.0),
+            winter_curing: Percent::new(60.0),
+            spring_curing: Percent::new(75.0),
         }
     }
 
@@ -448,32 +501,32 @@ impl WeatherPreset {
         WeatherPreset {
             name: "Goldfields".to_string(),
             monthly_temps: [
-                (20.0, 36.0), // Jan
-                (20.0, 35.0), // Feb
-                (17.0, 31.0), // Mar
-                (13.0, 26.0), // Apr
-                (10.0, 21.0), // May
-                (7.0, 17.0),  // Jun
-                (6.0, 16.0),  // Jul
-                (7.0, 18.0),  // Aug
-                (9.0, 22.0),  // Sep
-                (12.0, 27.0), // Oct
-                (16.0, 31.0), // Nov
-                (18.0, 34.0), // Dec
+                (Celsius::new(20.0), Celsius::new(36.0)), // Jan
+                (Celsius::new(20.0), Celsius::new(35.0)), // Feb
+                (Celsius::new(17.0), Celsius::new(31.0)), // Mar
+                (Celsius::new(13.0), Celsius::new(26.0)), // Apr
+                (Celsius::new(10.0), Celsius::new(21.0)), // May
+                (Celsius::new(7.0), Celsius::new(17.0)),  // Jun
+                (Celsius::new(6.0), Celsius::new(16.0)),  // Jul
+                (Celsius::new(7.0), Celsius::new(18.0)),  // Aug
+                (Celsius::new(9.0), Celsius::new(22.0)),  // Sep
+                (Celsius::new(12.0), Celsius::new(27.0)), // Oct
+                (Celsius::new(16.0), Celsius::new(31.0)), // Nov
+                (Celsius::new(18.0), Celsius::new(34.0)), // Dec
             ],
-            el_nino_temp_mod: 3.0,
-            la_nina_temp_mod: -0.5,
-            summer_humidity: 20.0,
-            autumn_humidity: 30.0,
-            winter_humidity: 45.0,
-            spring_humidity: 28.0,
-            el_nino_humidity_mod: -15.0,
-            la_nina_humidity_mod: 3.0,
-            summer_wind: 30.0,
-            autumn_wind: 25.0,
-            winter_wind: 20.0,
-            spring_wind: 28.0,
-            heatwave_temp_bonus: 12.0,
+            el_nino_temp_mod: Celsius::new(3.0),
+            la_nina_temp_mod: Celsius::new(-0.5),
+            summer_humidity: Percent::new(20.0),
+            autumn_humidity: Percent::new(30.0),
+            winter_humidity: Percent::new(45.0),
+            spring_humidity: Percent::new(28.0),
+            el_nino_humidity_mod: Percent::new(-15.0),
+            la_nina_humidity_mod: Percent::new(3.0),
+            summer_wind: KilometersPerHour::new(30.0),
+            autumn_wind: KilometersPerHour::new(25.0),
+            winter_wind: KilometersPerHour::new(20.0),
+            spring_wind: KilometersPerHour::new(28.0),
+            heatwave_temp_bonus: Celsius::new(12.0),
             base_pressure: 1010.0,
             heatwave_pressure_drop: 12.0,
             summer_pressure_mod: -4.0,
@@ -488,10 +541,10 @@ impl WeatherPreset {
             spring_drought_rate: 0.08,
             el_nino_drought_mod: 0.2,
             la_nina_drought_mod: -0.05,
-            summer_curing: 100.0,
-            autumn_curing: 95.0,
-            winter_curing: 75.0,
-            spring_curing: 85.0,
+            summer_curing: Percent::new(100.0),
+            autumn_curing: Percent::new(95.0),
+            winter_curing: Percent::new(75.0),
+            spring_curing: Percent::new(85.0),
         }
     }
 
@@ -501,32 +554,32 @@ impl WeatherPreset {
         WeatherPreset {
             name: "Kimberley".to_string(),
             monthly_temps: [
-                (26.0, 38.0), // Jan - Wet season
-                (26.0, 37.0), // Feb - Wet season
-                (25.0, 36.0), // Mar
-                (22.0, 34.0), // Apr
-                (18.0, 31.0), // May
-                (15.0, 29.0), // Jun - Dry season
-                (14.0, 29.0), // Jul - Dry season
-                (16.0, 31.0), // Aug
-                (20.0, 34.0), // Sep
-                (23.0, 36.0), // Oct
-                (25.0, 37.0), // Nov
-                (26.0, 38.0), // Dec
+                (Celsius::new(26.0), Celsius::new(38.0)), // Jan - Wet season
+                (Celsius::new(26.0), Celsius::new(37.0)), // Feb - Wet season
+                (Celsius::new(25.0), Celsius::new(36.0)), // Mar
+                (Celsius::new(22.0), Celsius::new(34.0)), // Apr
+                (Celsius::new(18.0), Celsius::new(31.0)), // May
+                (Celsius::new(15.0), Celsius::new(29.0)), // Jun - Dry season
+                (Celsius::new(14.0), Celsius::new(29.0)), // Jul - Dry season
+                (Celsius::new(16.0), Celsius::new(31.0)), // Aug
+                (Celsius::new(20.0), Celsius::new(34.0)), // Sep
+                (Celsius::new(23.0), Celsius::new(36.0)), // Oct
+                (Celsius::new(25.0), Celsius::new(37.0)), // Nov
+                (Celsius::new(26.0), Celsius::new(38.0)), // Dec
             ],
-            el_nino_temp_mod: 1.5,
-            la_nina_temp_mod: -1.0,
-            summer_humidity: 70.0, // High during wet season
-            autumn_humidity: 50.0,
-            winter_humidity: 30.0, // Low during dry season
-            spring_humidity: 45.0,
-            el_nino_humidity_mod: -15.0,
-            la_nina_humidity_mod: 10.0,
-            summer_wind: 18.0,
-            autumn_wind: 20.0,
-            winter_wind: 25.0,
-            spring_wind: 22.0,
-            heatwave_temp_bonus: 5.0,
+            el_nino_temp_mod: Celsius::new(1.5),
+            la_nina_temp_mod: Celsius::new(-1.0),
+            summer_humidity: Percent::new(70.0), // High during wet season
+            autumn_humidity: Percent::new(50.0),
+            winter_humidity: Percent::new(30.0), // Low during dry season
+            spring_humidity: Percent::new(45.0),
+            el_nino_humidity_mod: Percent::new(-15.0),
+            la_nina_humidity_mod: Percent::new(10.0),
+            summer_wind: KilometersPerHour::new(18.0),
+            autumn_wind: KilometersPerHour::new(20.0),
+            winter_wind: KilometersPerHour::new(25.0),
+            spring_wind: KilometersPerHour::new(22.0),
+            heatwave_temp_bonus: Celsius::new(5.0),
             base_pressure: 1008.0,
             heatwave_pressure_drop: 5.0,
             summer_pressure_mod: -5.0, // Monsoon lows
@@ -541,10 +594,10 @@ impl WeatherPreset {
             spring_drought_rate: 0.15,
             el_nino_drought_mod: 0.15,
             la_nina_drought_mod: -0.2,
-            summer_curing: 30.0, // Green during wet season
-            autumn_curing: 60.0,
-            winter_curing: 95.0, // Very dry
-            spring_curing: 90.0,
+            summer_curing: Percent::new(30.0), // Green during wet season
+            autumn_curing: Percent::new(60.0),
+            winter_curing: Percent::new(95.0), // Very dry
+            spring_curing: Percent::new(90.0),
         }
     }
 
@@ -554,32 +607,32 @@ impl WeatherPreset {
         WeatherPreset {
             name: "Pilbara".to_string(),
             monthly_temps: [
-                (27.0, 39.0), // Jan
-                (27.0, 38.0), // Feb
-                (25.0, 37.0), // Mar
-                (21.0, 33.0), // Apr
-                (17.0, 28.0), // May
-                (14.0, 25.0), // Jun
-                (13.0, 25.0), // Jul
-                (14.0, 27.0), // Aug
-                (18.0, 31.0), // Sep
-                (21.0, 34.0), // Oct
-                (24.0, 37.0), // Nov
-                (26.0, 39.0), // Dec
+                (Celsius::new(27.0), Celsius::new(39.0)), // Jan
+                (Celsius::new(27.0), Celsius::new(38.0)), // Feb
+                (Celsius::new(25.0), Celsius::new(37.0)), // Mar
+                (Celsius::new(21.0), Celsius::new(33.0)), // Apr
+                (Celsius::new(17.0), Celsius::new(28.0)), // May
+                (Celsius::new(14.0), Celsius::new(25.0)), // Jun
+                (Celsius::new(13.0), Celsius::new(25.0)), // Jul
+                (Celsius::new(14.0), Celsius::new(27.0)), // Aug
+                (Celsius::new(18.0), Celsius::new(31.0)), // Sep
+                (Celsius::new(21.0), Celsius::new(34.0)), // Oct
+                (Celsius::new(24.0), Celsius::new(37.0)), // Nov
+                (Celsius::new(26.0), Celsius::new(39.0)), // Dec
             ],
-            el_nino_temp_mod: 2.0,
-            la_nina_temp_mod: -1.0,
-            summer_humidity: 45.0, // Cyclone season
-            autumn_humidity: 35.0,
-            winter_humidity: 25.0,
-            spring_humidity: 30.0,
-            el_nino_humidity_mod: -12.0,
-            la_nina_humidity_mod: 8.0,
-            summer_wind: 22.0,
-            autumn_wind: 20.0,
-            winter_wind: 25.0,
-            spring_wind: 24.0,
-            heatwave_temp_bonus: 8.0,
+            el_nino_temp_mod: Celsius::new(2.0),
+            la_nina_temp_mod: Celsius::new(-1.0),
+            summer_humidity: Percent::new(45.0), // Cyclone season
+            autumn_humidity: Percent::new(35.0),
+            winter_humidity: Percent::new(25.0),
+            spring_humidity: Percent::new(30.0),
+            el_nino_humidity_mod: Percent::new(-12.0),
+            la_nina_humidity_mod: Percent::new(8.0),
+            summer_wind: KilometersPerHour::new(22.0),
+            autumn_wind: KilometersPerHour::new(20.0),
+            winter_wind: KilometersPerHour::new(25.0),
+            spring_wind: KilometersPerHour::new(24.0),
+            heatwave_temp_bonus: Celsius::new(8.0),
             base_pressure: 1009.0,
             heatwave_pressure_drop: 8.0,
             summer_pressure_mod: -4.0,
@@ -594,10 +647,10 @@ impl WeatherPreset {
             spring_drought_rate: 0.18,
             el_nino_drought_mod: 0.12,
             la_nina_drought_mod: -0.1,
-            summer_curing: 70.0,
-            autumn_curing: 85.0,
-            winter_curing: 95.0,
-            spring_curing: 90.0,
+            summer_curing: Percent::new(70.0),
+            autumn_curing: Percent::new(85.0),
+            winter_curing: Percent::new(95.0),
+            spring_curing: Percent::new(90.0),
         }
     }
 
@@ -617,26 +670,26 @@ impl WeatherPreset {
         let climate_mod = match climate {
             ClimatePattern::ElNino => self.el_nino_temp_mod,
             ClimatePattern::LaNina => self.la_nina_temp_mod,
-            ClimatePattern::Neutral => 0.0,
+            ClimatePattern::Neutral => Celsius::new(0.0),
         };
 
         // Apply heatwave bonus
         let heatwave_mod = if is_heatwave {
             self.heatwave_temp_bonus
         } else {
-            0.0
+            Celsius::new(0.0)
         };
 
         // Diurnal cycle: coldest at 6am, hottest at 2pm (8 hour half-period)
         // Using π/16 factor so sin reaches 1.0 at 14:00 (2pm)
         // At 6am: sin(0 * π/16) = 0 (min temp)
         // At 2pm: sin(8 * π/16) = sin(π/2) = 1.0 (max temp)
-        let hour_factor = ((time_of_day - 6.0) * std::f32::consts::PI / 16.0)
+        let hour_factor = f64::from(((time_of_day - 6.0) * std::f32::consts::PI / 16.0)
             .sin()
-            .max(0.0);
+            .max(0.0));
 
         let base_temp = min_temp + (max_temp - min_temp) * hour_factor;
-        Celsius::from(base_temp + climate_mod + heatwave_mod)
+        base_temp + climate_mod + heatwave_mod
     }
 
     /// Get humidity for specific season with modifiers
@@ -658,25 +711,24 @@ impl WeatherPreset {
         let climate_mod = match climate {
             ClimatePattern::ElNino => self.el_nino_humidity_mod,
             ClimatePattern::LaNina => self.la_nina_humidity_mod,
-            ClimatePattern::Neutral => 0.0,
+            ClimatePattern::Neutral => Percent::new(0.0),
         };
 
         // Temperature affects humidity (inverse relationship)
         let temp_adjustment = -(*temperature as f32 - 25.0) * 0.5;
-
-        Percent::new((season_humidity + climate_mod + temp_adjustment).clamp(5.0, 95.0))
+        let base_val = *season_humidity + *climate_mod + temp_adjustment;
+        Percent::new(base_val.clamp(5.0, 95.0))
     }
 
     /// Get wind speed for specific season
     #[must_use]
     pub fn get_wind_speed(&self, day_of_year: u16) -> KilometersPerHour {
-        let speed = match (day_of_year - 1) / 91 {
+        match (day_of_year - 1) / 91 {
             0 => self.summer_wind,
             1 => self.autumn_wind,
             2 => self.winter_wind,
             _ => self.spring_wind,
-        };
-        KilometersPerHour::new(speed)
+        }
     }
 
     /// Get drought rate for specific season with climate modifier
@@ -701,13 +753,12 @@ impl WeatherPreset {
     /// Get fuel curing percentage (dryness) for specific season
     #[must_use]
     pub fn get_curing(&self, day_of_year: u16) -> Percent {
-        let curing = match (day_of_year - 1) / 91 {
+        match (day_of_year - 1) / 91 {
             0 => self.summer_curing,
             1 => self.autumn_curing,
             2 => self.winter_curing,
             _ => self.spring_curing,
-        };
-        Percent::new(curing)
+        }
     }
 
     /// Get solar radiation for specific season and time
@@ -1160,7 +1211,8 @@ impl WeatherSystem {
             let hour_offset = (*self.time_of_day - 14.0) * std::f32::consts::PI / 12.0;
             let diurnal_variation = -8.0 * hour_offset.cos();
 
-            let target_with_diurnal = self.target_temperature + Celsius::new(f64::from(diurnal_variation));
+            let target_with_diurnal =
+                self.target_temperature + Celsius::new(f64::from(diurnal_variation));
             let temp_diff = target_with_diurnal - self.temperature;
             *self.temperature += *temp_diff * (f64::from(dt) / 3600.0).min(0.1);
 
@@ -1174,7 +1226,8 @@ impl WeatherSystem {
             // Wind speed variations
             let wind_hour_offset = (*self.time_of_day - 15.0) * std::f32::consts::PI / 12.0;
             let wind_variation = 5.0 * wind_hour_offset.cos();
-            let target_wind_with_variation = self.target_wind_speed - KilometersPerHour::new(wind_variation);
+            let target_wind_with_variation =
+                self.target_wind_speed - KilometersPerHour::new(wind_variation);
             let wind_diff = target_wind_with_variation - self.wind_speed;
             *self.wind_speed = (*self.wind_speed + *wind_diff * (dt / 1800.0).min(0.1)).max(0.0);
 
