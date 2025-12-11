@@ -66,10 +66,25 @@ const DEFAULT_HEIGHT: f32 = 150.0;
 /// Burning list sort mode
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BurningSortMode {
+    /// Sort by temperature (ascending)
+    TemperatureAsc,
     /// Sort by temperature (descending)
-    Temperature,
-    /// Sort by time since ignition (oldest first)
-    TimeSinceIgnition,
+    TemperatureDesc,
+    /// Sort by time since ignition (ascending)
+    TimeSinceIgnitionAsc,
+    /// Sort by time since ignition (descending)
+    TimeSinceIgnitionDesc,
+}
+
+impl BurningSortMode {
+    fn next_mode(&self) -> Self {
+        match self {
+            BurningSortMode::TemperatureAsc => BurningSortMode::TemperatureDesc,
+            BurningSortMode::TemperatureDesc => BurningSortMode::TimeSinceIgnitionAsc,
+            BurningSortMode::TimeSinceIgnitionAsc => BurningSortMode::TimeSinceIgnitionDesc,
+            BurningSortMode::TimeSinceIgnitionDesc => BurningSortMode::TemperatureAsc,
+        }
+    }
 }
 
 /// Application state
@@ -165,7 +180,7 @@ impl App {
             steps_remaining: 0,
             steps_total: 0,
             headless,
-            burning_sort_mode: BurningSortMode::Temperature,
+            burning_sort_mode: BurningSortMode::TemperatureDesc,
             ignition_times: std::collections::HashMap::new(),
         }
     }
@@ -981,13 +996,16 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                     KeyCode::Char('t' | 'T') => {
                         // Toggle burning list sort mode
-                        app.burning_sort_mode = match app.burning_sort_mode {
-                            BurningSortMode::Temperature => BurningSortMode::TimeSinceIgnition,
-                            BurningSortMode::TimeSinceIgnition => BurningSortMode::Temperature,
-                        };
+                        app.burning_sort_mode = app.burning_sort_mode.next_mode();
                         let mode_name = match app.burning_sort_mode {
-                            BurningSortMode::Temperature => "Temperature (descending)",
-                            BurningSortMode::TimeSinceIgnition => "Time Since Ignition",
+                            BurningSortMode::TemperatureAsc => "Temperature (ascending)",
+                            BurningSortMode::TemperatureDesc => "Temperature (descending)",
+                            BurningSortMode::TimeSinceIgnitionAsc => {
+                                "Time Since Ignition (ascending)"
+                            }
+                            BurningSortMode::TimeSinceIgnitionDesc => {
+                                "Time Since Ignition (descending)"
+                            }
                         };
                         app.add_message(format!("Burning list sort mode: {mode_name}"));
                     }
@@ -1181,7 +1199,17 @@ fn draw_burning_list(f: &mut Frame, app: &App, area: Rect) {
 
     // Sort based on current sort mode
     match app.burning_sort_mode {
-        BurningSortMode::Temperature => {
+        BurningSortMode::TemperatureAsc => {
+            // Sort by temperature ascending
+            burning_elements.sort_by(|a, b| {
+                let temp_a = a.get_stats().temperature;
+                let temp_b = b.get_stats().temperature;
+                temp_a
+                    .partial_cmp(&temp_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        BurningSortMode::TemperatureDesc => {
             // Sort by temperature descending
             burning_elements.sort_by(|a, b| {
                 let temp_a = a.get_stats().temperature;
@@ -1191,8 +1219,18 @@ fn draw_burning_list(f: &mut Frame, app: &App, area: Rect) {
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
-        BurningSortMode::TimeSinceIgnition => {
-            // Sort by time since ignition (oldest first)
+        BurningSortMode::TimeSinceIgnitionAsc => {
+            // Sort by time since ignition ascending
+            burning_elements.sort_by(|a, b| {
+                let id_a = a.get_stats().id;
+                let id_b = b.get_stats().id;
+                let time_a = app.ignition_times.get(&id_a).unwrap_or(&u32::MAX);
+                let time_b = app.ignition_times.get(&id_b).unwrap_or(&u32::MAX);
+                time_b.cmp(time_a)
+            });
+        }
+        BurningSortMode::TimeSinceIgnitionDesc => {
+            // Sort by time since ignition descending
             burning_elements.sort_by(|a, b| {
                 let id_a = a.get_stats().id;
                 let id_b = b.get_stats().id;
@@ -1238,8 +1276,10 @@ fn draw_burning_list(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let sort_indicator = match app.burning_sort_mode {
-        BurningSortMode::Temperature => "↓Temp",
-        BurningSortMode::TimeSinceIgnition => "Time",
+        BurningSortMode::TemperatureAsc => "↑Temp",
+        BurningSortMode::TemperatureDesc => "↓Temp",
+        BurningSortMode::TimeSinceIgnitionAsc => "↑Time",
+        BurningSortMode::TimeSinceIgnitionDesc => "↓Time",
     };
 
     let list = List::new(items).block(
