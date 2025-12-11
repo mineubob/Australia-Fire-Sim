@@ -365,6 +365,29 @@ impl FireSimulation {
         self.weather = weather;
     }
 
+    /// Update weather preset while preserving current time and day
+    ///
+    /// This updates the weather conditions to match a new regional preset
+    /// without resetting the simulation time or date. Useful for switching
+    /// between different weather scenarios during an active simulation.
+    ///
+    /// # Parameters
+    /// - `preset`: New weather preset to apply
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Switch to catastrophic conditions at current time
+    /// sim.update_weather_preset(WeatherPreset::catastrophic());
+    /// ```
+    pub fn update_weather_preset(&mut self, preset: crate::core_types::weather::WeatherPreset) {
+        self.weather.update_preset(preset);
+        
+        // Update grid ambient conditions to match new weather
+        self.grid.ambient_temperature = self.weather.temperature;
+        self.grid.ambient_humidity = *self.weather.humidity;
+        self.grid.ambient_wind = self.weather.wind_vector();
+    }
+
     /// Get reference to weather system (read-only)
     #[must_use]
     pub fn get_weather(&self) -> &WeatherSystem {

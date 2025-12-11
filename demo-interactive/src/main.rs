@@ -929,12 +929,8 @@ fn set_preset(sim: &mut FireSimulation, current_weather: &mut WeatherPreset, nam
     };
     *current_weather = preset.clone();
 
-    sim.set_weather(WeatherSystem::from_preset(
-        preset,
-        3,    // January 3
-        14.0, // 2pm
-        ClimatePattern::Neutral,
-    ));
+    // Update preset while preserving current time and day
+    sim.update_weather_preset(preset);
     println!("Weather preset changed to '{}'", current_weather.name);
     show_weather(sim);
 }
