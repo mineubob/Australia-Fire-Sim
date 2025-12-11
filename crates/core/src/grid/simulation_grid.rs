@@ -111,8 +111,8 @@ impl GridCell {
     pub fn buoyancy_force(&self, ambient_temp: Celsius) -> f32 {
         // Calculate ambient air density from temperature using ideal gas law
         const R_SPECIFIC_AIR: f32 = 287.05; // J/(kg·K)
-        let ambient_temp_k = (*ambient_temp as f32) + 273.15;
-        let ambient_density = self.pressure / (R_SPECIFIC_AIR * ambient_temp_k);
+        let ambient_temp_k = ambient_temp.to_kelvin();
+        let ambient_density = self.pressure / (R_SPECIFIC_AIR * (*ambient_temp_k as f32));
 
         let current_density = self.air_density();
         (ambient_density - current_density) * 9.81 // g = 9.81 m/s²

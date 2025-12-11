@@ -138,7 +138,7 @@ impl Ember {
         let ember_volume = *self.mass / 400.0; // ~400 kg/m³ for char
 
         // 1. Buoyancy (hot embers rise)
-        let buoyancy = if *self.temperature > 300.0 {
+        let buoyancy = if self.temperature > Celsius::new(300.0) {
             let temp_ratio = *self.temperature / 300.0;
             AIR_DENSITY * 9.81 * ember_volume * (temp_ratio as f32)
         } else {
@@ -180,8 +180,8 @@ impl Ember {
 
         // 5. Radiative cooling (Stefan-Boltzmann)
         // Simplified: dT/dt = -k(T - T_ambient)
-        let cooling_rate = (*self.temperature - *ambient_temp) * 0.05;
-        *self.temperature -= cooling_rate * f64::from(dt);
+        let cooling_rate = (self.temperature - ambient_temp) * 0.05;
+        self.temperature = Celsius::new(*self.temperature - *cooling_rate * f64::from(dt));
 
         // Clamp temperature to ambient minimum
         self.temperature = self.temperature.max(ambient_temp);
@@ -190,7 +190,7 @@ impl Ember {
     /// Check if ember is still active (hot and airborne)
     #[must_use]
     pub fn is_active(&self) -> bool {
-        *self.temperature > 200.0 && self.position.z > 0.0
+        self.temperature > Celsius::new(200.0) && self.position.z > 0.0
     }
 
     /// Check if ember has landed on the ground
@@ -206,7 +206,7 @@ impl Ember {
     /// - Landed on surface (z < 1m)
     #[must_use]
     pub fn can_ignite(&self) -> bool {
-        self.has_landed() && *self.temperature > 250.0
+        self.has_landed() && self.temperature > Celsius::new(250.0)
     }
 
     /// Get current temperature

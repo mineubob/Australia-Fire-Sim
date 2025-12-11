@@ -684,9 +684,11 @@ impl WeatherPreset {
         // Using π/16 factor so sin reaches 1.0 at 14:00 (2pm)
         // At 6am: sin(0 * π/16) = 0 (min temp)
         // At 2pm: sin(8 * π/16) = sin(π/2) = 1.0 (max temp)
-        let hour_factor = f64::from(((time_of_day - 6.0) * std::f32::consts::PI / 16.0)
-            .sin()
-            .max(0.0));
+        let hour_factor = f64::from(
+            ((time_of_day - 6.0) * std::f32::consts::PI / 16.0)
+                .sin()
+                .max(0.0),
+        );
 
         let base_temp = min_temp + (max_temp - min_temp) * hour_factor;
         base_temp + climate_mod + heatwave_mod
@@ -1232,7 +1234,7 @@ impl WeatherSystem {
             *self.wind_speed = (*self.wind_speed + *wind_diff * (dt / 1800.0).min(0.1)).max(0.0);
 
             // Drought factor slowly increases without rain
-            if *self.temperature > 35.0 && *self.humidity < 20.0 {
+            if self.temperature > Celsius::new(35.0) && self.humidity < Percent::new(20.0) {
                 self.drought_factor = (self.drought_factor + dt / 864000.0).min(10.0);
             }
         }

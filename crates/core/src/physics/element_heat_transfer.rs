@@ -43,13 +43,13 @@ pub(crate) fn calculate_radiation_flux(
     }
 
     // Convert to Kelvin for Stefan-Boltzmann and compute in f64 for stability
-    let temp_source_k = *source.temperature + 273.15;
-    let temp_target_k = *target.temperature + 273.15;
+    let temp_source_k = source.temperature.to_kelvin();
+    let temp_target_k = target.temperature.to_kelvin();
 
     // FULL FORMULA: σ * ε * (T_source^4 - T_target^4)
     // NO SIMPLIFICATIONS per repository guidelines
     let radiant_power_f64 =
-        STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
+        STEFAN_BOLTZMANN * EMISSIVITY * ((*temp_source_k).powi(4) - (*temp_target_k).powi(4));
 
     // cast back to f32 for the rest of this API boundary
     let radiant_power = radiant_power_f64 as f32;
@@ -100,11 +100,11 @@ pub(crate) fn calculate_convection_heat(
         return 0.0;
     }
 
-    let temp_diff = *source.temperature - *target.temperature;
-    if temp_diff <= 0.0 {
+    let temp_diff = source.temperature - target.temperature;
+    if *temp_diff <= 0.0 {
         return 0.0;
     }
-    let temp_diff_f32 = temp_diff as f32;
+    let temp_diff_f32 = *temp_diff as f32;
 
     // Natural convection coefficient for wildfire conditions (W/(m²·K))
     // h ≈ 1.32 * (ΔT/L)^0.25 for natural convection

@@ -303,12 +303,12 @@ impl FuelElement {
         }
 
         // OPTIMIZATION: Early exit for cold fuel (far from ignition temp)
-        if *self.temperature < *ignition_temp - 50.0 {
+        if self.temperature < ignition_temp - Celsius::new(50.0) {
             return;
         }
 
         // Track time above ignition temperature with f64 precision
-        if *self.temperature > *ignition_temp {
+        if self.temperature > ignition_temp {
             self.time_above_ignition += f64::from(dt);
         } else {
             // Reset timer if cooled below ignition
@@ -320,8 +320,8 @@ impl FuelElement {
             (1.0 - *self.moisture_fraction / *self.fuel.moisture_of_extinction).max(0.0);
 
         // Temperature above ignition increases probability (capped at 1.0)
-        let temp_excess = (*self.temperature - *ignition_temp).max(0.0);
-        let temp_factor = (temp_excess / 50.0).min(1.0);
+        let temp_excess = (self.temperature - ignition_temp).max(Celsius::new(0.0));
+        let temp_factor = (*temp_excess / 50.0).min(1.0);
 
         // Base coefficient for probabilistic ignition
         // 0.003 gives ~0.3% per second at max temp_factor
@@ -338,7 +338,7 @@ impl FuelElement {
         //   - 500°C: 60s / 2.1 = 29s threshold
         //   - 758°C: 60s / 3.4 = 18s threshold
         // Does NOT scale with FFDI - heat transfer controls spread rate instead
-        let time_threshold_f64 = 60.0 / (1.0 + temp_excess / 200.0);
+        let time_threshold_f64 = 60.0 / (1.0 + *temp_excess / 200.0);
 
         let guaranteed_ignition = self.time_above_ignition >= time_threshold_f64;
 
@@ -359,7 +359,7 @@ impl FuelElement {
         }
 
         // OPTIMIZATION: Early exit for cold fuel (not hot enough to burn)
-        if *self.temperature < *self.fuel.ignition_temperature {
+        if self.temperature < self.fuel.ignition_temperature {
             return 0.0;
         }
 
@@ -367,7 +367,7 @@ impl FuelElement {
         let moisture_factor =
             (1.0 - *self.moisture_fraction / *self.fuel.moisture_of_extinction).max(0.0);
         let temp_factor =
-            ((*self.temperature - *self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
+            (*(self.temperature - self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
 
         // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
         self.fuel.burn_rate_coefficient
