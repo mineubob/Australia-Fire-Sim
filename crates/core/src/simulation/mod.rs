@@ -748,12 +748,13 @@ impl FireSimulation {
                 for element in chunk.iter_mut().flatten() {
                     // Apply ambient temperature cooling for non-burning elements
                     if !element.ignited {
-                        // Newton's law of cooling: dT/dt = -k(T - T_ambient)
+                        // Newton's law of cooling with stable exponential decay
+                        // T = T_ambient + (T_0 - T_ambient) * exp(-k*t)
+                        // This naturally asymptotes to ambient and NEVER overshoots
                         let cooling_rate = element.fuel.cooling_rate; // Fuel-specific (grass=0.15, forest=0.05)
-                        let temp_diff = *element.temperature - *ambient_temp;
-                        let temp_change = temp_diff * f64::from(cooling_rate * dt);
-                        let new_temp = (*element.temperature - temp_change).max(*ambient_temp);
-                        element.temperature = Celsius::new(new_temp);
+                        let decay_factor = (-f64::from(cooling_rate * dt)).exp();
+                        let temp_above_ambient = element.temperature - ambient_temp;
+                        element.temperature = ambient_temp + temp_above_ambient * decay_factor;
                     }
 
                     // Update fuel moisture (Nelson timelag system - Phase 1)
