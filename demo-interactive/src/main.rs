@@ -842,7 +842,7 @@ impl App {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Check for headless mode flag
-    let headless = std::env::args().any(|arg| arg == "--headless" || arg == "-h");
+    let headless = std::env::args().any(|arg| arg == "--headless");
 
     if headless {
         run_headless()
