@@ -752,8 +752,8 @@ impl FireSimulation {
                         let cooling_rate = element.fuel.cooling_rate; // Fuel-specific (grass=0.15, forest=0.05)
                         let temp_diff = *element.temperature - *ambient_temp;
                         let temp_change = temp_diff * f64::from(cooling_rate * dt);
-                        element.temperature = Celsius::new(*element.temperature - temp_change);
-                        element.temperature = element.temperature.max(ambient_temp);
+                        let new_temp = (*element.temperature - temp_change).max(*ambient_temp);
+                        element.temperature = Celsius::new(new_temp);
                     }
 
                     // Update fuel moisture (Nelson timelag system - Phase 1)
@@ -935,9 +935,9 @@ impl FireSimulation {
                         let cooling_rate = grid_data.suppression_agent * 1000.0;
                         let mass = *element.fuel_remaining;
                         let temp_drop = cooling_rate / (mass * *element.fuel.specific_heat);
-                        element.temperature =
-                            Celsius::new(*element.temperature - f64::from(temp_drop))
-                                .max(grid_data.temperature);
+                        let new_temp = (*element.temperature - f64::from(temp_drop))
+                            .max(*grid_data.temperature);
+                        element.temperature = Celsius::new(new_temp);
                     }
                 }
             }
