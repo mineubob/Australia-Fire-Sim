@@ -95,6 +95,7 @@ The UI supports multiple view modes that can be switched between:
 - **Backspace**: Delete character
 - **ESC**: Return to dashboard view
 - **F1**: Show help
+- **T**: Toggle burning list sort mode (temperature/location)
 - **Ctrl+C**: Quit application
 
 ## All Commands Preserved
