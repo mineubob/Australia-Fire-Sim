@@ -359,4 +359,29 @@ mod tests {
         // With small embers, gravity may win but velocity should show upward component initially
         assert!(ember.velocity.z > -5.0); // Not falling fast
     }
+
+    #[test]
+    fn test_ember_cooling_never_below_absolute_zero() {
+        // Regression test for bug where aggressive cooling could cause panic
+        // after ~260 steps with "Celsius::new: value is below absolute zero"
+        let mut ember = Ember::new(
+            1,
+            Vec3::new(0.0, 0.0, 10.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Celsius::new(100.0), // Start with low temperature
+            Kilograms::new(0.001),
+            1,
+        );
+
+        let ambient = Celsius::new(20.0);
+
+        // Run for many steps (more than 260) - this previously would panic
+        for _ in 0..500 {
+            ember.update_physics(Vec3::zeros(), ambient, 0.1);
+        }
+
+        // Temperature should stabilize at ambient, never go below
+        assert!(*ember.temperature >= *ambient);
+        assert!(ember.temperature >= Celsius::ABSOLUTE_ZERO); // Never below absolute zero
+    }
 }
