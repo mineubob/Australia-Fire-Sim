@@ -388,7 +388,8 @@ impl SimulationGrid {
         // Trilinear interpolation helper
         let lerp = |a: f32, b: f32, t: f32| a * (1.0 - t) + b * t;
         let lerp_celsius = |a: Celsius, b: Celsius, t: f32| {
-            Celsius::new(*a * (1.0 - f64::from(t)) + *b * f64::from(t))
+            let result = *a * (1.0 - f64::from(t)) + *b * f64::from(t);
+            Celsius::new(result.max(-273.15))
         };
         let lerp_vec = |a: Vec3, b: Vec3, t: f32| a * (1.0 - t) + b * t;
 
