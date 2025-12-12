@@ -207,10 +207,10 @@ impl Ember {
         // 5. Radiative cooling (Stefan-Boltzmann)
         // Simplified: dT/dt = -k(T - T_ambient)
         let cooling_rate = (self.temperature - ambient_temp) * 0.05;
-        self.temperature = Celsius::new(*self.temperature - *cooling_rate * f64::from(dt));
+        let new_temp = *self.temperature - *cooling_rate * f64::from(dt);
 
-        // Clamp temperature to ambient minimum
-        self.temperature = self.temperature.max(ambient_temp);
+        // Clamp to ambient minimum BEFORE creating Celsius to prevent below-absolute-zero panic
+        self.temperature = Celsius::new(new_temp.max(*ambient_temp));
     }
 
     /// Check if ember is still active (hot and airborne)
@@ -358,5 +358,30 @@ mod tests {
         // Should have moved upward or stayed roughly the same (buoyancy counteracts gravity)
         // With small embers, gravity may win but velocity should show upward component initially
         assert!(ember.velocity.z > -5.0); // Not falling fast
+    }
+
+    #[test]
+    fn test_ember_cooling_never_below_absolute_zero() {
+        // Regression test for bug where aggressive cooling could cause panic
+        // after ~260 steps with "Celsius::new: value is below absolute zero"
+        let mut ember = Ember::new(
+            1,
+            Vec3::new(0.0, 0.0, 10.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Celsius::new(100.0), // Start with low temperature
+            Kilograms::new(0.001),
+            1,
+        );
+
+        let ambient = Celsius::new(20.0);
+
+        // Run for many steps (more than 260) - this previously would panic
+        for _ in 0..500 {
+            ember.update_physics(Vec3::zeros(), ambient, 0.1);
+        }
+
+        // Temperature should stabilize at ambient, never go below
+        assert!(*ember.temperature >= *ambient);
+        assert!(ember.temperature >= Celsius::ABSOLUTE_ZERO); // Never below absolute zero
     }
 }
