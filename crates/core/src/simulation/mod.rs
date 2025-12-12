@@ -1038,8 +1038,9 @@ impl FireSimulation {
                     let self_heating = combustion_heat * *element.fuel.self_heating_fraction;
                     let temp_rise =
                         self_heating / (*element.fuel_remaining * *element.fuel.specific_heat);
-                    element.temperature = Celsius::new(*element.temperature + f64::from(temp_rise))
-                        .min(element.fuel.max_flame_temperature);
+                    let new_temp = (*element.temperature + f64::from(temp_rise))
+                        .min(*element.fuel.max_flame_temperature);
+                    element.temperature = Celsius::new(new_temp);
                 }
 
                 if element.fuel_remaining < Kilograms::new(0.01) {

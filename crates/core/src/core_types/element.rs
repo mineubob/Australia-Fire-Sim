@@ -253,12 +253,14 @@ impl FuelElement {
             let remaining_heat = effective_heat - heat_for_evaporation;
             if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
                 let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-                self.temperature = Celsius::new(*self.temperature + f64::from(temp_rise));
+                let new_temp = *self.temperature + f64::from(temp_rise);
+                self.temperature = Celsius::new(new_temp.max(-273.15));
             }
         } else {
             // No moisture, all heat goes to temperature rise
             let temp_rise = effective_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-            self.temperature = Celsius::new(*self.temperature + f64::from(temp_rise));
+            let new_temp = *self.temperature + f64::from(temp_rise);
+            self.temperature = Celsius::new(new_temp.max(-273.15));
         }
 
         // STEP 3: Cap at fuel-specific maximum (prevents thermal runaway)

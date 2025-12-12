@@ -781,12 +781,12 @@ impl SimulationGrid {
                         if *temp_diff > 0.0 {
                             let heat_transfer = temp_diff * f64::from(transfer_fraction);
                             self.cells[idx_current].temperature =
-                                self.cells[idx_current].temperature + heat_transfer;
-                            // Cap at realistic maximum for wildfire air temperatures
-                            self.cells[idx_current].temperature =
-                                self.cells[idx_current].temperature.min(Celsius::new(800.0));
-                            self.cells[idx_below].temperature =
-                                self.cells[idx_below].temperature - heat_transfer;
+                                (self.cells[idx_current].temperature + heat_transfer)
+                                    .min(Celsius::new(800.0));
+                            let new_below_temp = (*self.cells[idx_below].temperature
+                                - *heat_transfer)
+                                .max(*self.ambient_temperature);
+                            self.cells[idx_below].temperature = Celsius::new(new_below_temp);
                         }
                     }
                 }
