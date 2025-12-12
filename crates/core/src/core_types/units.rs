@@ -102,6 +102,7 @@ impl Celsius {
     /// Create a new Celsius temperature. Asserts value >= absolute zero (-273.15°C).
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f64) -> Self {
         assert!(
             value >= -273.15,
@@ -236,6 +237,7 @@ impl Kelvin {
     /// Create a new Kelvin temperature. Asserts value >= absolute zero (0 K).
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f64) -> Self {
         assert!(
             value >= 0.0,
@@ -368,6 +370,7 @@ impl Meters {
     /// Create a new distance in meters
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(value >= 0.0, "Meters::new: negative distance is invalid");
         Meters(value)
@@ -489,6 +492,7 @@ impl Kilometers {
     /// Create a new Kilometers value.
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
@@ -742,6 +746,7 @@ impl KgPerCubicMeter {
     /// Create a new density. Asserts value >= 0 (non-negative density).
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
@@ -827,6 +832,7 @@ impl Seconds {
     /// Create a new duration in seconds
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(value >= 0.0, "Seconds::new: negative duration is invalid");
         Seconds(value)
@@ -940,6 +946,7 @@ impl Hours {
     /// Create a new Hours value.
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(value >= 0.0, "Hours::new: negative duration is invalid");
         Hours(value)
@@ -1148,6 +1155,7 @@ impl KilometersPerHour {
     /// Create a new `KilometersPerHour` value.
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         KilometersPerHour(value)
     }
@@ -1271,6 +1279,7 @@ impl Kilojoules {
     /// Create a new energy value
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(value >= 0.0, "Kilojoules::new: negative energy is invalid");
         Kilojoules(value)
@@ -1380,6 +1389,7 @@ impl KjPerKg {
     /// Create a new heat content value
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
@@ -1491,6 +1501,7 @@ impl KwPerMeter {
     /// Create a new fire intensity value. Asserts value >= 0 (non-negative intensity).
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
@@ -1597,6 +1608,7 @@ impl KjPerKgK {
     /// Create a new specific heat value. Asserts value >= 0 (non-negative specific heat).
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,
