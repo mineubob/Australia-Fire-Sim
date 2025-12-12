@@ -56,12 +56,57 @@ use ratatui::{
 };
 use std::{
     io::{self, Write},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Instant,
 };
 
 /// Default terrain dimensions
 const DEFAULT_WIDTH: f32 = 150.0;
 const DEFAULT_HEIGHT: f32 = 150.0;
+
+/// Guard struct to restore terminal state on drop
+///
+/// This ensures the terminal is properly reset even if the program panics,
+/// is interrupted (Ctrl+C), or exits early. Call `disarm()` only after
+/// intentional cleanup has completed.
+struct TerminalGuard {
+    /// Whether the guard is active (will restore on drop)
+    armed: AtomicBool,
+}
+
+impl TerminalGuard {
+    /// Create a new armed terminal guard
+    pub fn new() -> Self {
+        Self {
+            armed: AtomicBool::new(true),
+        }
+    }
+
+    /// Disarm the guard - prevents restoration on drop
+    ///
+    /// Call this only after manual cleanup has successfully completed.
+    pub fn disarm(&self) {
+        self.armed.store(false, Ordering::Release);
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        if self.armed.load(Ordering::Acquire) {
+            // Restore terminal state
+            let _ = disable_raw_mode();
+            let _ = execute!(
+                io::stdout(),
+                LeaveAlternateScreen,
+                DisableMouseCapture,
+                crossterm::cursor::Show
+            );
+        }
+    }
+}
 
 /// Burning list sort mode
 ///
@@ -964,29 +1009,41 @@ fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Set up panic hook to restore terminal on panic
-    let original_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        // Restore terminal state before printing panic info
-        let _ = disable_raw_mode();
-        let _ = execute!(
-            io::stdout(),
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            crossterm::cursor::Show
-        );
+    // Create guard to ensure terminal restoration on interrupt/early exit
+    let guard = Arc::new(TerminalGuard::new());
 
-        // Call the original panic hook to print full backtrace
-        original_hook(panic_info);
+    // Set up panic hook to print panic messages properly
+    // The guard handles terminal restoration, this ensures messages are visible
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new({
+        let guard = Arc::downgrade(&guard);
+
+        move |panic_info| {
+            // Restore terminal state before printing panic info
+            let _ = disable_raw_mode();
+            let _ = execute!(
+                io::stdout(),
+                LeaveAlternateScreen,
+                DisableMouseCapture,
+                crossterm::cursor::Show
+            );
+
+            if let Some(guard) = guard.upgrade() {
+                guard.disarm();
+            }
+
+            // Call the original panic hook to print full backtrace
+            original_hook(panic_info);
+        }
     }));
 
     // Create app
     let mut app = App::new(width, height);
 
-    // Run app (let panics propagate naturally for full backtrace)
+    // Run app
     let res = run_app(&mut terminal, &mut app);
 
-    // Restore terminal
+    // Restore terminal manually
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -994,6 +1051,9 @@ fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
+
+    // Disarm guard since we've manually cleaned up successfully
+    guard.disarm();
 
     res?;
 
