@@ -389,7 +389,7 @@ impl SimulationGrid {
         let lerp = |a: f32, b: f32, t: f32| a * (1.0 - t) + b * t;
         let lerp_celsius = |a: Celsius, b: Celsius, t: f32| {
             let result = *a * (1.0 - f64::from(t)) + *b * f64::from(t);
-            Celsius::new(result.max(-273.15))
+            Celsius::new(result.max(*Celsius::ABSOLUTE_ZERO))
         };
         let lerp_vec = |a: Vec3, b: Vec3, t: f32| a * (1.0 - t) + b * t;
 
