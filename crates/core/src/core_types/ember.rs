@@ -207,10 +207,10 @@ impl Ember {
         // 5. Radiative cooling (Stefan-Boltzmann)
         // Simplified: dT/dt = -k(T - T_ambient)
         let cooling_rate = (self.temperature - ambient_temp) * 0.05;
-        self.temperature = Celsius::new(*self.temperature - *cooling_rate * f64::from(dt));
+        let new_temp = *self.temperature - *cooling_rate * f64::from(dt);
 
-        // Clamp temperature to ambient minimum
-        self.temperature = self.temperature.max(ambient_temp);
+        // Clamp to ambient minimum BEFORE creating Celsius to prevent below-absolute-zero panic
+        self.temperature = Celsius::new(new_temp.max(*ambient_temp));
     }
 
     /// Check if ember is still active (hot and airborne)
