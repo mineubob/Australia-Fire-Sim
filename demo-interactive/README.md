@@ -133,10 +133,10 @@ All existing commands from the original REPL interface are fully supported:
 
 ## Non-Interactive Usage
 
-The demo can still be used non-interactively via heredoc (for testing):
+The demo can be used non-interactively via heredoc (for testing):
 
 ```bash
-./target/release/demo-interactive <<'HEREDOC'
+./target/release/demo-interactive --headless <<'HEREDOC'
 50
 50
 i 100

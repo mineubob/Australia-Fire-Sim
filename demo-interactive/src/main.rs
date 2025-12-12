@@ -64,19 +64,22 @@ const DEFAULT_WIDTH: f32 = 150.0;
 const DEFAULT_HEIGHT: f32 = 150.0;
 
 /// Burning list sort mode
+///
+/// Controls how the burning elements list is sorted in the UI.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BurningSortMode {
-    /// Sort by temperature (ascending)
+    /// Sort by temperature (ascending) - coolest first
     TemperatureAsc,
-    /// Sort by temperature (descending)
+    /// Sort by temperature (descending) - hottest first
     TemperatureDesc,
-    /// Sort by time since ignition (ascending)
+    /// Sort by time since ignition (ascending) - oldest fires first
     TimeSinceIgnitionAsc,
-    /// Sort by time since ignition (descending)
+    /// Sort by time since ignition (descending) - newest fires first
     TimeSinceIgnitionDesc,
 }
 
 impl BurningSortMode {
+    /// Get the next sort mode in the cycle when toggling
     fn next_mode(&self) -> Self {
         match self {
             BurningSortMode::TemperatureAsc => BurningSortMode::TemperatureDesc,
@@ -87,7 +90,10 @@ impl BurningSortMode {
     }
 }
 
-/// Application state
+/// Application state for the interactive fire simulation demo
+///
+/// Manages the simulation, UI state, command history, and user interaction.
+/// Supports both interactive TUI mode and headless mode for automation.
 struct App {
     /// The fire simulation
     sim: FireSimulation,
@@ -150,12 +156,17 @@ enum ViewMode {
 }
 
 impl App {
-    /// Create a new application
+    /// Create a new application with default settings (interactive mode)
     fn new(width: f32, height: f32) -> Self {
         Self::new_with_mode(width, height, false)
     }
 
     /// Create a new application with specified mode
+    ///
+    /// # Arguments
+    /// * `width` - Terrain width in meters
+    /// * `height` - Terrain height in meters
+    /// * `headless` - If true, runs without TUI for automation
     fn new_with_mode(width: f32, height: f32, headless: bool) -> Self {
         let weather = WeatherPreset::perth_metro();
         let sim = create_test_simulation(width, height, weather.clone());
@@ -190,16 +201,16 @@ impl App {
         }
     }
 
-    /// Add a message to display
+    /// Add a message to the message log
     fn add_message(&mut self, msg: String) {
         self.messages.push(msg);
-        // Keep last 100 messages
-        if self.messages.len() > 100 {
-            self.messages.remove(0);
+        // Keep last 1000 messages to prevent unbounded growth
+        if self.messages.len() > 1000 {
+            self.messages.drain(0..500);
         }
     }
 
-    /// Execute a command
+    /// Execute a command entered by the user
     fn execute_command(&mut self, command: &str) {
         let parts: Vec<&str> = command.split_whitespace().collect();
 
@@ -319,6 +330,10 @@ impl App {
     }
 
     /// Step the simulation forward (sets up stepping state)
+    /// Step the simulation forward by the specified number of timesteps
+    ///
+    /// In interactive mode, this sets up non-blocking stepping that processes
+    /// one step per frame to keep the UI responsive.
     fn step_simulation(&mut self, count: u32) {
         self.add_message(format!("Stepping {count} timestep(s)..."));
         self.steps_remaining = count;
@@ -326,6 +341,8 @@ impl App {
     }
 
     /// Process one simulation step (called from event loop)
+    ///
+    /// Updates the simulation by one timestep and tracks newly ignited elements.
     fn process_one_step(&mut self) {
         if self.steps_remaining == 0 {
             return;
@@ -390,7 +407,7 @@ impl App {
         }
     }
 
-    /// Show element details
+    /// Show element details by ID
     fn show_element(&mut self, id: usize) {
         if let Some(e) = self.sim.get_element(id) {
             let stats = e.get_stats();
@@ -417,7 +434,7 @@ impl App {
         }
     }
 
-    /// Show burning elements
+    /// Show list of currently burning elements
     fn show_burning(&mut self) {
         let burning_elements = self.sim.get_burning_elements();
         if burning_elements.is_empty() {
@@ -455,13 +472,14 @@ impl App {
         }
     }
 
-    /// Show embers
+    /// Show list of active embers
+    /// Show list of active embers
     fn show_embers(&mut self) {
         let ember_count = self.sim.ember_count();
         self.add_message(format!("Active embers: {ember_count}"));
     }
 
-    /// Show nearby elements
+    /// Show elements nearby the specified element ID
     fn show_nearby(&mut self, id: usize) {
         if let Some(e) = self.sim.get_element(id) {
             let source_pos = *e.position();
@@ -501,7 +519,7 @@ impl App {
         }
     }
 
-    /// Ignite an element
+    /// Ignite an element by ID and track its ignition time
     fn ignite_element(&mut self, id: usize) {
         if let Some(e) = self.sim.get_element(id) {
             let stats = e.get_stats();
@@ -518,7 +536,7 @@ impl App {
         }
     }
 
-    /// Heat an element
+    /// Heat an element to a target temperature
     fn heat_element(&mut self, id: usize, target_temp: f32) {
         if let Some(e) = self.sim.get_element(id) {
             let stats = e.get_stats();
@@ -532,7 +550,9 @@ impl App {
         }
     }
 
-    /// Ignite elements at position
+    /// Ignite elements at a specific position with optional filters
+    ///
+    /// Command format: `ignite_position <x> <y> [radius] [amount] [filters]`
     fn ignite_position(&mut self, parts: &[&str]) {
         let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
             self.add_message(
@@ -615,6 +635,9 @@ impl App {
     }
 
     /// Heat elements at position
+    /// Heat elements at a specific position to a target temperature
+    ///
+    /// Command format: `heat_position <x> <y> <temp> [radius] [amount] [filters]`
     fn heat_position(&mut self, parts: &[&str]) {
         let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
             self.add_message(
@@ -694,7 +717,7 @@ impl App {
         }
     }
 
-    /// Set weather preset
+    /// Set the weather preset by name
     fn set_preset(&mut self, name: &str) {
         let preset = match name.to_lowercase().as_str() {
             "perth" | "perth_metro" => WeatherPreset::perth_metro(),
@@ -724,12 +747,14 @@ impl App {
     }
 
     /// Reset simulation
+    /// Reset the simulation with new terrain dimensions
     fn reset_simulation(&mut self, width: f32, height: f32) {
         self.sim = create_test_simulation(width, height, self.current_weather.clone());
         self.terrain_width = width;
         self.terrain_height = height;
         self.step_count = 0;
         self.elapsed_time = 0.0;
+        self.ignition_times.clear(); // Clear ignition tracking from previous simulation
 
         self.add_message(format!(
             "Simulation reset! Created {} elements on {}x{} terrain",
@@ -740,6 +765,8 @@ impl App {
     }
 
     /// Show heatmap as text (for headless mode)
+    ///
+    /// Generates an ASCII representation of the temperature heatmap
     fn show_heatmap_text(&mut self, grid_size: usize) {
         self.add_message("═══════════════ TEMPERATURE HEATMAP ═══════════════".to_string());
 
@@ -1200,57 +1227,60 @@ fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
 
 /// Draw burning elements list
 fn draw_burning_list(f: &mut Frame, app: &App, area: Rect) {
-    let mut burning_elements = app.sim.get_burning_elements();
+    let burning_elements = app.sim.get_burning_elements();
+
+    // Extract stats once before sorting to improve performance
+    let mut elements_with_stats: Vec<_> = burning_elements
+        .iter()
+        .map(|e| {
+            let stats = e.get_stats();
+            let ignition_time = app.ignition_times.get(&stats.id).copied();
+            (e, stats, ignition_time)
+        })
+        .collect();
 
     // Sort based on current sort mode
     match app.burning_sort_mode {
         BurningSortMode::TemperatureAsc => {
-            // Sort by temperature ascending
-            burning_elements.sort_by(|a, b| {
-                let temp_a = a.get_stats().temperature;
-                let temp_b = b.get_stats().temperature;
-                temp_a
-                    .partial_cmp(&temp_b)
+            // Sort by temperature ascending (coolest first)
+            elements_with_stats.sort_by(|(_, stats_a, _), (_, stats_b, _)| {
+                stats_a
+                    .temperature
+                    .partial_cmp(&stats_b.temperature)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
         BurningSortMode::TemperatureDesc => {
-            // Sort by temperature descending
-            burning_elements.sort_by(|a, b| {
-                let temp_a = a.get_stats().temperature;
-                let temp_b = b.get_stats().temperature;
-                temp_b
-                    .partial_cmp(&temp_a)
+            // Sort by temperature descending (hottest first)
+            elements_with_stats.sort_by(|(_, stats_a, _), (_, stats_b, _)| {
+                stats_b
+                    .temperature
+                    .partial_cmp(&stats_a.temperature)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
         BurningSortMode::TimeSinceIgnitionAsc => {
-            // Sort by time since ignition ascending
-            burning_elements.sort_by(|a, b| {
-                let id_a = a.get_stats().id;
-                let id_b = b.get_stats().id;
-                let time_a = app.ignition_times.get(&id_a).unwrap_or(&u32::MAX);
-                let time_b = app.ignition_times.get(&id_b).unwrap_or(&u32::MAX);
-                time_b.cmp(time_a)
+            // Sort by time since ignition ascending (oldest fires first)
+            elements_with_stats.sort_by(|(_, _, time_a), (_, _, time_b)| {
+                let time_a = time_a.unwrap_or(u32::MAX);
+                let time_b = time_b.unwrap_or(u32::MAX);
+                time_a.cmp(&time_b)
             });
         }
         BurningSortMode::TimeSinceIgnitionDesc => {
-            // Sort by time since ignition descending
-            burning_elements.sort_by(|a, b| {
-                let id_a = a.get_stats().id;
-                let id_b = b.get_stats().id;
-                let time_a = app.ignition_times.get(&id_a).unwrap_or(&u32::MAX);
-                let time_b = app.ignition_times.get(&id_b).unwrap_or(&u32::MAX);
-                time_a.cmp(time_b)
+            // Sort by time since ignition descending (newest fires first)
+            elements_with_stats.sort_by(|(_, _, time_a), (_, _, time_b)| {
+                let time_a = time_a.unwrap_or(u32::MAX);
+                let time_b = time_b.unwrap_or(u32::MAX);
+                time_b.cmp(&time_a)
             });
         }
     }
 
-    let items: Vec<ListItem> = burning_elements
+    let items: Vec<ListItem> = elements_with_stats
         .iter()
         .take(area.height.saturating_sub(2) as usize)
-        .map(|e| {
-            let stats = e.get_stats();
+        .map(|(_, stats, ignition_time)| {
             let temp_color = if stats.temperature > 800.0 {
                 Color::Red
             } else if stats.temperature > 400.0 {
@@ -1259,8 +1289,8 @@ fn draw_burning_list(f: &mut Frame, app: &App, area: Rect) {
                 Color::White
             };
 
-            let time_info = if let Some(&ignition_step) = app.ignition_times.get(&stats.id) {
-                let steps_burning = app.step_count.saturating_sub(ignition_step);
+            let time_info = if let Some(ignition_step) = ignition_time {
+                let steps_burning = app.step_count.saturating_sub(*ignition_step);
                 format!(" | {steps_burning}s")
             } else {
                 String::new()
@@ -1292,7 +1322,7 @@ fn draw_burning_list(f: &mut Frame, app: &App, area: Rect) {
             .borders(Borders::ALL)
             .title(format!(
                 " 🔥 Burning ({}) [{}] ",
-                burning_elements.len(),
+                elements_with_stats.len(),
                 sort_indicator
             ))
             .style(Style::default().fg(Color::White)),
