@@ -132,15 +132,20 @@ struct App {
 /// UI view modes
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ViewMode {
-    /// Main dashboard view
+    /// Main dashboard view.
+    /// Shows the overall simulation state, terrain, and summary statistics.
     Dashboard,
-    /// Detailed status view
+    /// Detailed status view.
+    /// Displays in-depth information about burning elements and simulation internals.
     Status,
-    /// Weather details view
+    /// Weather details view.
+    /// Presents current weather conditions and allows inspection of weather parameters.
     Weather,
-    /// Help view
+    /// Help view.
+    /// Shows available commands and usage instructions for the interactive UI.
     Help,
-    /// Heatmap view
+    /// Heatmap view.
+    /// Visualizes simulation data (e.g., temperature, intensity) as a heatmap overlay.
     Heatmap,
 }
 
