@@ -69,17 +69,33 @@ crates/core/src/
 
 ---
 
-## RUNNING THE DEMO NON-INTERACTIVELY
+## RUNNING THE DEMO
 
-The interactive demo (`demo-interactive`) can be driven non-interactively using a heredoc. Example (run from the repo root):
+The `demo-interactive` binary has two modes:
+
+### Interactive Mode (default)
+
+Launches a full-featured terminal UI with ratatui:
+```bash
+cargo run --release --bin demo-interactive
+```
+
+Provides a multi-panel interface with real-time visualization, command input, and status displays.
+
+### Headless Mode
+
+**AI agents MUST use `--headless` to interact with the demo.** Without this flag, the demo enters interactive TUI mode which cannot be driven programmatically.
+
+For automation, scripting, or non-interactive use, run with the `--headless` flag:
 
 **Building with symbols for profiling:**
 ```bash
 CARGO_PROFILE_RELEASE_DEBUG=true CARGO_PROFILE_RELEASE_STRIP=false cargo build --release --bin demo-interactive
 ```
 
+**Running with heredoc input:**
 ```bash
-./target/release/demo-interactive <<'HEREDOC'
+./target/release/demo-interactive --headless <<'HEREDOC'
 1000
 1000
 p perth
@@ -91,27 +107,17 @@ HEREDOC
 
 Annotated: what each line in the heredoc is doing
 
-- 1000 — terrain width (meters). The demo **expects** a width value — provide a number here.
-- 1000 — terrain height (meters). The demo **expects** a height value — provide a number here.
-- p perth — select a weather preset ("p" is the demo command to choose a preset, then the preset name). This line is optional — if omitted the demo will use its default preset.
-- i 7 — ignite element id 7 ("i" is the demo command to ignite the specified fuel element ID). The demo **expects** an ignite command when you want to start a fire.
-- s 100 — step the simulation 100 times ("s" steps forwards in time; each step is one internal physics timestep). The demo **expects** a step count to advance the simulation.
-- q - quit the demo ("q" is the demo command to quit). The demo **expects** a quit command when you want to stop the simulation.
-
-
-### Wind field behaviour
-
-The demo uses the advanced 3D mass-consistent wind field (Sherman 1978 model) by default.
-There is no startup toggle or runtime command to disable it — the wind field is always enabled.
-
-When enabled, the wind field provides:
-- Spatially-varying wind based on terrain (logarithmic profile, slope effects)
-- Fire-atmosphere coupling (plume updrafts, entrainment)
-- Mass conservation via Poisson solver (∇·u = 0)
+- 1000 — terrain width (meters). Optional — press Enter or omit to use default of 150.0 meters.
+- 1000 — terrain height (meters). Optional — press Enter or omit to use default of 150.0 meters.
+- p perth — select a weather preset ("p" is the demo command to choose a preset, then the preset name). Optional — if omitted the demo will use its default preset.
+- i 7 — ignite element id 7 ("i" is the demo command to ignite the specified fuel element ID). **Required** to start a fire.
+- s 100 — step the simulation 100 times ("s" steps forwards in time; each step is one internal physics timestep). **Required** to advance the simulation.
+- q — quit the demo ("q" is the demo command to quit). Optional if stdin closes naturally.
 
 Notes:
-- You can change these numbers to other values or leave a prompt blank in the heredoc to accept demo defaults.
+- You can change the terrain dimensions and commands to other values, or leave a prompt blank in the heredoc to accept demo defaults.
 - Use quoted heredoc (<<'HEREDOC') to prevent shell expansion and ensure the demo receives the lines exactly as shown.
+- Headless mode outputs log messages to stdout, suitable for piping or redirection.
 
 ---
 

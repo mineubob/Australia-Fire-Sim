@@ -1,51 +1,65 @@
-//! Interactive Fire Simulation Demo
+//! Interactive Fire Simulation Demo with Ratatui UI
 //!
-//! A terminal-based interactive debugger for the fire simulation.
-//! Allows stepping through the simulation, inspecting element values,
-//! and debugging fire spread behavior.
+//! A terminal-based interactive debugger for the fire simulation with enhanced UI.
+//! Uses ratatui for rich terminal rendering with multiple panels.
 //!
 //! # Usage
 //!
+//! ## Interactive Mode (default)
 //! ```bash
 //! cargo run --package demo-interactive
 //! ```
 //!
+//! ## Headless Mode
+//! ```bash
+//! cargo run --package demo-interactive -- --headless
+//! # or
+//! echo "50\n50\ni 100\ns 10\nq" | cargo run --package demo-interactive -- --headless
+//! ```
+//!
 //! # Commands
 //!
-//! - `step [n]` - Advance simulation by n timesteps (default 1)
-//! - `status` - Show simulation status
-//! - `weather` - Show current weather conditions
-//! - `element <id>` - Show element details
-//! - `burning` - List all burning elements
-//! - `embers` - List all active embers
-//! - `nearby <id>` - Show elements near the specified element
-//! - `ignite <id>` - Manually ignite an element
-//! - `ignite_position <x> <y> [radius] [amount]` - Ignite elements around position in XY circle
-//!   - radius: optional, meters (default 1.0)
-//!   - amount: optional, number of elements to ignite (from ground-up). Use -1 for all (default -1)
-//!   - filters: optional tokens to further limit selection: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>
-//! - `heat <id> <temperature>` - Apply heat to an element (target temp in °C)
-//! - `heat_position <x> <y> <temperature> [radius] [amount]` - Apply heat to elements around position
-//!   - temperature: target temperature in Celsius
-//!   - radius: optional, meters (default 1.0)
-//!   - amount: optional, number of elements to heat (from ground-up). Use -1 for all (default -1)
-//!   - filters: optional tokens to further limit selection: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>
-//! - `preset <name>` - Switch weather preset (perth, catastrophic, etc.)
-//! - Advanced 3D wind field (mass-consistent model) — always enabled
-//! - `reset` - Reset simulation with new terrain dimensions
-//! - `heatmap [size]` - Generate a heatmap of the simulation
-//! - `help` - Show available commands
-//! - `quit` - Exit the simulation
+//! - `step [n]` or `s [n]` - Advance simulation by n timesteps (default 1)
+//! - `status` or `st` - Show simulation status
+//! - `weather` or `w` - Show weather conditions
+//! - `element <id>` or `e <id>` - Show element details
+//! - `burning` or `b` - List all burning elements
+//! - `embers` or `em` - List all active embers
+//! - `nearby <id>` or `n <id>` - Show elements near the specified element
+//! - `ignite <id>` or `i <id>` - Manually ignite an element
+//! - `ignite_position <x> <y> [radius] [amount] [filters]` or `ip` - Ignite elements in XY circle
+//! - `heat <id> <temperature>` or `h` - Apply heat to an element
+//! - `heat_position <x> <y> <temp> [radius] [amount] [filters]` or `hp` - Heat elements in XY circle
+//! - `preset <name>` or `p <name>` - Switch weather preset
+//! - `reset [w] [h]` or `r` - Reset simulation
+//! - `heatmap [size]` or `hm` - Generate a heatmap
+//! - `help` or `?` - Show available commands
+//! - `quit` or `q` - Exit the simulation
 
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
 use fire_sim_core::{
     core_types::{Celsius, Degrees, Kilograms, KilometersPerHour, Meters, Percent},
     ClimatePattern, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherPreset,
     WeatherSystem,
 };
-use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    Frame, Terminal,
+};
 use std::{
     io::{self, Write},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Instant,
 };
 
@@ -53,351 +67,1650 @@ use std::{
 const DEFAULT_WIDTH: f32 = 150.0;
 const DEFAULT_HEIGHT: f32 = 150.0;
 
-fn main() {
+/// Guard struct to restore terminal state on drop
+///
+/// This ensures the terminal is properly reset even if the program panics,
+/// is interrupted (Ctrl+C), or exits early. Call `disarm()` only after
+/// intentional cleanup has completed.
+struct TerminalGuard {
+    /// Whether the guard is active (will restore on drop)
+    armed: AtomicBool,
+}
+
+impl TerminalGuard {
+    /// Create a new armed terminal guard
+    pub fn new() -> Self {
+        Self {
+            armed: AtomicBool::new(true),
+        }
+    }
+
+    /// Disarm the guard - prevents restoration on drop
+    ///
+    /// Call this only after manual cleanup has successfully completed.
+    pub fn disarm(&self) {
+        self.armed.store(false, Ordering::Release);
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        if self.armed.load(Ordering::Acquire) {
+            // Restore terminal state
+            let _ = disable_raw_mode();
+            let _ = execute!(
+                io::stdout(),
+                LeaveAlternateScreen,
+                DisableMouseCapture,
+                crossterm::cursor::Show
+            );
+        }
+    }
+}
+
+/// Burning list sort mode
+///
+/// Controls how the burning elements list is sorted in the UI.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BurningSortMode {
+    /// Sort by temperature (ascending) - coolest first
+    TemperatureAsc,
+    /// Sort by temperature (descending) - hottest first
+    TemperatureDesc,
+    /// Sort by time since ignition (ascending) - oldest fires first
+    TimeSinceIgnitionAsc,
+    /// Sort by time since ignition (descending) - newest fires first
+    TimeSinceIgnitionDesc,
+}
+
+impl BurningSortMode {
+    /// Get the next sort mode in the cycle when toggling
+    fn next_mode(&self) -> Self {
+        match self {
+            BurningSortMode::TemperatureAsc => BurningSortMode::TemperatureDesc,
+            BurningSortMode::TemperatureDesc => BurningSortMode::TimeSinceIgnitionAsc,
+            BurningSortMode::TimeSinceIgnitionAsc => BurningSortMode::TimeSinceIgnitionDesc,
+            BurningSortMode::TimeSinceIgnitionDesc => BurningSortMode::TemperatureAsc,
+        }
+    }
+}
+
+/// Application state for the interactive fire simulation demo
+///
+/// Manages the simulation, UI state, command history, and user interaction.
+/// Supports both interactive TUI mode and headless mode for automation.
+struct App {
+    /// The fire simulation
+    sim: FireSimulation,
+    /// Current terrain width
+    terrain_width: f32,
+    /// Current terrain height
+    terrain_height: f32,
+    /// Current weather preset
+    current_weather: WeatherPreset,
+    /// Command input buffer
+    input: String,
+    /// Command history
+    history: Vec<String>,
+    /// History position for navigation
+    history_pos: usize,
+    /// Messages to display
+    messages: Vec<String>,
+    /// Message scroll offset
+    message_scroll: usize,
+    /// Simulation step count
+    step_count: u32,
+    /// Total elapsed simulation time
+    elapsed_time: f32,
+    /// Should quit
+    should_quit: bool,
+    /// Current view mode
+    view_mode: ViewMode,
+    /// Heatmap grid size
+    heatmap_size: usize,
+    /// Steps remaining to process (for non-blocking stepping)
+    steps_remaining: u32,
+    /// Total steps in current batch
+    steps_total: u32,
+    /// Headless mode (no UI)
+    headless: bool,
+    /// Burning list sort mode
+    burning_sort_mode: BurningSortMode,
+    /// Ignition times (`element_id` -> `step_count` when ignited)
+    ignition_times: std::collections::HashMap<usize, u32>,
+}
+
+/// UI view modes
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ViewMode {
+    /// Main dashboard view.
+    /// Shows the overall simulation state, terrain, and summary statistics.
+    Dashboard,
+    /// Detailed status view.
+    /// Displays in-depth information about burning elements and simulation internals.
+    Status,
+    /// Weather details view.
+    /// Presents current weather conditions and allows inspection of weather parameters.
+    Weather,
+    /// Help view.
+    /// Shows available commands and usage instructions for the interactive UI.
+    Help,
+    /// Heatmap view.
+    /// Visualizes simulation data (e.g., temperature, intensity) as a heatmap overlay.
+    Heatmap,
+}
+
+impl App {
+    /// Create a new application with default settings (interactive mode)
+    fn new(width: f32, height: f32) -> Self {
+        Self::new_with_mode(width, height, false)
+    }
+
+    /// Create a new application with specified mode
+    ///
+    /// # Arguments
+    /// * `width` - Terrain width in meters
+    /// * `height` - Terrain height in meters
+    /// * `headless` - If true, runs without TUI for automation
+    fn new_with_mode(width: f32, height: f32, headless: bool) -> Self {
+        let weather = WeatherPreset::perth_metro();
+        let sim = create_test_simulation(width, height, weather.clone());
+        let element_count = sim.get_all_elements().len();
+
+        Self {
+            sim,
+            terrain_width: width,
+            terrain_height: height,
+            current_weather: weather,
+            input: String::new(),
+            history: Vec::new(),
+            history_pos: 0,
+            messages: vec![
+                "Welcome to Australia Fire Simulation!".to_string(),
+                format!(
+                    "Created simulation with {element_count} elements on {width}x{height} terrain"
+                ),
+                "Type 'help' for available commands.".to_string(),
+            ],
+            message_scroll: 0,
+            step_count: 0,
+            elapsed_time: 0.0,
+            should_quit: false,
+            view_mode: ViewMode::Dashboard,
+            heatmap_size: 30,
+            steps_remaining: 0,
+            steps_total: 0,
+            headless,
+            burning_sort_mode: BurningSortMode::TemperatureDesc,
+            ignition_times: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Add a message to the message log
+    fn add_message(&mut self, msg: String) {
+        self.messages.push(msg);
+        // Keep last 1000 messages to prevent unbounded growth
+        if self.messages.len() > 1000 {
+            self.messages.drain(0..500);
+        }
+    }
+
+    /// Execute a command entered by the user
+    fn execute_command(&mut self, command: &str) {
+        let parts: Vec<&str> = command.split_whitespace().collect();
+
+        if parts.is_empty() {
+            return;
+        }
+
+        // Add to history
+        if !command.is_empty() {
+            self.history.push(command.to_string());
+            self.history_pos = self.history.len();
+        }
+
+        match parts[0].to_lowercase().as_str() {
+            "step" | "s" => {
+                let count = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
+                self.step_simulation(count);
+            }
+            "status" | "st" => {
+                self.view_mode = ViewMode::Status;
+                self.add_message("Switched to Status view".to_string());
+            }
+            "weather" | "w" => {
+                self.view_mode = ViewMode::Weather;
+                self.add_message("Switched to Weather view".to_string());
+            }
+            "dashboard" | "d" => {
+                self.view_mode = ViewMode::Dashboard;
+                self.add_message("Switched to Dashboard view".to_string());
+            }
+            "element" | "e" => {
+                if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
+                    self.show_element(id);
+                } else {
+                    self.add_message("Usage: element <id>".to_string());
+                }
+            }
+            "burning" | "b" => self.show_burning(),
+            "embers" | "em" => self.show_embers(),
+            "nearby" | "n" => {
+                if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
+                    self.show_nearby(id);
+                } else {
+                    self.add_message("Usage: nearby <id>".to_string());
+                }
+            }
+            "ignite" | "i" => {
+                if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
+                    self.ignite_element(id);
+                } else {
+                    self.add_message("Usage: ignite <id>".to_string());
+                }
+            }
+            "heat" | "h" => {
+                if let (Some(id), Some(temperature)) = (
+                    parts.get(1).and_then(|s| s.parse().ok()),
+                    parts.get(2).and_then(|s| s.parse().ok()),
+                ) {
+                    self.heat_element(id, temperature);
+                } else {
+                    self.add_message("Usage: heat <id> <temperature>".to_string());
+                }
+            }
+            "ignite_position" | "ip" => {
+                self.ignite_position(&parts);
+            }
+            "heat_position" | "hp" => {
+                self.heat_position(&parts);
+            }
+            "preset" | "p" => {
+                if let Some(name) = parts.get(1) {
+                    self.set_preset(name);
+                } else {
+                    self.add_message(
+                        "Usage: preset <perth|catastrophic|goldfields|wheatbelt|hot>".to_string(),
+                    );
+                }
+            }
+            "reset" | "r" => {
+                let new_width = parts
+                    .get(1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(self.terrain_width);
+                let new_height = parts
+                    .get(2)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(self.terrain_height);
+
+                self.reset_simulation(new_width, new_height);
+            }
+            "heatmap" | "hm" => {
+                let grid_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
+                self.heatmap_size = grid_size;
+                if self.headless {
+                    // In headless mode, output heatmap as text
+                    self.show_heatmap_text(grid_size);
+                } else {
+                    // In interactive mode, switch to heatmap view
+                    self.view_mode = ViewMode::Heatmap;
+                    self.add_message("Switched to Heatmap view".to_string());
+                }
+            }
+            "help" | "?" => {
+                self.view_mode = ViewMode::Help;
+                self.add_message("Switched to Help view".to_string());
+            }
+            "quit" | "q" | "exit" => {
+                self.should_quit = true;
+            }
+            _ => {
+                let cmd = parts[0];
+                self.add_message(format!(
+                    "Unknown command: '{cmd}'. Type 'help' for available commands."
+                ));
+            }
+        }
+    }
+
+    /// Step the simulation forward (sets up stepping state)
+    /// Step the simulation forward by the specified number of timesteps
+    ///
+    /// In interactive mode, this sets up non-blocking stepping that processes
+    /// one step per frame to keep the UI responsive.
+    fn step_simulation(&mut self, count: u32) {
+        self.add_message(format!("Stepping {count} timestep(s)..."));
+        self.steps_remaining = count;
+        self.steps_total = count;
+    }
+
+    /// Process one simulation step (called from event loop)
+    ///
+    /// Updates the simulation by one timestep and tracks newly ignited elements.
+    fn process_one_step(&mut self) {
+        if self.steps_remaining == 0 {
+            return;
+        }
+
+        let dt = 1.0;
+        let burning_before = self.sim.get_burning_elements().len();
+        let embers_before = self.sim.ember_count();
+        let start = Instant::now();
+
+        // Track which elements were burning before
+        let burning_ids_before: std::collections::HashSet<_> = self
+            .sim
+            .get_burning_elements()
+            .iter()
+            .map(|e| e.get_stats().id)
+            .collect();
+
+        self.sim.update(dt);
+        self.step_count += 1;
+        self.elapsed_time += dt;
+
+        // Track newly ignited elements
+        let burning_ids_after: std::collections::HashSet<_> = self
+            .sim
+            .get_burning_elements()
+            .iter()
+            .map(|e| e.get_stats().id)
+            .collect();
+
+        for id in burning_ids_after.difference(&burning_ids_before) {
+            self.ignition_times.insert(*id, self.step_count);
+        }
+
+        let burning_after = self.sim.get_burning_elements().len();
+        let embers_after = self.sim.ember_count();
+        let time = start.elapsed();
+
+        let current_step = self.steps_total - self.steps_remaining + 1;
+
+        // Log significant changes or every 10th step or the last step
+        if current_step == self.steps_total
+            || current_step.is_multiple_of(10)
+            || burning_after != burning_before
+            || embers_after != embers_before
+        {
+            self.add_message(format!(
+                "Step {}: Burning: {} → {}, Embers: {} → {}, Time: {}ms",
+                current_step,
+                burning_before,
+                burning_after,
+                embers_before,
+                embers_after,
+                time.as_millis()
+            ));
+        }
+
+        self.steps_remaining -= 1;
+
+        if self.steps_remaining == 0 {
+            self.add_message("Done.".to_string());
+        }
+    }
+
+    /// Show element details by ID
+    fn show_element(&mut self, id: usize) {
+        if let Some(e) = self.sim.get_element(id) {
+            let stats = e.get_stats();
+            let fuel_name = e.fuel().name.clone();
+            let part_type = format!("{:?}", stats.part_type);
+
+            self.add_message(format!("═══════════════ ELEMENT {id} ═══════════════"));
+            self.add_message(format!(
+                "Position: ({:.1}, {:.1}, {:.1})",
+                stats.position.x, stats.position.y, stats.position.z
+            ));
+            self.add_message(format!("Fuel Type: {fuel_name}"));
+            self.add_message(format!("Part Type: {part_type}"));
+            self.add_message(format!("Temperature: {:.1}°C", stats.temperature));
+            self.add_message(format!(
+                "Ignition Temp: {:.1}°C",
+                stats.ignition_temperature
+            ));
+            self.add_message(format!("Ignited: {}", stats.ignited));
+            self.add_message(format!("Moisture: {:.1}%", stats.moisture_fraction * 100.0));
+            self.add_message(format!("Fuel Mass: {:.2} kg", stats.fuel_remaining));
+        } else {
+            self.add_message(format!("Element {id} not found"));
+        }
+    }
+
+    /// Show list of currently burning elements
+    fn show_burning(&mut self) {
+        let burning_elements = self.sim.get_burning_elements();
+        if burning_elements.is_empty() {
+            self.add_message("No elements are currently burning.".to_string());
+        } else {
+            let count = burning_elements.len();
+            let messages: Vec<String> = burning_elements
+                .iter()
+                .take(10)
+                .map(|e| {
+                    let stats = e.get_stats();
+                    format!(
+                        "ID {:<6} ({:>5.1}, {:>5.1}, {:>4.1}) {:>7.1}°C {:>8.1}% {:>7.2}kg",
+                        stats.id,
+                        stats.position.x,
+                        stats.position.y,
+                        stats.position.z,
+                        stats.temperature,
+                        stats.moisture_fraction * 100.0,
+                        stats.fuel_remaining
+                    )
+                })
+                .collect();
+
+            self.add_message(format!(
+                "═══════════════ {count} BURNING ELEMENTS ═══════════════"
+            ));
+            for msg in messages {
+                self.add_message(msg);
+            }
+            if count > 10 {
+                let more = count - 10;
+                self.add_message(format!("... and {more} more"));
+            }
+        }
+    }
+
+    /// Show list of active embers
+    /// Show list of active embers
+    fn show_embers(&mut self) {
+        let ember_count = self.sim.ember_count();
+        self.add_message(format!("Active embers: {ember_count}"));
+    }
+
+    /// Show elements nearby the specified element ID
+    fn show_nearby(&mut self, id: usize) {
+        if let Some(e) = self.sim.get_element(id) {
+            let source_pos = *e.position();
+            let nearby = self.sim.get_elements_in_radius(source_pos, 15.0);
+
+            let messages: Vec<String> = nearby
+                .iter()
+                .take(10)
+                .filter_map(|n| {
+                    let stats = n.get_stats();
+                    if stats.id == id {
+                        return None;
+                    }
+
+                    let dist = (stats.position - source_pos).magnitude();
+                    Some(format!(
+                        "ID {:<6} ({:>5.1}, {:>5.1}, {:>4.1}) {:>7.1}°C {:>7.1}m {}",
+                        stats.id,
+                        stats.position.x,
+                        stats.position.y,
+                        stats.position.z,
+                        stats.temperature,
+                        dist,
+                        if stats.ignited { "🔥" } else { "" }
+                    ))
+                })
+                .collect();
+
+            self.add_message(format!(
+                "═══════════════ ELEMENTS NEAR {id} ═══════════════"
+            ));
+            for msg in messages {
+                self.add_message(msg);
+            }
+        } else {
+            self.add_message(format!("Element {id} not found"));
+        }
+    }
+
+    /// Ignite an element by ID and track its ignition time
+    fn ignite_element(&mut self, id: usize) {
+        if let Some(e) = self.sim.get_element(id) {
+            let stats = e.get_stats();
+            let initial_temp = Celsius::new(600.0).max(Celsius::from(stats.ignition_temperature));
+            self.sim.ignite_element(id, initial_temp);
+            // Track ignition time
+            self.ignition_times.insert(id, self.step_count);
+            self.add_message(format!(
+                "Ignited element {id} at ({:.1}, {:.1}, {:.1})",
+                stats.position.x, stats.position.y, stats.position.z
+            ));
+        } else {
+            self.add_message(format!("Element {id} not found"));
+        }
+    }
+
+    /// Heat an element to a target temperature
+    fn heat_element(&mut self, id: usize, target_temp: f32) {
+        if let Some(e) = self.sim.get_element(id) {
+            let stats = e.get_stats();
+            heat_element_to_temp(&mut self.sim, id, target_temp);
+            self.add_message(format!(
+                "Heating element {id} to {target_temp:.1}°C (was {:.1}°C) at ({:.1}, {:.1}, {:.1})",
+                stats.temperature, stats.position.x, stats.position.y, stats.position.z
+            ));
+        } else {
+            self.add_message(format!("Element {id} not found"));
+        }
+    }
+
+    /// Ignite elements at a specific position with optional filters
+    ///
+    /// Command format: `ignite_position <x> <y> [radius] [amount] [filters]`
+    fn ignite_position(&mut self, parts: &[&str]) {
+        let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
+            self.add_message(
+                "Usage: ignite_position <x> <y> [radius] [amount] [filters]".to_string(),
+            );
+            return;
+        };
+
+        let Some(y) = parts.get(2).and_then(|s| s.parse::<i32>().ok()) else {
+            self.add_message(
+                "Usage: ignite_position <x> <y> [radius] [amount] [filters]".to_string(),
+            );
+            return;
+        };
+
+        let radius = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+        let amount = parts
+            .get(4)
+            .and_then(|s| s.parse::<i32>().ok())
+            .unwrap_or(-1);
+
+        let (fuel_filter, part_filter, min_z, max_z) = parse_filters(parts, 5);
+
+        let center = Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0);
+
+        let filtered = filter_elements_in_circle(
+            &self.sim,
+            center,
+            radius,
+            fuel_filter.as_deref(),
+            part_filter.as_deref(),
+            min_z,
+            max_z,
+        );
+
+        let mut id_dist_ign: Vec<(usize, f32, Celsius, f32)> = filtered
+            .into_iter()
+            .filter_map(|(id, dist, z)| {
+                self.sim
+                    .get_element(id)
+                    .map(|e| (id, dist, e.fuel().ignition_temperature, z))
+            })
+            .collect();
+
+        if id_dist_ign.is_empty() {
+            self.add_message(format!(
+                "No elements found within radius {radius:.1} at ({x}, {y})"
+            ));
+        } else {
+            id_dist_ign.sort_by(|a, b| {
+                let z_cmp = a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal);
+                if z_cmp == std::cmp::Ordering::Equal {
+                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+                } else {
+                    z_cmp
+                }
+            });
+
+            let total = id_dist_ign.len();
+            let to_ignite: Vec<(usize, f32, Celsius, f32)> = if amount < 0 {
+                id_dist_ign.clone()
+            } else {
+                let amt = amount as usize;
+                id_dist_ign.into_iter().take(amt).collect()
+            };
+
+            let ignite_count = if amount < 0 { total } else { to_ignite.len() };
+            self.add_message(format!(
+                "Found {total} element(s) within radius {radius:.1} — igniting {ignite_count} (ground-up → closest):"
+            ));
+
+            for (id, dist, ign_temp, z) in &to_ignite {
+                let initial_temp = Celsius::new(600.0).max(*ign_temp);
+                self.sim.ignite_element(*id, initial_temp);
+                self.add_message(format!(
+                    "  ID {id}: {dist:.2}m, z={z:.2} — ignition temp {ign_temp:.1}°C"
+                ));
+            }
+        }
+    }
+
+    /// Heat elements at position
+    /// Heat elements at a specific position to a target temperature
+    ///
+    /// Command format: `heat_position <x> <y> <temp> [radius] [amount] [filters]`
+    fn heat_position(&mut self, parts: &[&str]) {
+        let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
+            self.add_message(
+                "Usage: heat_position <x> <y> <temperature> [radius] [amount] [filters]"
+                    .to_string(),
+            );
+            return;
+        };
+
+        let Some(y) = parts.get(2).and_then(|s| s.parse::<i32>().ok()) else {
+            self.add_message(
+                "Usage: heat_position <x> <y> <temperature> [radius] [amount] [filters]"
+                    .to_string(),
+            );
+            return;
+        };
+
+        let Some(temperature) = parts.get(3).and_then(|s| s.parse::<f32>().ok()) else {
+            self.add_message(
+                "Usage: heat_position <x> <y> <temperature> [radius] [amount] [filters]"
+                    .to_string(),
+            );
+            return;
+        };
+
+        let radius = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+        let amount = parts
+            .get(5)
+            .and_then(|s| s.parse::<i32>().ok())
+            .unwrap_or(-1);
+
+        let (fuel_filter, part_filter, min_z, max_z) = parse_filters(parts, 6);
+
+        let center = Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0);
+
+        let mut id_dist_z = filter_elements_in_circle(
+            &self.sim,
+            center,
+            radius,
+            fuel_filter.as_deref(),
+            part_filter.as_deref(),
+            min_z,
+            max_z,
+        );
+
+        if id_dist_z.is_empty() {
+            self.add_message(format!(
+                "No elements found within radius {radius:.1} at ({x}, {y})"
+            ));
+        } else {
+            id_dist_z.sort_by(|a, b| {
+                let z_cmp = a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal);
+                if z_cmp == std::cmp::Ordering::Equal {
+                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+                } else {
+                    z_cmp
+                }
+            });
+
+            let total = id_dist_z.len();
+            let to_heat: Vec<(usize, f32, f32)> = if amount < 0 {
+                id_dist_z.clone()
+            } else {
+                let amt = amount as usize;
+                id_dist_z.into_iter().take(amt).collect()
+            };
+
+            let heat_count = if amount < 0 { total } else { to_heat.len() };
+            self.add_message(format!(
+                "Found {total} element(s) within radius {radius:.1} — heating {heat_count} to {temperature:.1}°C (ground-up → closest):"
+            ));
+
+            for (id, dist, z) in &to_heat {
+                heat_element_to_temp(&mut self.sim, *id, temperature);
+                self.add_message(format!("  ID {id}: {dist:.2}m, z={z:.2}"));
+            }
+        }
+    }
+
+    /// Set the weather preset by name
+    fn set_preset(&mut self, name: &str) {
+        let preset = match name.to_lowercase().as_str() {
+            "perth" | "perth_metro" => WeatherPreset::perth_metro(),
+            "catastrophic" | "cat" => WeatherPreset::catastrophic(),
+            "goldfields" => WeatherPreset::goldfields(),
+            "wheatbelt" => WeatherPreset::wheatbelt(),
+            "hot" => WeatherPreset::basic(
+                "Hot",
+                Celsius::new(38.0),
+                Celsius::new(38.0),
+                Percent::new(20.0),
+                KilometersPerHour::new(35.0),
+                0.15,
+            ),
+            _ => {
+                self.add_message(format!(
+                    "Unknown preset: {name}. Available: perth, catastrophic, goldfields, wheatbelt, hot"
+                ));
+                return;
+            }
+        };
+
+        self.current_weather = preset.clone();
+        self.sim.update_weather_preset(preset);
+        let weather_name = &self.current_weather.name;
+        self.add_message(format!("Weather preset changed to '{weather_name}'"));
+    }
+
+    /// Reset simulation
+    /// Reset the simulation with new terrain dimensions
+    fn reset_simulation(&mut self, width: f32, height: f32) {
+        self.sim = create_test_simulation(width, height, self.current_weather.clone());
+        self.terrain_width = width;
+        self.terrain_height = height;
+        self.step_count = 0;
+        self.elapsed_time = 0.0;
+        self.ignition_times.clear(); // Clear ignition tracking from previous simulation
+
+        self.add_message(format!(
+            "Simulation reset! Created {} elements on {}x{} terrain",
+            self.sim.get_all_elements().len(),
+            width,
+            height
+        ));
+    }
+
+    /// Show heatmap as text (for headless mode)
+    ///
+    /// Generates an ASCII representation of the temperature heatmap
+    fn show_heatmap_text(&mut self, grid_size: usize) {
+        self.add_message("═══════════════ TEMPERATURE HEATMAP ═══════════════".to_string());
+
+        let cell_width = self.terrain_width / usize_to_f32(grid_size);
+        let cell_height = self.terrain_height / usize_to_f32(grid_size);
+
+        let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
+        let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
+        let mut burning_grid: Vec<Vec<bool>> = vec![vec![false; grid_size]; grid_size];
+
+        for e in self.sim.get_all_elements() {
+            let stats = e.get_stats();
+            let x = (stats.position.x / cell_width).floor() as i32;
+            let y = (stats.position.y / cell_height).floor() as i32;
+
+            if x >= 0 && x < grid_size as i32 && y >= 0 && y < grid_size as i32 {
+                let ix = x as usize;
+                let iy = y as usize;
+                grid[iy][ix] += stats.temperature;
+                counts[iy][ix] += 1;
+                if stats.ignited {
+                    burning_grid[iy][ix] = true;
+                }
+            }
+        }
+
+        for y in 0..grid_size {
+            for x in 0..grid_size {
+                if counts[y][x] > 0 {
+                    grid[y][x] /= u32_to_f32(counts[y][x]);
+                }
+            }
+        }
+
+        let mut min_temp = f32::MAX;
+        let mut max_temp = f32::MIN;
+        for y in 0..grid_size {
+            for x in 0..grid_size {
+                if counts[y][x] > 0 {
+                    let temp = grid[y][x];
+                    min_temp = min_temp.min(temp);
+                    max_temp = max_temp.max(temp);
+                }
+            }
+        }
+
+        if min_temp == f32::MAX {
+            min_temp = 0.0;
+            max_temp = 0.0;
+        }
+
+        const MIN_TEMP_COOL: f32 = 50.0;
+        const MIN_TEMP_WARM: f32 = 100.0;
+        const MIN_TEMP_HOT: f32 = 200.0;
+        const MIN_TEMP_VERY_HOT: f32 = 350.0;
+
+        let temp_range = max_temp - min_temp;
+        let threshold_very_hot = (min_temp + temp_range * 0.75).max(MIN_TEMP_VERY_HOT);
+        let threshold_hot = (min_temp + temp_range * 0.50).max(MIN_TEMP_HOT);
+        let threshold_warm = (min_temp + temp_range * 0.25).max(MIN_TEMP_WARM);
+        let threshold_cool = MIN_TEMP_COOL;
+
+        self.add_message("Legend: · = empty/ambient  🔥 = burning (ignited)".to_string());
+        self.add_message(format!(
+            "        ░ >{threshold_cool:.0}°C  ▒ >{threshold_warm:.0}°C  ▓ >{threshold_hot:.0}°C  █ >{threshold_very_hot:.0}°C"
+        ));
+        self.add_message(format!(
+            "Temperature range: {min_temp:.0}°C - {max_temp:.0}°C"
+        ));
+
+        for y in (0..grid_size).rev() {
+            let mut line = format!("{:3} │ ", (usize_to_f32(y) * cell_height) as i32);
+            for x in 0..grid_size {
+                if counts[y][x] == 0 {
+                    line.push_str("· ");
+                } else if burning_grid[y][x] {
+                    line.push('🔥');
+                } else {
+                    let temp = grid[y][x];
+                    let c = if temp >= threshold_very_hot {
+                        '█'
+                    } else if temp >= threshold_hot {
+                        '▓'
+                    } else if temp >= threshold_warm {
+                        '▒'
+                    } else if temp >= threshold_cool {
+                        '░'
+                    } else {
+                        '·'
+                    };
+                    line.push(c);
+                    line.push(' ');
+                }
+            }
+            self.add_message(line);
+        }
+
+        let burning_cells: usize = burning_grid.iter().flatten().filter(|&&b| b).count();
+        if burning_cells > 0 {
+            let total_cells = grid_size * grid_size;
+            self.add_message(format!("Burning cells: {burning_cells} / {total_cells}"));
+        }
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Check for headless mode flag
+    let headless = std::env::args().any(|arg| arg == "--headless");
+
+    if headless {
+        run_headless()
+    } else {
+        run_interactive()
+    }
+}
+
+/// Run in headless mode (no UI, just command processing and log output)
+fn run_headless() -> Result<(), Box<dyn std::error::Error>> {
+    println!("╔═══════════════════════════════════════════════════════════╗");
+    println!("║      Australia Fire Simulation - Headless Mode            ║");
+    println!("╚═══════════════════════════════════════════════════════════╝");
+    println!();
+
+    // Read terrain dimensions from stdin
+    let (width, height) = prompt_terrain_dimensions();
+
+    // Create app in headless mode
+    let mut app = App::new_with_mode(width, height, true);
+
+    println!(
+        "Created simulation with {} elements on {width}x{height} terrain",
+        app.sim.get_all_elements().len()
+    );
+    println!("Enter commands (type 'help' for available commands, 'quit' to exit):");
+    println!();
+
+    // Process commands from stdin
+    let stdin = io::stdin();
+    for line in stdin.lines() {
+        let line = line?;
+        let line = line.trim();
+
+        if line.is_empty() {
+            continue;
+        }
+
+        // Execute command
+        app.execute_command(line);
+
+        // Print all new messages
+        for msg in &app.messages {
+            if !msg.is_empty() {
+                println!("{msg}");
+            }
+        }
+        // Clear messages after printing
+        app.messages.clear();
+
+        // Process any pending steps
+        while app.steps_remaining > 0 {
+            app.process_one_step();
+            // Print step messages
+            for msg in &app.messages {
+                if !msg.is_empty() {
+                    println!("{msg}");
+                }
+            }
+            app.messages.clear();
+        }
+
+        if app.should_quit {
+            break;
+        }
+    }
+
+    println!();
+    println!("Goodbye!");
+    Ok(())
+}
+
+/// Run in interactive mode with TUI
+fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
+    // Prompt for terrain dimensions before entering TUI mode
     println!("╔═══════════════════════════════════════════════════════════╗");
     println!("║      Australia Fire Simulation - Interactive Debugger     ║");
     println!("╚═══════════════════════════════════════════════════════════╝");
     println!();
 
-    // Ask for terrain dimensions
     let (width, height) = prompt_terrain_dimensions();
 
-    // Default properties
-    let mut current_width = width;
-    let mut current_height = height;
-    let mut current_weather = WeatherPreset::perth_metro();
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-    // Create simulation with user-specified dimensions
-    let mut sim = create_test_simulation(width, height, current_weather.clone());
+    // Create guard to ensure terminal restoration on interrupt/early exit
+    let guard = Arc::new(TerminalGuard::new());
 
-    println!(
-        "Created simulation with {} elements on {}x{} terrain",
-        sim.get_all_elements().len(),
-        width,
-        height
-    );
-    println!("No elements are ignited. Use 'ignite <id>' to start a fire.");
+    // Set up panic hook to print panic messages properly
+    // The guard handles terminal restoration, this ensures messages are visible
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new({
+        let guard = Arc::downgrade(&guard);
 
-    // Setup readline
-    let mut rl = match DefaultEditor::new() {
-        Ok(rl) => rl,
-        Err(e) => {
-            eprintln!("Failed to create readline: {e}");
-            return;
+        move |panic_info| {
+            // Restore terminal state before printing panic info
+            let _ = disable_raw_mode();
+            let _ = execute!(
+                io::stdout(),
+                LeaveAlternateScreen,
+                DisableMouseCapture,
+                crossterm::cursor::Show
+            );
+
+            if let Some(guard) = guard.upgrade() {
+                guard.disarm();
+            }
+
+            // Call the original panic hook to print full backtrace
+            original_hook(panic_info);
         }
-    };
+    }));
 
-    println!("\nType 'help' for available commands.\n");
+    // Create app
+    let mut app = App::new(width, height);
 
+    // Run app
+    let res = run_app(&mut terminal, &mut app);
+
+    // Restore terminal manually
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    // Disarm guard since we've manually cleaned up successfully
+    guard.disarm();
+
+    res?;
+
+    println!("Goodbye!");
+    Ok(())
+}
+
+/// Run the application event loop
+fn run_app<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+) -> io::Result<()> {
     loop {
-        let readline = rl.readline("fire> ");
-        match readline {
-            Ok(line) => {
-                let _ = rl.add_history_entry(&line);
-                let parts: Vec<&str> = line.split_whitespace().collect();
+        terminal.draw(|f| ui(f, app))?;
 
-                if parts.is_empty() {
-                    continue;
-                }
+        if app.should_quit {
+            break;
+        }
 
-                match parts[0].to_lowercase().as_str() {
-                    "step" | "s" => {
-                        let count = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
-                        step_simulation(&mut sim, count);
+        // Process one simulation step if stepping is in progress
+        if app.steps_remaining > 0 {
+            app.process_one_step();
+            // Don't wait for input, immediately redraw to show progress
+            continue;
+        }
+
+        if event::poll(std::time::Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.should_quit = true;
                     }
-                    "status" | "st" => show_status(&sim),
-                    "weather" | "w" => show_weather(&sim),
-                    "element" | "e" => {
-                        if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
-                            show_element(&sim, id);
-                        } else {
-                            println!("Usage: element <id>");
-                        }
-                    }
-                    "burning" | "b" => show_burning(&sim),
-                    "embers" | "em" => show_embers(&sim),
-                    "nearby" | "n" => {
-                        if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
-                            show_nearby(&sim, id);
-                        } else {
-                            println!("Usage: nearby <id>");
-                        }
-                    }
-                    "ignite" | "i" => {
-                        if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
-                            ignite_element(&mut sim, id);
-                        } else {
-                            println!("Usage: ignite <id>");
-                        }
-                    }
-                    "heat" | "h" => {
-                        if let (Some(id), Some(temperature)) = (
-                            parts.get(1).and_then(|s| s.parse().ok()),
-                            parts.get(2).and_then(|s| s.parse().ok()),
-                        ) {
-                            heat_element(&mut sim, id, temperature);
-                        } else {
-                            println!("Usage: heat <id> <temperature>");
-                        }
-                    }
-                    "ignite_position" | "ip" => {
-                        let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
-                            println!("Usage: ignite_position <x> <y> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
-                            println!(
-                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
-                            );
-                            continue;
-                        };
-
-                        let Some(y) = parts.get(2).and_then(|s| s.parse::<i32>().ok()) else {
-                            println!("Usage: ignite_position <x> <y> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
-                            println!(
-                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
-                            );
-                            continue;
-                        };
-
-                        // Parse optional radius and amount parameters
-                        // Usage: ignite_position <x> <y> [radius] [amount]
-                        // amount: number of elements to ignite (from ground up). -1 = all
-                        let radius = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(1.0);
-                        let amount = parts
-                            .get(4)
-                            .and_then(|s| s.parse::<i32>().ok())
-                            .unwrap_or(-1);
-
-                        // Parse optional filters after amount
-                        let (fuel_filter, part_filter, min_z, max_z) = parse_filters(&parts, 5);
-
-                        let center = Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0);
-
-                        // Get filtered elements with ignition temperatures
-                        let filtered = filter_elements_in_circle(
-                            &sim,
-                            center,
-                            radius,
-                            fuel_filter.as_deref(),
-                            part_filter.as_deref(),
-                            min_z,
-                            max_z,
-                        );
-
-                        let mut id_dist_ign: Vec<(usize, f32, Celsius, f32)> = filtered
-                            .into_iter()
-                            .filter_map(|(id, dist, z)| {
-                                sim.get_element(id)
-                                    .map(|e| (id, dist, e.fuel().ignition_temperature, z))
-                            })
-                            .collect();
-
-                        if id_dist_ign.is_empty() {
-                            println!("No elements found within radius {radius:.1} at ({x}, {y})");
-                        } else {
-                            // Sort by Z ascending (ground-up), then horizontal distance ascending
-                            id_dist_ign.sort_by(|a, b| {
-                                let z_cmp =
-                                    a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal);
-                                if z_cmp == std::cmp::Ordering::Equal {
-                                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-                                } else {
-                                    z_cmp
-                                }
-                            });
-
-                            let total = id_dist_ign.len();
-                            let to_ignite: Vec<(usize, f32, Celsius, f32)> = if amount < 0 {
-                                id_dist_ign.clone()
-                            } else {
-                                let amt = amount as usize;
-                                id_dist_ign.into_iter().take(amt).collect()
-                            };
-
-                            println!(
-                                "Found {} element(s) within radius {:.1} — igniting {} (ground-up → closest):",
-                                total,
-                                radius,
-                                if amount < 0 { total } else { to_ignite.len() }
-                            );
-
-                            for (id, dist, ign_temp, z) in &to_ignite {
-                                println!(
-                                    "  ID {id}: {dist:.2}m, z={z:.2} — ignition temp {ign_temp:.1}°C"
-                                );
-                                // Start at 600°C - realistic for piloted ignition
-                                let initial_temp = Celsius::new(600.0).max(*ign_temp);
-                                sim.ignite_element(*id, initial_temp);
+                    KeyCode::Char('t' | 'T') => {
+                        // Toggle burning list sort mode
+                        app.burning_sort_mode = app.burning_sort_mode.next_mode();
+                        let mode_name = match app.burning_sort_mode {
+                            BurningSortMode::TemperatureAsc => "Temperature (ascending)",
+                            BurningSortMode::TemperatureDesc => "Temperature (descending)",
+                            BurningSortMode::TimeSinceIgnitionAsc => {
+                                "Time Since Ignition (ascending)"
                             }
-                        }
-                    }
-                    "heat_position" | "hp" => {
-                        let Some(x) = parts.get(1).and_then(|s| s.parse::<i32>().ok()) else {
-                            println!("Usage: heat_position <x> <y> <temperature> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
-                            println!(
-                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
-                            );
-                            continue;
-                        };
-
-                        let Some(y) = parts.get(2).and_then(|s| s.parse::<i32>().ok()) else {
-                            println!("Usage: heat_position <x> <y> <temperature> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
-                            println!(
-                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
-                            );
-                            continue;
-                        };
-
-                        let Some(temperature) = parts.get(3).and_then(|s| s.parse::<f32>().ok())
-                        else {
-                            println!("Usage: heat_position <x> <y> <temperature> [radius] [amount] [filters]  (radius default=1.0, amount -1 = all)");
-                            println!(
-                                "Filters: fuel=<name>, part=<partname>, minz=<f32>, maxz=<f32>"
-                            );
-                            continue;
-                        };
-
-                        // Parse optional radius and amount parameters
-                        let radius = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(1.0);
-                        let amount = parts
-                            .get(5)
-                            .and_then(|s| s.parse::<i32>().ok())
-                            .unwrap_or(-1);
-
-                        // Parse optional filters after amount
-                        let (fuel_filter, part_filter, min_z, max_z) = parse_filters(&parts, 6);
-
-                        let center = Vec3::new(i32_to_f32(x), i32_to_f32(y), 0.0);
-
-                        // Get filtered elements
-                        let mut id_dist_z = filter_elements_in_circle(
-                            &sim,
-                            center,
-                            radius,
-                            fuel_filter.as_deref(),
-                            part_filter.as_deref(),
-                            min_z,
-                            max_z,
-                        );
-
-                        if id_dist_z.is_empty() {
-                            println!("No elements found within radius {radius:.1} at ({x}, {y})");
-                        } else {
-                            // Sort by Z ascending (ground-up), then horizontal distance ascending
-                            id_dist_z.sort_by(|a, b| {
-                                let z_cmp =
-                                    a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal);
-                                if z_cmp == std::cmp::Ordering::Equal {
-                                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-                                } else {
-                                    z_cmp
-                                }
-                            });
-
-                            let total = id_dist_z.len();
-                            let to_heat: Vec<(usize, f32, f32)> = if amount < 0 {
-                                id_dist_z.clone()
-                            } else {
-                                let amt = amount as usize;
-                                id_dist_z.into_iter().take(amt).collect()
-                            };
-
-                            println!(
-                                "Found {} element(s) within radius {:.1} — heating {} to {:.1}°C (ground-up → closest):",
-                                total,
-                                radius,
-                                if amount < 0 { total } else { to_heat.len() },
-                                temperature
-                            );
-
-                            for (id, dist, z) in &to_heat {
-                                println!("  ID {id}: {dist:.2}m, z={z:.2}");
-                                heat_element_to_temp(&mut sim, *id, temperature);
+                            BurningSortMode::TimeSinceIgnitionDesc => {
+                                "Time Since Ignition (descending)"
                             }
+                        };
+                        app.add_message(format!("Burning list sort mode: {mode_name}"));
+                    }
+                    KeyCode::Char(c) => {
+                        app.input.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        app.input.pop();
+                    }
+                    KeyCode::Enter => {
+                        let command = app.input.clone();
+                        app.input.clear();
+                        app.execute_command(&command);
+                    }
+                    KeyCode::Up => {
+                        if !app.history.is_empty() && app.history_pos > 0 {
+                            app.history_pos -= 1;
+                            app.input = app.history[app.history_pos].clone();
                         }
                     }
-                    "preset" | "p" => {
-                        if let Some(name) = parts.get(1) {
-                            set_preset(&mut sim, &mut current_weather, name);
-                        } else {
-                            println!("Usage: preset <perth|catastrophic|goldfields|wheatbelt>");
+                    KeyCode::Down => {
+                        if !app.history.is_empty() && app.history_pos < app.history.len() - 1 {
+                            app.history_pos += 1;
+                            app.input = app.history[app.history_pos].clone();
+                        } else if app.history_pos == app.history.len() - 1 {
+                            app.history_pos = app.history.len();
+                            app.input.clear();
                         }
                     }
-                    // Wind field is always enabled; runtime toggle is disabled
-                    "reset" | "r" => {
-                        // Parse optional dimensions from command or use current
-                        let new_width = parts
-                            .get(1)
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(current_width);
-                        let new_height = parts
-                            .get(2)
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(current_height);
-
-                        sim =
-                            create_test_simulation(new_width, new_height, current_weather.clone());
-                        current_width = new_width;
-                        current_height = new_height;
-
-                        println!(
-                            "Simulation reset! Created {} elements on {}x{} terrain",
-                            sim.get_all_elements().len(),
-                            new_width,
-                            new_height
-                        );
+                    KeyCode::PageUp => {
+                        if app.message_scroll < app.messages.len().saturating_sub(1) {
+                            app.message_scroll = app.message_scroll.saturating_add(10);
+                        }
                     }
-                    "help" | "?" => show_help(),
-                    "heatmap" | "hm" => {
-                        let grid_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
-
-                        show_heatmap(&sim, current_width, current_height, grid_size);
+                    KeyCode::PageDown => {
+                        app.message_scroll = app.message_scroll.saturating_sub(10);
                     }
-                    "quit" | "q" | "exit" => {
-                        println!("Goodbye!");
-                        break;
+                    KeyCode::Home => {
+                        app.message_scroll = app.messages.len().saturating_sub(1);
                     }
-                    _ => println!(
-                        "Unknown command: {}. Type 'help' for available commands.",
-                        parts[0]
-                    ),
+                    KeyCode::End => {
+                        app.message_scroll = 0;
+                    }
+                    KeyCode::Esc => {
+                        app.view_mode = ViewMode::Dashboard;
+                        app.message_scroll = 0; // Reset scroll when returning to dashboard
+                    }
+                    KeyCode::F(1) => {
+                        app.view_mode = ViewMode::Help;
+                    }
+                    _ => {}
                 }
-            }
-            Err(ReadlineError::Interrupted) => {
-                println!("^C");
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                println!("^D");
-                break;
-            }
-            Err(err) => {
-                eprintln!("Error: {err:?}");
-                break;
             }
         }
     }
+
+    Ok(())
 }
 
-// Small helpers for deliberate integer->float casts used in the demo.
-// These centralize the `as` conversions and document / expect the precision loss.
-#[inline]
-#[expect(clippy::cast_precision_loss)]
-fn i32_to_f32(v: i32) -> f32 {
-    v as f32
+/// Draw the UI
+fn ui(f: &mut Frame, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Header
+            Constraint::Min(10),   // Main area
+            Constraint::Length(3), // Input
+        ])
+        .split(f.area());
+
+    // Header
+    draw_header(f, app, chunks[0]);
+
+    // Main area based on view mode
+    match app.view_mode {
+        ViewMode::Dashboard => draw_dashboard(f, app, chunks[1]),
+        ViewMode::Status => draw_status(f, app, chunks[1]),
+        ViewMode::Weather => draw_weather(f, app, chunks[1]),
+        ViewMode::Help => draw_help(f, chunks[1]),
+        ViewMode::Heatmap => draw_heatmap(f, app, chunks[1]),
+    }
+
+    // Input area
+    draw_input(f, app, chunks[2]);
 }
 
-#[inline]
-#[expect(clippy::cast_precision_loss)]
-fn usize_to_f32(v: usize) -> f32 {
-    v as f32
+/// Draw the header
+fn draw_header(f: &mut Frame, app: &App, area: Rect) {
+    let mut header_text = format!(
+        " Fire Simulation | Step: {} | Time: {:.1}s | Elements: {} | Burning: {} | Embers: {} ",
+        app.step_count,
+        app.elapsed_time,
+        app.sim.get_all_elements().len(),
+        app.sim.get_burning_elements().len(),
+        app.sim.ember_count()
+    );
+
+    // Add stepping progress indicator
+    if app.steps_remaining > 0 {
+        let progress = app.steps_total - app.steps_remaining + 1;
+        use std::fmt::Write;
+        let _ = write!(
+            header_text,
+            " | Stepping: {}/{} ",
+            progress, app.steps_total
+        );
+    }
+
+    let header = Paragraph::new(header_text)
+        .style(
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
+        .block(Block::default().borders(Borders::ALL));
+
+    f.render_widget(header, area);
 }
 
-#[inline]
-#[expect(clippy::cast_precision_loss)]
-fn u32_to_f32(v: u32) -> f32 {
-    v as f32
+/// Draw the dashboard view
+fn draw_dashboard(f: &mut Frame, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(70), // Messages
+            Constraint::Percentage(30), // Burning elements
+        ])
+        .split(area);
+
+    // Messages
+    draw_messages(f, app, chunks[0]);
+
+    // Burning elements
+    draw_burning_list(f, app, chunks[1]);
 }
 
-// Advanced wind field is always enabled — no startup prompt needed.
+/// Draw messages
+fn draw_messages(f: &mut Frame, app: &App, area: Rect) {
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let total_messages = app.messages.len();
+
+    // Calculate which messages to show based on scroll offset
+    let start_idx = if app.message_scroll >= total_messages {
+        0
+    } else {
+        total_messages.saturating_sub(app.message_scroll + visible_height)
+    };
+    let end_idx = total_messages.saturating_sub(app.message_scroll);
+
+    let messages: Vec<ListItem> = app
+        .messages
+        .iter()
+        .skip(start_idx)
+        .take(end_idx.saturating_sub(start_idx))
+        .map(|m| {
+            let style = if m.contains("Error") || m.contains("not found") {
+                Style::default().fg(Color::Red)
+            } else if m.contains("Ignited") || m.contains("Step") {
+                Style::default().fg(Color::Green)
+            } else if m.contains("═══") {
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ListItem::new(m.as_str()).style(style)
+        })
+        .collect();
+
+    let scroll_indicator = if app.message_scroll > 0 {
+        format!(" Messages (↑{}) ", app.message_scroll)
+    } else {
+        " Messages ".to_string()
+    };
+
+    let messages_list = List::new(messages).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(scroll_indicator)
+            .style(Style::default().fg(Color::White)),
+    );
+
+    f.render_widget(messages_list, area);
+}
+
+/// Draw burning elements list
+fn draw_burning_list(f: &mut Frame, app: &App, area: Rect) {
+    let burning_elements = app.sim.get_burning_elements();
+
+    // Extract stats once before sorting to improve performance
+    let mut elements_with_stats: Vec<_> = burning_elements
+        .iter()
+        .map(|e| {
+            let stats = e.get_stats();
+            let ignition_time = app.ignition_times.get(&stats.id).copied();
+            (e, stats, ignition_time)
+        })
+        .collect();
+
+    // Sort based on current sort mode
+    match app.burning_sort_mode {
+        BurningSortMode::TemperatureAsc => {
+            // Sort by temperature ascending (coolest first)
+            elements_with_stats.sort_by(|(_, stats_a, _), (_, stats_b, _)| {
+                stats_a
+                    .temperature
+                    .partial_cmp(&stats_b.temperature)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        BurningSortMode::TemperatureDesc => {
+            // Sort by temperature descending (hottest first)
+            elements_with_stats.sort_by(|(_, stats_a, _), (_, stats_b, _)| {
+                stats_b
+                    .temperature
+                    .partial_cmp(&stats_a.temperature)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        BurningSortMode::TimeSinceIgnitionAsc => {
+            // Sort by time since ignition ascending (oldest fires first)
+            elements_with_stats.sort_by(|(_, _, time_a), (_, _, time_b)| {
+                let time_a = time_a.unwrap_or(u32::MAX);
+                let time_b = time_b.unwrap_or(u32::MAX);
+                time_a.cmp(&time_b)
+            });
+        }
+        BurningSortMode::TimeSinceIgnitionDesc => {
+            // Sort by time since ignition descending (newest fires first)
+            elements_with_stats.sort_by(|(_, _, time_a), (_, _, time_b)| {
+                let time_a = time_a.unwrap_or(u32::MAX);
+                let time_b = time_b.unwrap_or(u32::MAX);
+                time_b.cmp(&time_a)
+            });
+        }
+    }
+
+    let items: Vec<ListItem> = elements_with_stats
+        .iter()
+        .take(area.height.saturating_sub(2) as usize)
+        .map(|(_, stats, ignition_time)| {
+            let temp_color = if stats.temperature > 800.0 {
+                Color::Red
+            } else if stats.temperature > 400.0 {
+                Color::Yellow
+            } else {
+                Color::White
+            };
+
+            let time_info = if let Some(ignition_step) = ignition_time {
+                let steps_burning = app.step_count.saturating_sub(*ignition_step);
+                format!(" | {steps_burning}s")
+            } else {
+                String::new()
+            };
+
+            let text = format!(
+                "ID {:>4} | {:.0}°C{} | ({:.0}, {:.0}, {:.0})",
+                stats.id,
+                stats.temperature,
+                time_info,
+                stats.position.x,
+                stats.position.y,
+                stats.position.z
+            );
+
+            ListItem::new(text).style(Style::default().fg(temp_color))
+        })
+        .collect();
+
+    let sort_indicator = match app.burning_sort_mode {
+        BurningSortMode::TemperatureAsc => "↑Temp",
+        BurningSortMode::TemperatureDesc => "↓Temp",
+        BurningSortMode::TimeSinceIgnitionAsc => "↑Time",
+        BurningSortMode::TimeSinceIgnitionDesc => "↓Time",
+    };
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!(
+                " 🔥 Burning ({}) [{}] ",
+                elements_with_stats.len(),
+                sort_indicator
+            ))
+            .style(Style::default().fg(Color::White)),
+    );
+
+    f.render_widget(list, area);
+}
+
+/// Draw the status view
+fn draw_status(f: &mut Frame, app: &App, area: Rect) {
+    let burning: Vec<_> = app
+        .sim
+        .get_all_elements()
+        .iter()
+        .map(|e| e.get_stats())
+        .collect();
+
+    let mut text = vec![
+        Line::from(Span::styled(
+            "═══════════════ SIMULATION STATUS ═══════════════",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(format!(
+            "Total elements:    {}",
+            app.sim.get_all_elements().len()
+        )),
+        Line::from(format!(
+            "Burning elements:  {}",
+            app.sim.get_burning_elements().len()
+        )),
+        Line::from(format!("Active embers:     {}", app.sim.ember_count())),
+        Line::from(""),
+    ];
+
+    if !burning.is_empty() {
+        let min_temp = burning
+            .iter()
+            .map(|e| e.temperature)
+            .fold(f32::MAX, f32::min);
+        let max_temp = burning
+            .iter()
+            .map(|e| e.temperature)
+            .fold(f32::MIN, f32::max);
+        let avg_temp: f32 =
+            burning.iter().map(|e| e.temperature).sum::<f32>() / usize_to_f32(burning.len());
+
+        text.push(Line::from("Element temperatures:"));
+        text.push(Line::from(format!("  Min: {min_temp:.1}°C")));
+        text.push(Line::from(format!("  Max: {max_temp:.1}°C")));
+        text.push(Line::from(format!("  Avg: {avg_temp:.1}°C")));
+    }
+
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "Press ESC to return to dashboard",
+        Style::default().fg(Color::Yellow),
+    )));
+
+    let paragraph = Paragraph::new(text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Status View ")
+                .style(Style::default().fg(Color::White)),
+        )
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
+/// Draw the weather view
+fn draw_weather(f: &mut Frame, app: &App, area: Rect) {
+    let w = app.sim.get_weather().get_stats();
+
+    let (month, day) = day_of_year_to_month_day(w.day_of_year);
+    let time_hours = (*w.time_of_day) as u32;
+    let time_minutes = ((*w.time_of_day - u32_to_f32(time_hours)) * 60.0) as u32;
+
+    let text = vec![
+        Line::from(Span::styled(
+            "═══════════════ WEATHER CONDITIONS ═══════════════",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(format!(
+            "Date & Time:     {month} {day} {time_hours:02}:{time_minutes:02}"
+        )),
+        Line::from(format!("Temperature:     {:.1}", w.temperature)),
+        Line::from(format!("Humidity:        {:.1}", w.humidity)),
+        Line::from(format!(
+            "Wind Speed:      {:.1} ({:.1})",
+            w.wind_speed,
+            w.wind_speed.to_mps()
+        )),
+        Line::from(format!("Wind Direction:  {:.0}", w.wind_direction)),
+        Line::from(format!("Drought Factor:  {:.1}", w.drought_factor)),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("FFDI:            {:.1}", w.ffdi),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(format!("Fire Danger:     {}", w.fire_danger_rating)),
+        Line::from(format!("Spread Mult:     {:.2}x", w.spread_rate_multiplier)),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Press ESC to return to dashboard",
+            Style::default().fg(Color::Yellow),
+        )),
+    ];
+
+    let paragraph = Paragraph::new(text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Weather View ")
+                .style(Style::default().fg(Color::White)),
+        )
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
+/// Draw the help view
+fn draw_help(f: &mut Frame, area: Rect) {
+    let text = vec![
+        Line::from(Span::styled("═══════════════ AVAILABLE COMMANDS ═══════════════", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from(Span::styled("Simulation Control:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+        Line::from("  step [n], s [n]          - Advance n timesteps (default 1)"),
+        Line::from("  reset [w] [h], r         - Reset simulation (optional: new width/height)"),
+        Line::from("  preset <name>, p         - Change weather preset (perth, catastrophic, goldfields, wheatbelt, hot)"),
+        Line::from(""),
+        Line::from(Span::styled("View Controls:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+        Line::from("  dashboard, d             - Switch to dashboard view"),
+        Line::from("  status, st               - Show simulation status"),
+        Line::from("  weather, w               - Show weather conditions"),
+        Line::from("  heatmap [size], hm       - Show temperature heatmap view (default size: 30)"),
+        Line::from("  help, ?                  - Show this help"),
+        Line::from("  F1                       - Quick help access"),
+        Line::from("  ESC                      - Return to dashboard"),
+        Line::from("  PageUp/PageDown          - Scroll messages up/down"),
+        Line::from("  Home/End                 - Jump to oldest/newest messages"),
+        Line::from(""),
+        Line::from(Span::styled("Element Commands:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+        Line::from("  element <id>, e          - Show element details"),
+        Line::from("  burning, b               - List burning elements"),
+        Line::from("  embers, em               - List active embers"),
+        Line::from("  nearby <id>, n           - Show elements near <id>"),
+        Line::from("  ignite <id>, i           - Manually ignite element"),
+        Line::from("  heat <id> <temp>, h      - Heat element to target temperature (°C)"),
+        Line::from(""),
+        Line::from(Span::styled("Position Commands:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+        Line::from("  ignite_position <x> <y> [radius] [amount] [filters]"),
+        Line::from("                           - Ignite elements in an XY circle"),
+        Line::from("  heat_position <x> <y> <temp> [radius] [amount] [filters]"),
+        Line::from("                           - Heat elements to target temperature"),
+        Line::from(""),
+        Line::from(Span::styled("Controls:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+        Line::from("  Ctrl+C, quit, q          - Exit simulation"),
+        Line::from("  Up/Down arrows           - Navigate command history"),
+        Line::from("  T                        - Toggle burning list sort (Temperature/Time)"),
+        Line::from(""),
+        Line::from(Span::styled("Press ESC to return to dashboard", Style::default().fg(Color::Yellow))),
+    ];
+
+    let paragraph = Paragraph::new(text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Help ")
+                .style(Style::default().fg(Color::White)),
+        )
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
+/// Draw the heatmap view
+fn draw_heatmap(f: &mut Frame, app: &App, area: Rect) {
+    let grid_size = app.heatmap_size;
+    let cell_width = app.terrain_width / usize_to_f32(grid_size);
+    let cell_height = app.terrain_height / usize_to_f32(grid_size);
+
+    let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
+    let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
+    let mut burning_grid: Vec<Vec<bool>> = vec![vec![false; grid_size]; grid_size];
+
+    for e in app.sim.get_all_elements() {
+        let stats = e.get_stats();
+        let x = (stats.position.x / cell_width).floor() as i32;
+        let y = (stats.position.y / cell_height).floor() as i32;
+
+        if x >= 0 && x < grid_size as i32 && y >= 0 && y < grid_size as i32 {
+            let ix = x as usize;
+            let iy = y as usize;
+            grid[iy][ix] += stats.temperature;
+            counts[iy][ix] += 1;
+            if stats.ignited {
+                burning_grid[iy][ix] = true;
+            }
+        }
+    }
+
+    for y in 0..grid_size {
+        for x in 0..grid_size {
+            if counts[y][x] > 0 {
+                grid[y][x] /= u32_to_f32(counts[y][x]);
+            }
+        }
+    }
+
+    let mut min_temp = f32::MAX;
+    let mut max_temp = f32::MIN;
+    for y in 0..grid_size {
+        for x in 0..grid_size {
+            if counts[y][x] > 0 {
+                let temp = grid[y][x];
+                min_temp = min_temp.min(temp);
+                max_temp = max_temp.max(temp);
+            }
+        }
+    }
+
+    if min_temp == f32::MAX {
+        min_temp = 0.0;
+        max_temp = 0.0;
+    }
+
+    const MIN_TEMP_COOL: f32 = 50.0;
+    const MIN_TEMP_WARM: f32 = 100.0;
+    const MIN_TEMP_HOT: f32 = 200.0;
+    const MIN_TEMP_VERY_HOT: f32 = 350.0;
+
+    let temp_range = max_temp - min_temp;
+    let threshold_very_hot = (min_temp + temp_range * 0.75).max(MIN_TEMP_VERY_HOT);
+    let threshold_hot = (min_temp + temp_range * 0.50).max(MIN_TEMP_HOT);
+    let threshold_warm = (min_temp + temp_range * 0.25).max(MIN_TEMP_WARM);
+    let threshold_cool = MIN_TEMP_COOL;
+
+    let mut text = vec![
+        Line::from(Span::styled(
+            "═══════════════ TEMPERATURE HEATMAP ═══════════════",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("Legend: · = empty/ambient  🔥 = burning (ignited)"),
+        Line::from(format!(
+            "        ░ >{threshold_cool:.0}°C  ▒ >{threshold_warm:.0}°C  ▓ >{threshold_hot:.0}°C  █ >{threshold_very_hot:.0}°C"
+        )),
+        Line::from(format!(
+            "Temperature range: {min_temp:.0}°C - {max_temp:.0}°C"
+        )),
+        Line::from(""),
+    ];
+
+    for y in (0..grid_size).rev() {
+        let mut line_text = format!("{:3} │ ", (usize_to_f32(y) * cell_height) as i32);
+        for x in 0..grid_size {
+            if counts[y][x] == 0 {
+                line_text.push_str("· ");
+            } else if burning_grid[y][x] {
+                line_text.push('🔥');
+            } else {
+                let temp = grid[y][x];
+                let c = if temp >= threshold_very_hot {
+                    '█'
+                } else if temp >= threshold_hot {
+                    '▓'
+                } else if temp >= threshold_warm {
+                    '▒'
+                } else if temp >= threshold_cool {
+                    '░'
+                } else {
+                    '·'
+                };
+                line_text.push(c);
+                line_text.push(' ');
+            }
+        }
+        text.push(Line::from(line_text));
+    }
+
+    let burning_cells: usize = burning_grid.iter().flatten().filter(|&&b| b).count();
+    if burning_cells > 0 {
+        let total_cells = grid_size * grid_size;
+        text.push(Line::from(""));
+        text.push(Line::from(format!(
+            "Burning cells: {burning_cells} / {total_cells}"
+        )));
+    }
+
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "Press ESC to return to dashboard",
+        Style::default().fg(Color::Yellow),
+    )));
+
+    let paragraph = Paragraph::new(text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Heatmap View ")
+                .style(Style::default().fg(Color::White)),
+        )
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
+/// Draw the input area
+fn draw_input(f: &mut Frame, app: &App, area: Rect) {
+    let input_text = format!("fire> {}", app.input);
+    let title = if app.message_scroll > 0 {
+        " Command Input (F1 for help | PgUp/PgDn to scroll) "
+    } else {
+        " Command Input (F1 for help) "
+    };
+    let input = Paragraph::new(input_text)
+        .style(Style::default().fg(Color::Yellow))
+        .block(Block::default().borders(Borders::ALL).title(title));
+
+    f.render_widget(input, area);
+}
+
+// Helper functions from the original implementation
 
 /// Prompt user for terrain dimensions at startup
 fn prompt_terrain_dimensions() -> (f32, f32) {
@@ -442,9 +1755,7 @@ fn parse_filters(
                 "part" => part_filter = Some(val.to_lowercase()),
                 "minz" => min_z = val.parse::<f32>().ok(),
                 "maxz" => max_z = val.parse::<f32>().ok(),
-                _ => {
-                    println!("Unknown filter '{key}', supported: fuel=, part=, minz=, maxz=");
-                }
+                _ => {}
             }
         }
     }
@@ -540,6 +1851,7 @@ fn filter_elements_in_circle(
         .collect()
 }
 
+/// Create a test simulation
 fn create_test_simulation(
     width: f32,
     height: f32,
@@ -547,14 +1859,6 @@ fn create_test_simulation(
 ) -> FireSimulation {
     let mut sim = FireSimulation::new(5.0, &TerrainData::flat(width, height, 5.0, 0.0));
 
-    // Wind field is always initialized by the simulation itself; no reconfiguration call required.
-
-    // Create a grid of fuel elements representing different vegetation
-    // Ground layer: grass and shrubs
-    //
-    // SPACING: 1m simulates near-continuous fuel beds like real grasslands.
-    // Fire spreads through direct flame contact and short-range radiation.
-    // Smaller spacing = faster, more realistic spread patterns.
     let step = 1;
     for x in (0..(width as i32)).step_by(step) {
         for y in (0..(height as i32)).step_by(step) {
@@ -578,7 +1882,7 @@ fn create_test_simulation(
         }
     }
 
-    // Set to conditions
+    // Set weather conditions
     let weather = WeatherSystem::from_preset(
         weather_preset,
         3,    // January 3
@@ -590,6 +1894,7 @@ fn create_test_simulation(
     sim
 }
 
+/// Create a tree
 fn create_tree(sim: &mut FireSimulation, x: f32, y: f32, _ground_id: usize) {
     // Trunk
     sim.add_fuel_element(
@@ -628,98 +1933,28 @@ fn create_tree(sim: &mut FireSimulation, x: f32, y: f32, _ground_id: usize) {
     );
 }
 
-fn step_simulation(sim: &mut FireSimulation, count: u32) {
-    let dt = 1.0; // 1 second timestep
-    println!("Stepping {count} timestep(s)...");
+/// Helper function to heat an element to a target temperature
+fn heat_element_to_temp(sim: &mut FireSimulation, id: usize, target_temp: f32) {
+    if let Some(e) = sim.get_element(id) {
+        let stats = e.get_stats();
+        let current_temp = stats.temperature;
+        let fuel_mass = stats.fuel_remaining;
+        let specific_heat = e.fuel().specific_heat;
 
-    for i in 0..count {
-        let burning_before = sim.get_burning_elements().len();
-        let embers_before = sim.ember_count();
-        let start = Instant::now();
+        if target_temp > current_temp {
+            // Calculate heat needed: Q = m × c × ΔT
+            let temp_rise = target_temp - current_temp;
+            let specific_heat_val: f32 = specific_heat.into();
+            let heat_kj = fuel_mass * specific_heat_val * temp_rise;
 
-        sim.update(dt);
-
-        let burning_after = sim.get_burning_elements().len();
-        let embers_after = sim.ember_count();
-        let time = start.elapsed();
-
-        if i == count - 1 || burning_after != burning_before || embers_after != embers_before {
-            println!(
-                "  Step {}: Burning: {} → {}, Embers: {} → {}, Time: {}ms",
-                i + 1,
-                burning_before,
-                burning_after,
-                embers_before,
-                embers_after,
-                time.as_millis()
-            );
+            // Apply heat over 1 second timestep (no pilot flame - external heat source)
+            sim.apply_heat_to_element(id, heat_kj, 1.0, false);
         }
     }
-    println!("Done.");
-}
-
-fn show_status(sim: &FireSimulation) {
-    println!("\n═══════════════ SIMULATION STATUS ═══════════════");
-    println!("Total elements:    {}", sim.get_all_elements().len());
-    println!("Burning elements:  {}", sim.get_burning_elements().len());
-    println!("Active embers:     {}", sim.ember_count());
-
-    // Find temperature range of burning elements
-    let burning: Vec<_> = sim
-        .get_all_elements()
-        .iter()
-        .map(|e| e.get_stats())
-        .collect();
-    if !burning.is_empty() {
-        let min_temp = burning
-            .iter()
-            .map(|e| e.temperature)
-            .fold(f32::MAX, f32::min);
-        let max_temp = burning
-            .iter()
-            .map(|e| e.temperature)
-            .fold(f32::MIN, f32::max);
-        let avg_temp: f32 =
-            burning.iter().map(|e| e.temperature).sum::<f32>() / usize_to_f32(burning.len());
-
-        println!("\nBurning element temperatures:");
-        println!("  Min: {min_temp:.1}°C");
-        println!("  Max: {max_temp:.1}°C");
-        println!("  Avg: {avg_temp:.1}°C");
-    }
-
-    println!("══════════════════════════════════════════════════\n");
-}
-
-fn show_weather(sim: &FireSimulation) {
-    let w = sim.get_weather().get_stats();
-
-    // Convert day_of_year to month and day
-    let (month, day) = day_of_year_to_month_day(w.day_of_year);
-    let time_hours = (*w.time_of_day) as u32;
-    let time_minutes = ((*w.time_of_day - u32_to_f32(time_hours)) * 60.0) as u32;
-
-    println!("\n═══════════════ WEATHER CONDITIONS ═══════════════");
-    println!("Date & Time:     {month} {day:02} {time_hours:02}:{time_minutes:02}");
-    println!("Temperature:     {:.1}", w.temperature);
-    println!("Humidity:        {:.1}", w.humidity);
-    println!(
-        "Wind Speed:      {:.1} ({:.1})",
-        w.wind_speed,
-        w.wind_speed.to_mps()
-    );
-    println!("Wind Direction:  {:.0}", w.wind_direction);
-    println!("Drought Factor:  {:.1}", w.drought_factor);
-    println!();
-    println!("FFDI:            {:.1}", w.ffdi);
-    println!("Fire Danger:     {}", w.fire_danger_rating);
-    println!("Spread Mult:     {:.2}x", w.spread_rate_multiplier);
-    println!("══════════════════════════════════════════════════\n");
 }
 
 /// Convert day of year (1-365) to month name and day
 fn day_of_year_to_month_day(day_of_year: u16) -> (&'static str, u16) {
-    // Days in each month (non-leap year)
     const DAYS_IN_MONTHS: [(u16, &str); 12] = [
         (31, "January"),
         (28, "February"),
@@ -743,355 +1978,24 @@ fn day_of_year_to_month_day(day_of_year: u16) -> (&'static str, u16) {
         remaining_days -= days_in_month;
     }
 
-    // Fallback for day 366 (leap year edge case)
     ("December", 31)
 }
 
-fn show_element(sim: &FireSimulation, id: usize) {
-    if let Some(e) = sim.get_element(id) {
-        let stats = e.get_stats();
-        println!("\n═══════════════ ELEMENT {id} ═══════════════");
-        println!(
-            "Position:      ({:.1}, {:.1}, {:.1})",
-            stats.position.x, stats.position.y, stats.position.z
-        );
-        println!("Fuel Type:     {}", e.fuel().name);
-        println!("Part Type:     {:?}", stats.part_type);
-        println!();
-        println!("Temperature:   {:.1}°C", stats.temperature);
-        println!("Ignition Temp: {:.1}°C", stats.ignition_temperature);
-        println!("Ignited:       {}", stats.ignited);
-        println!();
-        println!("Moisture:      {:.1}%", stats.moisture_fraction * 100.0);
-        println!("Fuel Mass:     {:.2} kg", stats.fuel_remaining);
-        println!("══════════════════════════════════════════════════\n");
-    } else {
-        println!("Element {id} not found");
-    }
+// Small helpers for deliberate integer->float casts
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn i32_to_f32(v: i32) -> f32 {
+    v as f32
 }
 
-fn show_burning(sim: &FireSimulation) {
-    println!("\n═══════════════ BURNING ELEMENTS ═══════════════");
-    let burning_elements = sim.get_burning_elements();
-    if burning_elements.is_empty() {
-        println!("No elements are currently burning.");
-    } else {
-        println!(
-            "{:<6} {:<20} {:<10} {:<10} {:<10}",
-            "ID", "Position", "Temp", "Moisture", "Fuel"
-        );
-        println!("{}", "-".repeat(60));
-
-        for e in burning_elements.iter().take(20) {
-            let stats = e.get_stats();
-            println!(
-                "{:<6} ({:>5.1}, {:>5.1}, {:>4.1}) {:>7.1}°C {:>8.1}% {:>7.2}kg",
-                stats.id,
-                stats.position.x,
-                stats.position.y,
-                stats.position.z,
-                stats.temperature,
-                stats.moisture_fraction * 100.0,
-                stats.fuel_remaining
-            );
-        }
-
-        if burning_elements.len() > 20 {
-            println!("... and {} more", burning_elements.len() - 20);
-        }
-    }
-    println!("══════════════════════════════════════════════════\n");
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
 }
 
-fn show_embers(sim: &FireSimulation) {
-    println!("\n═══════════════ ACTIVE EMBERS ═══════════════");
-    let ember_count = sim.ember_count();
-
-    if ember_count == 0 {
-        println!("No active embers.");
-    } else {
-        println!("Active embers: {ember_count}");
-    }
-    println!("══════════════════════════════════════════════════\n");
-}
-
-fn show_nearby(sim: &FireSimulation, id: usize) {
-    if let Some(e) = sim.get_element(id) {
-        let source_pos = *e.position();
-        let nearby = sim.get_elements_in_radius(source_pos, 15.0);
-
-        println!("\n═══════════════ ELEMENTS NEAR {id} ═══════════════");
-        println!(
-            "{:<6} {:<20} {:<10} {:<10} {:<8}",
-            "ID", "Position", "Temp", "Dist", "Ignited"
-        );
-        println!("{}", "-".repeat(60));
-
-        for n in nearby.iter().take(15) {
-            let stats = n.get_stats();
-            if stats.id == id {
-                continue;
-            }
-
-            let dist = (stats.position - source_pos).magnitude();
-            println!(
-                "{:<6} ({:>5.1}, {:>5.1}, {:>4.1}) {:>7.1}°C {:>7.1}m {}",
-                stats.id,
-                stats.position.x,
-                stats.position.y,
-                stats.position.z,
-                stats.temperature,
-                dist,
-                if stats.ignited { "🔥" } else { "" }
-            );
-        }
-        println!("══════════════════════════════════════════════════\n");
-    } else {
-        println!("Element {id} not found");
-    }
-}
-
-fn ignite_element(sim: &mut FireSimulation, id: usize) {
-    if let Some(e) = sim.get_element(id) {
-        let stats = e.get_stats();
-        // Start at 600°C - realistic for piloted ignition (matches test values)
-        // This represents the rapid flashover when a fuel element catches fire
-        // Real fires don't slowly heat from ignition temp - they flash to high temperatures
-        let initial_temp = Celsius::new(600.0).max(Celsius::from(stats.ignition_temperature));
-        sim.ignite_element(id, initial_temp);
-        println!(
-            "Ignited element {} at ({:.1}, {:.1}, {:.1})",
-            id, stats.position.x, stats.position.y, stats.position.z
-        );
-    } else {
-        println!("Element {id} not found");
-    }
-}
-
-fn heat_element(sim: &mut FireSimulation, id: usize, target_temp: f32) {
-    if let Some(e) = sim.get_element(id) {
-        let stats = e.get_stats();
-        heat_element_to_temp(sim, id, target_temp);
-        println!(
-            "Heating element {} to {:.1}°C (was {:.1}°C) at ({:.1}, {:.1}, {:.1})",
-            id,
-            target_temp,
-            stats.temperature,
-            stats.position.x,
-            stats.position.y,
-            stats.position.z
-        );
-    } else {
-        println!("Element {id} not found");
-    }
-}
-
-/// Helper function to heat an element to a target temperature
-fn heat_element_to_temp(sim: &mut FireSimulation, id: usize, target_temp: f32) {
-    if let Some(e) = sim.get_element(id) {
-        let stats = e.get_stats();
-        let current_temp = stats.temperature;
-        let fuel_mass = stats.fuel_remaining;
-        let specific_heat = e.fuel().specific_heat;
-
-        if target_temp > current_temp {
-            // Calculate heat needed: Q = m × c × ΔT
-            let temp_rise = target_temp - current_temp;
-            let specific_heat_val: f32 = specific_heat.into();
-            let heat_kj = fuel_mass * specific_heat_val * temp_rise;
-
-            // Apply heat over 1 second timestep (no pilot flame - external heat source)
-            sim.apply_heat_to_element(id, heat_kj, 1.0, false);
-        }
-    }
-}
-
-fn set_preset(sim: &mut FireSimulation, current_weather: &mut WeatherPreset, name: &str) {
-    let preset = match name.to_lowercase().as_str() {
-        "perth" | "perth_metro" => WeatherPreset::perth_metro(),
-        "catastrophic" | "cat" => WeatherPreset::catastrophic(),
-        "goldfields" => WeatherPreset::goldfields(),
-        "wheatbelt" => WeatherPreset::wheatbelt(),
-        "hot" => WeatherPreset::basic(
-            "Hot",
-            Celsius::new(38.0),
-            Celsius::new(38.0),
-            Percent::new(20.0),
-            KilometersPerHour::new(35.0),
-            0.15,
-        ),
-        _ => {
-            println!(
-                "Unknown preset: {name}. Available: perth, catastrophic, goldfields, wheatbelt, hot"
-            );
-            return;
-        }
-    };
-    *current_weather = preset.clone();
-
-    // Update preset while preserving current time and day
-    sim.update_weather_preset(preset);
-    println!("Weather preset changed to '{}'", current_weather.name);
-    show_weather(sim);
-}
-
-/// Display an ASCII heatmap of temperature distribution
-fn show_heatmap(sim: &FireSimulation, terrain_width: f32, terrain_height: f32, grid_size: usize) {
-    println!("\n═══════════════ TEMPERATURE HEATMAP ═══════════════");
-
-    // Create a grid covering the simulation area with appropriate cell size
-    let cell_width = terrain_width / usize_to_f32(grid_size);
-    let cell_height = terrain_height / usize_to_f32(grid_size);
-
-    let mut grid: Vec<Vec<f32>> = vec![vec![0.0; grid_size]; grid_size];
-    let mut counts: Vec<Vec<u32>> = vec![vec![0; grid_size]; grid_size];
-    let mut burning_grid: Vec<Vec<bool>> = vec![vec![false; grid_size]; grid_size];
-
-    // Accumulate temperatures and track burning state
-    for e in sim.get_all_elements() {
-        let stats = e.get_stats();
-        let x = (stats.position.x / cell_width).floor() as i32;
-        let y = (stats.position.y / cell_height).floor() as i32;
-
-        if x >= 0 && x < grid_size as i32 && y >= 0 && y < grid_size as i32 {
-            let ix = x as usize;
-            let iy = y as usize;
-            grid[iy][ix] += stats.temperature;
-            counts[iy][ix] += 1;
-            if stats.ignited {
-                burning_grid[iy][ix] = true;
-            }
-        }
-    }
-
-    // Average temperatures
-    for y in 0..grid_size {
-        for x in 0..grid_size {
-            if counts[y][x] > 0 {
-                grid[y][x] /= u32_to_f32(counts[y][x]);
-            }
-        }
-    }
-
-    // Find temperature range (excluding cells with no elements)
-    let mut min_temp = f32::MAX;
-    let mut max_temp = f32::MIN;
-    for y in 0..grid_size {
-        for x in 0..grid_size {
-            if counts[y][x] > 0 {
-                let temp = grid[y][x];
-                min_temp = min_temp.min(temp);
-                max_temp = max_temp.max(temp);
-            }
-        }
-    }
-
-    // Handle edge case where no elements exist
-    if min_temp == f32::MAX {
-        min_temp = 0.0;
-        max_temp = 0.0;
-    }
-
-    // Minimum absolute temperatures for heat visualization
-    // These ensure we don't show "hot" indicators at ambient temperatures
-    const MIN_TEMP_COOL: f32 = 50.0; // Must be above 50°C to show as warming
-    const MIN_TEMP_WARM: f32 = 100.0; // Must be above 100°C to show as warm
-    const MIN_TEMP_HOT: f32 = 200.0; // Must be above 200°C to show as hot
-    const MIN_TEMP_VERY_HOT: f32 = 350.0; // Must be above 350°C to show as very hot
-
-    // Calculate dynamic thresholds based on actual temperature range
-    // but enforce minimum absolute temperatures
-    let temp_range = max_temp - min_temp;
-    let threshold_very_hot = (min_temp + temp_range * 0.75).max(MIN_TEMP_VERY_HOT);
-    let threshold_hot = (min_temp + temp_range * 0.50).max(MIN_TEMP_HOT);
-    let threshold_warm = (min_temp + temp_range * 0.25).max(MIN_TEMP_WARM);
-    let threshold_cool = MIN_TEMP_COOL; // Fixed minimum for any heating indication
-
-    // Legend with dynamic values
-    println!("Legend: · = empty/ambient  🔥 = burning (ignited)");
-    println!(
-        "        ░ >{threshold_cool:.0}°C  ▒ >{threshold_warm:.0}°C  ▓ >{threshold_hot:.0}°C  █ >{threshold_very_hot:.0}°C"
-    );
-    println!("Temperature range: {min_temp:.0}°C - {max_temp:.0}°C\n");
-
-    // Print heatmap (top-down view, Y increases downward)
-    for y in (0..grid_size).rev() {
-        print!("{:3} │ ", (usize_to_f32(y) * cell_height) as i32);
-        for x in 0..grid_size {
-            if counts[y][x] == 0 {
-                print!("· ");
-            } else if burning_grid[y][x] {
-                // Actual burning element - use fire emoji or asterisk
-                print!("🔥");
-            } else {
-                let temp = grid[y][x];
-                let c = if temp >= threshold_very_hot {
-                    '█' // Very hot (>350°C or top 25%)
-                } else if temp >= threshold_hot {
-                    '▓' // Hot (>200°C or 50-75%)
-                } else if temp >= threshold_warm {
-                    '▒' // Warm (>100°C or 25-50%)
-                } else if temp >= threshold_cool {
-                    '░' // Warming (>50°C)
-                } else {
-                    '·' // At ambient
-                };
-                print!("{c} ");
-            }
-        }
-        println!();
-    }
-
-    // X-axis labels
-    print!("    └");
-    for _ in 0..grid_size {
-        print!("──");
-    }
-    println!();
-    print!("      ");
-    for x in (0..grid_size).step_by(5) {
-        print!("{:<10}", (usize_to_f32(x) * cell_width) as i32);
-    }
-    println!("\n");
-
-    // Summary stats
-    let burning_cells: usize = burning_grid.iter().flatten().filter(|&&b| b).count();
-    if burning_cells > 0 {
-        println!(
-            "Burning cells: {} / {}",
-            burning_cells,
-            grid_size * grid_size
-        );
-    }
-
-    println!("══════════════════════════════════════════════════\n");
-}
-
-fn show_help() {
-    println!("\n═══════════════ AVAILABLE COMMANDS ═══════════════");
-    println!("  step [n], s [n]      - Advance n timesteps (default 1)");
-    println!("  status, st           - Show simulation status");
-    println!("  weather, w           - Show weather conditions");
-    println!("  element <id>, e      - Show element details");
-    println!("  burning, b           - List burning elements");
-    println!("  embers, em           - List active embers");
-    println!("  nearby <id>, n       - Show elements near <id>");
-    println!("  ignite <id>, i       - Manually ignite element");
-    println!("  heat <id> <temp>, h  - Heat element to target temperature (in °C)");
-    println!("  ignite_position <x> <y> [radius] [amount] - Ignite elements in an XY circle around (x,y)");
-    println!("                         radius defaults to 1.0m; amount: number to ignite (from ground-up). -1 = all (default -1)");
-    println!("                         Optional filters: fuel=<name> (substring), part=<partname> (substring), minz=<f32>, maxz=<f32>");
-    println!("                         Example: ignite_position 10 20 5 -1 fuel=dry_grass part=groundvegetation minz=0 maxz=0.5");
-    println!("  heat_position <x> <y> <temp> [radius] [amount] - Heat elements to target temperature (in °C)");
-    println!("                         radius defaults to 1.0m; amount: number to heat (from ground-up). -1 = all (default -1)");
-    println!("                         Optional filters: fuel=<name> (substring), part=<partname> (substring), minz=<f32>, maxz=<f32>");
-    println!("                         Example: heat_position 10 20 300 5 -1 fuel=dry_grass part=groundvegetation minz=0 maxz=0.5");
-    println!("  heatmap, hm [size]   - Show temperature heatmap");
-    println!("  preset <name>, p     - Change weather preset");
-    println!("                         (perth, catastrophic, goldfields, wheatbelt, hot)");
-    println!("  reset [w] [h], r     - Reset simulation (optional: new width/height)");
-    // Wind field is always enabled — runtime toggle removed
-    println!("  help, ?              - Show this help");
-    println!("  quit, q              - Exit");
-    println!("══════════════════════════════════════════════════\n");
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn u32_to_f32(v: u32) -> f32 {
+    v as f32
 }
