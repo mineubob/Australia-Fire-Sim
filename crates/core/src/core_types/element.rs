@@ -198,7 +198,7 @@ impl FuelElement {
         &mut self,
         heat_kj: f32,
         dt: f32,
-        ambient_temperature: Celsius,
+        _ambient_temperature: Celsius,
         ffdi_multiplier: f32,
         has_pilot_flame: bool,
     ) {
@@ -256,26 +256,46 @@ impl FuelElement {
             if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
                 let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
                 let new_temp = *self.temperature + f64::from(temp_rise);
-                self.temperature = Celsius::new(new_temp.max(*Celsius::ABSOLUTE_ZERO));
+                
+                // When adding heat, temperature should only increase
+                debug_assert!(
+                    new_temp >= *self.temperature,
+                    "Temperature decreased when adding heat: {} -> {} (heat={}, temp_rise={})",
+                    *self.temperature, new_temp, remaining_heat, temp_rise
+                );
+                
+                self.temperature = Celsius::new(new_temp);
             }
         } else {
             // No moisture, all heat goes to temperature rise
             let temp_rise = effective_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
             let new_temp = *self.temperature + f64::from(temp_rise);
-            self.temperature = Celsius::new(new_temp.max(-273.15));
+            
+            // When adding heat, temperature should only increase
+            debug_assert!(
+                new_temp >= *self.temperature,
+                "Temperature decreased when adding heat: {} -> {} (heat={}, temp_rise={})",
+                *self.temperature, new_temp, effective_heat, temp_rise
+            );
+            
+            self.temperature = Celsius::new(new_temp);
         }
 
-        // STEP 3: Cap at fuel-specific maximum (prevents thermal runaway)
+        // STEP 3: Cap at fuel-specific maximum (physical constraint)
+        // Fuel cannot exceed its maximum combustion temperature
         let max_temp = Celsius::from(
             self.fuel
                 .calculate_max_flame_temperature(*self.moisture_fraction),
         );
         self.temperature = self.temperature.min(max_temp);
 
-        // STEP 4: Clamp to ambient minimum (prevents negative heat)
-        self.temperature = self.temperature.max(ambient_temperature);
+        // Note: Temperature may be below ambient_temperature if the element was cooler
+        // before heating (e.g., after rapid ambient temperature rise). This is physically
+        // correct - adding a small amount of heat doesn't instantly bring fuel to ambient.
+        // Natural convection/conduction will equilibrate temperature over time via the
+        // cooling mechanism in the simulation loop.
 
-        // STEP 5: Check for ignition using appropriate threshold
+        // STEP 4: Check for ignition using appropriate threshold
         // Piloted ignition (with adjacent flame) uses lower threshold
         // Auto-ignition (radiant heat only) uses higher threshold
         let effective_ignition_temp = if has_pilot_flame {
