@@ -30,7 +30,7 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Neg, Sub, SubAssign};
 
 // ============================================================================
 // HELPER FUNCTIONS FOR TOTAL ORDERING
@@ -93,6 +93,9 @@ impl Celsius {
     /// Absolute zero in Celsius
     pub const ABSOLUTE_ZERO: Celsius = Celsius(-273.15);
 
+    /// Celsius to Kelvin conversion offset (0°C = 273.15 K)
+    const CELSIUS_KELVIN_OFFSET: f64 = 273.15;
+
     /// Water freezing point
     pub const FREEZING: Celsius = Celsius(0.0);
 
@@ -105,7 +108,7 @@ impl Celsius {
     #[track_caller]
     pub const fn new(value: f64) -> Self {
         assert!(
-            value >= -273.15,
+            value >= -Self::CELSIUS_KELVIN_OFFSET,
             "Celsius::new: value is below absolute zero (-273.15°C)"
         );
         Celsius(value)
@@ -120,18 +123,18 @@ impl Celsius {
         Celsius(value)
     }
 
-    /// Get the raw f64 value
-    #[inline]
-    #[must_use]
-    pub fn value(self) -> f64 {
-        self.0
-    }
-
     /// Convert to Kelvin
     #[inline]
     #[must_use]
     pub fn to_kelvin(self) -> Kelvin {
-        Kelvin(self.0 + 273.15)
+        Kelvin(self.0 + Self::CELSIUS_KELVIN_OFFSET)
+    }
+
+    /// Convert to f32 for calculations requiring lower precision
+    #[inline]
+    #[must_use]
+    pub fn as_f32(self) -> f32 {
+        self.0 as f32
     }
 }
 
@@ -159,33 +162,188 @@ impl From<Celsius> for f64 {
     }
 }
 
-impl Add for Celsius {
-    type Output = Celsius;
-    fn add(self, rhs: Celsius) -> Celsius {
-        Celsius(self.0 + rhs.0)
+/// Temperature difference/delta in Celsius
+/// Can be any value (positive or negative)
+/// Used for temperature changes, differences, and relative values
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct CelsiusDelta(f64);
+
+impl Eq for CelsiusDelta {}
+
+impl PartialOrd for CelsiusDelta {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
+impl Ord for CelsiusDelta {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f64_total_cmp(self.0, other.0)
+    }
+}
+
+impl CelsiusDelta {
+    /// Create a temperature delta (can be any value, positive or negative)
+    #[inline]
+    #[must_use]
+    pub const fn new(value: f64) -> Self {
+        CelsiusDelta(value)
+    }
+
+    /// Get the raw f64 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f64 {
+        self.0
+    }
+
+    /// Convert to f32 (for compatibility with legacy code)
+    #[inline]
+    #[must_use]
+    pub fn as_f32(self) -> f32 {
+        self.0 as f32
+    }
+
+    /// Absolute value of the delta
+    #[inline]
+    #[must_use]
+    pub fn abs(self) -> Self {
+        CelsiusDelta(self.0.abs())
+    }
+}
+
+impl Deref for CelsiusDelta {
+    type Target = f64;
+    #[inline]
+    fn deref(&self) -> &f64 {
+        &self.0
+    }
+}
+
+impl Neg for CelsiusDelta {
+    type Output = CelsiusDelta;
+    fn neg(self) -> CelsiusDelta {
+        CelsiusDelta(-self.0)
+    }
+}
+
+impl Add<CelsiusDelta> for CelsiusDelta {
+    type Output = CelsiusDelta;
+    fn add(self, rhs: CelsiusDelta) -> CelsiusDelta {
+        CelsiusDelta(self.0 + rhs.0)
+    }
+}
+
+impl Sub<CelsiusDelta> for CelsiusDelta {
+    type Output = CelsiusDelta;
+    fn sub(self, rhs: CelsiusDelta) -> CelsiusDelta {
+        CelsiusDelta(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f64> for CelsiusDelta {
+    type Output = CelsiusDelta;
+    fn mul(self, rhs: f64) -> CelsiusDelta {
+        CelsiusDelta(self.0 * rhs)
+    }
+}
+
+impl Div<f64> for CelsiusDelta {
+    type Output = CelsiusDelta;
+    fn div(self, rhs: f64) -> CelsiusDelta {
+        CelsiusDelta(self.0 / rhs)
+    }
+}
+
+impl PartialEq<f64> for CelsiusDelta {
+    fn eq(&self, other: &f64) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialOrd<f64> for CelsiusDelta {
+    fn partial_cmp(&self, other: &f64) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
+    }
+}
+
+impl fmt::Display for CelsiusDelta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.1}°C", self.0)
+    }
+}
+
+// Celsius + CelsiusDelta = Celsius (adding a change to absolute temperature)
+impl Add<CelsiusDelta> for Celsius {
+    type Output = Celsius;
+    fn add(self, rhs: CelsiusDelta) -> Celsius {
+        let result = self.0 + rhs.0;
+        assert!(
+            result >= *Celsius::ABSOLUTE_ZERO,
+            "Temperature below absolute zero: {result:.2}°C"
+        );
+        Celsius(result)
+    }
+}
+
+// Celsius - CelsiusDelta = Celsius (subtracting a change from absolute temperature)
+impl Sub<CelsiusDelta> for Celsius {
+    type Output = Celsius;
+    fn sub(self, rhs: CelsiusDelta) -> Celsius {
+        let result = self.0 - rhs.0;
+        assert!(
+            result >= *Celsius::ABSOLUTE_ZERO,
+            "Temperature below absolute zero: {result:.2}°C"
+        );
+        Celsius(result)
+    }
+}
+
+// Celsius - Celsius = CelsiusDelta (difference between two absolute temperatures)
 impl Sub for Celsius {
-    type Output = Celsius;
-    fn sub(self, rhs: Celsius) -> Celsius {
-        // Direct subtraction - caller responsible for ensuring physical validity
-        // If result would be invalid, fix the calling code's physics, not here
-        Celsius(self.0 - rhs.0)
+    type Output = CelsiusDelta;
+    fn sub(self, rhs: Celsius) -> CelsiusDelta {
+        // Result is a delta - can be any value
+        CelsiusDelta(self.0 - rhs.0)
     }
 }
 
+// Celsius * f64 = Celsius (scaling absolute temperature, e.g., interpolation)
 impl Mul<f64> for Celsius {
     type Output = Celsius;
     fn mul(self, rhs: f64) -> Celsius {
-        Celsius(self.0 * rhs)
+        let result = self.0 * rhs;
+        assert!(
+            result >= *Celsius::ABSOLUTE_ZERO,
+            "Temperature below absolute zero: {result:.2}°C"
+        );
+        Celsius(result)
     }
 }
 
+// Celsius / f64 = Celsius (dividing absolute temperature)
 impl Div<f64> for Celsius {
     type Output = Celsius;
     fn div(self, rhs: f64) -> Celsius {
-        Celsius(self.0 / rhs)
+        let result = self.0 / rhs;
+        assert!(
+            result >= *Celsius::ABSOLUTE_ZERO,
+            "Temperature below absolute zero: {result:.2}°C"
+        );
+        Celsius(result)
+    }
+}
+
+impl PartialEq<f64> for Celsius {
+    fn eq(&self, other: &f64) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialOrd<f64> for Celsius {
+    fn partial_cmp(&self, other: &f64) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
     }
 }
 
@@ -259,14 +417,21 @@ impl Kelvin {
     #[inline]
     #[must_use]
     pub fn to_celsius(self) -> Celsius {
-        Celsius::new(self.0 - 273.15)
+        Celsius::new(self.0 - Celsius::CELSIUS_KELVIN_OFFSET)
     }
 
-    /// Get the raw f64 value
+    /// Raise temperature to an integer power (for Stefan-Boltzmann T^4 calculations)
     #[inline]
     #[must_use]
-    pub fn value(self) -> f64 {
-        self.0
+    pub fn powi(self, n: i32) -> f64 {
+        self.0.powi(n)
+    }
+
+    /// Convert to f32 for calculations requiring lower precision
+    #[inline]
+    #[must_use]
+    pub fn as_f32(self) -> f32 {
+        self.0 as f32
     }
 }
 
@@ -294,31 +459,155 @@ impl From<Kelvin> for f64 {
     }
 }
 
-impl Add for Kelvin {
-    type Output = Kelvin;
-    fn add(self, rhs: Kelvin) -> Kelvin {
-        Kelvin(self.0 + rhs.0)
+/// Temperature difference/delta in Kelvin
+/// Can be any value (positive or negative)
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct KelvinDelta(f64);
+
+impl Eq for KelvinDelta {}
+
+impl PartialOrd for KelvinDelta {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
+impl Ord for KelvinDelta {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f64_total_cmp(self.0, other.0)
+    }
+}
+
+impl KelvinDelta {
+    /// Create a temperature delta (can be any value)
+    #[inline]
+    #[must_use]
+    pub const fn new(value: f64) -> Self {
+        KelvinDelta(value)
+    }
+
+    /// Get the raw f64 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f64 {
+        self.0
+    }
+
+    /// Absolute value of the delta
+    #[inline]
+    #[must_use]
+    pub fn abs(self) -> Self {
+        KelvinDelta(self.0.abs())
+    }
+}
+
+impl Deref for KelvinDelta {
+    type Target = f64;
+    #[inline]
+    fn deref(&self) -> &f64 {
+        &self.0
+    }
+}
+
+impl Neg for KelvinDelta {
+    type Output = KelvinDelta;
+    fn neg(self) -> KelvinDelta {
+        KelvinDelta(-self.0)
+    }
+}
+
+impl Add<KelvinDelta> for KelvinDelta {
+    type Output = KelvinDelta;
+    fn add(self, rhs: KelvinDelta) -> KelvinDelta {
+        KelvinDelta(self.0 + rhs.0)
+    }
+}
+
+impl Sub<KelvinDelta> for KelvinDelta {
+    type Output = KelvinDelta;
+    fn sub(self, rhs: KelvinDelta) -> KelvinDelta {
+        KelvinDelta(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f64> for KelvinDelta {
+    type Output = KelvinDelta;
+    fn mul(self, rhs: f64) -> KelvinDelta {
+        KelvinDelta(self.0 * rhs)
+    }
+}
+
+impl Div<f64> for KelvinDelta {
+    type Output = KelvinDelta;
+    fn div(self, rhs: f64) -> KelvinDelta {
+        KelvinDelta(self.0 / rhs)
+    }
+}
+
+impl fmt::Display for KelvinDelta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.1} K", self.0)
+    }
+}
+
+// Kelvin + KelvinDelta = Kelvin
+impl Add<KelvinDelta> for Kelvin {
+    type Output = Kelvin;
+    fn add(self, rhs: KelvinDelta) -> Kelvin {
+        let result = self.0 + rhs.0;
+        assert!(
+            result >= *Kelvin::ABSOLUTE_ZERO,
+            "Temperature below absolute zero: {result:.2} K"
+        );
+        Kelvin(result)
+    }
+}
+
+// Kelvin - KelvinDelta = Kelvin
+impl Sub<KelvinDelta> for Kelvin {
+    type Output = Kelvin;
+    fn sub(self, rhs: KelvinDelta) -> Kelvin {
+        let result = self.0 - rhs.0;
+        assert!(
+            result >= *Kelvin::ABSOLUTE_ZERO,
+            "Temperature below absolute zero: {result:.2} K"
+        );
+        Kelvin(result)
+    }
+}
+
+// Kelvin - Kelvin = KelvinDelta
 impl Sub for Kelvin {
-    type Output = Kelvin;
-    fn sub(self, rhs: Kelvin) -> Kelvin {
-        Kelvin(self.0 - rhs.0)
+    type Output = KelvinDelta;
+    fn sub(self, rhs: Kelvin) -> KelvinDelta {
+        KelvinDelta(self.0 - rhs.0)
     }
 }
 
+// Kelvin * f64 = Kelvin (for interpolation, etc.)
 impl Mul<f64> for Kelvin {
     type Output = Kelvin;
     fn mul(self, rhs: f64) -> Kelvin {
-        Kelvin(self.0 * rhs)
+        let result = self.0 * rhs;
+        assert!(
+            result >= *Kelvin::ABSOLUTE_ZERO,
+            "Temperature below absolute zero: {result:.2} K"
+        );
+        Kelvin(result)
     }
 }
 
+// Kelvin / f64 = Kelvin
 impl Div<f64> for Kelvin {
     type Output = Kelvin;
     fn div(self, rhs: f64) -> Kelvin {
-        Kelvin(self.0 / rhs)
+        let result = self.0 / rhs;
+        assert!(
+            result >= *Kelvin::ABSOLUTE_ZERO,
+            "Temperature below absolute zero: {result:.2} K"
+        );
+        Kelvin(result)
     }
 }
 
@@ -658,6 +947,7 @@ impl From<Kilograms> for f32 {
 impl Add for Kilograms {
     type Output = Kilograms;
     fn add(self, rhs: Kilograms) -> Kilograms {
+        // Pure addition - if inputs are valid, output is valid
         Kilograms(self.0 + rhs.0)
     }
 }
@@ -665,13 +955,16 @@ impl Add for Kilograms {
 impl Sub for Kilograms {
     type Output = Kilograms;
     fn sub(self, rhs: Kilograms) -> Kilograms {
-        Kilograms(self.0 - rhs.0)
+        let result = self.0 - rhs.0;
+        assert!(result >= 0.0, "Negative mass: {result:.6} kg");
+        Kilograms(result)
     }
 }
 
 impl SubAssign<f32> for Kilograms {
     fn sub_assign(&mut self, rhs: f32) {
-        self.0 -= rhs;
+        // Consumption - clamp to 0 since mass can't be negative
+        self.0 = (self.0 - rhs).max(0.0);
     }
 }
 
@@ -684,6 +977,7 @@ impl AddAssign<f32> for Kilograms {
 impl Mul<f32> for Kilograms {
     type Output = Kilograms;
     fn mul(self, rhs: f32) -> Kilograms {
+        // Pure multiplication - if input is valid and scalar >= 0, output is valid
         Kilograms(self.0 * rhs)
     }
 }
@@ -691,6 +985,7 @@ impl Mul<f32> for Kilograms {
 impl Mul<Kilograms> for f32 {
     type Output = Kilograms;
     fn mul(self, rhs: Kilograms) -> Kilograms {
+        // Pure multiplication - if input is valid and scalar >= 0, output is valid
         Kilograms(self * rhs.0)
     }
 }
@@ -698,6 +993,7 @@ impl Mul<Kilograms> for f32 {
 impl Div<f32> for Kilograms {
     type Output = Kilograms;
     fn div(self, rhs: f32) -> Kilograms {
+        // Pure division - if input is valid and scalar > 0, output is valid
         Kilograms(self.0 / rhs)
     }
 }

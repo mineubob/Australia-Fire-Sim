@@ -1,5 +1,7 @@
 use crate::core_types::fuel::Fuel;
-use crate::core_types::units::{Celsius, Degrees, Fraction, Kilograms, Meters, Percent};
+use crate::core_types::units::{
+    Celsius, CelsiusDelta, Degrees, Fraction, Kilograms, Meters, Percent,
+};
 use crate::suppression::SuppressionCoverage;
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
@@ -254,7 +256,7 @@ impl FuelElement {
             if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
                 let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
                 let new_temp = *self.temperature + f64::from(temp_rise);
-                self.temperature = Celsius::new(new_temp.max(-273.15));
+                self.temperature = Celsius::new(new_temp.max(*Celsius::ABSOLUTE_ZERO));
             }
         } else {
             // No moisture, all heat goes to temperature rise
@@ -282,7 +284,7 @@ impl FuelElement {
             self.fuel.auto_ignition_temperature // Auto: 338-498°C
         };
 
-        if !self.ignited && *self.temperature >= *effective_ignition_temp {
+        if !self.ignited && self.temperature >= effective_ignition_temp {
             self.check_ignition_probability(dt, ffdi_multiplier, effective_ignition_temp);
         }
     }
@@ -305,7 +307,7 @@ impl FuelElement {
         }
 
         // OPTIMIZATION: Early exit for cold fuel (far from ignition temp)
-        if self.temperature < ignition_temp - Celsius::new(50.0) {
+        if self.temperature < ignition_temp - CelsiusDelta::new(50.0) {
             return;
         }
 
@@ -322,7 +324,7 @@ impl FuelElement {
             (1.0 - *self.moisture_fraction / *self.fuel.moisture_of_extinction).max(0.0);
 
         // Temperature above ignition increases probability (capped at 1.0)
-        let temp_excess = (self.temperature - ignition_temp).max(Celsius::new(0.0));
+        let temp_excess = (self.temperature - ignition_temp).max(CelsiusDelta::new(0.0));
         let temp_factor = (*temp_excess / 50.0).min(1.0);
 
         // Base coefficient for probabilistic ignition
@@ -369,7 +371,7 @@ impl FuelElement {
         let moisture_factor =
             (1.0 - *self.moisture_fraction / *self.fuel.moisture_of_extinction).max(0.0);
         let temp_factor =
-            (*(self.temperature - self.fuel.ignition_temperature) / 200.0).clamp(0.0, 1.0);
+            (*(self.temperature - self.fuel.ignition_temperature)).clamp(0.0, 200.0) / 200.0;
 
         // Reduced burn rate coefficient for longer-lasting fires (multiply by 0.1)
         self.fuel.burn_rate_coefficient
@@ -411,7 +413,7 @@ impl FuelElement {
         }
 
         // OPTIMIZATION: Early exit for cold fuel
-        if *self.temperature < *self.fuel.ignition_temperature {
+        if self.temperature < self.fuel.ignition_temperature {
             return 0.0;
         }
 
@@ -575,7 +577,7 @@ impl FuelElement {
         FuelElementStats {
             id: self.id,
             position: self.position,
-            temperature: *self.temperature as f32,
+            temperature: self.temperature.as_f32(),
             moisture_fraction: *self.moisture_fraction,
             fuel_remaining: *self.fuel_remaining,
             ignited: self.ignited,
