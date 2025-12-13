@@ -388,6 +388,8 @@ impl SimulationGrid {
         // Trilinear interpolation helper
         let lerp = |a: f32, b: f32, t: f32| a * (1.0 - t) + b * t;
         let lerp_celsius = |a: Celsius, b: Celsius, t: f32| {
+            // Linear interpolation between two valid temperatures is always valid
+            // No clamping needed if both inputs are >= absolute zero
             Celsius::new(*a * (1.0 - f64::from(t)) + *b * f64::from(t))
         };
         let lerp_vec = |a: Vec3, b: Vec3, t: f32| a * (1.0 - t) + b * t;
@@ -747,11 +749,12 @@ impl SimulationGrid {
 
         // OPTIMIZATION: Combine cooling and clamping into single branch
         if *new_temp > 100.0 {
-            // Natural cooling increases with temperature (0.5% per second above ambient)
-            let cooling = (new_temp - ambient_temp) * f64::from(0.005 * dt);
-            new_temp = (new_temp - cooling)
-                .max(ambient_temp)
-                .min(Celsius::new(800.0));
+            // Natural cooling with stable exponential decay
+            // T = T_ambient + (T_0 - T_ambient) * exp(-k*t)
+            let cooling_coefficient = 0.005; // 0.5% per second
+            let decay_factor = (-f64::from(cooling_coefficient * dt)).exp();
+            let temp_above_ambient = new_temp - ambient_temp;
+            new_temp = (ambient_temp + temp_above_ambient * decay_factor).min(Celsius::new(800.0));
         } else {
             new_temp = new_temp.min(Celsius::new(800.0));
         }
@@ -779,14 +782,19 @@ impl SimulationGrid {
                         let temp_diff =
                             cell_below.temperature - self.cells[idx_current].temperature;
                         if *temp_diff > 0.0 {
+                            // Heat rises via buoyancy - energy conservation
                             let heat_transfer = temp_diff * f64::from(transfer_fraction);
+
+                            // Upper cell receives heat (cap at physical max)
                             self.cells[idx_current].temperature =
-                                self.cells[idx_current].temperature + heat_transfer;
-                            // Cap at realistic maximum for wildfire air temperatures
-                            self.cells[idx_current].temperature =
-                                self.cells[idx_current].temperature.min(Celsius::new(800.0));
-                            self.cells[idx_below].temperature =
-                                self.cells[idx_below].temperature - heat_transfer;
+                                (self.cells[idx_current].temperature + heat_transfer)
+                                    .min(Celsius::new(800.0));
+
+                            // Lower cell loses heat (can't go below ambient via convection alone)
+                            let new_below_temp = (*self.cells[idx_below].temperature
+                                - *heat_transfer)
+                                .max(*self.ambient_temperature);
+                            self.cells[idx_below].temperature = Celsius::new(new_below_temp);
                         }
                     }
                 }

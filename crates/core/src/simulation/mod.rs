@@ -748,12 +748,13 @@ impl FireSimulation {
                 for element in chunk.iter_mut().flatten() {
                     // Apply ambient temperature cooling for non-burning elements
                     if !element.ignited {
-                        // Newton's law of cooling: dT/dt = -k(T - T_ambient)
+                        // Newton's law of cooling with stable exponential decay
+                        // T = T_ambient + (T_0 - T_ambient) * exp(-k*t)
+                        // This naturally asymptotes to ambient and NEVER overshoots
                         let cooling_rate = element.fuel.cooling_rate; // Fuel-specific (grass=0.15, forest=0.05)
-                        let temp_diff = *element.temperature - *ambient_temp;
-                        let temp_change = temp_diff * f64::from(cooling_rate * dt);
-                        element.temperature = Celsius::new(*element.temperature - temp_change);
-                        element.temperature = element.temperature.max(ambient_temp);
+                        let decay_factor = (-f64::from(cooling_rate * dt)).exp();
+                        let temp_above_ambient = element.temperature - ambient_temp;
+                        element.temperature = ambient_temp + temp_above_ambient * decay_factor;
                     }
 
                     // Update fuel moisture (Nelson timelag system - Phase 1)
@@ -932,12 +933,15 @@ impl FireSimulation {
 
                     // Apply suppression cooling
                     if grid_data.suppression_agent > 0.0 {
+                        // Cooling based on heat capacity physics
                         let cooling_rate = grid_data.suppression_agent * 1000.0;
                         let mass = *element.fuel_remaining;
-                        let temp_drop = cooling_rate / (mass * *element.fuel.specific_heat);
-                        element.temperature =
-                            Celsius::new(*element.temperature - f64::from(temp_drop))
-                                .max(grid_data.temperature);
+                        let temp_drop =
+                            f64::from(cooling_rate / (mass * *element.fuel.specific_heat));
+                        // Can't cool below grid temperature (thermal equilibrium)
+                        let target_temp =
+                            (*element.temperature - temp_drop).max(*grid_data.temperature);
+                        element.temperature = Celsius::new(target_temp);
                     }
                 }
             }
@@ -1038,8 +1042,9 @@ impl FireSimulation {
                     let self_heating = combustion_heat * *element.fuel.self_heating_fraction;
                     let temp_rise =
                         self_heating / (*element.fuel_remaining * *element.fuel.specific_heat);
-                    element.temperature = Celsius::new(*element.temperature + f64::from(temp_rise))
-                        .min(element.fuel.max_flame_temperature);
+                    let new_temp = (*element.temperature + f64::from(temp_rise))
+                        .min(*element.fuel.max_flame_temperature);
+                    element.temperature = Celsius::new(new_temp);
                 }
 
                 if element.fuel_remaining < Kilograms::new(0.01) {

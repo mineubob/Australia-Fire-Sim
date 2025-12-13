@@ -84,8 +84,10 @@ pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &
                                         let dilution = f64::from(1.0 / (dzf * dzf));
 
                                         let temp_transfer = temp_excess * 0.1 * dilution;
-                                        target_cell.temperature =
-                                            target_cell.temperature + temp_transfer;
+                                        // Ensure temperature never goes below absolute zero
+                                        target_cell.temperature = (target_cell.temperature
+                                            + temp_transfer)
+                                            .max(Celsius::ABSOLUTE_ZERO);
 
                                         let smoke_transfer = source_smoke * 0.1 * (dilution as f32);
                                         target_cell.smoke_particles += smoke_transfer;

@@ -204,13 +204,13 @@ impl Ember {
         self.velocity += accel * dt;
         self.position += self.velocity * dt;
 
-        // 5. Radiative cooling (Stefan-Boltzmann)
-        // Simplified: dT/dt = -k(T - T_ambient)
-        let cooling_rate = (self.temperature - ambient_temp) * 0.05;
-        let new_temp = *self.temperature - *cooling_rate * f64::from(dt);
-
-        // Clamp to ambient minimum BEFORE creating Celsius to prevent below-absolute-zero panic
-        self.temperature = Celsius::new(new_temp.max(*ambient_temp));
+        // 5. Radiative cooling (Newton's law of cooling)
+        // Stable exponential decay: T = T_ambient + (T_0 - T_ambient) * exp(-k*t)
+        // This naturally asymptotes to ambient and NEVER overshoots
+        let cooling_coefficient = 0.05; // 1/s
+        let decay_factor = (-cooling_coefficient * f64::from(dt)).exp();
+        let temp_above_ambient = self.temperature - ambient_temp;
+        self.temperature = ambient_temp + temp_above_ambient * decay_factor;
     }
 
     /// Check if ember is still active (hot and airborne)
