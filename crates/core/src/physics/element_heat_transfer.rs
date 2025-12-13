@@ -25,6 +25,33 @@ const STEFAN_BOLTZMANN: f64 = 5.67e-8;
 /// Reference: Typical wildfire flame emissivity from Butler & Cohen (1998)
 const EMISSIVITY: f64 = 0.95;
 
+/// Flame area coefficient for Byram's flame height model
+/// Calibrated to match Rothermel spread rate predictions
+/// Reference: Byram (1959), Rothermel (1972)
+const FLAME_AREA_COEFFICIENT: f32 = 6.0;
+
+/// Minimum effective flame area (m²) for numerical stability
+const MIN_FLAME_AREA: f32 = 0.5;
+
+/// Minimum view factor for numerical stability (prevents excessive attenuation)
+const MIN_VIEW_FACTOR: f32 = 0.001;
+
+/// Maximum view factor (geometric constraint - planar radiator can't exceed 100% visibility)
+const MAX_VIEW_FACTOR: f32 = 1.0;
+
+/// Reference surface-area-to-volume ratio for grass (m²/m³)
+/// Used to normalize absorption efficiency calculations
+/// Reference: Anderson (1982) "Aids to determining fuel models"
+const REFERENCE_SAV: f32 = 3500.0;
+
+/// Minimum absorption efficiency for coarse fuels (logs, branches)
+/// Based on low SAV (~150 m²/m³) having reduced surface area for heat absorption
+const MIN_ABSORPTION_EFFICIENCY: f32 = 0.2;
+
+/// Maximum absorption efficiency enhancement for very fine fuels
+/// Accounts for multiple scattering and increased effective absorption area
+const MAX_ABSORPTION_EFFICIENCY: f32 = 1.5;
+
 /// Calculate radiant heat flux from source element to target element
 /// Uses full Stefan-Boltzmann law: σ * ε * (`T_source^4` - `T_target^4`)
 ///
@@ -65,20 +92,19 @@ pub(crate) fn calculate_radiation_flux(
     // Reference: Drysdale (2011) "Introduction to Fire Dynamics"
     //
     // Effective flame area scales with fuel mass (Byram's flame height model)
-    // Coefficient 6.0 calibrated to match Rothermel spread rate predictions
-    let effective_flame_area = (*source.fuel_remaining * 6.0).max(0.5);
+    let effective_flame_area = (*source.fuel_remaining * FLAME_AREA_COEFFICIENT).max(MIN_FLAME_AREA);
     let view_factor = effective_flame_area / (std::f32::consts::PI * distance * distance);
-    let view_factor = view_factor.clamp(0.001, 1.0);
+    let view_factor = view_factor.clamp(MIN_VIEW_FACTOR, MAX_VIEW_FACTOR);
 
     // Calculate flux at target (W/m²)
     let flux = radiant_power * view_factor;
 
     // Target absorption based on fuel characteristics
     // Fine fuels (high SAV) have more surface area to absorb heat
-    // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (*target.fuel.surface_area_to_volume / 3500.0)
+    // Reference SAV for grass = 3500 m²/m³, logs = 150 m²/m³
+    let absorption_efficiency = (*target.fuel.surface_area_to_volume / REFERENCE_SAV)
         .sqrt()
-        .clamp(0.2, 1.5);
+        .clamp(MIN_ABSORPTION_EFFICIENCY, MAX_ABSORPTION_EFFICIENCY);
 
     // Convert W/m² to kW (kJ/s)
     flux * absorption_efficiency * 0.001
@@ -118,10 +144,10 @@ pub(crate) fn calculate_convection_heat(
 
     // Target absorption based on fuel characteristics (matches radiation)
     // Fine fuels (high SAV) have more surface area to absorb heat
-    // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (*target.fuel.surface_area_to_volume / 3500.0)
+    // Reference SAV for grass = 3500 m²/m³, logs = 150 m²/m³
+    let absorption_efficiency = (*target.fuel.surface_area_to_volume / REFERENCE_SAV)
         .sqrt()
-        .clamp(0.2, 1.5);
+        .clamp(MIN_ABSORPTION_EFFICIENCY, MAX_ABSORPTION_EFFICIENCY);
 
     // Convert W/m² to kW (kJ/s)
     convection_coeff * temp_diff_f32 * absorption_efficiency * distance_attenuation * 0.001
@@ -348,16 +374,16 @@ pub(crate) fn calculate_heat_transfer_raw(
     //   - Radiating area: ~18 m² (both sides)
     //
     // Coefficient calibrated to match Rothermel spread rate predictions:
-    //   - fuel_remaining × 6.0 gives realistic flame areas
+    //   - fuel_remaining × FLAME_AREA_COEFFICIENT gives realistic flame areas
     //   - 3kg grass → 18 m² (matches Byram/Rothermel predictions)
     //   - This ensures heat transfer matches expected spread rates (5-100 m/min for grass)
-    let effective_flame_area = (source_fuel_remaining * 6.0).max(0.5); // m²
+    let effective_flame_area = (source_fuel_remaining * FLAME_AREA_COEFFICIENT).max(MIN_FLAME_AREA); // m²
 
     // Planar view factor: A / (πr²) for extended radiator facing target
     // This is 4× higher than point source and matches fire radiation physics
     // Reference: Drysdale (2011) "Introduction to Fire Dynamics" - radiative heat transfer
     let view_factor = effective_flame_area / (std::f32::consts::PI * distance * distance);
-    let view_factor = view_factor.clamp(0.001, 1.0);
+    let view_factor = view_factor.clamp(MIN_VIEW_FACTOR, MAX_VIEW_FACTOR);
 
     // === DIRECT FLAME CONTACT MULTIPLIER ===
     // For elements within ~1.5m, flames physically engulf adjacent fuel.
@@ -380,8 +406,9 @@ pub(crate) fn calculate_heat_transfer_raw(
 
     // Target absorption based on fuel characteristics
     // Fine fuels (high SAV) have more surface area to absorb heat
-    // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (target_surface_area_vol / 3500.0).sqrt().clamp(0.2, 1.5);
+    // Reference SAV for grass = 3500 m²/m³, logs = 150 m²/m³
+    let absorption_efficiency = (target_surface_area_vol / REFERENCE_SAV).sqrt()
+        .clamp(MIN_ABSORPTION_EFFICIENCY, MAX_ABSORPTION_EFFICIENCY);
 
     // Convert W/m² to kW (kJ/s) - radiation is power per unit area
     // CRITICAL: Must match units with convection term (which also converts to kW)
