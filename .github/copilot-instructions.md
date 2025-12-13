@@ -36,6 +36,13 @@ Values that vary by context MUST come from the appropriate struct:
 - Public-facing APIs (public crates, modules, types, and functions) MUST include at least minimal documentation/comments explaining purpose and expected usage.
 - Keep comments concise and factual: a one-line summary for each public item plus any important invariants, side-effects, or usage notes is sufficient.
 
+### 5. FIX ROOT CAUSES, NOT SYMPTOMS
+- **NEVER apply band-aid fixes** that mask underlying problems with artificial limits, clamping, or workarounds.
+- When encountering invalid values (negative temperatures, NaN, out-of-range, etc.), investigate **WHY** they occur.
+- Fix the physics/math that creates the problem, not the symptom.
+- Example: Temperature going below absolute zero? Don't just clamp to -273.15°C — fix the cooling calculation to use stable exponential decay instead of unstable explicit Euler integration.
+- Artificial limits are acceptable ONLY for physical constraints (max temperature 800°C for finite precision, oxygen can't exceed atmospheric levels) — not to hide numerical instability or incorrect formulas.
+
 ---
 
 ## IMPLEMENTED PHYSICS MODELS

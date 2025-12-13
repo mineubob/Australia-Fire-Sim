@@ -169,9 +169,9 @@ impl Add for Celsius {
 impl Sub for Celsius {
     type Output = Celsius;
     fn sub(self, rhs: Celsius) -> Celsius {
-        let result = self.0 - rhs.0;
-        // Clamp to absolute zero to prevent invalid temperatures
-        Celsius(result.max(*Celsius::ABSOLUTE_ZERO))
+        // Direct subtraction - caller responsible for ensuring physical validity
+        // If result would be invalid, fix the calling code's physics, not here
+        Celsius(self.0 - rhs.0)
     }
 }
 
