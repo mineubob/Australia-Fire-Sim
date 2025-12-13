@@ -5,7 +5,7 @@
 //! elements interact with cells for extreme realism.
 
 use crate::core_types::element::Vec3;
-use crate::core_types::units::{Celsius, Fraction, Meters};
+use crate::core_types::units::{Celsius, CelsiusDelta, Fraction, Meters};
 use crate::grid::{TerrainCache, TerrainData};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -101,7 +101,7 @@ impl GridCell {
     #[must_use]
     pub fn air_density(&self) -> f32 {
         const R_SPECIFIC_AIR: f32 = 287.05; // J/(kg·K)
-        let temp_k = *self.temperature as f32 + 273.15;
+        let temp_k = self.temperature.to_kelvin().as_f32();
         self.pressure / (R_SPECIFIC_AIR * temp_k)
     }
 
@@ -371,9 +371,11 @@ impl SimulationGrid {
         let iy1 = iy0 + 1;
         let iz1 = iz0 + 1;
 
-        let fx = gx - usize_to_f32(ix0);
-        let fy = gy - usize_to_f32(iy0);
-        let fz = gz - usize_to_f32(iz0);
+        // Interpolation parameters must be in [0, 1] for valid interpolation
+        // Clamp to handle positions outside grid bounds (e.g., embers flying beyond terrain)
+        let fx = (gx - usize_to_f32(ix0)).clamp(0.0, 1.0);
+        let fy = (gy - usize_to_f32(iy0)).clamp(0.0, 1.0);
+        let fz = (gz - usize_to_f32(iz0)).clamp(0.0, 1.0);
 
         // Get 8 corner cells
         let c000 = &self.cells[self.cell_index(ix0, iy0, iz0)];
@@ -388,8 +390,7 @@ impl SimulationGrid {
         // Trilinear interpolation helper
         let lerp = |a: f32, b: f32, t: f32| a * (1.0 - t) + b * t;
         let lerp_celsius = |a: Celsius, b: Celsius, t: f32| {
-            // Linear interpolation between two valid temperatures is always valid
-            // No clamping needed if both inputs are >= absolute zero
+            // Linear interpolation between two valid temperatures
             Celsius::new(*a * (1.0 - f64::from(t)) + *b * f64::from(t))
         };
         let lerp_vec = |a: Vec3, b: Vec3, t: f32| a * (1.0 - t) + b * t;
@@ -682,7 +683,8 @@ impl SimulationGrid {
 
         // OPTIMIZATION: Compute all neighbors with fewer branches
         // Use conditional addition instead of if statements for better branch prediction
-        let mut laplacian = Celsius::new(0.0);
+        // Laplacian accumulates temperature DIFFERENCES (deltas), not absolute temperatures
+        let mut laplacian = CelsiusDelta::new(0.0);
 
         // X neighbors (most likely to exist - interior cells)
         let has_x_minus = ix > 0;
@@ -691,13 +693,13 @@ impl SimulationGrid {
             // SAFETY: has_x_minus guarantees ix > 0, so idx - 1 is a valid cell index
             // within the grid bounds (idx is already validated)
             laplacian =
-                laplacian + unsafe { self.cells.get_unchecked(idx - 1).temperature } - cell_temp;
+                laplacian + (unsafe { self.cells.get_unchecked(idx - 1).temperature } - cell_temp);
         }
         if has_x_plus {
             // SAFETY: has_x_plus guarantees ix < nx - 1, so idx + 1 is a valid cell index
             // within the grid bounds (idx is already validated)
             laplacian =
-                laplacian + unsafe { self.cells.get_unchecked(idx + 1).temperature } - cell_temp;
+                laplacian + (unsafe { self.cells.get_unchecked(idx + 1).temperature } - cell_temp);
         }
 
         // Y neighbors
@@ -707,13 +709,13 @@ impl SimulationGrid {
             // SAFETY: has_y_minus guarantees iy > 0, so idx - nx is a valid cell index
             // within the grid bounds (idx is already validated)
             laplacian =
-                laplacian + unsafe { self.cells.get_unchecked(idx - nx).temperature } - cell_temp;
+                laplacian + (unsafe { self.cells.get_unchecked(idx - nx).temperature } - cell_temp);
         }
         if has_y_plus {
             // SAFETY: has_y_plus guarantees iy < ny - 1, so idx + nx is a valid cell index
             // within the grid bounds (idx is already validated)
             laplacian =
-                laplacian + unsafe { self.cells.get_unchecked(idx + nx).temperature } - cell_temp;
+                laplacian + (unsafe { self.cells.get_unchecked(idx + nx).temperature } - cell_temp);
         }
 
         // Z neighbors
@@ -722,14 +724,14 @@ impl SimulationGrid {
         if has_z_minus {
             // SAFETY: has_z_minus guarantees iz > 0, so idx - ny_nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx - ny_nx).temperature }
-                - cell_temp;
+            laplacian = laplacian
+                + (unsafe { self.cells.get_unchecked(idx - ny_nx).temperature } - cell_temp);
         }
         if has_z_plus {
             // SAFETY: has_z_plus guarantees iz < nz - 1, so idx + ny_nx is a valid cell index
             // within the grid bounds (idx is already validated)
-            laplacian = laplacian + unsafe { self.cells.get_unchecked(idx + ny_nx).temperature }
-                - cell_temp;
+            laplacian = laplacian
+                + (unsafe { self.cells.get_unchecked(idx + ny_nx).temperature } - cell_temp);
         }
 
         // Most cells have all 6 neighbors (interior cells), early exit rare
@@ -748,7 +750,7 @@ impl SimulationGrid {
         let mut new_temp = cell_temp + temp_change;
 
         // OPTIMIZATION: Combine cooling and clamping into single branch
-        if *new_temp > 100.0 {
+        if new_temp > 100.0 {
             // Natural cooling with stable exponential decay
             // T = T_ambient + (T_0 - T_ambient) * exp(-k*t)
             let cooling_coefficient = 0.005; // 0.5% per second
@@ -791,10 +793,9 @@ impl SimulationGrid {
                                     .min(Celsius::new(800.0));
 
                             // Lower cell loses heat (can't go below ambient via convection alone)
-                            let new_below_temp = (*self.cells[idx_below].temperature
-                                - *heat_transfer)
-                                .max(*self.ambient_temperature);
-                            self.cells[idx_below].temperature = Celsius::new(new_below_temp);
+                            self.cells[idx_below].temperature = (self.cells[idx_below].temperature
+                                - heat_transfer)
+                                .max(self.ambient_temperature);
                         }
                     }
                 }

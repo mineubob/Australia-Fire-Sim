@@ -5,7 +5,7 @@
 
 use crate::core_types::element::Vec3;
 use crate::core_types::units::{
-    Celsius, Degrees, Hours, KilometersPerHour, MetersPerSecond, Percent,
+    Celsius, CelsiusDelta, Degrees, Hours, KilometersPerHour, MetersPerSecond, Percent,
 };
 use serde::{Deserialize, Serialize};
 
@@ -698,7 +698,7 @@ impl WeatherPreset {
         );
 
         let base_temp = min_temp + (max_temp - min_temp) * hour_factor;
-        base_temp + climate_mod + heatwave_mod
+        base_temp + CelsiusDelta::new(*climate_mod) + CelsiusDelta::new(*heatwave_mod)
     }
 
     /// Get humidity for specific season with modifiers
@@ -1107,7 +1107,7 @@ impl WeatherSystem {
         // - T=45°C, H=10%, V=60km/h, D=10 → FFDI=172.3 (reference: 173.5)
         // https://aurora.landgate.wa.gov.au/fbc/#!/mmk5-forest
         let exponent = -0.45 + 0.987 * df.ln() - 0.0345 * *self.humidity
-            + 0.0338 * (*self.temperature as f32)
+            + 0.0338 * self.temperature.as_f32()
             + 0.0234 * *self.wind_speed;
 
         let ffdi = 2.11 * exponent.exp();
@@ -1245,7 +1245,7 @@ impl WeatherSystem {
             let diurnal_variation = -8.0 * hour_offset.cos();
 
             let target_with_diurnal =
-                self.target_temperature + Celsius::new(f64::from(diurnal_variation));
+                self.target_temperature + CelsiusDelta::new(f64::from(diurnal_variation));
             let temp_diff = target_with_diurnal - self.temperature;
             *self.temperature += *temp_diff * (f64::from(dt) / 3600.0).min(0.1);
 
@@ -1447,7 +1447,7 @@ impl WeatherSystem {
         // Simplified fuel moisture calculation
         // Higher humidity increases moisture, higher temperature decreases it
         let humidity_factor = *self.humidity / 100.0;
-        let temp_factor = (30.0 / (*self.temperature as f32).max(10.0)).min(2.0);
+        let temp_factor = (30.0 / self.temperature.as_f32().max(10.0)).min(2.0);
 
         (base_moisture * humidity_factor * temp_factor).clamp(0.0, 1.0)
     }

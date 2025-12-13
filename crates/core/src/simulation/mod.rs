@@ -21,7 +21,7 @@ use crate::core_types::element::{FuelElement, FuelPart, Vec3};
 use crate::core_types::ember::Ember;
 use crate::core_types::fuel::Fuel;
 use crate::core_types::spatial::SpatialIndex;
-use crate::core_types::units::{Celsius, Kilograms, Percent};
+use crate::core_types::units::{Celsius, CelsiusDelta, Kilograms, Percent};
 use crate::core_types::weather::WeatherSystem;
 use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise};
 use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField, WindFieldConfig};
@@ -919,7 +919,7 @@ impl FireSimulation {
                 );
 
                 if let Some(element) = self.get_element_mut(element_id) {
-                    use crate::core_types::units::{Celsius, Fraction};
+                    use crate::core_types::units::Fraction;
 
                     // Apply humidity changes
                     if grid_data.humidity > *element.moisture_fraction {
@@ -931,17 +931,24 @@ impl FireSimulation {
                                 .min(Fraction::new(*element.fuel.base_moisture * 1.5));
                     }
 
-                    // Apply suppression cooling
+                    // Apply suppression cooling using stable exponential decay
+                    // This naturally asymptotes to target and NEVER overshoots (no band-aid clamping needed)
                     if grid_data.suppression_agent > 0.0 {
-                        // Cooling based on heat capacity physics
-                        let cooling_rate = grid_data.suppression_agent * 1000.0;
+                        // Cooling rate coefficient based on suppression agent concentration and fuel mass
+                        // Higher agent concentration = faster cooling
+                        // Larger fuel mass = slower cooling (more thermal inertia)
                         let mass = *element.fuel_remaining;
-                        let temp_drop =
-                            f64::from(cooling_rate / (mass * *element.fuel.specific_heat));
-                        // Can't cool below grid temperature (thermal equilibrium)
-                        let target_temp =
-                            (*element.temperature - temp_drop).max(*grid_data.temperature);
-                        element.temperature = Celsius::new(target_temp);
+                        let cooling_coefficient = f64::from(
+                            grid_data.suppression_agent * 1000.0
+                                / (mass * *element.fuel.specific_heat),
+                        );
+
+                        // Stable exponential decay: T = T_target + (T_0 - T_target) * exp(-k*dt)
+                        // Target is grid temperature (thermal equilibrium with suppressed environment)
+                        let decay_factor = (-cooling_coefficient * f64::from(dt)).exp();
+                        let temp_above_target = element.temperature - grid_data.temperature;
+                        element.temperature =
+                            grid_data.temperature + temp_above_target * decay_factor;
                     }
                 }
             }
@@ -1042,6 +1049,7 @@ impl FireSimulation {
                     let self_heating = combustion_heat * *element.fuel.self_heating_fraction;
                     let temp_rise =
                         self_heating / (*element.fuel_remaining * *element.fuel.specific_heat);
+                    // Adding heat, so temperature rises (cannot go below starting temperature)
                     let new_temp = (*element.temperature + f64::from(temp_rise))
                         .min(*element.fuel.max_flame_temperature);
                     element.temperature = Celsius::new(new_temp);
@@ -1195,7 +1203,7 @@ impl FireSimulation {
                         let air_mass = cell.air_density() * cell_volume;
                         const SPECIFIC_HEAT_AIR: f32 = 1.005; // kJ/(kg·K) - physical constant
                         let temp_rise =
-                            Celsius::new(heat_kj / f64::from(air_mass * SPECIFIC_HEAT_AIR));
+                            CelsiusDelta::new(heat_kj / f64::from(air_mass * SPECIFIC_HEAT_AIR));
 
                         // Fuel-specific atmospheric heat efficiency (how much heat transfers to air)
                         // Cell should not exceed element temp (can't be hotter than source)
@@ -1244,20 +1252,11 @@ impl FireSimulation {
         // Sequential iteration with better cache locality
         for (element_id, _pos, nearby) in &nearby_cache {
             // Get source element data (read-only)
-            let source_data = self.get_element(*element_id).map(|source| {
-                (
-                    source.position,
-                    *source.temperature,
-                    *source.fuel_remaining,
-                    source.fuel.clone(),
-                )
-            });
+            let source_data = self
+                .get_element(*element_id)
+                .map(|source| (source.position, source.temperature, *source.fuel_remaining));
 
-            if let Some((source_pos, source_temp, source_fuel_remaining, source_fuel)) = source_data
-            {
-                // Pre-compute source properties once (instead of per-target)
-                let source_surface_area_vol = source_fuel.surface_area_to_volume;
-
+            if let Some((source_pos, source_temp, source_fuel_remaining)) = source_data {
                 // Calculate heat for all nearby targets
                 for &target_id in nearby {
                     if target_id == *element_id {
@@ -1279,11 +1278,10 @@ impl FireSimulation {
                         let base_heat =
                             crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
                                 source_pos,
-                                source_temp as f32,
+                                source_temp,
                                 source_fuel_remaining,
-                                *source_surface_area_vol,
                                 target.position,
-                                *target.temperature as f32,
+                                target.temperature,
                                 *target.fuel.surface_area_to_volume,
                                 wind_vector,
                                 dt,
@@ -1607,7 +1605,7 @@ impl FireSimulation {
                     if ignition_prob > 0.0 && rand::random::<f32>() < ignition_prob {
                         // Ignite fuel element at ember temperature
                         let ignition_temp = temperature
-                            .min(fuel_element.fuel.ignition_temperature + Celsius::new(100.0));
+                            .min(fuel_element.fuel.ignition_temperature + CelsiusDelta::new(100.0));
                         self.ignite_element(fuel_id, ignition_temp);
                         ignition_occurred = true;
                         break; // Ember successfully ignited fuel, stop trying
@@ -1805,7 +1803,7 @@ mod tests {
         let cell = sim
             .get_cell_at_position(Vec3::new(50.0, 50.0, 1.0))
             .unwrap();
-        assert!(*cell.temperature > 20.0);
+        assert!(cell.temperature > 20.0);
     }
 
     /// Test fire spread under LOW fire danger conditions (cool, humid, calm)

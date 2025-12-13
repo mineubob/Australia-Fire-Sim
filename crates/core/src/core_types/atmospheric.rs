@@ -4,7 +4,7 @@
 //! enabling realistic fire-atmosphere interaction.
 
 use crate::core_types::element::{FuelElement, Vec3};
-use crate::core_types::units::Celsius;
+use crate::core_types::units::{Celsius, CelsiusDelta};
 use crate::grid::SimulationGrid;
 use crate::physics::combustion_physics::oxygen_limited_burn_rate;
 // no parallel helper required (previously used by update_wind_field)
@@ -36,7 +36,7 @@ pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &
             let source_temp = source_cell.temperature;
             let source_smoke = source_cell.smoke_particles;
 
-            if source_temp > grid.ambient_temperature + Celsius::new(50.0) {
+            if source_temp > grid.ambient_temperature + CelsiusDelta::new(50.0) {
                 // Calculate plume rise velocity
                 let temp_excess = source_temp - grid.ambient_temperature;
                 const GRAVITY: f64 = 9.81; // m/s² - gravitational acceleration

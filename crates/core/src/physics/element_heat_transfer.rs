@@ -14,7 +14,7 @@
 //! - Slope effects: Butler et al. (2004), Rothermel slope factors
 
 use crate::core_types::element::{FuelElement, Vec3};
-use crate::core_types::units::Kilograms;
+use crate::core_types::units::{Celsius, Kilograms};
 
 /// Stefan-Boltzmann constant (W/(m²·K⁴))
 /// Reference: Fundamental physics constant (Stefan 1879, Boltzmann 1884)
@@ -281,11 +281,10 @@ pub(crate) fn calculate_total_heat_transfer(
 )]
 pub(crate) fn calculate_heat_transfer_raw(
     source_pos: Vec3,
-    source_temp: f32,
+    source_temp: Celsius,
     source_fuel_remaining: f32,
-    _source_surface_area_vol: f32, // Kept for API compatibility; not used in current formula
     target_pos: Vec3,
-    target_temp: f32,
+    target_temp: Celsius,
     target_surface_area_vol: f32,
     wind: Vec3,
     dt: f32,
@@ -316,11 +315,11 @@ pub(crate) fn calculate_heat_transfer_raw(
 
     // === RADIATION CALCULATION (Stefan-Boltzmann) ===
     // Use f64 for the T^4 computation, then downcast for the hot path performance
-    let temp_source_k = f64::from(source_temp + 273.15);
-    let temp_target_k = f64::from(target_temp + 273.15);
+    let temp_source_k = source_temp.to_kelvin();
+    let temp_target_k = target_temp.to_kelvin();
 
     let radiant_power_f64 =
-        STEFAN_BOLTZMANN * EMISSIVITY * (temp_source_k.powi(4) - temp_target_k.powi(4));
+        STEFAN_BOLTZMANN * EMISSIVITY * ((*temp_source_k).powi(4) - (*temp_target_k).powi(4));
 
     let radiant_power = radiant_power_f64 as f32;
 
@@ -408,7 +407,11 @@ pub(crate) fn calculate_heat_transfer_raw(
             // High SAV = more surface for convective heating
             let convective_area_factor = absorption_efficiency;
 
-            convection_coeff * temp_diff * convective_area_factor * distance_attenuation * 0.001
+            convection_coeff
+                * (*temp_diff as f32)
+                * convective_area_factor
+                * distance_attenuation
+                * 0.001
         } else {
             0.0
         }
@@ -637,17 +640,14 @@ mod tests {
         let target_v = create_test_element(0.0, 0.0, 5.0, 20.0);
 
         let src_pos = source.position;
-        let src_temp = *source.temperature;
         let src_remain = *source.fuel_remaining;
-        let src_sav = *source.fuel.surface_area_to_volume;
 
         let horiz = calculate_heat_transfer_raw(
             src_pos,
-            src_temp as f32,
+            source.temperature,
             src_remain,
-            src_sav,
             target_h.position,
-            *target_h.temperature as f32,
+            target_h.temperature,
             *target_h.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
@@ -655,11 +655,10 @@ mod tests {
 
         let vert = calculate_heat_transfer_raw(
             src_pos,
-            src_temp as f32,
+            source.temperature,
             src_remain,
-            src_sav,
             target_v.position,
-            *target_v.temperature as f32,
+            target_v.temperature,
             *target_v.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
@@ -764,40 +763,36 @@ mod tests {
         .with_temperature(Celsius::new(20.0));
 
         let src_pos = ground.position;
-        let src_temp = *ground.temperature;
         let src_remain = *ground.fuel_remaining;
         let src_sav = *ground.fuel.surface_area_to_volume;
 
         // Calculate heat transfer from ground fire to each tree part (1 second dt)
         let heat_to_trunk = calculate_heat_transfer_raw(
             src_pos,
-            src_temp as f32,
+            ground.temperature,
             src_remain,
-            src_sav,
             trunk_lower.position,
-            *trunk_lower.temperature as f32,
+            trunk_lower.temperature,
             *trunk_lower.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
         let heat_to_branch = calculate_heat_transfer_raw(
             src_pos,
-            src_temp as f32,
+            ground.temperature,
             src_remain,
-            src_sav,
             branch.position,
-            *branch.temperature as f32,
+            branch.temperature,
             *branch.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
         let heat_to_crown = calculate_heat_transfer_raw(
             src_pos,
-            src_temp as f32,
+            ground.temperature,
             src_remain,
-            src_sav,
             crown.position,
-            *crown.temperature as f32,
+            crown.temperature,
             *crown.fuel.surface_area_to_volume,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
@@ -810,7 +805,10 @@ mod tests {
 
         // Print diagnostic info BEFORE assertions so we can see values on failure
         eprintln!("\n=== Multi-part stringybark tree heat transfer diagnostics ===");
-        eprintln!("Ground fire (dry grass): {src_temp}°C, {src_remain:.2} kg fuel, SAV={src_sav}");
+        eprintln!(
+            "Ground fire (dry grass): {}°C, {src_remain:.2} kg fuel, SAV={src_sav}",
+            *ground.temperature
+        );
         eprintln!(
             "Trunk SAV={}, Branch SAV={}, Crown SAV={}",
             *trunk_lower.fuel.surface_area_to_volume,
@@ -862,8 +860,8 @@ mod tests {
         // Energy needed = 1.5 * 5 * 208 = 1560 kJ
         let specific_heat = *crown.fuel.specific_heat;
         let crown_mass = *crown.fuel_remaining;
-        let delta_t = *crown.fuel.ignition_temperature - *crown.temperature;
-        let energy_to_ignite_kj = specific_heat * crown_mass * (delta_t as f32);
+        let delta_t = crown.fuel.ignition_temperature - crown.temperature;
+        let energy_to_ignite_kj = specific_heat * crown_mass * delta_t.as_f32();
         let estimated_time_to_crown_ignition = energy_to_ignite_kj / heat_to_crown;
 
         // PHYSICAL REALITY: Direct ground-to-crown (8m) heating is SLOW
@@ -898,7 +896,10 @@ mod tests {
 
         // Print diagnostic info for tuning (visible with `cargo test -- --nocapture`)
         eprintln!("\n=== Multi-part stringybark tree heat transfer diagnostics ===");
-        eprintln!("Ground fire (dry grass): {src_temp}°C, {src_remain:.2} kg fuel, SAV={src_sav}");
+        eprintln!(
+            "Ground fire (dry grass): {}°C, {src_remain:.2} kg fuel, SAV={src_sav}",
+            *ground.temperature
+        );
         eprintln!(
             "Trunk SAV={}, Branch SAV={}, Crown SAV={}",
             *trunk_lower.fuel.surface_area_to_volume,

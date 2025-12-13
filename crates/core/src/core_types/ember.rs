@@ -299,7 +299,7 @@ impl Ember {
             self.velocity,
             *self.mass,
             ember_diameter,
-            *self.temperature as f32,
+            self.temperature.as_f32(),
             wind_speed_10m,
             wind_direction,
             dt,
@@ -332,7 +332,7 @@ mod tests {
         }
 
         // Ember should cool down over time
-        assert!(*ember.temperature < *initial_temp);
+        assert!(ember.temperature < initial_temp);
 
         // Ember should be affected by physics (moved from initial position)
         assert!(ember.position.z != 10.0 || ember.position.x != 0.0);

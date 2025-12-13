@@ -24,6 +24,9 @@
 
 use crate::core_types::element::Vec3;
 
+/// Celsius to Kelvin conversion offset (0°C = 273.15 K)
+const CELSIUS_TO_KELVIN: f64 = 273.15;
+
 /// Calculate ember lofting height based on fireline intensity
 ///
 /// Albini (1979) empirical relationship:
@@ -243,8 +246,8 @@ pub fn calculate_ember_trajectory(
 
         // Buoyancy (if ember is hot)
         let buoyancy_force = if ember_temperature > 300.0 {
-            let temp_ratio = (ember_temperature + 273.15) / 293.15; // Kelvin ratio
-            AIR_DENSITY * GRAVITY * ember_volume * (temp_ratio - 1.0)
+            let temp_ratio = (f64::from(ember_temperature) + CELSIUS_TO_KELVIN) / 293.15;
+            (f64::from(AIR_DENSITY * GRAVITY * ember_volume) * (temp_ratio - 1.0)) as f32
         } else {
             0.0
         };
