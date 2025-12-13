@@ -92,7 +92,8 @@ pub(crate) fn calculate_radiation_flux(
     // Reference: Drysdale (2011) "Introduction to Fire Dynamics"
     //
     // Effective flame area scales with fuel mass (Byram's flame height model)
-    let effective_flame_area = (*source.fuel_remaining * FLAME_AREA_COEFFICIENT).max(MIN_FLAME_AREA);
+    let effective_flame_area =
+        (*source.fuel_remaining * FLAME_AREA_COEFFICIENT).max(MIN_FLAME_AREA);
     let view_factor = effective_flame_area / (std::f32::consts::PI * distance * distance);
     let view_factor = view_factor.clamp(MIN_VIEW_FACTOR, MAX_VIEW_FACTOR);
 
@@ -407,7 +408,8 @@ pub(crate) fn calculate_heat_transfer_raw(
     // Target absorption based on fuel characteristics
     // Fine fuels (high SAV) have more surface area to absorb heat
     // Reference SAV for grass = 3500 m²/m³, logs = 150 m²/m³
-    let absorption_efficiency = (target_surface_area_vol / REFERENCE_SAV).sqrt()
+    let absorption_efficiency = (target_surface_area_vol / REFERENCE_SAV)
+        .sqrt()
         .clamp(MIN_ABSORPTION_EFFICIENCY, MAX_ABSORPTION_EFFICIENCY);
 
     // Convert W/m² to kW (kJ/s) - radiation is power per unit area

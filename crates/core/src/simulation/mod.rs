@@ -1227,7 +1227,7 @@ impl FireSimulation {
                     // Limit oxygen consumption to available oxygen (can't consume more than exists)
                     let o2_consumption_concentration = products.o2_consumed() / cell_volume;
                     let actual_o2_consumption = o2_consumption_concentration.min(cell.oxygen);
-                    
+
                     cell.oxygen -= actual_o2_consumption;
                     // Note: oxygen should never go negative due to limiting above
                     debug_assert!(
@@ -1237,7 +1237,7 @@ impl FireSimulation {
                         actual_o2_consumption,
                         cell.oxygen + actual_o2_consumption
                     );
-                    
+
                     cell.carbon_dioxide += products.co2_produced() / cell_volume;
                     cell.water_vapor += products.h2o_produced() / cell_volume;
                     cell.smoke_particles += products.smoke_produced() / cell_volume;
