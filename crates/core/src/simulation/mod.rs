@@ -936,9 +936,11 @@ impl FireSimulation {
                         // Cooling based on heat capacity physics
                         let cooling_rate = grid_data.suppression_agent * 1000.0;
                         let mass = *element.fuel_remaining;
-                        let temp_drop = f64::from(cooling_rate / (mass * *element.fuel.specific_heat));
+                        let temp_drop =
+                            f64::from(cooling_rate / (mass * *element.fuel.specific_heat));
                         // Can't cool below grid temperature (thermal equilibrium)
-                        let target_temp = (*element.temperature - temp_drop).max(*grid_data.temperature);
+                        let target_temp =
+                            (*element.temperature - temp_drop).max(*grid_data.temperature);
                         element.temperature = Celsius::new(target_temp);
                     }
                 }

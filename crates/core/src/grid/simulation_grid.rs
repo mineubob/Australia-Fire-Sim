@@ -754,8 +754,7 @@ impl SimulationGrid {
             let cooling_coefficient = 0.005; // 0.5% per second
             let decay_factor = (-f64::from(cooling_coefficient * dt)).exp();
             let temp_above_ambient = new_temp - ambient_temp;
-            new_temp = (ambient_temp + temp_above_ambient * decay_factor)
-                .min(Celsius::new(800.0));
+            new_temp = (ambient_temp + temp_above_ambient * decay_factor).min(Celsius::new(800.0));
         } else {
             new_temp = new_temp.min(Celsius::new(800.0));
         }
@@ -785,14 +784,15 @@ impl SimulationGrid {
                         if *temp_diff > 0.0 {
                             // Heat rises via buoyancy - energy conservation
                             let heat_transfer = temp_diff * f64::from(transfer_fraction);
-                            
+
                             // Upper cell receives heat (cap at physical max)
                             self.cells[idx_current].temperature =
                                 (self.cells[idx_current].temperature + heat_transfer)
                                     .min(Celsius::new(800.0));
-                            
+
                             // Lower cell loses heat (can't go below ambient via convection alone)
-                            let new_below_temp = (*self.cells[idx_below].temperature - *heat_transfer)
+                            let new_below_temp = (*self.cells[idx_below].temperature
+                                - *heat_transfer)
                                 .max(*self.ambient_temperature);
                             self.cells[idx_below].temperature = Celsius::new(new_below_temp);
                         }
