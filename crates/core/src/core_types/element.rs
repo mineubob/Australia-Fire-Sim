@@ -185,15 +185,7 @@ impl FuelElement {
     /// Verifies temperature increases when heat is added (within floating-point tolerance)
     /// and enforces physical constraint of absolute zero minimum.
     fn apply_temperature_increase(&mut self, heat: f32, old_temp: f64) {
-        // Avoid division by near-zero fuel mass, which can cause unphysical temperature spikes.
-        // See: Rothermel (1972), Rein (2009) — temperature rise should remain finite even as mass approaches zero.
-        const MIN_FUEL_MASS: Kilograms = Kilograms::new(1e-5); // kg, physical lower bound for stable heat transfer
-        const MAX_TEMP_RISE_PER_STEP: f32 = 1000.0; // °C, physically plausible upper bound per timestep
-
-        let effective_fuel_mass = self.fuel_remaining.max(MIN_FUEL_MASS);
-        let temp_rise = heat / (*effective_fuel_mass * *self.fuel.specific_heat);
-        // Clamp temperature rise to a physically reasonable maximum per step
-        let temp_rise = temp_rise.clamp(-MAX_TEMP_RISE_PER_STEP, MAX_TEMP_RISE_PER_STEP);
+        let temp_rise = heat / (*self.fuel_remaining * *self.fuel.specific_heat);
         let new_temp = old_temp + f64::from(temp_rise);
 
         // When adding heat, temperature should increase
