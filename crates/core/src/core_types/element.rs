@@ -185,7 +185,6 @@ impl FuelElement {
     /// # Arguments
     /// * `heat_kj` - Heat energy applied in kilojoules
     /// * `dt` - Time step in seconds
-    /// * `ambient_temperature` - Ambient air temperature
     /// * `ffdi_multiplier` - Fire danger index multiplier
     /// * `has_pilot_flame` - Whether an adjacent burning element provides a pilot flame
     ///
@@ -198,7 +197,6 @@ impl FuelElement {
         &mut self,
         heat_kj: f32,
         dt: f32,
-        _ambient_temperature: Celsius,
         ffdi_multiplier: f32,
         has_pilot_flame: bool,
     ) {
