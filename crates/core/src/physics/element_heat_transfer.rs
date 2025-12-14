@@ -147,7 +147,6 @@ pub(crate) fn calculate_convection_heat(
     let distance_attenuation = 1.0 / (1.0 + distance * distance);
 
     // Target absorption based on fuel characteristics (matches radiation)
-    // Target absorption based on fuel characteristics
     let absorption_efficiency = calculate_absorption_efficiency(
         *target.fuel.absorption_efficiency_base,
         *target.fuel.surface_area_to_volume,
