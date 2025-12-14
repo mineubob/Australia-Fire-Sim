@@ -138,12 +138,12 @@ Never make decisions based on incomplete information.
 
 **NEVER TRUNCATE OUTPUT.** Do not use `head`, `tail`, `grep | head`, or any pipeline that limits output before it's saved. These commands hide critical information and lead to incorrect conclusions.
 
-**For potentially large output, ALWAYS redirect to file first:**
+**For potentially large output, use `tee` to view and save simultaneously:**
 ```bash
-# Check size before viewing
-command 2>&1 | wc -l
+# Use tee to see output AND save to file
+command 2>&1 | tee output.txt
 
-# If large, redirect to file
+# If tee is unavailable, redirect to file instead
 command > output.txt 2>&1
 
 # Then read the file
