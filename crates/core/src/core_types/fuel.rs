@@ -183,6 +183,17 @@ pub struct Fuel {
     pub combustion_efficiency: Fraction,
     /// Geometry multiplier for surface area calculation (wood=0.1, grass=0.15)
     pub surface_area_geometry_factor: f32,
+    /// Flame area coefficient for view factor calculation
+    /// Grass fires: 8-10 (wide, short flames)
+    /// Forest fires: 4-6 (tall, narrow flames)
+    /// Reference: Byram (1959) flame geometry, Drysdale (2011) planar radiator model
+    pub flame_area_coefficient: f32,
+    /// Base absorption efficiency (0-1) for radiant/convective heat
+    /// Fine fuels: 0.85-0.95 (high surface area)
+    /// Coarse fuels: 0.65-0.75 (lower surface area)
+    /// Scales with sqrt(SAV) for realistic heat absorption
+    /// Reference: Butler & Cohen (1998), Drysdale (2011) radiative transfer
+    pub absorption_efficiency_base: Fraction,
 
     // Australian-specific
     /// Volatile oil content (kg/kg) - eucalypts: 0.02-0.05
@@ -279,6 +290,8 @@ impl Fuel {
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.92), // High efficiency (dry hardwood)
             surface_area_geometry_factor: 0.12,         // Irregular bark strips increase area
+            flame_area_coefficient: 5.0, // Moderate-tall flames (forest fire geometry)
+            absorption_efficiency_base: Fraction::new(0.70), // Coarse fuel, moderate absorption
 
             volatile_oil_content: Fraction::new(0.04),
             oil_vaporization_temp: Celsius::new(170.0),
@@ -357,6 +370,8 @@ impl Fuel {
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.93), // High efficiency (dense hardwood)
             surface_area_geometry_factor: 0.08,         // Smooth bark, lower surface area
+            flame_area_coefficient: 4.5, // Tall, narrow flames (forest fire geometry)
+            absorption_efficiency_base: Fraction::new(0.65), // Dense coarse fuel, lower absorption
 
             volatile_oil_content: Fraction::new(0.02),
             oil_vaporization_temp: Celsius::new(170.0),
@@ -436,6 +451,8 @@ impl Fuel {
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.85), // Moderate efficiency (fast burn, incomplete)
             surface_area_geometry_factor: 0.15,         // Fine grass has high surface area
+            flame_area_coefficient: 9.0,                // Wide, short flames (grass fire geometry)
+            absorption_efficiency_base: Fraction::new(0.90), // Fine fuel, excellent absorption
 
             volatile_oil_content: Fraction::new(0.0),
             oil_vaporization_temp: Celsius::new(0.0),
@@ -514,6 +531,8 @@ impl Fuel {
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.88), // Good efficiency (woody fuel)
             surface_area_geometry_factor: 0.10,         // Medium-sized branches
+            flame_area_coefficient: 6.5,                // Medium-tall flames (shrub fire geometry)
+            absorption_efficiency_base: Fraction::new(0.75), // Medium fuel, good absorption
 
             volatile_oil_content: Fraction::new(0.01),
             oil_vaporization_temp: Celsius::new(180.0),
@@ -592,6 +611,8 @@ impl Fuel {
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.90), // High efficiency (dry dead wood)
             surface_area_geometry_factor: 0.09,         // Compacted litter
+            flame_area_coefficient: 7.0,                // Moderate flames (ground fire geometry)
+            absorption_efficiency_base: Fraction::new(0.80), // Loose dead fuel, good absorption
 
             volatile_oil_content: Fraction::new(0.0),
             oil_vaporization_temp: Celsius::new(0.0),
@@ -670,6 +691,8 @@ impl Fuel {
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.70), // Low efficiency (high moisture, incomplete)
             surface_area_geometry_factor: 0.11,         // Live foliage
+            flame_area_coefficient: 7.5,                // Moderate-wide flames (live fuel geometry)
+            absorption_efficiency_base: Fraction::new(0.85), // Fine live fuel, excellent absorption
 
             volatile_oil_content: Fraction::new(0.0),
             oil_vaporization_temp: Celsius::new(0.0),
@@ -788,6 +811,8 @@ impl Fuel {
             crown_fire_temp_multiplier: Fraction::new(0.0),
             combustion_efficiency: Fraction::new(0.0), // Non-burnable
             surface_area_geometry_factor: 0.0,         // N/A for water
+            flame_area_coefficient: 0.0,               // Non-burnable - no flames
+            absorption_efficiency_base: Fraction::new(1.0), // Water absorbs all heat (cooling)
 
             volatile_oil_content: Fraction::new(0.0),
             oil_vaporization_temp: Celsius::new(0.0),
@@ -859,6 +884,8 @@ impl Fuel {
             crown_fire_temp_multiplier: Fraction::new(0.0),
             combustion_efficiency: Fraction::new(0.0), // Non-burnable
             surface_area_geometry_factor: 0.0,         // N/A for rock
+            flame_area_coefficient: 0.0,               // Non-burnable - no flames
+            absorption_efficiency_base: Fraction::new(0.5), // Rock absorbs some heat (thermal mass)
 
             volatile_oil_content: Fraction::new(0.0),
             oil_vaporization_temp: Celsius::new(0.0),

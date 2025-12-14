@@ -1262,11 +1262,18 @@ impl FireSimulation {
         // Sequential iteration with better cache locality
         for (element_id, _pos, nearby) in &nearby_cache {
             // Get source element data (read-only)
-            let source_data = self
-                .get_element(*element_id)
-                .map(|source| (source.position, source.temperature, *source.fuel_remaining));
+            let source_data = self.get_element(*element_id).map(|source| {
+                (
+                    source.position,
+                    source.temperature,
+                    *source.fuel_remaining,
+                    source.fuel.flame_area_coefficient,
+                )
+            });
 
-            if let Some((source_pos, source_temp, source_fuel_remaining)) = source_data {
+            if let Some((source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff)) =
+                source_data
+            {
                 // Calculate heat for all nearby targets
                 for &target_id in nearby {
                     if target_id == *element_id {
@@ -1290,9 +1297,11 @@ impl FireSimulation {
                                 source_pos,
                                 source_temp,
                                 source_fuel_remaining,
+                                source_flame_area_coeff,
                                 target.position,
                                 target.temperature,
                                 *target.fuel.surface_area_to_volume,
+                                *target.fuel.absorption_efficiency_base,
                                 wind_vector,
                                 dt,
                             );
