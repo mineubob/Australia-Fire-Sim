@@ -134,13 +134,30 @@ Notes:
 AI agents MUST NOT stop, pause, or ask permission until the user's request is fully implemented. Continue working until done or genuinely blocked.
 
 ### Always View Full Output
-Use `--no-pager`, `--no-truncate`, or redirect to file. Truncated output causes incorrect conclusions.
+Never make decisions based on incomplete information.
 
-**NEVER PIPE TO PAGERS OR TRUNCATORS.** Do not use `head`, `tail`, `less`, `more`, `grep | head`, or any pipeline that truncates or limits output. These commands hide critical information and lead to incomplete conclusions. **Always:**
-- Use full untruncated output (use `wc -l` to count lines first if needed)
-- Redirect to files: `command > output.txt` then read the file
-- Use explicit flags: `git --no-pager`, `cargo --color never`
-- Read everything before making decisions
+**NEVER TRUNCATE OUTPUT.** Do not use `head`, `tail`, `grep | head`, or any pipeline that limits output before it's saved. These commands hide critical information and lead to incorrect conclusions.
+
+**For potentially large output, ALWAYS redirect to file first:**
+```bash
+# Check size before viewing
+command 2>&1 | wc -l
+
+# If large, redirect to file
+command > output.txt 2>&1
+
+# Then read the file
+cat output.txt  # or use read_file tool
+```
+
+**Important:** Delete temporary output files before committing. Do not upload them to GitHub.
+
+**Required practices:**
+- **Test output:** Use `wc -l` to count lines before viewing directly
+- **Large output:** Redirect to file (`command > output.txt 2>&1`), then read file
+- **Cargo commands:** Always redirect: `cargo clippy > clippy.txt 2>&1`
+- **Git commands:** Use `git --no-pager` AND redirect for complete output
+- **Read everything:** Never make decisions on partial data
 
 ### Validate Rust Code Before Submitting
 ```bash
