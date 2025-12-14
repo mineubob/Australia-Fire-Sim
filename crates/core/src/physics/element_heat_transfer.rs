@@ -105,7 +105,6 @@ pub(crate) fn calculate_radiation_flux(
     let flux = radiant_power * view_factor;
 
     // Target absorption based on fuel characteristics
-    // Target absorption based on fuel characteristics
     let absorption_efficiency = calculate_absorption_efficiency(
         *target.fuel.absorption_efficiency_base,
         *target.fuel.surface_area_to_volume,
