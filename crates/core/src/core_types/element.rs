@@ -290,11 +290,12 @@ impl FuelElement {
         );
         self.temperature = self.temperature.min(max_temp);
 
-        // Note: Temperature may be below ambient_temperature if the element was cooler
-        // before heating (e.g., after rapid ambient temperature rise). This is physically
-        // correct - adding a small amount of heat doesn't instantly bring fuel to ambient.
-        // Natural convection/conduction will equilibrate temperature over time via the
-        // cooling mechanism in the simulation loop.
+        // Note: The element's temperature may be below the ambient temperature specified
+        // elsewhere in the simulation context if the element was initially cooler before heating
+        // (e.g., after a rapid rise in ambient temperature). This is physically correct—
+        // adding a small amount of heat does not instantly bring the fuel to ambient temperature.
+        // Natural convection/conduction will equilibrate temperature over time via the cooling
+        // mechanism in the simulation loop.
 
         // STEP 4: Check for ignition using appropriate threshold
         // Piloted ignition (with adjacent flame) uses lower threshold
