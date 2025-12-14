@@ -221,8 +221,7 @@ mod tests {
 
         // Heat release should be proportionally reduced
         // Combustion efficiency with full oxygen is ~1.0, so heat ~= fuel * heat_content
-        let expected_heat =
-            expected_fuel_combusted * 18000.0 * 1.0; // Full combustion efficiency since O2 concentration is normal
+        let expected_heat = expected_fuel_combusted * 18000.0 * 1.0; // Full combustion efficiency since O2 concentration is normal
         assert!((products.heat_released - expected_heat).abs() < 100.0);
     }
 }
