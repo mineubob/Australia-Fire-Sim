@@ -180,12 +180,32 @@ impl FuelElement {
         self
     }
 
+    /// Apply temperature increase from heat addition with physical constraints
+    ///
+    /// Verifies temperature increases when heat is added (within floating-point tolerance)
+    /// and enforces physical constraint of absolute zero minimum.
+    fn apply_temperature_increase(&mut self, heat: f32, old_temp: f64) {
+        let temp_rise = heat / (*self.fuel_remaining * *self.fuel.specific_heat);
+        let new_temp = old_temp + f64::from(temp_rise);
+
+        // When adding heat, temperature should increase
+        // Allow small tolerance (1e-9) for floating-point rounding errors in division/multiplication
+        debug_assert!(
+            new_temp >= old_temp - 1e-9,
+            "Temperature decreased significantly when adding heat: {old_temp} -> {new_temp} (heat={heat}, temp_rise={temp_rise})"
+        );
+
+        // Ensure temperature doesn't go below absolute zero (physical constraint)
+        // This should never happen when adding heat, but guard against floating-point errors
+        let new_temp = new_temp.max(*Celsius::ABSOLUTE_ZERO);
+        self.temperature = Celsius::new(new_temp);
+    }
+
     /// Apply heat to this fuel element (CRITICAL: moisture evaporation first)
     ///
     /// # Arguments
     /// * `heat_kj` - Heat energy applied in kilojoules
     /// * `dt` - Time step in seconds
-    /// * `ambient_temperature` - Ambient air temperature
     /// * `ffdi_multiplier` - Fire danger index multiplier
     /// * `has_pilot_flame` - Whether an adjacent burning element provides a pilot flame
     ///
@@ -198,7 +218,6 @@ impl FuelElement {
         &mut self,
         heat_kj: f32,
         dt: f32,
-        ambient_temperature: Celsius,
         ffdi_multiplier: f32,
         has_pilot_flame: bool,
     ) {
@@ -254,28 +273,30 @@ impl FuelElement {
             // STEP 2: Remaining heat raises temperature
             let remaining_heat = effective_heat - heat_for_evaporation;
             if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
-                let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-                let new_temp = *self.temperature + f64::from(temp_rise);
-                self.temperature = Celsius::new(new_temp.max(*Celsius::ABSOLUTE_ZERO));
+                self.apply_temperature_increase(remaining_heat, *self.temperature);
             }
         } else {
             // No moisture, all heat goes to temperature rise
-            let temp_rise = effective_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-            let new_temp = *self.temperature + f64::from(temp_rise);
-            self.temperature = Celsius::new(new_temp.max(-273.15));
+            // Note: fuel_remaining > 0 is guaranteed by the check at the start of apply_heat()
+            self.apply_temperature_increase(effective_heat, *self.temperature);
         }
 
-        // STEP 3: Cap at fuel-specific maximum (prevents thermal runaway)
+        // STEP 3: Cap at fuel-specific maximum (physical constraint)
+        // Fuel cannot exceed its maximum combustion temperature
         let max_temp = Celsius::from(
             self.fuel
                 .calculate_max_flame_temperature(*self.moisture_fraction),
         );
         self.temperature = self.temperature.min(max_temp);
 
-        // STEP 4: Clamp to ambient minimum (prevents negative heat)
-        self.temperature = self.temperature.max(ambient_temperature);
+        // Note: The element's temperature may be below the ambient temperature specified
+        // elsewhere in the simulation context if the element was initially cooler before heating
+        // (e.g., after a rapid rise in ambient temperature). This is physically correct—
+        // adding a small amount of heat does not instantly bring the fuel to ambient temperature.
+        // Natural convection/conduction will equilibrate temperature over time via the cooling
+        // mechanism in the simulation loop.
 
-        // STEP 5: Check for ignition using appropriate threshold
+        // STEP 4: Check for ignition using appropriate threshold
         // Piloted ignition (with adjacent flame) uses lower threshold
         // Auto-ignition (radiant heat only) uses higher threshold
         let effective_ignition_temp = if has_pilot_flame {

@@ -25,6 +25,33 @@ const STEFAN_BOLTZMANN: f64 = 5.67e-8;
 /// Reference: Typical wildfire flame emissivity from Butler & Cohen (1998)
 const EMISSIVITY: f64 = 0.95;
 
+/// Maximum view factor (geometric constraint - planar radiator can't exceed 100% visibility)
+const MAX_VIEW_FACTOR: f32 = 1.0;
+
+/// Reference SAV for absorption efficiency normalization (m²/m³)
+/// Used to scale absorption efficiency with `sqrt(SAV/REFERENCE_SAV)`
+/// Value of 1000 represents typical intermediate fuel (between grass at 3500 and logs at 150)
+/// Reference: Anderson (1982) "Aids to determining fuel models"
+const REFERENCE_SAV_FOR_ABSORPTION: f32 = 1000.0;
+
+/// Calculate absorption efficiency for heat transfer based on fuel properties
+///
+/// Base absorption efficiency is fuel-specific (0-1):
+///   - Fine fuels: 0.85-0.95 (high surface area)
+///   - Coarse fuels: 0.65-0.75 (lower surface area)
+///
+/// Scales with sqrt(SAV) for realistic surface-to-volume effects.
+/// Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more energy than is incident)
+///
+/// # References
+/// - Butler & Cohen (1998), Drysdale (2011) - radiative transfer theory
+/// - Anderson (1982) - energy conservation constraint
+#[inline(always)]
+fn calculate_absorption_efficiency(base_efficiency: f32, surface_area_to_volume: f32) -> f32 {
+    let sav_factor = (surface_area_to_volume / REFERENCE_SAV_FOR_ABSORPTION).sqrt();
+    (base_efficiency * sav_factor).min(1.0)
+}
+
 /// Calculate radiant heat flux from source element to target element
 /// Uses full Stefan-Boltzmann law: σ * ε * (`T_source^4` - `T_target^4`)
 ///
@@ -65,20 +92,23 @@ pub(crate) fn calculate_radiation_flux(
     // Reference: Drysdale (2011) "Introduction to Fire Dynamics"
     //
     // Effective flame area scales with fuel mass (Byram's flame height model)
-    // Coefficient 6.0 calibrated to match Rothermel spread rate predictions
-    let effective_flame_area = (*source.fuel_remaining * 6.0).max(0.5);
+    // Flame area coefficient is fuel-specific:
+    //   - Grass fires: 8-10 (wide, short flames)
+    //   - Forest fires: 4-6 (tall, narrow flames)
+    // Very small fuel masses produce proportionally small flame areas and heat transfer
+    let effective_flame_area = *source.fuel_remaining * source.fuel.flame_area_coefficient;
     let view_factor = effective_flame_area / (std::f32::consts::PI * distance * distance);
-    let view_factor = view_factor.clamp(0.001, 1.0);
+    // View factor cannot exceed 1.0 (100% visibility - geometric constraint)
+    let view_factor = view_factor.min(MAX_VIEW_FACTOR);
 
     // Calculate flux at target (W/m²)
     let flux = radiant_power * view_factor;
 
     // Target absorption based on fuel characteristics
-    // Fine fuels (high SAV) have more surface area to absorb heat
-    // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (*target.fuel.surface_area_to_volume / 3500.0)
-        .sqrt()
-        .clamp(0.2, 1.5);
+    let absorption_efficiency = calculate_absorption_efficiency(
+        *target.fuel.absorption_efficiency_base,
+        *target.fuel.surface_area_to_volume,
+    );
 
     // Convert W/m² to kW (kJ/s)
     flux * absorption_efficiency * 0.001
@@ -117,11 +147,10 @@ pub(crate) fn calculate_convection_heat(
     let distance_attenuation = 1.0 / (1.0 + distance * distance);
 
     // Target absorption based on fuel characteristics (matches radiation)
-    // Fine fuels (high SAV) have more surface area to absorb heat
-    // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (*target.fuel.surface_area_to_volume / 3500.0)
-        .sqrt()
-        .clamp(0.2, 1.5);
+    let absorption_efficiency = calculate_absorption_efficiency(
+        *target.fuel.absorption_efficiency_base,
+        *target.fuel.surface_area_to_volume,
+    );
 
     // Convert W/m² to kW (kJ/s)
     convection_coeff * temp_diff_f32 * absorption_efficiency * distance_attenuation * 0.001
@@ -274,6 +303,10 @@ pub(crate) fn calculate_total_heat_transfer(
 /// OPTIMIZED: Calculate heat transfer using raw data instead of `FuelElement` structures
 /// Eliminates 500,000+ temporary structure allocations per frame at 12.5k burning elements
 /// Inline attribute ensures this hot function is optimized (called millions of times per frame)
+///
+/// # Parameters
+/// * `source_flame_area_coeff` - Fuel-specific flame geometry coefficient (grass=9.0, forest=5.0)
+/// * `target_absorption_base` - Fuel-specific base absorption efficiency (grass=0.90, forest=0.70)
 #[inline(always)]
 #[expect(
     clippy::too_many_arguments,
@@ -283,9 +316,11 @@ pub(crate) fn calculate_heat_transfer_raw(
     source_pos: Vec3,
     source_temp: Celsius,
     source_fuel_remaining: f32,
+    source_flame_area_coeff: f32,
     target_pos: Vec3,
     target_temp: Celsius,
     target_surface_area_vol: f32,
+    target_absorption_base: f32,
     wind: Vec3,
     dt: f32,
 ) -> f32 {
@@ -348,16 +383,20 @@ pub(crate) fn calculate_heat_transfer_raw(
     //   - Radiating area: ~18 m² (both sides)
     //
     // Coefficient calibrated to match Rothermel spread rate predictions:
-    //   - fuel_remaining × 6.0 gives realistic flame areas
-    //   - 3kg grass → 18 m² (matches Byram/Rothermel predictions)
+    //   - fuel_remaining × flame_area_coefficient gives realistic flame areas
+    //   - Grass fires: 8-10 (wide, short flames)
+    //   - Forest fires: 4-6 (tall, narrow flames)
+    //   - 3kg grass → 27 m² (matches Byram/Rothermel predictions)
     //   - This ensures heat transfer matches expected spread rates (5-100 m/min for grass)
-    let effective_flame_area = (source_fuel_remaining * 6.0).max(0.5); // m²
+    // Very small fuel masses produce proportionally small flame areas and heat transfer
+    let effective_flame_area = source_fuel_remaining * source_flame_area_coeff; // m²
 
     // Planar view factor: A / (πr²) for extended radiator facing target
     // This is 4× higher than point source and matches fire radiation physics
     // Reference: Drysdale (2011) "Introduction to Fire Dynamics" - radiative heat transfer
     let view_factor = effective_flame_area / (std::f32::consts::PI * distance * distance);
-    let view_factor = view_factor.clamp(0.001, 1.0);
+    // View factor cannot exceed 1.0 (100% visibility - geometric constraint)
+    let view_factor = view_factor.min(MAX_VIEW_FACTOR);
 
     // === DIRECT FLAME CONTACT MULTIPLIER ===
     // For elements within ~1.5m, flames physically engulf adjacent fuel.
@@ -379,9 +418,8 @@ pub(crate) fn calculate_heat_transfer_raw(
     let flux = radiant_power * view_factor * flame_contact_boost;
 
     // Target absorption based on fuel characteristics
-    // Fine fuels (high SAV) have more surface area to absorb heat
-    // SAV 3500 (grass) → 1.0, SAV 150 (logs) → 0.2
-    let absorption_efficiency = (target_surface_area_vol / 3500.0).sqrt().clamp(0.2, 1.5);
+    let absorption_efficiency =
+        calculate_absorption_efficiency(target_absorption_base, target_surface_area_vol);
 
     // Convert W/m² to kW (kJ/s) - radiation is power per unit area
     // CRITICAL: Must match units with convection term (which also converts to kW)
@@ -405,7 +443,9 @@ pub(crate) fn calculate_heat_transfer_raw(
 
             // Normalize surface area factor (same as radiation absorption)
             // High SAV = more surface for convective heating
-            let convective_area_factor = absorption_efficiency;
+            // Uses fuel-specific absorption efficiency scaled by SAV
+            let convective_area_factor =
+                calculate_absorption_efficiency(target_absorption_base, target_surface_area_vol);
 
             convection_coeff
                 * (*temp_diff as f32)
@@ -646,9 +686,11 @@ mod tests {
             src_pos,
             source.temperature,
             src_remain,
+            source.fuel.flame_area_coefficient,
             target_h.position,
             target_h.temperature,
             *target_h.fuel.surface_area_to_volume,
+            *target_h.fuel.absorption_efficiency_base,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -657,9 +699,11 @@ mod tests {
             src_pos,
             source.temperature,
             src_remain,
+            source.fuel.flame_area_coefficient,
             target_v.position,
             target_v.temperature,
             *target_v.fuel.surface_area_to_volume,
+            *target_v.fuel.absorption_efficiency_base,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -771,9 +815,11 @@ mod tests {
             src_pos,
             ground.temperature,
             src_remain,
+            ground.fuel.flame_area_coefficient,
             trunk_lower.position,
             trunk_lower.temperature,
             *trunk_lower.fuel.surface_area_to_volume,
+            *trunk_lower.fuel.absorption_efficiency_base,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -781,9 +827,11 @@ mod tests {
             src_pos,
             ground.temperature,
             src_remain,
+            ground.fuel.flame_area_coefficient,
             branch.position,
             branch.temperature,
             *branch.fuel.surface_area_to_volume,
+            *branch.fuel.absorption_efficiency_base,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );
@@ -791,9 +839,11 @@ mod tests {
             src_pos,
             ground.temperature,
             src_remain,
+            ground.fuel.flame_area_coefficient,
             crown.position,
             crown.temperature,
             *crown.fuel.surface_area_to_volume,
+            *crown.fuel.absorption_efficiency_base,
             Vec3::new(0.0, 0.0, 0.0),
             1.0,
         );

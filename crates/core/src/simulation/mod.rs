@@ -311,11 +311,10 @@ impl FireSimulation {
         dt: f32,
         has_pilot_flame: bool,
     ) {
-        let ambient_temp = self.grid.ambient_temperature;
         let ffdi_multiplier = self.weather.spread_rate_multiplier();
         if let Some(element) = self.get_element_mut(element_id) {
             let was_ignited = element.ignited;
-            element.apply_heat(heat_kj, dt, ambient_temp, ffdi_multiplier, has_pilot_flame);
+            element.apply_heat(heat_kj, dt, ffdi_multiplier, has_pilot_flame);
 
             // Add newly ignited elements to burning set
             if !was_ignited && element.ignited {
@@ -1221,10 +1220,22 @@ impl FireSimulation {
                             fuel_consumed,
                             cell,
                             heat_content,
+                            cell_volume,
                         );
 
+                    // Apply combustion products to cell
+                    // Oxygen consumption is already limited by calculate_combustion_products
                     cell.oxygen -= products.o2_consumed() / cell_volume;
-                    cell.oxygen = cell.oxygen.max(0.0);
+
+                    // Oxygen should never go negative as consumption is limited in calculate_combustion_products
+                    // Small negative values (> -1e-9) are tolerated as floating-point rounding errors
+                    debug_assert!(
+                        cell.oxygen >= -1e-9,
+                        "Oxygen below floating-point tolerance: {} (consumed: {}, tolerance: -1e-9)",
+                        cell.oxygen,
+                        products.o2_consumed()
+                    );
+
                     cell.carbon_dioxide += products.co2_produced() / cell_volume;
                     cell.water_vapor += products.h2o_produced() / cell_volume;
                     cell.smoke_particles += products.smoke_produced() / cell_volume;
@@ -1238,7 +1249,6 @@ impl FireSimulation {
         // OPTIMIZATION: Use sequential collection to reduce Par Extend overhead (13% CPU)
         // Heat transfer calculation is memory-bound (reading elements), not CPU-bound
         // Sequential access has better cache locality than parallel collection
-        let ambient_temp = self.grid.ambient_temperature;
 
         // OPTIMIZATION: Use FxHashMap for integer keys (faster hashing) and accurate sizing
         // Pre-compute exact capacity needed to avoid any resizing during accumulation
@@ -1252,11 +1262,18 @@ impl FireSimulation {
         // Sequential iteration with better cache locality
         for (element_id, _pos, nearby) in &nearby_cache {
             // Get source element data (read-only)
-            let source_data = self
-                .get_element(*element_id)
-                .map(|source| (source.position, source.temperature, *source.fuel_remaining));
+            let source_data = self.get_element(*element_id).map(|source| {
+                (
+                    source.position,
+                    source.temperature,
+                    *source.fuel_remaining,
+                    source.fuel.flame_area_coefficient,
+                )
+            });
 
-            if let Some((source_pos, source_temp, source_fuel_remaining)) = source_data {
+            if let Some((source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff)) =
+                source_data
+            {
                 // Calculate heat for all nearby targets
                 for &target_id in nearby {
                     if target_id == *element_id {
@@ -1280,9 +1297,11 @@ impl FireSimulation {
                                 source_pos,
                                 source_temp,
                                 source_fuel_remaining,
+                                source_flame_area_coeff,
                                 target.position,
                                 target.temperature,
                                 *target.fuel.surface_area_to_volume,
+                                *target.fuel.absorption_efficiency_base,
                                 wind_vector,
                                 dt,
                             );
@@ -1332,7 +1351,7 @@ impl FireSimulation {
                 let temp_before = *target.temperature;
                 let moisture_before = *target.moisture_fraction;
                 // Piloted ignition: heat from burning neighbors provides pilot flame
-                target.apply_heat(total_heat, dt, ambient_temp, ffdi_multiplier, true);
+                target.apply_heat(total_heat, dt, ffdi_multiplier, true);
 
                 // DEBUG: Print target element updates
                 if std::env::var("DEBUG_TARGET").is_ok() && total_heat > 0.5 {
