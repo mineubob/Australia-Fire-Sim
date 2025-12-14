@@ -34,6 +34,24 @@ const MAX_VIEW_FACTOR: f32 = 1.0;
 /// Reference: Anderson (1982) "Aids to determining fuel models"
 const REFERENCE_SAV_FOR_ABSORPTION: f32 = 1000.0;
 
+/// Calculate absorption efficiency for heat transfer based on fuel properties
+///
+/// Base absorption efficiency is fuel-specific (0-1):
+///   - Fine fuels: 0.85-0.95 (high surface area)
+///   - Coarse fuels: 0.65-0.75 (lower surface area)
+///
+/// Scales with sqrt(SAV) for realistic surface-to-volume effects.
+/// Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more energy than is incident)
+///
+/// # References
+/// - Butler & Cohen (1998), Drysdale (2011) - radiative transfer theory
+/// - Anderson (1982) - energy conservation constraint
+#[inline(always)]
+fn calculate_absorption_efficiency(base_efficiency: f32, surface_area_to_volume: f32) -> f32 {
+    let sav_factor = (surface_area_to_volume / REFERENCE_SAV_FOR_ABSORPTION).sqrt();
+    (base_efficiency * sav_factor).min(1.0)
+}
+
 /// Calculate radiant heat flux from source element to target element
 /// Uses full Stefan-Boltzmann law: σ * ε * (`T_source^4` - `T_target^4`)
 ///
@@ -87,14 +105,11 @@ pub(crate) fn calculate_radiation_flux(
     let flux = radiant_power * view_factor;
 
     // Target absorption based on fuel characteristics
-    // Base absorption efficiency is fuel-specific (0-1):
-    //   - Fine fuels: 0.85-0.95 (high surface area)
-    //   - Coarse fuels: 0.65-0.75 (lower surface area)
-    // Scales with sqrt(SAV) for realistic surface-to-volume effects
-    // Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more energy than is incident)
-    // Reference: Butler & Cohen (1998), Drysdale (2011) - radiative transfer theory
-    let sav_factor = (*target.fuel.surface_area_to_volume / REFERENCE_SAV_FOR_ABSORPTION).sqrt();
-    let absorption_efficiency = (*target.fuel.absorption_efficiency_base * sav_factor).min(1.0);
+    // Target absorption based on fuel characteristics
+    let absorption_efficiency = calculate_absorption_efficiency(
+        *target.fuel.absorption_efficiency_base,
+        *target.fuel.surface_area_to_volume,
+    );
 
     // Convert W/m² to kW (kJ/s)
     flux * absorption_efficiency * 0.001
@@ -133,14 +148,11 @@ pub(crate) fn calculate_convection_heat(
     let distance_attenuation = 1.0 / (1.0 + distance * distance);
 
     // Target absorption based on fuel characteristics (matches radiation)
-    // Base absorption efficiency is fuel-specific (0-1):
-    //   - Fine fuels: 0.85-0.95 (high surface area)
-    //   - Coarse fuels: 0.65-0.75 (lower surface area)
-    // Scales with sqrt(SAV) for realistic surface-to-volume effects
-    // Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more heat than is incident via convection)
-    // Reference: Anderson (1982), energy conservation constraint
-    let sav_factor = (*target.fuel.surface_area_to_volume / REFERENCE_SAV_FOR_ABSORPTION).sqrt();
-    let absorption_efficiency = (*target.fuel.absorption_efficiency_base * sav_factor).min(1.0);
+    // Target absorption based on fuel characteristics
+    let absorption_efficiency = calculate_absorption_efficiency(
+        *target.fuel.absorption_efficiency_base,
+        *target.fuel.surface_area_to_volume,
+    );
 
     // Convert W/m² to kW (kJ/s)
     convection_coeff * temp_diff_f32 * absorption_efficiency * distance_attenuation * 0.001
@@ -408,14 +420,8 @@ pub(crate) fn calculate_heat_transfer_raw(
     let flux = radiant_power * view_factor * flame_contact_boost;
 
     // Target absorption based on fuel characteristics
-    // Base absorption efficiency is fuel-specific (0-1):
-    //   - Fine fuels: 0.85-0.95 (high surface area)
-    //   - Coarse fuels: 0.65-0.75 (lower surface area)
-    // Scales with sqrt(SAV) for realistic surface-to-volume effects
-    // Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more radiant energy than is incident)
-    // Reference: Stefan-Boltzmann law, energy conservation
-    let sav_factor = (target_surface_area_vol / REFERENCE_SAV_FOR_ABSORPTION).sqrt();
-    let absorption_efficiency = (target_absorption_base * sav_factor).min(1.0);
+    let absorption_efficiency =
+        calculate_absorption_efficiency(target_absorption_base, target_surface_area_vol);
 
     // Convert W/m² to kW (kJ/s) - radiation is power per unit area
     // CRITICAL: Must match units with convection term (which also converts to kW)
@@ -440,7 +446,8 @@ pub(crate) fn calculate_heat_transfer_raw(
             // Normalize surface area factor (same as radiation absorption)
             // High SAV = more surface for convective heating
             // Uses fuel-specific absorption efficiency scaled by SAV
-            let convective_area_factor = (target_absorption_base * sav_factor).min(1.0);
+            let convective_area_factor =
+                calculate_absorption_efficiency(target_absorption_base, target_surface_area_vol);
 
             convection_coeff
                 * (*temp_diff as f32)

@@ -277,9 +277,8 @@ impl FuelElement {
             }
         } else {
             // No moisture, all heat goes to temperature rise
-            if *self.fuel_remaining > 0.0 {
-                self.apply_temperature_increase(effective_heat, *self.temperature);
-            }
+            // Note: fuel_remaining > 0 is guaranteed by the check at the start of apply_heat()
+            self.apply_temperature_increase(effective_heat, *self.temperature);
         }
 
         // STEP 3: Cap at fuel-specific maximum (physical constraint)
