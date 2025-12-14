@@ -120,9 +120,9 @@ pub(crate) fn calculate_combustion_products(
         let fuel_fraction = o2_consumed / o2_required;
         actual_fuel_combusted = fuel_consumed * fuel_fraction;
 
-        // Recalculate completeness: if we have less oxygen mass than needed,
-        // the combustion becomes less complete regardless of concentration
-        oxygen_completeness = oxygen_completeness_by_concentration * fuel_fraction;
+        // Do NOT reduce completeness: as long as concentration is sufficient,
+        // the fuel that does burn combusts with the same completeness.
+        oxygen_completeness = oxygen_completeness_by_concentration;
     } else {
         // Not oxygen mass limited - use concentration-based completeness
         actual_fuel_combusted = fuel_consumed;
@@ -222,7 +222,7 @@ mod tests {
         // Heat release should be proportionally reduced
         // Combustion efficiency with full oxygen is ~1.0, so heat ~= fuel * heat_content
         let expected_heat =
-            expected_fuel_combusted * 18000.0 * (0.6 + 0.4 * expected_fuel_fraction);
+            expected_fuel_combusted * 18000.0 * 1.0; // Full combustion efficiency since O2 concentration is normal
         assert!((products.heat_released - expected_heat).abs() < 100.0);
     }
 }
