@@ -90,8 +90,8 @@ pub(crate) fn calculate_combustion_products(
     fuel_heat_content: f32,
     cell_volume: f32,
 ) -> CombustionProducts {
-    // Check oxygen availability
-    let oxygen_completeness = if cell.oxygen > 0.195 {
+    // Check oxygen availability by concentration
+    let oxygen_completeness_by_concentration = if cell.oxygen > 0.195 {
         1.0 // Complete combustion
     } else if cell.oxygen > 0.1 {
         // Incomplete combustion (more CO, less CO2)
@@ -101,7 +101,7 @@ pub(crate) fn calculate_combustion_products(
     };
 
     // Calculate oxygen that would be consumed for this completeness level
-    let o2_required = fuel_consumed * O2_PER_KG_FUEL * oxygen_completeness;
+    let o2_required = fuel_consumed * O2_PER_KG_FUEL * oxygen_completeness_by_concentration;
 
     // Available oxygen mass in the cell (kg)
     let o2_available = cell.oxygen * cell_volume;
@@ -110,12 +110,24 @@ pub(crate) fn calculate_combustion_products(
     // This prevents consuming more oxygen than physically exists in the cell
     let o2_consumed = o2_required.min(o2_available);
 
-    // If we're limited by available oxygen, reduce the actual fuel that can combust
-    let actual_fuel_combusted = if o2_required > 0.0 {
-        fuel_consumed * (o2_consumed / o2_required)
+    // If we're limited by available oxygen mass (not concentration),
+    // we need to recalculate completeness based on actual oxygen availability
+    let actual_fuel_combusted;
+    let oxygen_completeness;
+
+    if o2_required > 0.0 && o2_consumed < o2_required {
+        // Oxygen mass limited - reduce fuel combusted proportionally
+        let fuel_fraction = o2_consumed / o2_required;
+        actual_fuel_combusted = fuel_consumed * fuel_fraction;
+
+        // Recalculate completeness: if we have less oxygen mass than needed,
+        // the combustion becomes less complete regardless of concentration
+        oxygen_completeness = oxygen_completeness_by_concentration * fuel_fraction;
     } else {
-        fuel_consumed
-    };
+        // Not oxygen mass limited - use concentration-based completeness
+        actual_fuel_combusted = fuel_consumed;
+        oxygen_completeness = oxygen_completeness_by_concentration;
+    }
 
     // Complete combustion products based on actual combustion
     let co2_complete = actual_fuel_combusted * CO2_PER_KG_FUEL * oxygen_completeness;
@@ -180,5 +192,37 @@ mod tests {
 
         // Heat release is reduced
         assert!(products.heat_released < 18000.0);
+    }
+
+    #[test]
+    fn test_oxygen_mass_limiting() {
+        // Test case where oxygen mass (not concentration) is the limiting factor
+        let mut cell = GridCell::new(0.0);
+        cell.oxygen = 0.21; // Normal oxygen concentration (complete combustion)
+        let cell_volume = 1.0; // Small cell volume: only 0.21 kg O2 available
+
+        // High fuel consumption that would require ~13.3 kg O2 for complete combustion
+        let fuel_consumed = 10.0;
+        let products = calculate_combustion_products(fuel_consumed, &cell, 18000.0, cell_volume);
+
+        // Oxygen consumption should be limited to available oxygen
+        let o2_available = cell.oxygen * cell_volume;
+        assert!((products.o2_consumed - o2_available).abs() < 1e-6);
+
+        // All available oxygen should be consumed
+        assert!(products.o2_consumed < fuel_consumed * O2_PER_KG_FUEL);
+
+        // Fuel combusted should be reduced proportionally
+        // o2_required ~= 10.0 * 1.33 = 13.3 kg, o2_available = 0.21 kg
+        // fuel_fraction = 0.21 / 13.3 ~= 0.0158
+        let expected_fuel_fraction = o2_available / (fuel_consumed * O2_PER_KG_FUEL);
+        let expected_fuel_combusted = fuel_consumed * expected_fuel_fraction;
+        assert!((products.o2_consumed / O2_PER_KG_FUEL - expected_fuel_combusted).abs() < 0.1);
+
+        // Heat release should be proportionally reduced
+        // Combustion efficiency with full oxygen is ~1.0, so heat ~= fuel * heat_content
+        let expected_heat =
+            expected_fuel_combusted * 18000.0 * (0.6 + 0.4 * expected_fuel_fraction);
+        assert!((products.heat_released - expected_heat).abs() < 100.0);
     }
 }
