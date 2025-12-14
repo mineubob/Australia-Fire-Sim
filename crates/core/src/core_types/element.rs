@@ -255,11 +255,11 @@ impl FuelElement {
                 let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
                 let new_temp = *self.temperature + f64::from(temp_rise);
 
-                // When adding heat, temperature must increase (within floating-point precision)
-                // Allow 1e-9 tolerance for accumulated floating-point errors
+                // When adding heat, temperature should increase
+                // Allow small tolerance (1e-9) for floating-point rounding errors in division/multiplication
                 debug_assert!(
                     new_temp >= *self.temperature - 1e-9,
-                    "Temperature decreased when adding heat: {} -> {} (heat={}, temp_rise={})",
+                    "Temperature decreased significantly when adding heat: {} -> {} (heat={}, temp_rise={})",
                     *self.temperature,
                     new_temp,
                     remaining_heat,
@@ -276,11 +276,11 @@ impl FuelElement {
             let temp_rise = effective_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
             let new_temp = *self.temperature + f64::from(temp_rise);
 
-            // When adding heat, temperature must increase (within floating-point precision)
-            // Allow 1e-9 tolerance for accumulated floating-point errors
+            // When adding heat, temperature should increase
+            // Allow small tolerance (1e-9) for floating-point rounding errors in division/multiplication
             debug_assert!(
                 new_temp >= *self.temperature - 1e-9,
-                "Temperature decreased when adding heat: {} -> {} (heat={}, temp_rise={})",
+                "Temperature decreased significantly when adding heat: {} -> {} (heat={}, temp_rise={})",
                 *self.temperature,
                 new_temp,
                 effective_heat,

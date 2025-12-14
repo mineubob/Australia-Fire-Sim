@@ -28,6 +28,12 @@ const EMISSIVITY: f64 = 0.95;
 /// Maximum view factor (geometric constraint - planar radiator can't exceed 100% visibility)
 const MAX_VIEW_FACTOR: f32 = 1.0;
 
+/// Reference SAV for absorption efficiency normalization (m²/m³)
+/// Used to scale absorption efficiency with `sqrt(SAV/REFERENCE_SAV)`
+/// Value of 1000 represents typical intermediate fuel (between grass at 3500 and logs at 150)
+/// Reference: Anderson (1982) "Aids to determining fuel models"
+const REFERENCE_SAV_FOR_ABSORPTION: f32 = 1000.0;
+
 /// Calculate radiant heat flux from source element to target element
 /// Uses full Stefan-Boltzmann law: σ * ε * (`T_source^4` - `T_target^4`)
 ///
@@ -87,7 +93,7 @@ pub(crate) fn calculate_radiation_flux(
     // Scales with sqrt(SAV) for realistic surface-to-volume effects
     // Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more energy than is incident)
     // Reference: Butler & Cohen (1998), Drysdale (2011) - radiative transfer theory
-    let sav_factor = (*target.fuel.surface_area_to_volume / 1000.0).sqrt();
+    let sav_factor = (*target.fuel.surface_area_to_volume / REFERENCE_SAV_FOR_ABSORPTION).sqrt();
     let absorption_efficiency = (*target.fuel.absorption_efficiency_base * sav_factor).min(1.0);
 
     // Convert W/m² to kW (kJ/s)
@@ -133,7 +139,7 @@ pub(crate) fn calculate_convection_heat(
     // Scales with sqrt(SAV) for realistic surface-to-volume effects
     // Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more heat than is incident via convection)
     // Reference: Anderson (1982), energy conservation constraint
-    let sav_factor = (*target.fuel.surface_area_to_volume / 1000.0).sqrt();
+    let sav_factor = (*target.fuel.surface_area_to_volume / REFERENCE_SAV_FOR_ABSORPTION).sqrt();
     let absorption_efficiency = (*target.fuel.absorption_efficiency_base * sav_factor).min(1.0);
 
     // Convert W/m² to kW (kJ/s)
@@ -404,7 +410,7 @@ pub(crate) fn calculate_heat_transfer_raw(
     // Scales with sqrt(SAV) for realistic surface-to-volume effects
     // Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more radiant energy than is incident)
     // Reference: Stefan-Boltzmann law, energy conservation
-    let sav_factor = (target_surface_area_vol / 1000.0).sqrt();
+    let sav_factor = (target_surface_area_vol / REFERENCE_SAV_FOR_ABSORPTION).sqrt();
     let absorption_efficiency = (target_absorption_base * sav_factor).min(1.0);
 
     // Convert W/m² to kW (kJ/s) - radiation is power per unit area
