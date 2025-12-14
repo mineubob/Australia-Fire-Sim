@@ -180,6 +180,27 @@ impl FuelElement {
         self
     }
 
+    /// Apply temperature increase from heat addition with physical constraints
+    ///
+    /// Verifies temperature increases when heat is added (within floating-point tolerance)
+    /// and enforces physical constraint of absolute zero minimum.
+    fn apply_temperature_increase(&mut self, heat: f32, old_temp: f64) {
+        let temp_rise = heat / (*self.fuel_remaining * *self.fuel.specific_heat);
+        let new_temp = old_temp + f64::from(temp_rise);
+
+        // When adding heat, temperature should increase
+        // Allow small tolerance (1e-9) for floating-point rounding errors in division/multiplication
+        debug_assert!(
+            new_temp >= old_temp - 1e-9,
+            "Temperature decreased significantly when adding heat: {old_temp} -> {new_temp} (heat={heat}, temp_rise={temp_rise})"
+        );
+
+        // Ensure temperature doesn't go below absolute zero (physical constraint)
+        // This should never happen when adding heat, but guard against floating-point errors
+        let new_temp = new_temp.max(*Celsius::ABSOLUTE_ZERO);
+        self.temperature = Celsius::new(new_temp);
+    }
+
     /// Apply heat to this fuel element (CRITICAL: moisture evaporation first)
     ///
     /// # Arguments
@@ -252,45 +273,13 @@ impl FuelElement {
             // STEP 2: Remaining heat raises temperature
             let remaining_heat = effective_heat - heat_for_evaporation;
             if remaining_heat > 0.0 && *self.fuel_remaining > 0.0 {
-                let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-                let new_temp = *self.temperature + f64::from(temp_rise);
-
-                // When adding heat, temperature should increase
-                // Allow small tolerance (1e-9) for floating-point rounding errors in division/multiplication
-                debug_assert!(
-                    new_temp >= *self.temperature - 1e-9,
-                    "Temperature decreased significantly when adding heat: {} -> {} (heat={}, temp_rise={})",
-                    *self.temperature,
-                    new_temp,
-                    remaining_heat,
-                    temp_rise
-                );
-
-                // Ensure temperature doesn't go below absolute zero (physical constraint)
-                // This should never happen when adding heat, but guard against floating-point errors
-                let new_temp = new_temp.max(*Celsius::ABSOLUTE_ZERO);
-                self.temperature = Celsius::new(new_temp);
+                self.apply_temperature_increase(remaining_heat, *self.temperature);
             }
         } else {
             // No moisture, all heat goes to temperature rise
-            let temp_rise = effective_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
-            let new_temp = *self.temperature + f64::from(temp_rise);
-
-            // When adding heat, temperature should increase
-            // Allow small tolerance (1e-9) for floating-point rounding errors in division/multiplication
-            debug_assert!(
-                new_temp >= *self.temperature - 1e-9,
-                "Temperature decreased significantly when adding heat: {} -> {} (heat={}, temp_rise={})",
-                *self.temperature,
-                new_temp,
-                effective_heat,
-                temp_rise
-            );
-
-            // Ensure temperature doesn't go below absolute zero (physical constraint)
-            // This should never happen when adding heat, but guard against floating-point errors
-            let new_temp = new_temp.max(*Celsius::ABSOLUTE_ZERO);
-            self.temperature = Celsius::new(new_temp);
+            if *self.fuel_remaining > 0.0 {
+                self.apply_temperature_increase(effective_heat, *self.temperature);
+            }
         }
 
         // STEP 3: Cap at fuel-specific maximum (physical constraint)

@@ -293,6 +293,10 @@ pub(crate) fn calculate_total_heat_transfer(
 /// OPTIMIZED: Calculate heat transfer using raw data instead of `FuelElement` structures
 /// Eliminates 500,000+ temporary structure allocations per frame at 12.5k burning elements
 /// Inline attribute ensures this hot function is optimized (called millions of times per frame)
+///
+/// # Parameters
+/// * `source_flame_area_coeff` - Fuel-specific flame geometry coefficient (grass=9, forest=5)
+/// * `target_absorption_base` - Fuel-specific base absorption efficiency (grass=0.7, forest=0.5)
 #[inline(always)]
 #[expect(
     clippy::too_many_arguments,
@@ -302,11 +306,11 @@ pub(crate) fn calculate_heat_transfer_raw(
     source_pos: Vec3,
     source_temp: Celsius,
     source_fuel_remaining: f32,
-    source_flame_area_coeff: f32, // source_flame_area_coeff: Fuel-specific flame geometry coefficient (grass=9, forest=5)
+    source_flame_area_coeff: f32,
     target_pos: Vec3,
     target_temp: Celsius,
     target_surface_area_vol: f32,
-    target_absorption_base: f32, // Fuel-specific base absorption efficiency (grass=0.7, forest=0.5)
+    target_absorption_base: f32,
     wind: Vec3,
     dt: f32,
 ) -> f32 {
