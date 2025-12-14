@@ -91,7 +91,11 @@ pub(crate) fn calculate_radiation_flux(
     // Fine fuels (high SAV) have more surface area to absorb heat
     // Reference SAV for grass = 3500 m²/m³, logs = 150 m²/m³
     // The sqrt() accounts for surface-to-volume scaling in heat absorption
-    let absorption_efficiency = (*target.fuel.surface_area_to_volume / REFERENCE_SAV).sqrt();
+    // Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more energy than is incident)
+    // Reference: Butler & Cohen (1998), Drysdale (2011) - radiative transfer theory
+    let absorption_efficiency = (*target.fuel.surface_area_to_volume / REFERENCE_SAV)
+        .sqrt()
+        .min(1.0);
 
     // Convert W/m² to kW (kJ/s)
     flux * absorption_efficiency * 0.001
@@ -133,7 +137,11 @@ pub(crate) fn calculate_convection_heat(
     // Fine fuels (high SAV) have more surface area to absorb heat
     // Reference SAV for grass = 3500 m²/m³, logs = 150 m²/m³
     // The sqrt() accounts for surface-to-volume scaling in heat absorption
-    let absorption_efficiency = (*target.fuel.surface_area_to_volume / REFERENCE_SAV).sqrt();
+    // Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more heat than is incident via convection)
+    // Reference: Anderson (1982), energy conservation constraint
+    let absorption_efficiency = (*target.fuel.surface_area_to_volume / REFERENCE_SAV)
+        .sqrt()
+        .min(1.0);
 
     // Convert W/m² to kW (kJ/s)
     convection_coeff * temp_diff_f32 * absorption_efficiency * distance_attenuation * 0.001
@@ -396,7 +404,9 @@ pub(crate) fn calculate_heat_transfer_raw(
     // Fine fuels (high SAV) have more surface area to absorb heat
     // Reference SAV for grass = 3500 m²/m³, logs = 150 m²/m³
     // The sqrt() accounts for surface-to-volume scaling in heat absorption
-    let absorption_efficiency = (target_surface_area_vol / REFERENCE_SAV).sqrt();
+    // Absorption efficiency cannot exceed 1.0 (physical constraint: cannot absorb more radiant energy than is incident)
+    // Reference: Stefan-Boltzmann law, energy conservation
+    let absorption_efficiency = (target_surface_area_vol / REFERENCE_SAV).sqrt().min(1.0);
 
     // Convert W/m² to kW (kJ/s) - radiation is power per unit area
     // CRITICAL: Must match units with convection term (which also converts to kW)
