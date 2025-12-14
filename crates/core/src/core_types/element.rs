@@ -257,17 +257,19 @@ impl FuelElement {
                 let temp_rise = remaining_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
                 let new_temp = *self.temperature + f64::from(temp_rise);
 
-                // When adding heat, temperature should increase (allow for floating-point precision)
-                // Only assert if remaining_heat is significant (> 0.01 kJ)
+                // When adding heat, temperature must increase (within floating-point precision)
                 debug_assert!(
-                    new_temp >= *self.temperature - 1e-6 || remaining_heat < 0.01,
-                    "Temperature decreased significantly when adding heat: {} -> {} (heat={}, temp_rise={})",
+                    new_temp >= *self.temperature,
+                    "Temperature decreased when adding heat: {} -> {} (heat={}, temp_rise={})",
                     *self.temperature,
                     new_temp,
                     remaining_heat,
                     temp_rise
                 );
 
+                // Ensure temperature doesn't go below absolute zero (physical constraint)
+                // This should never happen when adding heat, but guard against floating-point errors
+                let new_temp = new_temp.max(*Celsius::ABSOLUTE_ZERO);
                 self.temperature = Celsius::new(new_temp);
             }
         } else {
@@ -275,17 +277,19 @@ impl FuelElement {
             let temp_rise = effective_heat / (*self.fuel_remaining * *self.fuel.specific_heat);
             let new_temp = *self.temperature + f64::from(temp_rise);
 
-            // When adding heat, temperature should increase (allow for floating-point precision)
-            // Only assert if effective_heat is significant (> 0.01 kJ)
+            // When adding heat, temperature must increase (within floating-point precision)
             debug_assert!(
-                new_temp >= *self.temperature - 1e-6 || effective_heat < 0.01,
-                "Temperature decreased significantly when adding heat: {} -> {} (heat={}, temp_rise={})",
+                new_temp >= *self.temperature,
+                "Temperature decreased when adding heat: {} -> {} (heat={}, temp_rise={})",
                 *self.temperature,
                 new_temp,
                 effective_heat,
                 temp_rise
             );
 
+            // Ensure temperature doesn't go below absolute zero (physical constraint)
+            // This should never happen when adding heat, but guard against floating-point errors
+            let new_temp = new_temp.max(*Celsius::ABSOLUTE_ZERO);
             self.temperature = Celsius::new(new_temp);
         }
 
