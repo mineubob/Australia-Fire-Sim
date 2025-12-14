@@ -420,13 +420,6 @@ impl Kelvin {
         Celsius::new(self.0 - Celsius::CELSIUS_KELVIN_OFFSET)
     }
 
-    /// Raise temperature to an integer power (for Stefan-Boltzmann T^4 calculations)
-    #[inline]
-    #[must_use]
-    pub fn powi(self, n: i32) -> f64 {
-        self.0.powi(n)
-    }
-
     /// Convert to f32 for calculations requiring lower precision
     #[inline]
     #[must_use]
