@@ -305,8 +305,8 @@ pub(crate) fn calculate_total_heat_transfer(
 /// Inline attribute ensures this hot function is optimized (called millions of times per frame)
 ///
 /// # Parameters
-/// * `source_flame_area_coeff` - Fuel-specific flame geometry coefficient (grass=9, forest=5)
-/// * `target_absorption_base` - Fuel-specific base absorption efficiency (grass=0.7, forest=0.5)
+/// * `source_flame_area_coeff` - Fuel-specific flame geometry coefficient (grass=9.0, forest=5.0)
+/// * `target_absorption_base` - Fuel-specific base absorption efficiency (grass=0.90, forest=0.70)
 #[inline(always)]
 #[expect(
     clippy::too_many_arguments,
