@@ -31,6 +31,8 @@
 //! - `heat <id> <temperature>` or `h` - Apply heat to an element
 //! - `heat_position <x> <y> <temp> [radius] [amount] [filters]` or `hp` - Heat elements in XY circle
 //! - `preset <name>` or `p <name>` - Switch weather preset
+//! - `time <hours>` or `t <hours>` - Set time of day (0-24 hours)
+//! - `setday <day>` or `sd <day>` - Set day of year (1-365)
 //! - `reset [w] [h]` or `r` - Reset simulation
 //! - `heatmap [size]` or `hm` - Generate a heatmap
 //! - `help` or `?` - Show available commands
@@ -275,14 +277,22 @@ impl App {
                 self.step_simulation(count);
             }
             "status" | "st" => {
-                self.view_mode = ViewMode::Status;
-                self.add_message("Switched to Status view".to_string());
+                if self.headless {
+                    self.show_status_text();
+                } else {
+                    self.view_mode = ViewMode::Status;
+                    self.add_message("Switched to Status view".to_string());
+                }
             }
             "weather" | "w" => {
-                self.view_mode = ViewMode::Weather;
-                self.add_message("Switched to Weather view".to_string());
+                if self.headless {
+                    self.show_weather_text();
+                } else {
+                    self.view_mode = ViewMode::Weather;
+                    self.add_message("Switched to Weather view".to_string());
+                }
             }
-            "dashboard" | "d" => {
+            "dashboard" | "d" if !self.headless => {
                 self.view_mode = ViewMode::Dashboard;
                 self.add_message("Switched to Dashboard view".to_string());
             }
@@ -330,8 +340,22 @@ impl App {
                     self.set_preset(name);
                 } else {
                     self.add_message(
-                        "Usage: preset <perth|catastrophic|goldfields|wheatbelt|hot>".to_string(),
+                        "Usage: preset <perth|catastrophic|south_west|wheatbelt|goldfields|kimberley|pilbara|hot>".to_string(),
                     );
+                }
+            }
+            "time" | "t" => {
+                if let Some(hours) = parts.get(1).and_then(|s| s.parse().ok()) {
+                    self.set_time(hours);
+                } else {
+                    self.add_message("Usage: time <hours> (0-24)".to_string());
+                }
+            }
+            "setday" | "sd" => {
+                if let Some(day) = parts.get(1).and_then(|s| s.parse().ok()) {
+                    self.set_day(day);
+                } else {
+                    self.add_message("Usage: setday <day> (1-365)".to_string());
                 }
             }
             "reset" | "r" => {
@@ -359,8 +383,12 @@ impl App {
                 }
             }
             "help" | "?" => {
-                self.view_mode = ViewMode::Help;
-                self.add_message("Switched to Help view".to_string());
+                if self.headless {
+                    self.show_help_text();
+                } else {
+                    self.view_mode = ViewMode::Help;
+                    self.add_message("Switched to Help view".to_string());
+                }
             }
             "quit" | "q" | "exit" => {
                 self.should_quit = true;
@@ -769,6 +797,9 @@ impl App {
             "catastrophic" | "cat" => WeatherPreset::catastrophic(),
             "goldfields" => WeatherPreset::goldfields(),
             "wheatbelt" => WeatherPreset::wheatbelt(),
+            "south_west" | "southwest" | "sw" => WeatherPreset::south_west(),
+            "kimberley" => WeatherPreset::kimberley(),
+            "pilbara" => WeatherPreset::pilbara(),
             "hot" => WeatherPreset::basic(
                 "Hot",
                 Celsius::new(38.0),
@@ -779,7 +810,7 @@ impl App {
             ),
             _ => {
                 self.add_message(format!(
-                    "Unknown preset: {name}. Available: perth, catastrophic, goldfields, wheatbelt, hot"
+                    "Unknown preset: {name}. Available: perth, catastrophic, south_west, wheatbelt, goldfields, kimberley, pilbara, hot"
                 ));
                 return;
             }
@@ -789,6 +820,40 @@ impl App {
         self.sim.update_weather_preset(preset);
         let weather_name = &self.current_weather.name;
         self.add_message(format!("Weather preset changed to '{weather_name}'"));
+    }
+
+    /// Set time of day in hours (0-24)
+    fn set_time(&mut self, hours: f32) {
+        if !(0.0..=24.0).contains(&hours) {
+            self.add_message("Time must be between 0 and 24 hours".to_string());
+            return;
+        }
+
+        use fire_sim_core::core_types::Hours;
+        let weather = self.sim.get_weather_mut();
+        weather.set_time_of_day(Hours::new(hours));
+
+        #[allow(clippy::cast_precision_loss)]
+        let time_hours = hours.floor() as u32;
+        #[allow(clippy::cast_precision_loss)]
+        let time_minutes = ((hours - time_hours as f32) * 60.0).round() as u32;
+        self.add_message(format!(
+            "Time of day set to {time_hours:02}:{time_minutes:02}"
+        ));
+    }
+
+    /// Set day of year (1-365)
+    fn set_day(&mut self, day: u16) {
+        if !(1..=365).contains(&day) {
+            self.add_message("Day must be between 1 and 365".to_string());
+            return;
+        }
+
+        let weather = self.sim.get_weather_mut();
+        weather.set_day_of_year(day);
+
+        let (month, day_of_month) = day_of_year_to_month_day(day);
+        self.add_message(format!("Day of year set to {day} ({month} {day_of_month})"));
     }
 
     /// Reset simulation
@@ -807,6 +872,121 @@ impl App {
             width,
             height
         ));
+    }
+
+    /// Show help text (for headless mode)
+    fn show_help_text(&mut self) {
+        self.add_message("═══════════════ AVAILABLE COMMANDS ═══════════════".to_string());
+        self.add_message(String::new());
+        self.add_message("Simulation Control:".to_string());
+        self.add_message(
+            "  step [n], s [n]          - Advance n timesteps (default 1)".to_string(),
+        );
+        self.add_message(
+            "  reset [w] [h], r         - Reset simulation (optional: new width/height)"
+                .to_string(),
+        );
+        self.add_message("  preset <name>, p         - Change weather preset".to_string());
+        self.add_message("                             (perth, catastrophic, south_west, wheatbelt, goldfields, kimberley, pilbara, hot)".to_string());
+        self.add_message("  time <hours>, t          - Set time of day (0-24 hours)".to_string());
+        self.add_message("  setday <day>, sd         - Set day of year (1-365)".to_string());
+        self.add_message(String::new());
+        self.add_message("Information Commands:".to_string());
+        self.add_message("  status, st               - Show simulation status".to_string());
+        self.add_message("  weather, w               - Show weather conditions".to_string());
+        self.add_message(
+            "  heatmap [size], hm       - Show temperature heatmap (default size: 30)".to_string(),
+        );
+        self.add_message("  help, ?                  - Show this help".to_string());
+        self.add_message(String::new());
+        self.add_message("Element Commands:".to_string());
+        self.add_message("  element <id>, e          - Show element details".to_string());
+        self.add_message("  burning, b               - List burning elements".to_string());
+        self.add_message("  embers, em               - List active embers".to_string());
+        self.add_message("  nearby <id>, n           - Show elements near <id>".to_string());
+        self.add_message("  ignite <id>, i           - Manually ignite element".to_string());
+        self.add_message(
+            "  heat <id> <temp>, h      - Heat element to target temperature (°C)".to_string(),
+        );
+        self.add_message(String::new());
+        self.add_message("Position Commands:".to_string());
+        self.add_message("  ignite_position <x> <y> [radius] [amount] [filters]".to_string());
+        self.add_message(
+            "                           - Ignite elements in an XY circle".to_string(),
+        );
+        self.add_message("  heat_position <x> <y> <temp> [radius] [amount] [filters]".to_string());
+        self.add_message(
+            "                           - Heat elements to target temperature".to_string(),
+        );
+        self.add_message(String::new());
+        self.add_message("Controls:".to_string());
+        self.add_message("  quit, q                  - Exit simulation".to_string());
+    }
+
+    /// Show status as text (for headless mode)
+    fn show_status_text(&mut self) {
+        let burning: Vec<_> = self
+            .sim
+            .get_all_elements()
+            .iter()
+            .map(|e| e.get_stats())
+            .collect();
+
+        self.add_message("═══════════════ SIMULATION STATUS ═══════════════".to_string());
+        self.add_message(format!(
+            "Total elements:    {}",
+            self.sim.get_all_elements().len()
+        ));
+        self.add_message(format!(
+            "Burning elements:  {}",
+            self.sim.get_burning_elements().len()
+        ));
+        self.add_message(format!("Active embers:     {}", self.sim.ember_count()));
+
+        if !burning.is_empty() {
+            let min_temp = burning
+                .iter()
+                .map(|e| e.temperature)
+                .fold(f32::MAX, f32::min);
+            let max_temp = burning
+                .iter()
+                .map(|e| e.temperature)
+                .fold(f32::MIN, f32::max);
+            let avg_temp: f32 =
+                burning.iter().map(|e| e.temperature).sum::<f32>() / usize_to_f32(burning.len());
+
+            self.add_message(String::new());
+            self.add_message("Element temperatures:".to_string());
+            self.add_message(format!("  Min: {min_temp:.1}°C"));
+            self.add_message(format!("  Max: {max_temp:.1}°C"));
+            self.add_message(format!("  Avg: {avg_temp:.1}°C"));
+        }
+    }
+
+    /// Show weather conditions as text (for headless mode)
+    fn show_weather_text(&mut self) {
+        let w = self.sim.get_weather().get_stats();
+        let (month, day) = day_of_year_to_month_day(w.day_of_year);
+        let time_hours = (*w.time_of_day) as u32;
+        let time_minutes = ((*w.time_of_day - u32_to_f32(time_hours)) * 60.0) as u32;
+
+        self.add_message("═══════════════ WEATHER CONDITIONS ═══════════════".to_string());
+        self.add_message(format!(
+            "Date & Time:     {month} {day} {time_hours:02}:{time_minutes:02}"
+        ));
+        self.add_message(format!("Temperature:     {:.1}", w.temperature));
+        self.add_message(format!("Humidity:        {:.1}", w.humidity));
+        self.add_message(format!(
+            "Wind Speed:      {:.1} ({:.1})",
+            w.wind_speed,
+            w.wind_speed.to_mps()
+        ));
+        self.add_message(format!("Wind Direction:  {:.0}", w.wind_direction));
+        self.add_message(format!("Drought Factor:  {:.1}", w.drought_factor));
+        self.add_message(String::new());
+        self.add_message(format!("FFDI:            {:.1}", w.ffdi));
+        self.add_message(format!("Fire Danger:     {}", w.fire_danger_rating));
+        self.add_message(format!("Spread Mult:     {:.2}x", w.spread_rate_multiplier));
     }
 
     /// Show heatmap as text (for headless mode)
@@ -1086,7 +1266,7 @@ fn run_app<B: ratatui::backend::Backend>(
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         app.should_quit = true;
                     }
-                    KeyCode::Char('t' | 'T') => {
+                    KeyCode::Char('t' | 'T') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         // Toggle burning list sort mode
                         app.burning_sort_mode = app.burning_sort_mode.next_mode();
                         let mode_name = match app.burning_sort_mode {
@@ -1516,7 +1696,10 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from(Span::styled("Simulation Control:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
         Line::from("  step [n], s [n]          - Advance n timesteps (default 1)"),
         Line::from("  reset [w] [h], r         - Reset simulation (optional: new width/height)"),
-        Line::from("  preset <name>, p         - Change weather preset (perth, catastrophic, goldfields, wheatbelt, hot)"),
+        Line::from("  preset <name>, p         - Change weather preset"),
+        Line::from("                             (perth, catastrophic, south_west, wheatbelt, goldfields, kimberley, pilbara, hot)"),
+        Line::from("  time <hours>, t          - Set time of day (0-24 hours)"),
+        Line::from("  setday <day>, sd         - Set day of year (1-365)"),
         Line::from(""),
         Line::from(Span::styled("View Controls:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
         Line::from("  dashboard, d             - Switch to dashboard view"),
