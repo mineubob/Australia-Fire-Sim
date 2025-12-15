@@ -2188,6 +2188,7 @@ fn u32_to_f32(v: u32) -> f32 {
 }
 
 #[inline]
+#[expect(clippy::cast_possible_truncation)]
 fn f32_to_u32(v: f32) -> u32 {
     v as u32
 }
