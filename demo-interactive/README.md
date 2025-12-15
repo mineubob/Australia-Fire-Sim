@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Australia Fire Simulation now features a rich terminal UI powered by ratatui, providing an enhanced interactive experience with multiple panels and color-coded visualizations.
+The Bushfire Simulation now features a rich terminal UI powered by ratatui, providing an enhanced interactive experience with multiple panels and color-coded visualizations.
 
 ## UI Layout
 
@@ -11,7 +11,7 @@ The Australia Fire Simulation now features a rich terminal UI powered by ratatui
 │ Fire Simulation | Step: 0 | Time: 0.0s | Elements: 2564 | Burning: 0│
 └─────────────────────────────────────────────────────────────────────┘
 ┌─ Messages ───────────────────────────────────┐┌─ 🔥 Burning (0) ────┐
-│ Welcome to Australia Fire Simulation!        ││                     │
+│ Welcome to Bushfire Simulation!              ││                     │
 │ Created simulation with 2564 elements...     ││ (List of burning    │
 │ Type 'help' for available commands.          ││  elements with      │
 │                                              ││  temperatures)      │

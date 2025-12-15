@@ -1,6 +1,6 @@
 # Fire Simulation FFI
 
-C-compatible Foreign Function Interface (FFI) for the Australia Fire Simulation.
+C-compatible Foreign Function Interface (FFI) for the Bushfire Simulation engine.
 
 ## Overview
 

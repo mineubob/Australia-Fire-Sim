@@ -528,7 +528,7 @@ impl App {
             history: Vec::new(),
             history_pos: 0,
             messages: vec![
-                "Welcome to Australia Fire Simulation!".to_string(),
+                "Welcome to Bushfire Simulation!".to_string(),
                 format!(
                     "Created simulation with {element_count} elements on {width}x{height} terrain"
                 ),
@@ -1343,7 +1343,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Run in headless mode (no UI, just command processing and log output)
 fn run_headless() -> Result<(), Box<dyn std::error::Error>> {
     println!("╔═══════════════════════════════════════════════════════════╗");
-    println!("║      Australia Fire Simulation - Headless Mode            ║");
+    println!("║      Bushfire Simulation - Headless Mode                   ║");
     println!("╚═══════════════════════════════════════════════════════════╝");
     println!();
 
@@ -1408,7 +1408,7 @@ fn run_headless() -> Result<(), Box<dyn std::error::Error>> {
 fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
     // Prompt for terrain dimensions before entering TUI mode
     println!("╔═══════════════════════════════════════════════════════════╗");
-    println!("║      Australia Fire Simulation - Interactive Debugger     ║");
+    println!("║      Bushfire Simulation - Interactive Debugger            ║");
     println!("╚═══════════════════════════════════════════════════════════╝");
     println!();
 

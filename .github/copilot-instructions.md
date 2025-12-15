@@ -1,6 +1,6 @@
-# Australia Fire Simulation - Development Guidelines
+# Bushfire Simulation - Development Guidelines
 
-Scientifically accurate wildfire simulation. **Extreme realism is paramount.**
+Scientifically accurate wildfire simulation engine with **extreme realism as paramount**. Initial implementation and validation focuses on Australian conditions (eucalyptus fuel types, regional weather systems, FFDI), but physics models are universal and applicable to bushfires globally.
 
 **Status:** Phase 1-3 Complete — Rothermel, Van Wagner, Albini, Nelson, Rein models integrated. 83 unit tests passing.
 
@@ -27,10 +27,11 @@ Values that vary by context MUST come from the appropriate struct:
 
 **Exception:** Universal physical constants (e.g., `STEFAN_BOLTZMANN = 5.67e-8`, `GRAVITY = 9.81`) CAN be hardcoded.
 
-### 3. AUSTRALIAN-SPECIFIC BEHAVIORS
-- Eucalyptus oil explosions (vaporizes 170°C, autoignites 232°C, 43 MJ/kg)
-- Stringybark ladder fuels dramatically lower crown fire thresholds
-- Ember spotting up to 25km (validated against Black Saturday data)
+### 3. REGION-SPECIFIC BEHAVIORS (Initial Focus: Australian)
+- Eucalyptus oil explosions (vaporizes 170°C, autoignites 232°C, 43 MJ/kg) - primary fuel example
+- Stringybark ladder fuels dramatically lower crown fire thresholds - Australian-specific modeling
+- Ember spotting up to 25km (validated against Black Saturday data) - extreme example case
+- Physics models are universal; fuel types and regional parameters are configurable
 
 ### 4. PUBLIC CODE SHOULD BE COMMENTED
 - Public-facing APIs (public crates, modules, types, and functions) MUST include at least minimal documentation/comments explaining purpose and expected usage.
@@ -184,13 +185,13 @@ cargo fmt --all -v --check
 
 ## KEY TAKEAWAYS
 
-1. This is a **simulation, not a game** — extreme realism is the goal
+1. This is a **professional-grade simulation engine** — extreme realism is the goal
 2. **Never simplify formulas** — implement exactly as published
-3. **Australian fire behavior is unique** — eucalyptus oils, stringybark, 25km spotting
+3. **Initial focus: Australian conditions** — eucalyptus oils, stringybark, 25km spotting, but physics is universal
 4. **Moisture evaporation is critical** — 2260 kJ/kg latent heat FIRST
 5. **Wind effects are extreme** — 26x downwind is realistic
 6. **Validation is mandatory** — tests against known values
-7. **User's mantra:** "I want it as realistic as possible — NEVER simplify"
+7. **Core principle:** "I want it as realistic as possible — NEVER simplify"
 
 ---
 
