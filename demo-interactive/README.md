@@ -95,8 +95,19 @@ The UI supports multiple view modes that can be switched between:
 - **Backspace**: Delete character
 - **ESC**: Return to dashboard view
 - **F1**: Show help
-- **T**: Toggle burning list sort mode (temperature/location)
-- **Ctrl+C**: Quit application
+- **Ctrl+T**: Toggle burning list sort mode (temperature/time since ignition)
+- **Ctrl+C**: 
+  - During stepping: Stop the stepping process (simulation remains intact)
+  - Otherwise: Quit application
+
+### Commands During Stepping
+
+While the simulation is stepping, you can still use these commands:
+- View commands: `status`, `weather`, `dashboard`, `help`
+- Query commands: `element`, `burning`, `embers`, `nearby`, `heatmap`
+- Navigation: Press **Ctrl+C** to interrupt stepping at any time
+
+Simulation-modifying commands (like `ignite`, `heat`, `step`, `reset`) are blocked during stepping to prevent conflicts.
 
 ## All Commands Preserved
 
@@ -124,6 +135,27 @@ All existing commands from the original REPL interface are fully supported:
 ### Position Commands
 - `ignite_position <x> <y> [radius] [amount] [filters]`, `ip`
 - `heat_position <x> <y> <temp> [radius] [amount] [filters]`, `hp`
+
+### Filters (for position commands)
+
+The position commands support optional filters to target specific elements:
+
+- `fuel=<name>` - Filter by fuel type (e.g., `fuel=eucalyptus`, `fuel=savanna`)
+- `part=<type>` - Filter by fuel part type (e.g., `part=crown`, `part=root`, `part=groundlitter`)
+- `minz=<height>` - Minimum height in meters (e.g., `minz=0`)
+- `maxz=<height>` - Maximum height in meters (e.g., `maxz=20`)
+
+**Examples:**
+```bash
+# Ignite 5 eucalyptus elements between 0-10m height in a 50m radius
+ip 100 100 50 5 fuel=eucalyptus minz=0 maxz=10
+
+# Heat all crown parts to 600°C in a 30m radius
+hp 100 100 600 30 -1 part=crown
+
+# Heat the closest 3 elements at ground level
+hp 100 100 500 20 3 maxz=1.0
+```
 
 ### Visualization
 - `heatmap [size]`, `hm` - Show temperature heatmap

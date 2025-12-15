@@ -393,6 +393,15 @@ impl FireSimulation {
         &self.weather
     }
 
+    /// Get mutable reference to weather system
+    ///
+    /// Allows direct modification of weather parameters such as time of day,
+    /// day of year, and other weather conditions.
+    #[must_use]
+    pub fn get_weather_mut(&mut self) -> &mut WeatherSystem {
+        &mut self.weather
+    }
+
     /// Apply suppression directly at specified coordinates without physics simulation
     ///
     /// This method immediately applies suppression agent to the grid at the given position,

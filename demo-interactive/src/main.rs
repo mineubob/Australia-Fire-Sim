@@ -31,10 +31,23 @@
 //! - `heat <id> <temperature>` or `h` - Apply heat to an element
 //! - `heat_position <x> <y> <temp> [radius] [amount] [filters]` or `hp` - Heat elements in XY circle
 //! - `preset <name>` or `p <name>` - Switch weather preset
+//! - `time <hours>` or `t <hours>` - Set time of day (0-24 hours)
+//! - `setday <day>` or `sd <day>` - Set day of year (1-365)
 //! - `reset [w] [h]` or `r` - Reset simulation
 //! - `heatmap [size]` or `hm` - Generate a heatmap
 //! - `help` or `?` - Show available commands
 //! - `quit` or `q` - Exit the simulation
+//!
+//! # Filters for Position Commands
+//!
+//! The `ignite_position` and `heat_position` commands support optional filters:
+//!
+//! - `fuel=<name>` - Filter by fuel type (e.g., `fuel=eucalyptus`, `fuel=savanna`)
+//! - `part=<type>` - Filter by fuel part type (e.g., `part=crown`, `part=root`, `part=groundlitter`)
+//! - `minz=<height>` - Minimum height in meters (e.g., `minz=0`)
+//! - `maxz=<height>` - Maximum height in meters (e.g., `maxz=20`)
+//!
+//! # Examples
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -108,6 +121,293 @@ impl Drop for TerminalGuard {
     }
 }
 
+/// Command information for help generation and execution
+///
+/// Stores metadata about a command including its name, aliases, usage, description, category,
+/// and a handler function that executes the command.
+#[derive(Clone, Copy)]
+struct CommandInfo {
+    /// Primary command name
+    name: &'static str,
+    /// Short alias(es) (comma-separated if multiple)
+    alias: &'static str,
+    /// Usage/parameters description
+    usage: &'static str,
+    /// Description of what the command does
+    description: &'static str,
+    /// Category for grouping in help
+    category: &'static str,
+    /// Handler function that executes this command
+    handler: fn(&mut App, &[&str]),
+}
+
+impl CommandInfo {
+    /// Check if this command matches the given command string (name or alias)
+    fn matches(&self, cmd: &str) -> bool {
+        cmd == self.name || (!self.alias.is_empty() && cmd == self.alias)
+    }
+}
+
+/// All available commands in the simulation
+const COMMANDS: &[CommandInfo] = &[
+    // Simulation Control
+    CommandInfo {
+        name: "step",
+        alias: "s",
+        usage: "[n]",
+        description: "Advance n timesteps (default 1)",
+        category: "Simulation Control",
+        handler: |app, parts| {
+            let count = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
+            app.step_simulation(count);
+        },
+    },
+    CommandInfo {
+        name: "reset",
+        alias: "r",
+        usage: "[w] [h]",
+        description: "Reset simulation (optional: new width/height)",
+        category: "Simulation Control",
+        handler: |app, parts| {
+            let new_width = parts
+                .get(1)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(app.terrain_width);
+            let new_height = parts
+                .get(2)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(app.terrain_height);
+            app.reset_simulation(new_width, new_height);
+        },
+    },
+    CommandInfo {
+        name: "preset",
+        alias: "p",
+        usage: "<name>",
+        description: "Change weather preset (perth, catastrophic, south_west, wheatbelt, goldfields, kimberley, pilbara, hot)",
+        category: "Simulation Control",
+        handler: |app, parts| {
+            if let Some(name) = parts.get(1) {
+                app.set_preset(name);
+            } else {
+                app.add_message(
+                    "Usage: preset <perth|catastrophic|south_west|wheatbelt|goldfields|kimberley|pilbara|hot>".to_string(),
+                );
+            }
+        },
+    },
+    CommandInfo {
+        name: "time",
+        alias: "t",
+        usage: "<hours>",
+        description: "Set time of day (0-24 hours)",
+        category: "Simulation Control",
+        handler: |app, parts| {
+            if let Some(hours) = parts.get(1).and_then(|s| s.parse().ok()) {
+                app.set_time(hours);
+            } else {
+                app.add_message("Usage: time <hours> (0-24)".to_string());
+            }
+        },
+    },
+    CommandInfo {
+        name: "setday",
+        alias: "sd",
+        usage: "<day>",
+        description: "Set day of year (1-365)",
+        category: "Simulation Control",
+        handler: |app, parts| {
+            if let Some(day) = parts.get(1).and_then(|s| s.parse().ok()) {
+                app.set_day(day);
+            } else {
+                app.add_message("Usage: setday <day> (1-365)".to_string());
+            }
+        },
+    },
+    // Information Commands
+    CommandInfo {
+        name: "status",
+        alias: "st",
+        usage: "",
+        description: "Show simulation status",
+        category: "Information Commands",
+        handler: |app, _parts| {
+            if app.headless {
+                app.show_status_text();
+            } else {
+                app.view_mode = ViewMode::Status;
+                app.add_message("Switched to Status view".to_string());
+            }
+        },
+    },
+    CommandInfo {
+        name: "weather",
+        alias: "w",
+        usage: "",
+        description: "Show weather conditions",
+        category: "Information Commands",
+        handler: |app, _parts| {
+            if app.headless {
+                app.show_weather_text();
+            } else {
+                app.view_mode = ViewMode::Weather;
+                app.add_message("Switched to Weather view".to_string());
+            }
+        },
+    },
+    CommandInfo {
+        name: "dashboard",
+        alias: "d",
+        usage: "",
+        description: "Switch to dashboard view",
+        category: "Information Commands",
+        handler: |app, _parts| {
+            if app.headless {
+                app.add_message(
+                    "Dashboard view is only available in interactive mode".to_string(),
+                );
+            } else {
+                app.view_mode = ViewMode::Dashboard;
+                app.add_message("Switched to Dashboard view".to_string());
+            }
+        },
+    },
+    CommandInfo {
+        name: "heatmap",
+        alias: "hm",
+        usage: "[size]",
+        description: "Show temperature heatmap (default size: 30)",
+        category: "Information Commands",
+        handler: |app, parts| {
+            let grid_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
+            app.heatmap_size = grid_size;
+            if app.headless {
+                app.show_heatmap_text(grid_size);
+            } else {
+                app.view_mode = ViewMode::Heatmap;
+                app.add_message("Switched to Heatmap view".to_string());
+            }
+        },
+    },
+    CommandInfo {
+        name: "help",
+        alias: "?",
+        usage: "",
+        description: "Show this help",
+        category: "Information Commands",
+        handler: |app, _parts| {
+            if app.headless {
+                app.show_help_text();
+            } else {
+                app.view_mode = ViewMode::Help;
+                app.add_message("Switched to Help view".to_string());
+            }
+        },
+    },
+    // Element Commands
+    CommandInfo {
+        name: "element",
+        alias: "e",
+        usage: "<id>",
+        description: "Show element details",
+        category: "Element Commands",
+        handler: |app, parts| {
+            if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
+                app.show_element(id);
+            } else {
+                app.add_message("Usage: element <id>".to_string());
+            }
+        },
+    },
+    CommandInfo {
+        name: "burning",
+        alias: "b",
+        usage: "",
+        description: "List burning elements",
+        category: "Element Commands",
+        handler: |app, _parts| app.show_burning(),
+    },
+    CommandInfo {
+        name: "embers",
+        alias: "em",
+        usage: "",
+        description: "List active embers",
+        category: "Element Commands",
+        handler: |app, _parts| app.show_embers(),
+    },
+    CommandInfo {
+        name: "nearby",
+        alias: "n",
+        usage: "<id>",
+        description: "Show elements near <id>",
+        category: "Element Commands",
+        handler: |app, parts| {
+            if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
+                app.show_nearby(id);
+            } else {
+                app.add_message("Usage: nearby <id>".to_string());
+            }
+        },
+    },
+    CommandInfo {
+        name: "ignite",
+        alias: "i",
+        usage: "<id>",
+        description: "Manually ignite element",
+        category: "Element Commands",
+        handler: |app, parts| {
+            if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
+                app.ignite_element(id);
+            } else {
+                app.add_message("Usage: ignite <id>".to_string());
+            }
+        },
+    },
+    CommandInfo {
+        name: "heat",
+        alias: "h",
+        usage: "<id> <temp>",
+        description: "Heat element to target temperature (°C)",
+        category: "Element Commands",
+        handler: |app, parts| {
+            if let (Some(id), Some(temperature)) = (
+                parts.get(1).and_then(|s| s.parse().ok()),
+                parts.get(2).and_then(|s| s.parse().ok()),
+            ) {
+                app.heat_element(id, temperature);
+            } else {
+                app.add_message("Usage: heat <id> <temperature>".to_string());
+            }
+        },
+    },
+    // Position Commands
+    CommandInfo {
+        name: "ignite_position",
+        alias: "ip",
+        usage: "<x> <y> [radius] [amount] [filters]",
+        description: "Ignite elements in an XY circle",
+        category: "Position Commands",
+        handler: |app, parts| app.ignite_position(parts),
+    },
+    CommandInfo {
+        name: "heat_position",
+        alias: "hp",
+        usage: "<x> <y> <temp> [radius] [amount] [filters]",
+        description: "Heat elements to target temperature",
+        category: "Position Commands",
+        handler: |app, parts| app.heat_position(parts),
+    },
+    // Control Commands
+    CommandInfo {
+        name: "quit",
+        alias: "q",
+        usage: "",
+        description: "Exit simulation",
+        category: "Controls",
+        handler: |app, _parts| app.should_quit = true,
+    },
+];
+
 /// Burning list sort mode
 ///
 /// Controls how the burning elements list is sorted in the UI.
@@ -178,6 +478,8 @@ struct App {
     burning_sort_mode: BurningSortMode,
     /// Ignition times (`element_id` -> `step_count` when ignited)
     ignition_times: std::collections::HashMap<usize, u32>,
+    /// Whether we're currently in stepping mode (used to filter allowed commands)
+    is_stepping: bool,
 }
 
 /// UI view modes
@@ -243,6 +545,7 @@ impl App {
             headless,
             burning_sort_mode: BurningSortMode::TemperatureDesc,
             ignition_times: std::collections::HashMap::new(),
+            is_stepping: false,
         }
     }
 
@@ -269,107 +572,30 @@ impl App {
             self.history_pos = self.history.len();
         }
 
-        match parts[0].to_lowercase().as_str() {
-            "step" | "s" => {
-                let count = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
-                self.step_simulation(count);
-            }
-            "status" | "st" => {
-                self.view_mode = ViewMode::Status;
-                self.add_message("Switched to Status view".to_string());
-            }
-            "weather" | "w" => {
-                self.view_mode = ViewMode::Weather;
-                self.add_message("Switched to Weather view".to_string());
-            }
-            "dashboard" | "d" => {
-                self.view_mode = ViewMode::Dashboard;
-                self.add_message("Switched to Dashboard view".to_string());
-            }
-            "element" | "e" => {
-                if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
-                    self.show_element(id);
-                } else {
-                    self.add_message("Usage: element <id>".to_string());
-                }
-            }
-            "burning" | "b" => self.show_burning(),
-            "embers" | "em" => self.show_embers(),
-            "nearby" | "n" => {
-                if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
-                    self.show_nearby(id);
-                } else {
-                    self.add_message("Usage: nearby <id>".to_string());
-                }
-            }
-            "ignite" | "i" => {
-                if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
-                    self.ignite_element(id);
-                } else {
-                    self.add_message("Usage: ignite <id>".to_string());
-                }
-            }
-            "heat" | "h" => {
-                if let (Some(id), Some(temperature)) = (
-                    parts.get(1).and_then(|s| s.parse().ok()),
-                    parts.get(2).and_then(|s| s.parse().ok()),
-                ) {
-                    self.heat_element(id, temperature);
-                } else {
-                    self.add_message("Usage: heat <id> <temperature>".to_string());
-                }
-            }
-            "ignite_position" | "ip" => {
-                self.ignite_position(&parts);
-            }
-            "heat_position" | "hp" => {
-                self.heat_position(&parts);
-            }
-            "preset" | "p" => {
-                if let Some(name) = parts.get(1) {
-                    self.set_preset(name);
-                } else {
-                    self.add_message(
-                        "Usage: preset <perth|catastrophic|goldfields|wheatbelt|hot>".to_string(),
-                    );
-                }
-            }
-            "reset" | "r" => {
-                let new_width = parts
-                    .get(1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(self.terrain_width);
-                let new_height = parts
-                    .get(2)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(self.terrain_height);
+        // Check if command is allowed during stepping
+        if self.is_stepping && !Self::is_command_allowed_during_stepping(parts[0]) {
+            self.add_message(format!(
+                "Command '{}' not allowed during stepping. Press Ctrl+C to stop stepping.",
+                parts[0]
+            ));
+            return;
+        }
 
-                self.reset_simulation(new_width, new_height);
-            }
-            "heatmap" | "hm" => {
-                let grid_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
-                self.heatmap_size = grid_size;
-                if self.headless {
-                    // In headless mode, output heatmap as text
-                    self.show_heatmap_text(grid_size);
-                } else {
-                    // In interactive mode, switch to heatmap view
-                    self.view_mode = ViewMode::Heatmap;
-                    self.add_message("Switched to Heatmap view".to_string());
+        let cmd_str = parts[0].to_lowercase();
+
+        // Find and execute the command from the COMMANDS array
+        if let Some(cmd_info) = COMMANDS.iter().find(|c| c.matches(&cmd_str)) {
+            (cmd_info.handler)(self, &parts);
+        } else {
+            // Handle special aliases not in COMMANDS (like "exit" for "quit")
+            match cmd_str.as_str() {
+                "exit" => self.should_quit = true,
+                _ => {
+                    self.add_message(format!(
+                        "Unknown command: '{}'. Type 'help' for available commands.",
+                        parts[0]
+                    ));
                 }
-            }
-            "help" | "?" => {
-                self.view_mode = ViewMode::Help;
-                self.add_message("Switched to Help view".to_string());
-            }
-            "quit" | "q" | "exit" => {
-                self.should_quit = true;
-            }
-            _ => {
-                let cmd = parts[0];
-                self.add_message(format!(
-                    "Unknown command: '{cmd}'. Type 'help' for available commands."
-                ));
             }
         }
     }
@@ -383,6 +609,7 @@ impl App {
         self.add_message(format!("Stepping {count} timestep(s)..."));
         self.steps_remaining = count;
         self.steps_total = count;
+        self.is_stepping = true;
     }
 
     /// Process one simulation step (called from event loop)
@@ -449,7 +676,38 @@ impl App {
 
         if self.steps_remaining == 0 {
             self.add_message("Done.".to_string());
+            self.is_stepping = false;
         }
+    }
+
+    /// Check if a command is allowed during stepping
+    ///
+    /// View commands and navigation are allowed, but simulation-modifying
+    /// commands (ignite, heat, step, reset, etc.) are blocked.
+    fn is_command_allowed_during_stepping(cmd: &str) -> bool {
+        matches!(
+            cmd.to_lowercase().as_str(),
+            "status"
+                | "st"
+                | "weather"
+                | "w"
+                | "dashboard"
+                | "d"
+                | "help"
+                | "?"
+                | "element"
+                | "e"
+                | "burning"
+                | "b"
+                | "embers"
+                | "em"
+                | "nearby"
+                | "n"
+                | "heatmap"
+                | "hm"
+                | "quit"
+                | "q"
+        )
     }
 
     /// Show element details by ID
@@ -769,6 +1027,9 @@ impl App {
             "catastrophic" | "cat" => WeatherPreset::catastrophic(),
             "goldfields" => WeatherPreset::goldfields(),
             "wheatbelt" => WeatherPreset::wheatbelt(),
+            "south_west" | "southwest" | "sw" => WeatherPreset::south_west(),
+            "kimberley" => WeatherPreset::kimberley(),
+            "pilbara" => WeatherPreset::pilbara(),
             "hot" => WeatherPreset::basic(
                 "Hot",
                 Celsius::new(38.0),
@@ -779,7 +1040,7 @@ impl App {
             ),
             _ => {
                 self.add_message(format!(
-                    "Unknown preset: {name}. Available: perth, catastrophic, goldfields, wheatbelt, hot"
+                    "Unknown preset: {name}. Available: perth, catastrophic, south_west, wheatbelt, goldfields, kimberley, pilbara, hot"
                 ));
                 return;
             }
@@ -789,6 +1050,38 @@ impl App {
         self.sim.update_weather_preset(preset);
         let weather_name = &self.current_weather.name;
         self.add_message(format!("Weather preset changed to '{weather_name}'"));
+    }
+
+    /// Set time of day in hours (0-24)
+    fn set_time(&mut self, hours: f32) {
+        if !(0.0..=24.0).contains(&hours) {
+            self.add_message("Time must be between 0 and 24 hours".to_string());
+            return;
+        }
+
+        use fire_sim_core::core_types::Hours;
+        let weather = self.sim.get_weather_mut();
+        weather.set_time_of_day(Hours::new(hours));
+
+        let time_hours = f32_to_u32(hours.floor());
+        let time_minutes = f32_to_u32(((hours - u32_to_f32(time_hours)) * 60.0).round());
+        self.add_message(format!(
+            "Time of day set to {time_hours:02}:{time_minutes:02}"
+        ));
+    }
+
+    /// Set day of year (1-365)
+    fn set_day(&mut self, day: u16) {
+        if !(1..=365).contains(&day) {
+            self.add_message("Day must be between 1 and 365".to_string());
+            return;
+        }
+
+        let weather = self.sim.get_weather_mut();
+        weather.set_day_of_year(day);
+
+        let (month, day_of_month) = day_of_year_to_month_day(day);
+        self.add_message(format!("Day of year set to {day} ({month} {day_of_month})"));
     }
 
     /// Reset simulation
@@ -807,6 +1100,125 @@ impl App {
             width,
             height
         ));
+    }
+
+    /// Show help text (for headless mode)
+    fn show_help_text(&mut self) {
+        self.add_message("═══════════════ AVAILABLE COMMANDS ═══════════════".to_string());
+        self.add_message(String::new());
+
+        let mut current_category = "";
+        for cmd in COMMANDS {
+            // Add category header when it changes
+            if cmd.category != current_category {
+                if !current_category.is_empty() {
+                    self.add_message(String::new());
+                }
+                self.add_message(format!("{}:", cmd.category));
+                current_category = cmd.category;
+            }
+
+            // Format the command line - put usage with name, alias separate
+            let usage_part = if cmd.usage.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", cmd.usage)
+            };
+
+            let alias_part = if cmd.alias.is_empty() {
+                String::new()
+            } else {
+                format!(", {}", cmd.alias)
+            };
+
+            let cmd_text = format!("  {}{}{}", cmd.name, usage_part, alias_part);
+            let padding = 32_usize.saturating_sub(cmd_text.len());
+            let spaces = " ".repeat(padding.max(1));
+
+            self.add_message(format!("{}{}- {}", cmd_text, spaces, cmd.description));
+        }
+
+        self.add_message(String::new());
+        self.add_message("Filters (for position commands):".to_string());
+        self.add_message(
+            "  fuel=<name>              - Filter by fuel type (e.g., fuel=eucalyptus)".to_string(),
+        );
+        self.add_message(
+            "  part=<type>              - Filter by fuel part (e.g., part=crown)".to_string(),
+        );
+        self.add_message(
+            "  minz=<height>            - Minimum height in meters (e.g., minz=0)".to_string(),
+        );
+        self.add_message(
+            "  maxz=<height>            - Maximum height in meters (e.g., maxz=20)".to_string(),
+        );
+        self.add_message("  Example: ip 100 100 50 5 fuel=eucalyptus minz=0 maxz=10".to_string());
+    }
+
+    /// Show status as text (for headless mode)
+    fn show_status_text(&mut self) {
+        let burning: Vec<_> = self
+            .sim
+            .get_all_elements()
+            .iter()
+            .map(|e| e.get_stats())
+            .collect();
+
+        self.add_message("═══════════════ SIMULATION STATUS ═══════════════".to_string());
+        self.add_message(format!(
+            "Total elements:    {}",
+            self.sim.get_all_elements().len()
+        ));
+        self.add_message(format!(
+            "Burning elements:  {}",
+            self.sim.get_burning_elements().len()
+        ));
+        self.add_message(format!("Active embers:     {}", self.sim.ember_count()));
+
+        if !burning.is_empty() {
+            let min_temp = burning
+                .iter()
+                .map(|e| e.temperature)
+                .fold(f32::MAX, f32::min);
+            let max_temp = burning
+                .iter()
+                .map(|e| e.temperature)
+                .fold(f32::MIN, f32::max);
+            let avg_temp: f32 =
+                burning.iter().map(|e| e.temperature).sum::<f32>() / usize_to_f32(burning.len());
+
+            self.add_message(String::new());
+            self.add_message("Element temperatures:".to_string());
+            self.add_message(format!("  Min: {min_temp:.1}°C"));
+            self.add_message(format!("  Max: {max_temp:.1}°C"));
+            self.add_message(format!("  Avg: {avg_temp:.1}°C"));
+        }
+    }
+
+    /// Show weather conditions as text (for headless mode)
+    fn show_weather_text(&mut self) {
+        let w = self.sim.get_weather().get_stats();
+        let (month, day) = day_of_year_to_month_day(w.day_of_year);
+        let time_hours = f32_to_u32(*w.time_of_day);
+        let time_minutes = f32_to_u32((*w.time_of_day - u32_to_f32(time_hours)) * 60.0);
+
+        self.add_message("═══════════════ WEATHER CONDITIONS ═══════════════".to_string());
+        self.add_message(format!(
+            "Date & Time:     {month} {day} {time_hours:02}:{time_minutes:02}"
+        ));
+        self.add_message(format!("Temperature:     {:.1}", w.temperature));
+        self.add_message(format!("Humidity:        {:.1}", w.humidity));
+        self.add_message(format!(
+            "Wind Speed:      {:.1} ({:.1})",
+            w.wind_speed,
+            w.wind_speed.to_mps()
+        ));
+        self.add_message(format!("Wind Direction:  {:.0}", w.wind_direction));
+        self.add_message(format!("Drought Factor:  {:.1}", w.drought_factor));
+        self.add_message(String::new());
+        self.add_message(format!("FFDI:            {:.1}", w.ffdi));
+        self.add_message(format!("Fire Danger:     {}", w.fire_danger_rating));
+        self.add_message(format!("Spread Mult:     {:.2}x", w.spread_rate_multiplier));
     }
 
     /// Show heatmap as text (for headless mode)
@@ -1076,17 +1488,30 @@ fn run_app<B: ratatui::backend::Backend>(
         // Process one simulation step if stepping is in progress
         if app.steps_remaining > 0 {
             app.process_one_step();
-            // Don't wait for input, immediately redraw to show progress
-            continue;
         }
 
-        if event::poll(std::time::Duration::from_millis(100))? {
+        // Poll for events - use shorter timeout during stepping for responsiveness
+        let timeout = if app.steps_remaining > 0 {
+            std::time::Duration::from_millis(10)
+        } else {
+            std::time::Duration::from_millis(100)
+        };
+
+        if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        app.should_quit = true;
+                        // Ctrl+C stops stepping if in progress, otherwise quits
+                        if app.steps_remaining > 0 {
+                            app.steps_remaining = 0;
+                            app.steps_total = 0;
+                            app.is_stepping = false;
+                            app.add_message("Stepping interrupted by user.".to_string());
+                        } else {
+                            app.should_quit = true;
+                        }
                     }
-                    KeyCode::Char('t' | 'T') => {
+                    KeyCode::Char('t' | 'T') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         // Toggle burning list sort mode
                         app.burning_sort_mode = app.burning_sort_mode.next_mode();
                         let mode_name = match app.burning_sort_mode {
@@ -1460,8 +1885,8 @@ fn draw_weather(f: &mut Frame, app: &App, area: Rect) {
     let w = app.sim.get_weather().get_stats();
 
     let (month, day) = day_of_year_to_month_day(w.day_of_year);
-    let time_hours = (*w.time_of_day) as u32;
-    let time_minutes = ((*w.time_of_day - u32_to_f32(time_hours)) * 60.0) as u32;
+    let time_hours = f32_to_u32(*w.time_of_day);
+    let time_minutes = f32_to_u32((*w.time_of_day - u32_to_f32(time_hours)) * 60.0);
 
     let text = vec![
         Line::from(Span::styled(
@@ -1510,46 +1935,116 @@ fn draw_weather(f: &mut Frame, app: &App, area: Rect) {
 
 /// Draw the help view
 fn draw_help(f: &mut Frame, area: Rect) {
-    let text = vec![
-        Line::from(Span::styled("═══════════════ AVAILABLE COMMANDS ═══════════════", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+    let mut text = vec![
+        Line::from(Span::styled(
+            "═══════════════ AVAILABLE COMMANDS ═══════════════",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
-        Line::from(Span::styled("Simulation Control:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
-        Line::from("  step [n], s [n]          - Advance n timesteps (default 1)"),
-        Line::from("  reset [w] [h], r         - Reset simulation (optional: new width/height)"),
-        Line::from("  preset <name>, p         - Change weather preset (perth, catastrophic, goldfields, wheatbelt, hot)"),
-        Line::from(""),
-        Line::from(Span::styled("View Controls:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
-        Line::from("  dashboard, d             - Switch to dashboard view"),
-        Line::from("  status, st               - Show simulation status"),
-        Line::from("  weather, w               - Show weather conditions"),
-        Line::from("  heatmap [size], hm       - Show temperature heatmap view (default size: 30)"),
-        Line::from("  help, ?                  - Show this help"),
-        Line::from("  F1                       - Quick help access"),
-        Line::from("  ESC                      - Return to dashboard"),
-        Line::from("  PageUp/PageDown          - Scroll messages up/down"),
-        Line::from("  Home/End                 - Jump to oldest/newest messages"),
-        Line::from(""),
-        Line::from(Span::styled("Element Commands:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
-        Line::from("  element <id>, e          - Show element details"),
-        Line::from("  burning, b               - List burning elements"),
-        Line::from("  embers, em               - List active embers"),
-        Line::from("  nearby <id>, n           - Show elements near <id>"),
-        Line::from("  ignite <id>, i           - Manually ignite element"),
-        Line::from("  heat <id> <temp>, h      - Heat element to target temperature (°C)"),
-        Line::from(""),
-        Line::from(Span::styled("Position Commands:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
-        Line::from("  ignite_position <x> <y> [radius] [amount] [filters]"),
-        Line::from("                           - Ignite elements in an XY circle"),
-        Line::from("  heat_position <x> <y> <temp> [radius] [amount] [filters]"),
-        Line::from("                           - Heat elements to target temperature"),
-        Line::from(""),
-        Line::from(Span::styled("Controls:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
-        Line::from("  Ctrl+C, quit, q          - Exit simulation"),
-        Line::from("  Up/Down arrows           - Navigate command history"),
-        Line::from("  T                        - Toggle burning list sort (Temperature/Time)"),
-        Line::from(""),
-        Line::from(Span::styled("Press ESC to return to dashboard", Style::default().fg(Color::Yellow))),
     ];
+
+    let mut current_category = "";
+    for cmd in COMMANDS {
+        // Add category header when it changes
+        if cmd.category != current_category {
+            if !current_category.is_empty() {
+                text.push(Line::from(""));
+            }
+            text.push(Line::from(Span::styled(
+                format!("{}:", cmd.category),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            current_category = cmd.category;
+        }
+
+        // Format the command line - put usage with name, alias separate
+        let usage_part = if cmd.usage.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", cmd.usage)
+        };
+
+        let alias_part = if cmd.alias.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", cmd.alias)
+        };
+
+        let cmd_text = format!("  {}{}{}", cmd.name, usage_part, alias_part);
+        let padding = 32_usize.saturating_sub(cmd_text.len());
+        let spaces = " ".repeat(padding.max(1));
+
+        text.push(Line::from(format!(
+            "{}{}- {}",
+            cmd_text, spaces, cmd.description
+        )));
+    }
+
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "Filters (for position commands):",
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
+    )));
+    text.push(Line::from(
+        "  fuel=<name>              - Filter by fuel type (e.g., fuel=eucalyptus)",
+    ));
+    text.push(Line::from(
+        "  part=<type>              - Filter by fuel part (e.g., part=crown, part=root)",
+    ));
+    text.push(Line::from(
+        "  minz=<height>            - Minimum height in meters (e.g., minz=5.0)",
+    ));
+    text.push(Line::from(
+        "  maxz=<height>            - Maximum height in meters (e.g., maxz=20.0)",
+    ));
+    text.push(Line::from(
+        "  Examples: ip 100 100 50 5 fuel=eucalyptus minz=0 maxz=10",
+    ));
+    text.push(Line::from("            hp 100 100 600 50 part=crown"));
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "Controls:",
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
+    )));
+    text.push(Line::from(
+        "  Ctrl+C                   - Stop stepping (if active) or quit simulation",
+    ));
+    text.push(Line::from(
+        "  Up/Down arrows           - Navigate command history",
+    ));
+    text.push(Line::from(
+        "  Ctrl+T                   - Toggle burning list sort (Temperature/Time)",
+    ));
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "During Stepping:",
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )));
+    text.push(Line::from(
+        "  While stepping is in progress, you can still use:",
+    ));
+    text.push(Line::from(
+        "  - View commands (status, weather, dashboard, help)",
+    ));
+    text.push(Line::from(
+        "  - Query commands (element, burning, embers, nearby, heatmap)",
+    ));
+    text.push(Line::from("  - Ctrl+C to interrupt stepping at any time"));
+    text.push(Line::from(""));
+    text.push(Line::from(Span::styled(
+        "Press ESC to return to dashboard",
+        Style::default().fg(Color::Yellow),
+    )));
 
     let paragraph = Paragraph::new(text)
         .block(
@@ -1981,7 +2476,7 @@ fn day_of_year_to_month_day(day_of_year: u16) -> (&'static str, u16) {
     ("December", 31)
 }
 
-// Small helpers for deliberate integer->float casts
+// Small helpers for deliberate integer↔float casts
 #[inline]
 #[expect(clippy::cast_precision_loss)]
 fn i32_to_f32(v: i32) -> f32 {
@@ -1998,4 +2493,10 @@ fn usize_to_f32(v: usize) -> f32 {
 #[expect(clippy::cast_precision_loss)]
 fn u32_to_f32(v: u32) -> f32 {
     v as f32
+}
+
+#[inline]
+#[expect(clippy::cast_possible_truncation)]
+fn f32_to_u32(v: f32) -> u32 {
+    v as u32
 }
