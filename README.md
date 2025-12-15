@@ -1,16 +1,16 @@
-# Australia Fire Simulation System
+# Bushfire Simulation System
 
-A scientifically accurate wildfire simulation system built in Rust, based on Australian bushfire research.
+A scientifically accurate wildfire simulation engine built in Rust. Initial implementation and validation focuses on Australian bushfire conditions (eucalyptus fuel types, regional weather systems, FFDI), but physics models are universal and applicable to bushfires globally.
 
 Note: the simulation now always uses the advanced 3D mass-consistent wind field (Sherman 1978) — there is no runtime toggle to disable it.
 The core API exposes `FireSimulation::reconfigure_wind_field(WindFieldConfig)` if you need to change solver configuration at runtime.
 
 ## Overview
 
-This is NOT a game - it's a physics-based simulation implementing real-world fire behavior including:
+This is a professional-grade physics-based simulation implementing real-world fire behavior including:
 
 - **Discrete 3D fuel element system** (not grid-based)
-- **Australian-specific fire physics** (eucalyptus oil explosions, stringybark ladder fuels)
+- **Region-specific fire physics** (initial focus: eucalyptus oil explosions, stringybark ladder fuels)
 - **Extreme wind directionality** (26x faster downwind spread)
 - **Critical moisture evaporation** (heat goes to evaporation first)
 - **Ember generation and spotting** (up to 25km for stringybark)
@@ -31,7 +31,7 @@ Heat MUST go to moisture evaporation FIRST (2260 kJ/kg latent heat) before tempe
 - 20% moisture fuel takes 3x longer to ignite
 - Temperature rise only occurs after moisture evaporation
 
-### Australian-Specific Behaviors
+### Region-Specific Behaviors (Initial Focus: Australian)
 
 **Eucalyptus Oil Vapor Explosions:**
 - Oil vaporizes at 170°C
@@ -48,7 +48,7 @@ Heat MUST go to moisture evaporation FIRST (2260 kJ/kg latent heat) before tempe
 - Ratings: Low → Moderate → High → Very High → Severe → Extreme → CATASTROPHIC
 - Directly scales fire spread rate
 
-### Fuel Types
+### Fuel Types (Initial Set: Australian Vegetation)
 
 1. **Eucalyptus Stringybark** - 25km spotting, extreme ladder fuel, 0.04 oil content
 2. **Eucalyptus Smooth Bark** - 10km spotting, less ladder fuel, 0.02 oil content
@@ -60,7 +60,7 @@ Heat MUST go to moisture evaporation FIRST (2260 kJ/kg latent heat) before tempe
 ## Project Structure
 
 ```
-Australia-Fire-Sim/
+Bushfire-Simulation/
 ├── Cargo.toml                  # Workspace configuration
 ├── FireSimFFI.h                # Auto-generated C header (for game engines)
 ├── crates/
@@ -89,16 +89,16 @@ Australia-Fire-Sim/
 
 **✅ Scientifically Validated Against Published Research**
 
-This simulation accurately implements peer-reviewed Australian bushfire dynamics. See [docs/SCIENTIFIC_VALIDATION.md](docs/SCIENTIFIC_VALIDATION.md) for comprehensive validation report.
+This simulation accurately implements peer-reviewed fire behavior physics with initial validation against Australian bushfire dynamics. See [docs/SCIENTIFIC_VALIDATION.md](docs/SCIENTIFIC_VALIDATION.md) for comprehensive validation report.
 
 Based on:
-- **Rothermel Fire Spread Model** (1972)
-- **McArthur Forest Fire Danger Index Mark 5** - Noble et al. (1980)
-- **Byram's Intensity and Flame Height** equations (1959)
-- **CSIRO Bushfire Research**: fuel classification, fire behavior
-- **Stefan-Boltzmann Law**: radiant heat transfer (Stefan 1879, Boltzmann 1884)
-- **Bureau of Meteorology**: Australian fire weather data
-- **Eucalyptus Fire Behavior**: Pausas et al. (2017), Forest Education Foundation
+- **Rothermel Fire Spread Model** (1972) - universal fire spread physics
+- **McArthur Forest Fire Danger Index Mark 5** - Noble et al. (1980) - Australian fire danger system
+- **Byram's Intensity and Flame Height** equations (1959) - universal fire intensity
+- **CSIRO Bushfire Research**: fuel classification, fire behavior (Australian focus)
+- **Stefan-Boltzmann Law**: radiant heat transfer (Stefan 1879, Boltzmann 1884) - universal
+- **Bureau of Meteorology**: Fire weather data (Australian initial focus)
+- **Eucalyptus Fire Behavior**: Pausas et al. (2017), Forest Education Foundation - example fuel type
 
 ### Key Research Papers
 - Noble et al. (1980) - McArthur's fire-danger meters as equations
