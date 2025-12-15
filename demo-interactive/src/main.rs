@@ -1644,8 +1644,8 @@ fn draw_weather(f: &mut Frame, app: &App, area: Rect) {
     let w = app.sim.get_weather().get_stats();
 
     let (month, day) = day_of_year_to_month_day(w.day_of_year);
-    let time_hours = (*w.time_of_day) as u32;
-    let time_minutes = ((*w.time_of_day - u32_to_f32(time_hours)) * 60.0) as u32;
+    let time_hours = f32_to_u32(*w.time_of_day);
+    let time_minutes = f32_to_u32((*w.time_of_day - u32_to_f32(time_hours)) * 60.0);
 
     let text = vec![
         Line::from(Span::styled(
@@ -2168,7 +2168,7 @@ fn day_of_year_to_month_day(day_of_year: u16) -> (&'static str, u16) {
     ("December", 31)
 }
 
-// Small helpers for deliberate integer->float casts
+// Small helpers for deliberate integer↔float casts
 #[inline]
 #[expect(clippy::cast_precision_loss)]
 fn i32_to_f32(v: i32) -> f32 {
