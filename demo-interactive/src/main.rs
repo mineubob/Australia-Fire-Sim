@@ -839,10 +839,8 @@ impl App {
         let weather = self.sim.get_weather_mut();
         weather.set_time_of_day(Hours::new(hours));
 
-        #[allow(clippy::cast_precision_loss)]
-        let time_hours = hours.floor() as u32;
-        #[allow(clippy::cast_precision_loss)]
-        let time_minutes = ((hours - time_hours as f32) * 60.0).round() as u32;
+        let time_hours = f32_to_u32(hours.floor());
+        let time_minutes = f32_to_u32(((hours - u32_to_f32(time_hours)) * 60.0).round());
         self.add_message(format!(
             "Time of day set to {time_hours:02}:{time_minutes:02}"
         ));
@@ -973,8 +971,8 @@ impl App {
     fn show_weather_text(&mut self) {
         let w = self.sim.get_weather().get_stats();
         let (month, day) = day_of_year_to_month_day(w.day_of_year);
-        let time_hours = (*w.time_of_day) as u32;
-        let time_minutes = ((*w.time_of_day - u32_to_f32(time_hours)) * 60.0) as u32;
+        let time_hours = f32_to_u32(*w.time_of_day);
+        let time_minutes = f32_to_u32((*w.time_of_day - u32_to_f32(time_hours)) * 60.0);
 
         self.add_message("═══════════════ WEATHER CONDITIONS ═══════════════".to_string());
         self.add_message(format!(
@@ -2187,4 +2185,9 @@ fn usize_to_f32(v: usize) -> f32 {
 #[expect(clippy::cast_precision_loss)]
 fn u32_to_f32(v: u32) -> f32 {
     v as f32
+}
+
+#[inline]
+fn f32_to_u32(v: f32) -> u32 {
+    v as u32
 }
