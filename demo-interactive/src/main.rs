@@ -292,9 +292,15 @@ impl App {
                     self.add_message("Switched to Weather view".to_string());
                 }
             }
-            "dashboard" | "d" if !self.headless => {
-                self.view_mode = ViewMode::Dashboard;
-                self.add_message("Switched to Dashboard view".to_string());
+            "dashboard" | "d" => {
+                if self.headless {
+                    self.add_message(
+                        "Dashboard view is only available in interactive mode".to_string(),
+                    );
+                } else {
+                    self.view_mode = ViewMode::Dashboard;
+                    self.add_message("Switched to Dashboard view".to_string());
+                }
             }
             "element" | "e" => {
                 if let Some(id) = parts.get(1).and_then(|s| s.parse().ok()) {
