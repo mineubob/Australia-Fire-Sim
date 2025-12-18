@@ -2353,15 +2353,15 @@ fn draw_heatmap(f: &mut Frame, app: &App, area: Rect) {
 
         tui_lines.push(Line::from(vec![
             Span::styled("█", Style::default().fg(Color::Rgb(0, 100, 255))),
-            Span::raw(format!(" Blue {:.0}-{:.0}°C   ", effective_min, blue_max)),
+            Span::raw(format!(" Blue {effective_min:.0}-{blue_max:.0}°C   ")),
             Span::styled("█", Style::default().fg(Color::Rgb(0, 255, 255))),
-            Span::raw(format!(" Cyan {:.0}-{:.0}°C   ", blue_max, cyan_max)),
+            Span::raw(format!(" Cyan {blue_max:.0}-{cyan_max:.0}°C   ")),
             Span::styled("█", Style::default().fg(Color::Rgb(0, 255, 0))),
-            Span::raw(format!(" Green {:.0}-{:.0}°C", cyan_max, green_max)),
+            Span::raw(format!(" Green {cyan_max:.0}-{green_max:.0}°C")),
         ]));
         tui_lines.push(Line::from(vec![
             Span::styled("█", Style::default().fg(Color::Rgb(255, 255, 0))),
-            Span::raw(format!(" Yellow {:.0}-{:.0}°C  ", green_max, yellow_max)),
+            Span::raw(format!(" Yellow {green_max:.0}-{yellow_max:.0}°C  ")),
             Span::styled("█", Style::default().fg(Color::Rgb(255, 150, 0))),
             Span::raw(format!(
                 " Orange {:.0}-{:.0}°C  ",
@@ -2381,7 +2381,7 @@ fn draw_heatmap(f: &mut Frame, app: &App, area: Rect) {
         let cell_height = app.terrain_height / usize_to_f32(grid_size);
 
         // Calculate max label width for proper alignment
-        let max_y_label = ((grid_size - 1) as f32 * cell_height) as i32;
+        let max_y_label = (f64::from((grid_size - 1) as u32) * f64::from(cell_height)) as i32;
         let _label_width = max_y_label.to_string().len().max(3);
 
         // Build table rows instead of lines
@@ -2394,9 +2394,7 @@ fn draw_heatmap(f: &mut Frame, app: &App, area: Rect) {
             for x in 0..grid_size {
                 let cell = &cache.cells[y][x];
 
-                if cell.element_count == 0 {
-                    cell_spans.push(Span::styled("· ", Style::default().fg(Color::DarkGray)));
-                } else if cell.temperature < threshold_cool {
+                if cell.element_count == 0 || cell.temperature < threshold_cool {
                     cell_spans.push(Span::styled("· ", Style::default().fg(Color::DarkGray)));
                 } else {
                     let bg_color = temp_to_color(cell.temperature, effective_min, cache.max_temp);
