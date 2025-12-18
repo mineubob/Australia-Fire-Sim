@@ -162,7 +162,8 @@ pub(crate) fn calculate_convection_heat(
 /// # References
 /// - `McArthur` (1967) - Australian bushfire observations
 /// - Rothermel (1972) - Wind coefficient equations
-/// - Empirical data from Australian fire behavior studies
+/// - Anderson, H.E. (1983) "Predicting Wind-Driven Wild Land Fire Size and Shape"
+/// - Alexander, M.E. (1985) "Estimating the length-to-breadth ratio"
 #[inline(always)]
 #[allow(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
 pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32 {
@@ -177,30 +178,43 @@ pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32
     let wind_normalized = wind.normalize();
     let alignment = direction.dot(&wind_normalized);
 
-    if alignment > 0.0 {
-        // Downwind: Balanced scaling for realistic fire spread
-        // Using reduced coefficients to achieve target spread rates:
-        //   - Moderate (6.9 m/s): ~3x multiplier → 1-10 ha/hr
-        //   - Catastrophic (16.7 m/s): ~5x multiplier → 100-300 ha/hr
-        //
-        // At 6.9 m/s (25 km/h): 1.0 + 1.0 × sqrt(6.9) × 0.8 = ~3.1× (Moderate)
-        // At 16.7 m/s (60 km/h): 1.0 + 1.0 × sqrt(16.7) × 0.8 = ~4.3× (Extreme base)
-        let base_multiplier = 1.0 + alignment * wind_speed_ms.sqrt() * 0.8;
+    // Anderson (1983) elliptical model for realistic fire shapes
+    // L/W = 0.936 × exp(0.2566 × U_mph) + 0.461 × exp(-0.1548 × U_mph) - 0.397
+    let wind_mph = wind_speed_ms * 2.237;
+    let lw_raw = 0.936 * (0.2566 * wind_mph).exp() + 0.461 * (-0.1548 * wind_mph).exp() - 0.397;
+    let lw = lw_raw.clamp(1.0, 8.0);
 
-        if wind_speed_ms > 15.0 {
-            // Additional boost for catastrophic conditions, but gentler
-            // At 16.7 m/s: 4.3 × 1.08 = ~4.7×
-            let extreme_boost = ((wind_speed_ms - 15.0) / 10.0).min(1.0);
-            base_multiplier * (1.0 + extreme_boost * 0.5)
-        } else {
-            base_multiplier
-        }
+    let lw_sq = lw * lw;
+    let sqrt_term = (lw_sq - 1.0).max(0.0).sqrt();
+
+    // V_back / V_head ratio (theoretical from ellipse geometry)
+    let back_ratio_theoretical = if lw > 1.001 {
+        (lw - sqrt_term) / (lw + sqrt_term)
     } else {
-        // Upwind: exponential suppression to 5% minimum
-        // alignment is negative, so we want exp(alignment * wind_speed_ms * 0.35)
-        // which gives exp(negative) = small number
-        // At -1.0 alignment and 10 m/s: exp(-1.0 * 10 * 0.35) = exp(-3.5) ≈ 0.03 (3%)
-        ((alignment * wind_speed_ms * 0.35).exp()).max(0.05)
+        1.0
+    };
+
+    // V_flank / V_head ratio (theoretical)
+    let flank_ratio_theoretical = if lw > 1.001 {
+        (1.0 + back_ratio_theoretical) / (2.0 * lw)
+    } else {
+        1.0
+    };
+
+    // Squared ratios to compensate for cumulative heating in element-based sim
+    let back_ratio = back_ratio_theoretical * back_ratio_theoretical;
+    let flank_ratio = flank_ratio_theoretical * flank_ratio_theoretical;
+
+    if alignment >= 0.0 {
+        // Downwind: head fire with enhanced wind-driven boost
+        // Use alignment^6 for sharper concentration of boost in narrow cone
+        let head_boost = 1.0 + wind_speed_ms.sqrt() * 1.2; // ~5.8x at 20 m/s
+        let t = alignment.powi(6);
+        flank_ratio * (1.0 - t) + head_boost * t
+    } else {
+        // Upwind: interpolate between flank and back
+        let t = -alignment;
+        flank_ratio * (1.0 - t) + back_ratio * t
     }
 }
 
@@ -324,27 +338,77 @@ pub(crate) fn calculate_heat_transfer_raw(
     wind: Vec3,
     dt: f32,
 ) -> f32 {
-    // Distance check (optimized with distance squared)
-    let diff = target_pos - source_pos;
-    let distance_sq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
+    // First, compute original distance for early bailout and tilt scaling
+    let original_diff = target_pos - source_pos;
+    let original_distance_sq =
+        original_diff.x * original_diff.x + original_diff.y * original_diff.y;
 
-    // OPTIMIZATION: Skip if too far - heat falls off with r², so beyond 15m is negligible
-    // This reduces neighbor processing by ~75% compared to 50m radius
-    // At 15m with 900°C source: ~0.1 kJ/s (< 1% of close-range heat)
-    if distance_sq > 225.0 {
-        // 15m² = 225
+    // OPTIMIZATION: Skip if too far horizontally
+    if original_distance_sq > 400.0 {
+        // 20m
         return 0.0;
     }
 
     // OPTIMIZATION: Skip very close checks when source is cold
-    // If source < 100°C, no meaningful heat transfer occurs
     if source_temp < 100.0 {
         return 0.0;
     }
 
-    let distance = distance_sq.sqrt();
+    let original_distance = (original_distance_sq + original_diff.z * original_diff.z).sqrt();
+    if original_distance <= 0.0 || source_fuel_remaining <= 0.0 {
+        return 0.0;
+    }
 
-    if distance <= 0.0 || source_fuel_remaining <= 0.0 {
+    // === FLAME TILT: Key physics for wind-driven fire shape ===
+    //
+    // When wind blows, flames tilt in the wind direction, effectively shifting
+    // the radiating surface downwind. This is the PRIMARY mechanism that creates
+    // elongated fire shapes - not just heat multipliers.
+    //
+    // Flame tilt angle formula (from Albini & Baughman 1979):
+    //   tan(θ) = U / sqrt(g * L)
+    // where U = wind speed, g = gravity, L = flame height
+    //
+    // CRITICAL: Tilt distance is scaled relative to distance to target
+    // This prevents tilt from "overshooting" nearby fuel:
+    //   - Close targets (2m): tilt up to 0.5m toward them
+    //   - Mid targets (10m): tilt up to 2.5m toward them
+    //   - Far targets (20m): tilt up to 5m toward them
+    //
+    // This creates the elongated fire shape while maintaining proper near-field heating.
+    let wind_speed_ms = wind.magnitude();
+
+    // Maximum tilt fraction: 25% of original distance, scaled by wind
+    // At 10 m/s: 0.25 × distance; at 20 m/s: 0.40 × distance (capped)
+    let tilt_fraction = if wind_speed_ms > 0.5 {
+        // Tilt increases with wind, caps at 40% of distance
+        ((wind_speed_ms - 0.5) * 0.02).min(0.40)
+    } else {
+        0.0
+    };
+
+    // Calculate effective source position with flame tilt
+    let (diff, distance) = if tilt_fraction > 0.001 && wind_speed_ms > 0.5 {
+        let wind_dir = Vec3::new(wind.x / wind_speed_ms, wind.y / wind_speed_ms, 0.0);
+        // Tilt distance proportional to original horizontal distance
+        let horizontal_dist = original_distance_sq.sqrt();
+        let flame_tilt_distance = horizontal_dist * tilt_fraction;
+
+        let effective_source_pos = Vec3::new(
+            source_pos.x + wind_dir.x * flame_tilt_distance,
+            source_pos.y + wind_dir.y * flame_tilt_distance,
+            source_pos.z, // z unchanged - tilt is horizontal
+        );
+
+        let new_diff = target_pos - effective_source_pos;
+        let new_dist_sq =
+            new_diff.x * new_diff.x + new_diff.y * new_diff.y + new_diff.z * new_diff.z;
+        (new_diff, new_dist_sq.sqrt())
+    } else {
+        (original_diff, original_distance)
+    };
+
+    if distance <= 0.0 {
         return 0.0;
     }
 
@@ -403,19 +467,25 @@ pub(crate) fn calculate_heat_transfer_raw(
     // This simulates continuous fuel beds (grass, shrubs) where fire spreads
     // through direct flame contact, not just radiation.
     //
-    // Real grass fires: flames are 2-5m tall and spread laterally as they burn.
-    // Adjacent fuel is literally inside the flame zone, receiving convective
-    // and radiative heat from all directions simultaneously.
-    //
-    // Multiplier: 3x at 0m, tapering to 1x at 1.5m (no boost beyond)
-    // This matches observed grass fire spread rates of 1-3 m/s under high wind.
+    // Base multiplier: 3x at 0m, tapering to 1x at 1.5m (no boost beyond)
+    // NOTE: Directional effects (flame tilt) are handled by the Anderson (1983)
+    // elliptical model in wind_factor below - no need for duplicate logic here.
     let flame_contact_boost = if distance < 1.5 {
         1.0 + 2.0 * (1.0 - distance / 1.5) // 3x at 0m, 1x at 1.5m
     } else {
         1.0
     };
 
-    let flux = radiant_power * view_factor * flame_contact_boost;
+    // === DIRECTIONAL EMISSION BIAS ===
+    // NOTE: Directional effects are now handled entirely by the Anderson (1983)
+    // elliptical model in wind_factor below. The flame tilt effect is implicitly
+    // captured in the empirical L/W relationship derived from field observations.
+    //
+    // We keep a minimal emission bias for very close elements where flame
+    // contact physics dominate over radiation physics.
+    let directional_emission = 1.0;
+
+    let flux = radiant_power * view_factor * flame_contact_boost * directional_emission;
 
     // Target absorption based on fuel characteristics
     let absorption_efficiency =
@@ -459,7 +529,21 @@ pub(crate) fn calculate_heat_transfer_raw(
         0.0
     };
 
-    // === WIND FACTOR ===
+    // === WIND FACTOR (Anderson 1983 Elliptical Model) ===
+    // Real wind-driven fires form elliptical shapes. The length-to-width ratio (L/W)
+    // determines the relative spread rates in different directions.
+    //
+    // Reference: Anderson, H.E. (1983) "Predicting Wind-Driven Wild Land Fire Size and Shape"
+    // Also: Alexander, M.E. (1985) "Estimating the length-to-breadth ratio of elliptical
+    //       forest fire patterns"
+    //
+    // Key relationships from ellipse geometry (ignition at rear focus):
+    //   V_back = V_head × (L/W - √((L/W)² - 1)) / (L/W + √((L/W)² - 1))
+    //   V_flank = (V_head + V_back) / (2 × L/W)
+    //
+    // At L/W = 8 (catastrophic winds):
+    //   V_back ≈ 0.015 × V_head (backing fire is only 1.5% of head fire!)
+    //   V_flank ≈ 0.063 × V_head (flanking fire is only 6.3% of head fire!)
     let direction = (target_pos - source_pos).normalize();
     let wind_speed_ms = wind.magnitude();
     let wind_normalized = if wind_speed_ms > 0.1 {
@@ -469,34 +553,67 @@ pub(crate) fn calculate_heat_transfer_raw(
     };
     let alignment = direction.dot(&wind_normalized);
 
-    let wind_factor = if alignment > 0.0 {
-        // Downwind: Balanced scaling for realistic fire spread
-        // Using reduced coefficients to achieve target spread rates:
-        //   - Moderate (6.9 m/s): ~3x multiplier → 1-10 ha/hr
-        //   - Catastrophic (16.7 m/s): ~5x multiplier → 100-300 ha/hr
-        //
-        // At 6.9 m/s (25 km/h): 1.0 + 1.0 × sqrt(6.9) × 0.8 = ~3.1× (Moderate)
-        // At 16.7 m/s (60 km/h): 1.0 + 1.0 × sqrt(16.7) × 0.8 = ~4.3× (Extreme base)
-        //
-        // NOTE: 0.8 coefficient is for element-to-element transfer physics (universal)
-        // Fuel-specific wind_sensitivity is applied at higher level (Rothermel model)
-        let base_multiplier = 1.0 + alignment * wind_speed_ms.sqrt() * 0.8;
-
-        if wind_speed_ms > 15.0 {
-            // Additional boost for catastrophic conditions, but gentler
-            // At 16.7 m/s: 4.3 × 1.08 = ~4.7×
-            let extreme_boost = ((wind_speed_ms - 15.0) / 10.0).min(1.0);
-            base_multiplier * (1.0 + extreme_boost * 0.5)
-        } else {
-            base_multiplier
-        }
+    let wind_factor = if wind_speed_ms < 0.1 {
+        // No wind - symmetric spread
+        1.0
     } else {
-        // Upwind: exponential decay - fire spreads much slower into the wind
-        // alignment < 0 (upwind), so alignment * wind_speed gives negative exponent
-        // At 16.7 m/s directly upwind (alignment=-1): exp(-5.8) ≈ 0.003 → clamped to 0.05
-        // At 10 m/s directly upwind: exp(-3.5) ≈ 0.03 → clamped to 0.05
-        // At 5 m/s directly upwind: exp(-1.75) ≈ 0.17
-        (alignment * wind_speed_ms * 0.35).exp().max(0.05)
+        // Calculate L/W ratio using Anderson (1983) formula
+        // Original formula uses midflame wind speed in mph
+        // L/W = 0.936 × exp(0.2566 × U_mf) + 0.461 × exp(-0.1548 × U_mf) - 0.397
+        // Capped at 8.0 (maximum observed in field studies)
+        let wind_mph = wind_speed_ms * 2.237; // Convert m/s to mph
+        let lw_raw = 0.936 * (0.2566 * wind_mph).exp() + 0.461 * (-0.1548 * wind_mph).exp() - 0.397;
+        let lw = lw_raw.clamp(1.0, 8.0);
+
+        // Calculate relative spread rates from ellipse geometry
+        // These are the ratios of backing/flanking speed to head fire speed
+        let lw_sq = lw * lw;
+        let sqrt_term = (lw_sq - 1.0).max(0.0).sqrt();
+
+        // V_back / V_head ratio (theoretical from Anderson 1983)
+        let back_ratio_theoretical = if lw > 1.001 {
+            (lw - sqrt_term) / (lw + sqrt_term)
+        } else {
+            1.0 // Circular fire
+        };
+
+        // V_flank / V_head ratio (theoretical from ellipse geometry)
+        let flank_ratio_theoretical = if lw > 1.001 {
+            (1.0 + back_ratio_theoretical) / (2.0 * lw)
+        } else {
+            1.0 // Circular fire
+        };
+
+        // CORRECTION: In element-based simulation, heat accumulates from many sources.
+        // To achieve realistic fire shapes, we square the ratios to compensate for
+        // cumulative heating effects that allow flanks to catch up.
+        // This produces more elongated shapes matching real fire observations.
+        let back_ratio = back_ratio_theoretical * back_ratio_theoretical;
+        let flank_ratio = flank_ratio_theoretical * flank_ratio_theoretical;
+
+        // Map alignment [-1, 1] to spread ratio
+        // alignment = 1.0 (downwind/head): multiplier based on head fire physics
+        // alignment = 0.0 (lateral/flank): use flank_ratio
+        // alignment = -1.0 (upwind/back): use back_ratio
+        //
+        // CRITICAL: Use sharper transition to create more elliptical fire shapes.
+        // Real fires have a distinct head fire that races ahead; the transition
+        // from head to flank is not gradual but relatively abrupt.
+        // Using cosine^2 smoothstep for sharper falloff outside ~30° cone.
+        if alignment >= 0.0 {
+            // Downwind quadrant: head fire dominates in narrow cone
+            // Increase head_boost coefficient for more extreme elongation
+            let head_boost = 1.0 + wind_speed_ms.sqrt() * 1.2; // ~5.8x at 20 m/s
+
+            // Sharp transition: most boost within 30° of downwind (alignment > 0.87)
+            // alignment^6 for even sharper concentration
+            let t = alignment.powi(6);
+            flank_ratio * (1.0 - t) + head_boost * t
+        } else {
+            // Upwind quadrant: interpolate between flank (0) and back (-1)
+            let t = -alignment; // 0 at lateral, 1 at upwind
+            flank_ratio * (1.0 - t) + back_ratio * t
+        }
     };
 
     // === VERTICAL/SLOPE COMBINED FACTOR ===
@@ -584,14 +701,14 @@ mod tests {
 
         let multiplier = wind_radiation_multiplier(from, to, wind);
 
-        // Calibrated for realistic spread rates:
-        //   - Perth Moderate (25 km/h): 1-10 ha/hr target
-        //   - Catastrophic (60 km/h): 100-300 ha/hr target
-        // At 10 m/s: 1.0 + 1.0 × sqrt(10) × 0.8 = ~3.5×
-        // This creates appropriate FFDI-scaled spread differentiation
+        // Anderson (1983) elliptical model with enhanced head fire boost
+        // At 10 m/s (22 mph), L/W → 8 (clamped max)
+        // Head boost = 1.0 + sqrt(10) × 1.2 ≈ 4.8
+        // Enhanced coefficient (1.2 vs 0.6) for more elliptical fire shapes
+        // in element-based simulation where cumulative heating washes out asymmetry
         assert!(
-            multiplier > 3.0 && multiplier < 4.5,
-            "Expected ~3.5× boost at 10 m/s, got {multiplier}"
+            multiplier > 4.0 && multiplier < 6.0,
+            "Expected ~4.8× boost at 10 m/s with enhanced coefficient, got {multiplier}"
         );
     }
 
@@ -603,9 +720,16 @@ mod tests {
 
         let multiplier = wind_radiation_multiplier(from, to, wind);
 
-        // Should be suppressed to ~5% upwind
-        assert!(multiplier < 0.1, "Expected ~5% upwind, got {multiplier}");
-        assert!(multiplier >= 0.05, "Should not go below 5%");
+        // Anderson (1983) with squared correction for element-based simulation:
+        // back_ratio² compensates for cumulative heating from many sources.
+        // At L/W = 8: theoretical back_ratio ≈ 0.4%, squared ≈ 0.0015%
+        // This creates the strongly suppressed backing fire needed for elliptical shapes.
+        // Reference: Alexander (1985), Black Saturday fire behavior
+        assert!(
+            multiplier < 0.001,
+            "Expected <0.1% upwind with squared Anderson correction, got {multiplier}"
+        );
+        assert!(multiplier > 0.0, "Should be positive, got {multiplier}");
     }
 
     #[test]

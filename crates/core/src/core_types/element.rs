@@ -352,8 +352,27 @@ impl FuelElement {
         // 0.003 gives ~0.3% per second at max temp_factor
         // Scales with FFDI for extreme conditions
         let base_coefficient = 0.003;
+
+        // Phase 7: Add spatial variation to ignition probability
+        // This creates irregular fire perimeters by making some areas ignite
+        // faster or slower than others, matching real-world observations.
+        // Uses position-based noise for ±20% variation (0.8 to 1.2 multiplier)
+        // Reference: Finney (2003) "Calculation of fire spread rates across random landscapes"
+        let position_noise = crate::core_types::noise::spatial_noise_2d(
+            self.position.x,
+            self.position.y,
+            25.0,  // 25m scale for ignition variation
+            12345, // Fixed seed for deterministic but spatially varying behavior
+        );
+        let ignition_variation = 1.0 + position_noise * 0.2; // ±20% variation
+
         let ignition_prob = f64::from(
-            moisture_factor * (temp_factor as f32) * dt * base_coefficient * ffdi_multiplier,
+            moisture_factor
+                * (temp_factor as f32)
+                * dt
+                * base_coefficient
+                * ffdi_multiplier
+                * ignition_variation,
         );
 
         // GUARANTEED IGNITION: Elements above ignition temp for sufficient time
@@ -363,7 +382,9 @@ impl FuelElement {
         //   - 500°C: 60s / 2.1 = 29s threshold
         //   - 758°C: 60s / 3.4 = 18s threshold
         // Does NOT scale with FFDI - heat transfer controls spread rate instead
-        let time_threshold_f64 = 60.0 / (1.0 + *temp_excess / 200.0);
+        // Phase 7: Apply variation to time threshold too for irregular perimeter
+        let time_threshold_f64 =
+            (60.0 / (1.0 + *temp_excess / 200.0)) * f64::from(ignition_variation);
 
         let guaranteed_ignition = self.time_above_ignition >= time_threshold_f64;
 
