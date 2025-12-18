@@ -242,7 +242,7 @@ impl TurbulentWind {
     /// Create turbulent wind model for given FFDI conditions
     ///
     /// Higher FFDI = more turbulence due to fire-atmosphere coupling
-    /// 
+    ///
     /// **Note:** This is a simplified interface. For more accurate turbulence,
     /// use `for_atmospheric_conditions()` which considers stability, mixing height, etc.
     pub fn for_ffdi(ffdi: f32) -> Self {
@@ -300,7 +300,7 @@ impl TurbulentWind {
 
         // Factor 3: Mixing height (boundary layer turbulence)
         // Low (< 500m): Suppressed turbulence
-        // Normal (1500m): Standard turbulence  
+        // Normal (1500m): Standard turbulence
         // High (> 3000m): Enhanced turbulence
         let mixing_factor = (mixing_height_m / 1500.0).sqrt().clamp(0.6, 1.5);
 
