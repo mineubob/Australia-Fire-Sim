@@ -148,7 +148,7 @@ impl FireSimulation {
             weather: WeatherSystem::default(),
             embers: Vec::new(),
             next_ember_id: 0,
-            max_search_radius: 5.0, // Reduced from 10m - most heat transfer within 5m
+            max_search_radius: 15.0, // Increased from 5m to support tall trees (up to 15m) and wind-extended search
             total_fuel_consumed: 0.0,
             simulation_time: 0.0,
             nearby_cache: FxHashMap::default(),
@@ -224,6 +224,27 @@ impl FireSimulation {
     ///
     /// This creates heterogeneous fuel beds that produce irregular fire perimeters,
     /// matching real-world fire behavior observations.
+    ///
+    /// # References
+    /// - Finney, M.A. (2003) "Calculation of fire spread rates across random landscapes"
+    /// - Anderson, H.E. (1982) "Aids to determining fuel models" USDA INT-122
+    pub fn disable_fuel_variation(&mut self) {
+        self.fuel_variation = FuelVariation {
+            moisture_variation: 0.0,
+            load_variation: 0.0,
+            moisture_scale: 30.0,
+            load_scale: 15.0,
+            octaves: 1,
+        };
+    }
+
+    /// Add a fuel element to the simulation
+    ///
+    /// Applies stochastic spatial variation to fuel properties for realistic fire spread:
+    /// - Moisture: ±30% variation based on position (Perlin-like noise)
+    /// - Fuel load: ±40% variation based on position
+    ///
+    /// Call `disable_fuel_variation()` before adding elements to get uniform fuel properties.
     ///
     /// # References
     /// - Finney, M.A. (2003) "Calculation of fire spread rates across random landscapes"
@@ -1312,9 +1333,16 @@ impl FireSimulation {
             FxHashMap::with_capacity_and_hasher(estimated_targets, FxBuildHasher);
 
         // Phase 7: Get turbulent wind model for realistic fire spread irregularity
-        // Turbulence scales with FFDI (higher fire danger = more fire-induced turbulence)
+        // Turbulence scales with FFDI, atmospheric stability, mixing height, and time of day
+        // This gives realistic spatial and temporal variation in fire spread
         let ffdi = self.weather.calculate_ffdi();
-        let turbulent_wind = TurbulentWind::for_ffdi(ffdi);
+        let is_daytime = self.weather.is_daytime();
+        let turbulent_wind = TurbulentWind::for_atmospheric_conditions(
+            ffdi,
+            self.atmospheric_profile.mixing_height,
+            is_daytime,
+            self.atmospheric_profile.lifted_index,
+        );
         let sim_time = self.simulation_time;
 
         // Sequential iteration with better cache locality

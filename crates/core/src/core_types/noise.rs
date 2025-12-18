@@ -230,10 +230,10 @@ pub struct TurbulentWind {
 impl Default for TurbulentWind {
     fn default() -> Self {
         Self {
-            gust_intensity: 1.2,    // ±120% speed variation (extreme gusting like real fires)
-            direction_wobble: 60.0, // ±60° direction variation (extreme fingering)
-            spatial_scale: 20.0,    // 20m gust cells (very fine detail)
-            temporal_scale: 1.5,    // 1.5-second gust cycles (very rapid fluctuations)
+            gust_intensity: 0.4,    // ±40% speed variation (realistic gusting)
+            direction_wobble: 25.0, // ±25° direction variation (realistic wind shift)
+            spatial_scale: 50.0,    // 50m gust cells (landscape-scale turbulence)
+            temporal_scale: 5.0,    // 5-second gust cycles (realistic gust duration)
         }
     }
 }
@@ -242,6 +242,9 @@ impl TurbulentWind {
     /// Create turbulent wind model for given FFDI conditions
     ///
     /// Higher FFDI = more turbulence due to fire-atmosphere coupling
+    /// 
+    /// **Note:** This is a simplified interface. For more accurate turbulence,
+    /// use `for_atmospheric_conditions()` which considers stability, mixing height, etc.
     pub fn for_ffdi(ffdi: f32) -> Self {
         let base = Self::default();
 
@@ -255,6 +258,63 @@ impl TurbulentWind {
             direction_wobble: base.direction_wobble * (0.7 + 0.3 * ffdi_factor),
             spatial_scale: base.spatial_scale / (0.5 + 0.5 * ffdi_factor),
             temporal_scale: base.temporal_scale / (0.5 + 0.5 * ffdi_factor),
+        }
+    }
+
+    /// Create turbulent wind model from full atmospheric conditions
+    ///
+    /// This is the scientifically accurate approach that considers:
+    /// - Fire danger (FFDI) - fire-induced convection
+    /// - Atmospheric stability - thermal turbulence
+    /// - Mixing height - boundary layer depth
+    /// - Solar heating (daytime) - thermal convection
+    ///
+    /// # References
+    /// - Pasquill-Gifford stability classes
+    /// - Byram (1954) - atmospheric instability effects
+    /// - Schroeder & Buck (1970) - fire weather turbulence
+    pub fn for_atmospheric_conditions(
+        ffdi: f32,
+        mixing_height_m: f32,
+        is_daytime: bool,
+        atmospheric_stability: f32, // Lifted Index: negative = unstable, positive = stable
+    ) -> Self {
+        let base = Self::default();
+
+        // Factor 1: FFDI (fire-induced turbulence)
+        let ffdi_factor = (ffdi / 50.0).min(2.0);
+
+        // Factor 2: Atmospheric stability (thermal turbulence)
+        // Unstable (LI < -3): Enhanced turbulence (factor 1.5)
+        // Neutral (LI ~ 0): Normal turbulence (factor 1.0)
+        // Stable (LI > 3): Suppressed turbulence (factor 0.6)
+        let stability_factor = if atmospheric_stability < -3.0 {
+            1.5 // Very unstable
+        } else if atmospheric_stability < 0.0 {
+            1.0 + (-atmospheric_stability / 6.0) // Slightly unstable
+        } else if atmospheric_stability < 3.0 {
+            1.0 - (atmospheric_stability / 6.0) // Slightly stable
+        } else {
+            0.6 // Very stable
+        };
+
+        // Factor 3: Mixing height (boundary layer turbulence)
+        // Low (< 500m): Suppressed turbulence
+        // Normal (1500m): Standard turbulence  
+        // High (> 3000m): Enhanced turbulence
+        let mixing_factor = (mixing_height_m / 1500.0).sqrt().clamp(0.6, 1.5);
+
+        // Factor 4: Daytime solar heating (convective turbulence)
+        let daytime_factor = if is_daytime { 1.2 } else { 0.8 };
+
+        // Combine all factors (multiplicative because they interact)
+        let combined_factor = ffdi_factor * stability_factor * mixing_factor * daytime_factor;
+
+        Self {
+            gust_intensity: base.gust_intensity * (0.5 + 0.5 * combined_factor),
+            direction_wobble: base.direction_wobble * (0.7 + 0.3 * combined_factor),
+            spatial_scale: base.spatial_scale / (0.5 + 0.5 * combined_factor),
+            temporal_scale: base.temporal_scale / (0.5 + 0.5 * combined_factor),
         }
     }
 
@@ -341,11 +401,11 @@ pub struct FuelVariation {
 impl Default for FuelVariation {
     fn default() -> Self {
         Self {
-            moisture_variation: 0.60, // ±60% moisture (extreme patchiness with wet/dry zones)
-            load_variation: 1.20,     // ±120% fuel load (some areas nearly barren, others dense)
-            moisture_scale: 10.0,     // 10m scale (very fine moisture patches)
-            load_scale: 5.0,          // 5m scale (extremely fine fuel distribution)
-            octaves: 5,               // 5 octaves (maximum multi-scale fractal detail)
+            moisture_variation: 0.30, // ±30% moisture (realistic patchiness)
+            load_variation: 0.40,     // ±40% fuel load (some areas sparse, others dense)
+            moisture_scale: 30.0,     // 30m scale (landscape-level moisture variation)
+            load_scale: 15.0,         // 15m scale (fuel distribution patches)
+            octaves: 3,               // 3 octaves (multi-scale without extreme fine detail)
         }
     }
 }
