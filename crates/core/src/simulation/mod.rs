@@ -20,6 +20,7 @@ pub(crate) use action_queue::ActionQueue;
 use crate::core_types::element::{FuelElement, FuelPart, Vec3};
 use crate::core_types::ember::Ember;
 use crate::core_types::fuel::Fuel;
+use crate::core_types::noise::{FuelVariation, TurbulentWind};
 use crate::core_types::spatial::SpatialIndex;
 use crate::core_types::units::{Celsius, CelsiusDelta, Kilograms, Percent};
 use crate::core_types::weather::WeatherSystem;
@@ -99,6 +100,14 @@ pub struct FireSimulation {
     /// Always present: provides spatially-varying wind based on terrain and fire plumes
     /// Uses Sherman (1978) mass-consistent model with Gauss-Seidel Poisson solver
     wind_field: WindField,
+
+    // Phase 7: Stochastic Fire Spread (realistic perimeter irregularity)
+    // Turbulent wind is computed fresh each step using TurbulentWind::for_ffdi()
+    // to ensure turbulence scales with current fire danger conditions.
+    /// Fuel spatial variation for heterogeneous fuel distribution
+    /// Provides moisture (±10%) and load (±40%) variation
+    /// Reference: Finney (2003), Anderson (1982)
+    fuel_variation: FuelVariation,
 }
 
 impl FireSimulation {
@@ -139,7 +148,7 @@ impl FireSimulation {
             weather: WeatherSystem::default(),
             embers: Vec::new(),
             next_ember_id: 0,
-            max_search_radius: 5.0, // Reduced from 10m - most heat transfer within 5m
+            max_search_radius: 15.0, // Increased from 5m to support tall trees (up to 15m) and wind-extended search
             total_fuel_consumed: 0.0,
             simulation_time: 0.0,
             nearby_cache: FxHashMap::default(),
@@ -167,6 +176,8 @@ impl FireSimulation {
                 };
                 WindField::new(config, terrain)
             },
+            // Phase 7: Stochastic fire spread for realistic perimeter irregularity
+            fuel_variation: FuelVariation::default(),
         }
     }
 
@@ -206,6 +217,38 @@ impl FireSimulation {
     }
 
     /// Add a fuel element to the simulation
+    ///
+    /// Applies stochastic spatial variation to fuel properties for realistic fire spread:
+    /// - Moisture: ±10% variation based on position (Perlin-like noise)
+    /// - Fuel load: ±40% variation based on position
+    ///
+    /// This creates heterogeneous fuel beds that produce irregular fire perimeters,
+    /// matching real-world fire behavior observations.
+    ///
+    /// # References
+    /// - Finney, M.A. (2003) "Calculation of fire spread rates across random landscapes"
+    /// - Anderson, H.E. (1982) "Aids to determining fuel models" USDA INT-122
+    pub fn disable_fuel_variation(&mut self) {
+        self.fuel_variation = FuelVariation {
+            moisture_variation: 0.0,
+            load_variation: 0.0,
+            moisture_scale: 30.0,
+            load_scale: 15.0,
+            octaves: 1,
+        };
+    }
+
+    /// Add a fuel element to the simulation
+    ///
+    /// Applies stochastic spatial variation to fuel properties for realistic fire spread:
+    /// - Moisture: ±30% variation based on position (Perlin-like noise)
+    /// - Fuel load: ±40% variation based on position
+    ///
+    /// Call `disable_fuel_variation()` before adding elements to get uniform fuel properties.
+    ///
+    /// # References
+    /// - Finney, M.A. (2003) "Calculation of fire spread rates across random landscapes"
+    /// - Anderson, H.E. (1982) "Aids to determining fuel models" USDA INT-122
     pub fn add_fuel_element(
         &mut self,
         position: Vec3,
@@ -216,7 +259,28 @@ impl FireSimulation {
         let id = self.next_element_id;
         self.next_element_id += 1;
 
-        let mut element = FuelElement::new(id, position, fuel, mass, part_type);
+        // Apply stochastic fuel variation for realistic heterogeneity
+        // Moisture and load vary spatially to create irregular fire perimeters
+        let moisture_mult = self
+            .fuel_variation
+            .moisture_multiplier(position.x, position.y);
+        let load_mult = self.fuel_variation.load_multiplier(position.x, position.y);
+
+        // Apply variation to mass (fuel load)
+        let varied_mass = Kilograms::new((*mass * load_mult).max(0.1));
+
+        let mut element = FuelElement::new(id, position, fuel, varied_mass, part_type);
+
+        // Apply moisture variation (will be further modified by weather system)
+        // Clamp to valid range [0.02, 0.50] to prevent unrealistic values
+        let base_moisture = *element.moisture_fraction;
+        let varied_moisture = (base_moisture * moisture_mult).clamp(0.02, 0.50);
+        element.moisture_fraction = crate::core_types::units::Fraction::new(varied_moisture);
+
+        // Update moisture state to match varied moisture
+        if let Some(ref mut state) = element.moisture_state {
+            state.set_all(varied_moisture);
+        }
 
         // OPTIMIZATION: Cache terrain properties once at creation
         // Uses Horn's method (3x3 kernel) for accurate slope/aspect
@@ -1268,6 +1332,19 @@ impl FireSimulation {
         let mut heat_map: FxHashMap<usize, f32> =
             FxHashMap::with_capacity_and_hasher(estimated_targets, FxBuildHasher);
 
+        // Phase 7: Get turbulent wind model for realistic fire spread irregularity
+        // Turbulence scales with FFDI, atmospheric stability, mixing height, and time of day
+        // This gives realistic spatial and temporal variation in fire spread
+        let ffdi = self.weather.calculate_ffdi();
+        let is_daytime = self.weather.is_daytime();
+        let turbulent_wind = TurbulentWind::for_atmospheric_conditions(
+            ffdi,
+            self.atmospheric_profile.mixing_height,
+            is_daytime,
+            self.atmospheric_profile.lifted_index,
+        );
+        let sim_time = self.simulation_time;
+
         // Sequential iteration with better cache locality
         for (element_id, _pos, nearby) in &nearby_cache {
             // Get source element data (read-only)
@@ -1283,6 +1360,13 @@ impl FireSimulation {
             if let Some((source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff)) =
                 source_data
             {
+                // Phase 7: Apply turbulent wind fluctuations at source position
+                // This creates spatially and temporally varying wind that produces
+                // irregular fire perimeters matching real-world observations
+                // Reference: Byram (1954), Schroeder & Buck (1970)
+                let local_wind =
+                    turbulent_wind.apply(wind_vector, source_pos.x, source_pos.y, sim_time);
+
                 // Calculate heat for all nearby targets
                 for &target_id in nearby {
                     if target_id == *element_id {
@@ -1301,6 +1385,7 @@ impl FireSimulation {
 
                         // OPTIMIZED: Use raw data instead of temporary FuelElement structures
                         // Eliminates 500,000+ allocations per frame at 12.5k burning elements
+                        // Phase 7: Uses local_wind (with turbulent fluctuations) for irregular spread
                         let base_heat =
                             crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
                                 source_pos,
@@ -1311,7 +1396,7 @@ impl FireSimulation {
                                 target.temperature,
                                 *target.fuel.surface_area_to_volume,
                                 *target.fuel.absorption_efficiency_base,
-                                wind_vector,
+                                local_wind,
                                 dt,
                             );
 
@@ -1322,12 +1407,13 @@ impl FireSimulation {
                         // Phase 3: Apply terrain-based slope effect on fire spread
                         // OPTIMIZED: Uses cached slope/aspect from FuelElement (computed once at creation)
                         // Eliminates 82.8% performance bottleneck from repeated Horn's method terrain lookups
+                        // Phase 7: Uses local_wind for consistent turbulent effects
                         let terrain_multiplier = crate::physics::terrain_spread_multiplier_cached(
                             &source_pos,
                             &target.position,
                             *target.slope_angle,
                             *target.aspect_angle,
-                            &wind_vector,
+                            &local_wind,
                         );
                         heat *= terrain_multiplier;
 
@@ -1335,7 +1421,24 @@ impl FireSimulation {
                         #[cfg(debug_assertions)]
                         if base_heat > 0.0 && !target.ignited && std::env::var("DEBUG_HEAT").is_ok()
                         {
-                            eprintln!("Heat {element_id:?}->{target_id:?}: base={base_heat:.4} ffdi_mult={ffdi_multiplier:.2} terrain={terrain_multiplier:.2} final={heat:.4} kJ");
+                            let direction = target.position - source_pos;
+                            let wind_norm = local_wind.normalize();
+                            let alignment = if local_wind.magnitude() > 0.1 {
+                                direction.normalize().dot(&wind_norm)
+                            } else {
+                                0.0
+                            };
+                            let dir_type = if alignment > 0.5 {
+                                "DWIND"
+                            } else if alignment < -0.5 {
+                                "UWIND"
+                            } else {
+                                "FLANK"
+                            };
+                            eprintln!(
+                                "Heat {element_id:?}->{target_id:?} ({dir_type} align={alignment:.2}): base={base_heat:.4} final={heat:.4} kJ src=({:.0},{:.0}) tgt=({:.0},{:.0})",
+                                source_pos.x, source_pos.y, target.position.x, target.position.y
+                            );
                         }
 
                         if heat > 0.0 {

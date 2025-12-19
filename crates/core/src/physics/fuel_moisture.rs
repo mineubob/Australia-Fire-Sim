@@ -177,6 +177,17 @@ impl FuelMoistureState {
         }
     }
 
+    /// Set all moisture classes to the same value
+    ///
+    /// Used when applying spatial variation to fuel moisture at creation time.
+    pub(crate) fn set_all(&mut self, moisture: f32) {
+        self.moisture_1h = moisture;
+        self.moisture_10h = moisture;
+        self.moisture_100h = moisture;
+        self.moisture_1000h = moisture;
+        self.average_moisture = moisture;
+    }
+
     /// Get average moisture content
     pub(crate) fn average_moisture(&self) -> f32 {
         self.average_moisture
