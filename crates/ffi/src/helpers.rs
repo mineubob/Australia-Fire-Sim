@@ -95,9 +95,9 @@ where
 ///
 /// Safety note: the caller must ensure the pointer originates from `fire_sim_new` and is not dangling.
 #[inline]
-pub(crate) fn instance_from_ptr(
+pub(crate) fn instance_from_ptr<'a>(
     ptr: *const FireSimInstance,
-) -> Result<&'static FireSimInstance, DefaultFireSimError> {
+) -> Result<&'a FireSimInstance, DefaultFireSimError> {
     if ptr.is_null() {
         return Err(DefaultFireSimError::null_pointer("ptr"));
     }
@@ -107,38 +107,47 @@ pub(crate) fn instance_from_ptr(
 }
 
 /// If valid instance, call `f` with a `&FireSimulation` and return the closure result.
-/// Panics if the lock is poisoned (indicates a previous panic during lock acquisition).
+/// Returns `Err(FireSimErrorCode::LockPoisoned)` if the lock is poisoned (indicates a previous panic).
 ///
 /// Thread-safe: acquires the internal `RwLock` read lock for the duration of the closure.
 ///
 /// Safety note: the caller must ensure the reference is valid.
 #[inline]
-pub(crate) fn with_fire_sim<R, F>(instance: &FireSimInstance, f: F) -> R
+pub(crate) fn with_fire_sim<R, F>(
+    instance: &FireSimInstance,
+    f: F,
+) -> Result<R, DefaultFireSimError>
 where
     F: FnOnce(&FireSimulation) -> R,
 {
     // Acquire the read lock for the duration of the closure.
-    // Panic if the lock is poisoned (acceptable for FFI safety - indicates previous panic).
-    let sim = instance.sim.read().expect("FireSimulation RwLock poisoned");
-    f(&sim)
+    // If the lock is poisoned, propagate an explicit error instead of panicking across FFI.
+    let sim = instance
+        .sim
+        .read()
+        .map_err(|_| DefaultFireSimError::lock_poisoned("FireSimulation RwLock"))?;
+    Ok(f(&sim))
 }
 
 /// If valid instance, call `f` with a `&mut FireSimulation` and return the closure result.
-/// Panics if the lock is poisoned (indicates a previous panic during lock acquisition).
+/// Returns `Err(FireSimErrorCode::LockPoisoned)` if the lock is poisoned (indicates a previous panic).
 ///
 /// Thread-safe: acquires the internal `RwLock` write lock for the duration of the closure.
 ///
 /// Safety note: the caller must ensure the reference is valid.
 #[inline]
-pub(crate) fn with_fire_sim_mut<R, F>(instance: &FireSimInstance, f: F) -> R
+pub(crate) fn with_fire_sim_mut<R, F>(
+    instance: &FireSimInstance,
+    f: F,
+) -> Result<R, DefaultFireSimError>
 where
     F: FnOnce(&mut FireSimulation) -> R,
 {
     // Acquire the write lock for the duration of the closure.
-    // Panic if the lock is poisoned (acceptable for FFI safety - indicates previous panic).
+    // If the lock is poisoned, propagate an explicit error instead of panicking across FFI.
     let mut sim = instance
         .sim
         .write()
-        .expect("FireSimulation RwLock poisoned");
-    f(&mut sim)
+        .map_err(|_| DefaultFireSimError::lock_poisoned("FireSimulation RwLock"))?;
+    Ok(f(&mut sim))
 }
