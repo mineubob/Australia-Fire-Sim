@@ -3,28 +3,40 @@
 #[repr(C)]
 pub enum Terrain {
     /// Flat terrain with specified width and height in meters.
-    Flat { width: f32, height: f32 },
+    Flat {
+        /// Width of the terrain in meters.
+        width: f32,
+        /// Height of the terrain in meters.
+        height: f32,
+    },
 
     /// Single hill terrain.
-    ///
-    /// width, height, resolution, `base_elevation`, `hill_height`, `hill_radius`
     SingleHill {
+        /// Width of the terrain in meters.
         width: f32,
+        /// Height of the terrain in meters.
         height: f32,
+        /// Grid resolution in meters (cell size).
         resolution: f32,
+        /// Base elevation of the terrain in meters.
         base_elevation: f32,
+        /// Height of the hill above base elevation in meters.
         hill_height: f32,
+        /// Radius of the hill in meters.
         hill_radius: f32,
     },
 
     /// Valley between two hills.
-    ///
-    /// width, height, resolution, `base_elevation`, `hill_height`
     ValleyBetweenHills {
+        /// Width of the terrain in meters.
         width: f32,
+        /// Height of the terrain in meters.
         height: f32,
+        /// Grid resolution in meters (cell size).
         resolution: f32,
+        /// Base elevation of the valley floor in meters.
         base_elevation: f32,
+        /// Height of the hills above base elevation in meters.
         hill_height: f32,
     },
 
@@ -32,12 +44,19 @@ pub enum Terrain {
     ///
     /// The heightmap pointer should point to nx*ny f32 values in row-major order.
     FromHeightmap {
+        /// Width of the terrain in meters.
         width: f32,
+        /// Height of the terrain in meters.
         height: f32,
+        /// Pointer to heightmap data (nx*ny f32 values in row-major order).
         heightmap_ptr: *const f32,
+        /// Number of columns in the heightmap grid.
         nx: usize,
+        /// Number of rows in the heightmap grid.
         ny: usize,
+        /// Scale factor to convert heightmap values to meters.
         elevation_scale: f32,
+        /// Base elevation to add to all heightmap values in meters.
         base_elevation: f32,
     },
 }
