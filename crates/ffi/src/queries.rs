@@ -117,7 +117,9 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
     }
 
     if out_array.is_null() {
-        *out_len = 0;
+        unsafe {
+            *out_len = 0;
+        }
         return track_error(&DefaultFireSimError::null_pointer("out_array"));
     }
 
@@ -140,16 +142,20 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
         })?;
 
         // Set output values
-        *out_len = snapshot.len();
-        *out_array = snapshot.as_ptr();
+        unsafe {
+            *out_len = snapshot.len();
+            *out_array = snapshot.as_ptr();
+        }
 
         Ok::<(), DefaultFireSimError>(())
     });
 
     // Set to null on error (per documentation contract)
     if result != FireSimErrorCode::Ok {
-        *out_array = ptr::null();
-        *out_len = 0;
+        unsafe {
+            *out_array = ptr::null();
+            *out_len = 0;
+        }
     }
 
     result
@@ -218,15 +224,19 @@ pub unsafe extern "C" fn fire_sim_get_element_stats(
         with_fire_sim(instance, |sim| {
             if let Some(element) = sim.get_element(element_id) {
                 let stats = ElementStats::from((element, sim));
-                *out_stats = stats;
-                if !out_found.is_null() {
-                    *out_found = true;
+                unsafe {
+                    *out_stats = stats;
+                    if !out_found.is_null() {
+                        *out_found = true;
+                    }
                 }
                 Ok::<(), DefaultFireSimError>(())
             } else {
                 // Not an error - element just doesn't exist
-                if !out_found.is_null() {
-                    *out_found = false;
+                unsafe {
+                    if !out_found.is_null() {
+                        *out_found = false;
+                    }
                 }
                 Ok::<(), DefaultFireSimError>(())
             }

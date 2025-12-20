@@ -234,12 +234,16 @@ pub unsafe extern "C" fn fire_sim_new(
 
     match track_result(FireSimInstance::new(&terrain)) {
         Ok(instance) => {
-            *out_instance = Box::into_raw(instance);
+            unsafe {
+                *out_instance = Box::into_raw(instance);
+            }
             FireSimErrorCode::Ok
         }
         Err(code) => {
-            // Set to null on error (per documentation contract)
-            *out_instance = ptr::null_mut();
+            unsafe {
+                // Set to null on error (per documentation contract)
+                *out_instance = ptr::null_mut();
+            }
 
             code
         }
@@ -277,6 +281,8 @@ pub unsafe extern "C" fn fire_sim_destroy(ptr: *mut FireSimInstance) {
     // and not freed or moved elsewhere. We check for null above to avoid UB from
     // dereferencing a null pointer. Converting back with `Box::from_raw` reclaims
     // ownership and will run the destructor for `FireSim` when the Box is dropped.
-    // Recreate the Box and immediately drop it to free the allocation.
-    drop(Box::from_raw(ptr));
+    unsafe {
+        // Recreate the Box and immediately drop it to free the allocation.
+        drop(Box::from_raw(ptr));
+    }
 }

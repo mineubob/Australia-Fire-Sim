@@ -175,7 +175,10 @@ pub extern "C" fn fire_sim_get_last_error() -> *const c_char {
                 // Store the CString in thread-local storage to prevent memory leak
                 LAST_ERROR_CSTRING.with_borrow_mut(|storage| {
                     *storage = Some(cs);
-                    storage.as_ref().unwrap().as_ptr()
+                    // SAFETY: We just stored the CString in thread-local storage above,
+                    // so it's guaranteed to be Some. The pointer will remain valid
+                    // until the next error or thread termination.
+                    storage.as_ref().expect("CString just stored").as_ptr()
                 })
             })
     })
