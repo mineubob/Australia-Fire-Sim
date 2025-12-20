@@ -7,9 +7,10 @@ use crate::instance::FireSimInstance;
 /// Internal helper for FFI functions to record failure details.
 /// Accepts any type implementing `FireSimError` trait.
 pub(crate) fn set_last_error(error: &impl FireSimError) {
-    with_last_error_mut(|(msg, code)| {
+    with_last_error_mut(|(msg, code, cstring)| {
         *msg = Some(error.msg());
         *code = error.code();
+        *cstring = None; // Clear old CString when setting new error
     });
 }
 
@@ -51,9 +52,10 @@ pub(crate) fn track_result<T, E: FireSimError>(
 /// Clear the thread-local error message and code.
 /// Internal helper called on successful operations.
 pub(crate) fn clear_last_error() {
-    with_last_error_mut(|(msg, code)| {
+    with_last_error_mut(|(msg, code, cstring)| {
         *msg = None;
         *code = FireSimErrorCode::Ok;
+        *cstring = None;
     });
 }
 
@@ -107,7 +109,7 @@ pub(crate) fn instance_from_ptr<'a>(
 }
 
 /// If valid instance, call `f` with a `&FireSimulation` and return the closure result.
-/// Returns `Err(FireSimErrorCode::LockPoisoned)` if the lock is poisoned (indicates a previous panic).
+/// Returns `Err(DefaultFireSimError::lock_poisoned(...))` if the lock is poisoned (indicates a previous panic).
 ///
 /// Thread-safe: acquires the internal `RwLock` read lock for the duration of the closure.
 ///
@@ -130,7 +132,7 @@ where
 }
 
 /// If valid instance, call `f` with a `&mut FireSimulation` and return the closure result.
-/// Returns `Err(FireSimErrorCode::LockPoisoned)` if the lock is poisoned (indicates a previous panic).
+/// Returns `Err(DefaultFireSimError::lock_poisoned(...))` if the lock is poisoned (indicates a previous panic).
 ///
 /// Thread-safe: acquires the internal `RwLock` write lock for the duration of the closure.
 ///

@@ -113,27 +113,24 @@ impl From<DefaultFireSimError> for FireSimErrorCode {
 }
 
 thread_local! {
-    /// Thread-local storage for the most recent FFI error (message, code).
+    /// Thread-local storage for the most recent FFI error (message, code, C string representation).
     /// Allows callers to retrieve diagnostic information after operations that return null.
-    static LAST_ERROR: RefCell<(Option<String>, FireSimErrorCode)> = const { RefCell::new((None, FireSimErrorCode::Ok)) };
-
-    /// Thread-local storage for the C string representation of the last error message.
-    /// Holds the CString to prevent memory leaks when returning raw pointers via FFI.
-    static LAST_ERROR_CSTRING: RefCell<Option<CString>> = const { RefCell::new(None) };
+    /// The CString is stored to prevent memory leaks when returning raw pointers via FFI.
+    static LAST_ERROR: RefCell<(Option<String>, FireSimErrorCode, Option<CString>)> = const { RefCell::new((None, FireSimErrorCode::Ok, None)) };
 }
 
-/// Internal helper to read `LAST_ERROR` thread-local storage (message, code).
+/// Internal helper to read `LAST_ERROR` thread-local storage (message, code, cstring).
 pub(crate) fn with_last_error<F, R>(f: F) -> R
 where
-    F: FnOnce(&(Option<String>, FireSimErrorCode)) -> R,
+    F: FnOnce(&(Option<String>, FireSimErrorCode, Option<CString>)) -> R,
 {
     LAST_ERROR.with_borrow(f)
 }
 
-/// Internal helper to mutate `LAST_ERROR` thread-local storage (message, code).
+/// Internal helper to mutate `LAST_ERROR` thread-local storage (message, code, cstring).
 pub(crate) fn with_last_error_mut<F, R>(f: F) -> R
 where
-    F: FnOnce(&mut (Option<String>, FireSimErrorCode)) -> R,
+    F: FnOnce(&mut (Option<String>, FireSimErrorCode, Option<CString>)) -> R,
 {
     LAST_ERROR.with_borrow_mut(f)
 }
@@ -168,18 +165,20 @@ where
 /// ```
 #[no_mangle]
 pub extern "C" fn fire_sim_get_last_error() -> *const c_char {
-    with_last_error(|(msg, _code)| {
+    with_last_error_mut(|(msg, _code, cstring)| {
         msg.as_ref()
             .and_then(|s| CString::new(s.as_str()).ok())
             .map_or(ptr::null(), |cs| {
                 // Store the CString in thread-local storage to prevent memory leak
-                LAST_ERROR_CSTRING.with_borrow_mut(|storage| {
-                    *storage = Some(cs);
-                    // SAFETY: We just stored the CString in thread-local storage above,
-                    // so it's guaranteed to be Some. The pointer will remain valid
-                    // until the next error or thread termination.
-                    storage.as_ref().expect("CString just stored").as_ptr()
-                })
+                *cstring = Some(cs);
+                // We just stored the CString in thread-local storage above,
+                // so under normal operation this will be `Some`. If it is
+                // unexpectedly `None`, return a null pointer rather than
+                // panicking across the FFI boundary.
+                match cstring.as_ref() {
+                    Some(stored) => stored.as_ptr(),
+                    None => ptr::null(),
+                }
             })
     })
 }
@@ -205,5 +204,5 @@ pub extern "C" fn fire_sim_get_last_error() -> *const c_char {
 /// ```
 #[no_mangle]
 pub extern "C" fn fire_sim_get_last_error_code() -> FireSimErrorCode {
-    with_last_error(|(_msg, code)| *code)
+    with_last_error(|(_msg, code, _cstring)| *code)
 }
