@@ -158,7 +158,11 @@ impl FireSimInstance {
                 None // Not a heightmap
             }
             Terrain::FromHeightmap {
-                width, height, nx, ny, ..
+                width,
+                height,
+                nx,
+                ny,
+                ..
             } => {
                 if width <= 0.0 {
                     return Err(DefaultFireSimError::invalid_terrain_parameter(
@@ -248,7 +252,7 @@ impl FireSimInstance {
                 }
                 // Safe: dimensions validated above ensure len > 0 and no overflow
                 // Use the pre-validated length to avoid recomputing and potential overflow
-                let len = validated_heightmap_len.expect("heightmap length validated above");
+                let len = validated_heightmap_len.unwrap();
                 let slice = unsafe { std::slice::from_raw_parts(heightmap_ptr, len) };
                 TerrainData::from_heightmap(
                     width,
