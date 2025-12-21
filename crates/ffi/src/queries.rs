@@ -92,7 +92,6 @@ impl From<(&FuelElement, &FireSimulation)> for ElementStats {
     }
 }
 
-#[no_mangle]
 /// Return a borrowed pointer to cached burning elements snapshot.
 ///
 /// **PERFORMANCE & THREAD SAFETY**: This function reuses an internal buffer protected by Mutex
@@ -129,6 +128,7 @@ impl From<(&FuelElement, &FireSimulation)> for ElementStats {
 ///     // Use burning[i] - no need to free
 /// }
 /// ```
+#[no_mangle]
 pub unsafe extern "C" fn fire_sim_get_burning_elements(
     ptr: *const FireSimInstance,
     out_len: *mut usize,
@@ -192,7 +192,6 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
     result
 }
 
-#[no_mangle]
 /// Clear the cached burning elements snapshot and free unused memory.
 ///
 /// This clears the snapshot and shrinks its capacity to fit the actual data.
@@ -214,6 +213,7 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
 ///
 /// - `ptr` must be a valid pointer created by `fire_sim_new`.
 /// - `ptr` must remain valid for the duration of the call.
+#[no_mangle]
 pub unsafe extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) -> FireSimErrorCode {
     handle_ffi_result_error(|| {
         // SAFETY:
@@ -221,7 +221,7 @@ pub unsafe extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) ->
         // - No borrows or references derived from the `instance` escape the function's scope.
         let instance = unsafe { instance_from_ptr(ptr)? };
         let mut snapshot = instance
-            .burning_snapshot
+        .burning_snapshot
             .lock()
             .map_err(|_| DefaultFireSimError::lock_poisoned("burning_snapshot Mutex"))?;
         snapshot.clear();
@@ -230,7 +230,6 @@ pub unsafe extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) ->
     })
 }
 
-#[no_mangle]
 /// Fill `out_stats` with a snapshot of the specified element's statistics.
 ///
 /// - `element_id` is the element index to query.
@@ -247,6 +246,7 @@ pub unsafe extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) ->
 /// - `ptr` must be a valid pointer returned by `fire_sim_new` or null.
 /// - `out_stats` must be a valid, non-null pointer to a `ElementStats` that this function will write to.
 /// - `out_found` if non-null, must be a valid pointer to a `bool`.
+#[no_mangle]
 pub unsafe extern "C" fn fire_sim_get_element_stats(
     ptr: *const FireSimInstance,
     element_id: usize,
