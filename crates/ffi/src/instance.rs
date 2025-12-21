@@ -383,7 +383,7 @@ impl FireSimInstance {
 /// - This function is `extern "C"` and `#[no_mangle]` for FFI usage.
 ///
 /// Example:
-/// ```c
+/// ```cpp
 /// FireSimInstance* sim = nullptr;
 /// FireSimErrorCode err = fire_sim_new(terrain, &sim);
 /// if (err != FireSimErrorCode::Ok) {
