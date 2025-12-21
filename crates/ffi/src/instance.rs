@@ -56,11 +56,6 @@ fn usize_to_f32_checked(param_name: &str, v: usize) -> Result<f32, DefaultFireSi
 ///
 /// func _ready():
 ///     # Create flat terrain 1000m x 1000m
-///     # Note: You will need GDNative/GDExtension bindings to construct the C Terrain enum.
-///     # The exact API depends on your binding layer (e.g., gdnative-rust, godot-cpp).
-///     # This is conceptual pseudocode - see your binding documentation for actual usage.
-///     
-///     # Example wrapper function that creates Terrain and calls fire_sim_new:
 ///     var result = FireSimFFI.create_flat_terrain(1000.0, 1000.0, 5.0, 0.0)
 ///     if result.error != FireSimFFI.FireSimErrorCode.Ok:
 ///         push_error("Failed to create fire simulation")
@@ -68,7 +63,6 @@ fn usize_to_f32_checked(param_name: &str, v: usize) -> Result<f32, DefaultFireSi
 ///     fire_sim = result.instance
 ///
 /// func _process(delta):
-///     # Safe to call from main thread
 ///     FireSimFFI.fire_sim_update(fire_sim, delta)
 ///
 /// func _exit_tree():
@@ -83,14 +77,7 @@ fn usize_to_f32_checked(param_name: &str, v: usize) -> Result<f32, DefaultFireSi
 ///
 /// // In BeginPlay or initialization
 /// void AFireSimActor::BeginPlay() {
-///     // Create flat terrain 1000m x 1000m
-///     // Note: Rust #[repr(C)] enums are represented differently than C++ tagged unions.
-///     // You'll need to construct the enum using C-compatible helpers or match Rust's layout.
-///     // Consider creating a C wrapper or using rust-bindgen to generate correct bindings.
-///     
-///     // Example using a hypothetical C wrapper:
 ///     Terrain terrain = create_flat_terrain(1000.0f, 1000.0f, 5.0f, 0.0f);
-///     
 ///     FireSimErrorCode err = fire_sim_new(terrain, &FireSimPtr);
 ///     if (err != FireSimErrorCode::Ok) {
 ///         UE_LOG(LogTemp, Error, TEXT("Failed to create fire simulation"));
@@ -98,12 +85,10 @@ fn usize_to_f32_checked(param_name: &str, v: usize) -> Result<f32, DefaultFireSi
 ///     }
 /// }
 ///
-/// // Safe to call from Game Thread, Render Thread via async tasks, etc.
 /// void AFireSimActor::Tick(float DeltaTime) {
 ///     fire_sim_update(FireSimPtr, DeltaTime);
 /// }
 ///
-/// // In EndPlay or destructor
 /// void AFireSimActor::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 ///     if (FireSimPtr) {
 ///         fire_sim_destroy(FireSimPtr);
@@ -397,8 +382,8 @@ impl FireSimInstance {
 /// - The `terrain` value is moved by value; heightmap pointers are only read and copied.
 /// - This function is `extern "C"` and `#[no_mangle]` for FFI usage.
 ///
-/// Example (C++)
-/// ```cpp
+/// Example:
+/// ```c
 /// FireSimInstance* sim = nullptr;
 /// FireSimErrorCode err = fire_sim_new(terrain, &sim);
 /// if (err != FireSimErrorCode::Ok) {

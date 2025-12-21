@@ -16,18 +16,17 @@
 /// tagged union representation. Each variant has a discriminant (tag) followed by its fields.
 /// Use the appropriate language binding or FFI helper library to ensure correct memory layout.
 ///
-/// # Example (Conceptual)
+/// Example (Conceptual):
 ///
 /// In C using the generated bindings (for example, from `cbindgen`), you would:
 /// ```c
 /// Terrain terrain;
 /// memset(&terrain, 0, sizeof(Terrain));
 ///
-/// /* Set the tag/discriminant field to select the flat-terrain variant. */
-/// /* Then assign the associated fields (width, height, resolution,
-///  * base elevation, etc.) using the names and types defined in
-///  * the generated FireSimFFI.h header.
-///  */
+/// // Set the tag/discriminant field to select the flat-terrain variant.
+/// // Then assign the associated fields (width, height, resolution,
+/// // base elevation, etc.) using the names and types defined in
+/// // the generated FireSimFFI.h header.
 /// ```
 ///
 /// The exact struct, union, and field names are defined in the generated
