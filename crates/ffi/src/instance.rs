@@ -119,7 +119,8 @@ impl FireSimInstance {
     pub(crate) fn new(terrain: &Terrain) -> Result<Box<Self>, DefaultFireSimError> {
         // Validate terrain parameters upfront to prevent invalid configurations.
         // All width, height, and resolution values must be positive.
-        match *terrain {
+        // For heightmap, also validate and compute the total size early to avoid overflow.
+        let validated_heightmap_len = match *terrain {
             Terrain::Flat {
                 width,
                 height,
@@ -154,6 +155,7 @@ impl FireSimInstance {
                         resolution,
                     ));
                 }
+                None // Not a heightmap
             }
             Terrain::FromHeightmap {
                 width, height, nx, ny, ..
@@ -169,12 +171,15 @@ impl FireSimInstance {
                     ));
                 }
                 // Validate heightmap dimensions using checked_mul to detect overflow
-                let len = nx.checked_mul(ny).unwrap_or(0);
-                if len == 0 {
-                    return Err(DefaultFireSimError::invalid_heightmap_dimensions(nx, ny));
+                match nx.checked_mul(ny) {
+                    Some(len) if len > 0 => Some(len),
+                    _ => {
+                        // Either overflow or zero dimensions
+                        return Err(DefaultFireSimError::invalid_heightmap_dimensions(nx, ny));
+                    }
                 }
             }
-        }
+        };
 
         // Extract grid cell size from terrain configuration before converting to TerrainData.
         // Grid cell size controls the spatial resolution of the simulation.
@@ -242,7 +247,8 @@ impl FireSimInstance {
                     return Err(DefaultFireSimError::null_pointer("heightmap_ptr"));
                 }
                 // Safe: dimensions validated above ensure len > 0 and no overflow
-                let len = nx * ny;
+                // Use the pre-validated length to avoid recomputing and potential overflow
+                let len = validated_heightmap_len.expect("heightmap length validated above");
                 let slice = unsafe { std::slice::from_raw_parts(heightmap_ptr, len) };
                 TerrainData::from_heightmap(
                     width,
