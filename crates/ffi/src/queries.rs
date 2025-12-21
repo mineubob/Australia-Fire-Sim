@@ -124,10 +124,10 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
     }
 
     let result = handle_ffi_result_error(|| {
-        // SAFETY: This is safe because we only use the borrowed `&FireSimInstance` to
-        // populate the internal `burning_snapshot` (protected by a Mutex) and then return a
-        // pointer to the snapshot's owned data; no borrow tied to `instance` escapes this
-        // function's scope.
+        // SAFETY:
+        // - We only use the borrowed `&FireSimInstance` to populate an internal `burning_snapshot`
+        //   (protected by a Mutex) and then return a pointer to owned snapshot data.
+        // - No borrow tied to `instance` escapes this function's scope.
         let instance = unsafe { instance_from_ptr(ptr)? };
         // Acquire Mutex lock on cached snapshot
         let mut snapshot = instance
@@ -182,11 +182,16 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
 /// - `FireSimErrorCode::Ok` (0) on success
 /// - `FireSimErrorCode::NullPointer` if `ptr` is null
 /// - `FireSimErrorCode::LockPoisoned` if the internal lock is poisoned
-pub extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) -> FireSimErrorCode {
+///
+/// # Safety
+///
+/// - `ptr` must be a valid pointer created by `fire_sim_new`.
+/// - `ptr` must remain valid for the duration of the call.
+pub unsafe extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) -> FireSimErrorCode {
     handle_ffi_result_error(|| {
-        // SAFETY: Safe because the reference is only used to lock and mutate the instance's
-        // internal snapshot under its Mutex and no borrows or references derived from the
-        // `instance` escape the function's scope.
+        // SAFETY:
+        // - The reference is only used to lock and mutate the instance's internal snapshot under its Mutex.
+        // - No borrows or references derived from the `instance` escape the function's scope.
         let instance = unsafe { instance_from_ptr(ptr)? };
         let mut snapshot = instance
             .burning_snapshot
@@ -226,9 +231,9 @@ pub unsafe extern "C" fn fire_sim_get_element_stats(
     }
 
     handle_ffi_result_error(|| {
-        // SAFETY: Safe because we only read from the instance and copy values into `out_stats`;
-        // we do not return any references tied to the `instance`. Any invalid pointer will be
-        // handled by `instance_from_ptr` returning an error instead of producing undefined behavior.
+        // SAFETY:
+        // - We only read from the instance and copy values into `out_stats`; no references tied to the instance are returned.
+        // - Any invalid pointer is handled by `instance_from_ptr` returning an error.
         let instance = unsafe { instance_from_ptr(ptr)? };
         // Query read-only state
         with_fire_sim(instance, |sim| {
