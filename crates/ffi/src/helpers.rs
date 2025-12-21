@@ -20,7 +20,7 @@ pub(crate) fn set_last_error(error: &impl FireSimError) {
 /// # Example
 /// ```rust
 /// if out_instance.is_null() {
-///     return track_error(&DefaultFireSimError::null_pointer(\"out_instance\"));
+///     return track_error(&DefaultFireSimError::null_pointer("out_instance"));
 /// }
 /// ```
 #[inline]
