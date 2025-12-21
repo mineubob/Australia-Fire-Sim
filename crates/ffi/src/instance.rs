@@ -312,7 +312,7 @@ impl FireSimInstance {
 /// - `FireSimErrorCode::Ok` (0) — success, `out_instance` contains valid pointer
 /// - `FireSimErrorCode::NullPointer` — heightmap pointer is null or `out_instance` parameter is null
 /// - `FireSimErrorCode::InvalidHeightmapDimensions` — heightmap dimensions are zero
-/// - `FireSimErrorCode::InvalidTerrainParameters` — width, height, or resolution are not positive
+/// - `FireSimErrorCode::InvalidTerrainParameters` — width, height, or resolution are not finite and positive
 ///
 /// Error Details
 /// - Call `fire_sim_get_last_error()` to retrieve human-readable error description
