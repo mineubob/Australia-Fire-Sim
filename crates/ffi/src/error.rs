@@ -117,7 +117,8 @@ pub enum FireSimErrorCode {
     /// Lock poisoned: internal synchronization primitive was poisoned by a panic.
     LockPoisoned = 3,
 
-    /// Invalid terrain parameters: width, height, or resolution must be positive.
+    /// Invalid terrain parameters: width, height, or resolution must be finite and positive
+    /// (not NaN, infinity, or <= 0).
     InvalidTerrainParameters = 4,
 }
 
