@@ -41,26 +41,6 @@ pub(crate) struct DefaultFireSimError {
 }
 
 impl DefaultFireSimError {
-    /// Create error for invalid heightmap: dimensions are zero.
-    ///
-    /// # Arguments
-    /// * `nx` - The width dimension
-    /// * `ny` - The height dimension
-    ///
-    /// # Deprecated
-    /// This function is deprecated in favor of `invalid_terrain_parameter_msg` for better generality.
-    /// Kept for backward compatibility but may be removed in future versions.
-    #[deprecated(note = "Use invalid_terrain_parameter_msg instead for better generality")]
-    #[allow(dead_code)]
-    pub fn invalid_heightmap_dimensions(nx: usize, ny: usize) -> Self {
-        Self {
-            code: FireSimErrorCode::InvalidHeightmapDimensions,
-            msg: format!(
-                "Terrain heightmap dimensions (nx={nx}, ny={ny}) are invalid (product is zero or causes overflow)"
-            ),
-        }
-    }
-
     /// Create error for null pointer passed where non-null required.
     ///
     /// # Arguments
@@ -143,17 +123,12 @@ pub enum FireSimErrorCode {
     /// Invalid pointer: null pointer passed where non-null required.
     NullPointer = 1,
 
-    /// Invalid heightmap: dimensions are zero.
-    /// @deprecated Use `InvalidTerrainParameters` instead. This code is kept for backward compatibility
-    /// but is no longer used internally.
-    InvalidHeightmapDimensions = 2,
-
     /// Lock poisoned: internal synchronization primitive was poisoned by a panic.
-    LockPoisoned = 3,
+    LockPoisoned = 2,
 
     /// Invalid terrain parameters: width, height, resolution, or dimensions must be valid
     /// (finite and positive for f32, or within representable range for usize).
-    InvalidTerrainParameters = 4,
+    InvalidTerrainParameters = 3,
 }
 
 impl From<DefaultFireSimError> for FireSimErrorCode {
