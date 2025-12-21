@@ -48,12 +48,9 @@ impl DefaultFireSimError {
     /// * `ny` - The height dimension
     ///
     /// # Deprecated
-    /// This function is deprecated. Use `invalid_terrain_parameter_msg` instead.
-    /// Kept for backward compatibility.
-    #[deprecated(
-        since = "0.1.0",
-        note = "Use invalid_terrain_parameter_msg instead for better generality"
-    )]
+    /// This function is deprecated in favor of `invalid_terrain_parameter_msg` for better generality.
+    /// Kept for backward compatibility but may be removed in future versions.
+    #[deprecated(note = "Use invalid_terrain_parameter_msg instead for better generality")]
     #[allow(dead_code)]
     pub fn invalid_heightmap_dimensions(nx: usize, ny: usize) -> Self {
         Self {

@@ -25,7 +25,7 @@ fn usize_to_f32(v: usize) -> Result<f32, DefaultFireSimError> {
         return Err(DefaultFireSimError::invalid_terrain_parameter_usize(
             "grid_dimension",
             v,
-            "exceeds maximum exactly representable in f32 (16,777,216)",
+            &format!("exceeds maximum exactly representable in f32 ({MAX_EXACT_F32})"),
         ));
     }
 
