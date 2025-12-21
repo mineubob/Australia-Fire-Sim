@@ -18,17 +18,21 @@
 ///
 /// # Example (Conceptual)
 ///
-/// In C with proper bindings, you might create a flat terrain like:
+/// In C using the generated bindings (for example, from `cbindgen`), you would:
 /// ```c
 /// Terrain terrain;
-/// terrain.tag = Terrain_Flat;  // Set discriminant
-/// terrain.flat.width = 1000.0;
-/// terrain.flat.height = 1000.0;
-/// terrain.flat.resolution = 5.0;
-/// terrain.flat.base_elevation = 0.0;
+/// memset(&terrain, 0, sizeof(Terrain));
+///
+/// /* Set the tag/discriminant field to select the flat-terrain variant. */
+/// /* Then assign the associated fields (width, height, resolution,
+///  * base elevation, etc.) using the names and types defined in
+///  * the generated FireSimFFI.h header.
+///  */
 /// ```
 ///
-/// The exact syntax depends on your FFI binding generator (e.g., cbindgen, bindgen).
+/// The exact struct, union, and field names are defined in the generated
+/// `FireSimFFI.h` (or your binding generator's output). Always consult that
+/// header to match the precise C layout for this enum.
 #[repr(C)]
 pub enum Terrain {
     /// Flat terrain with specified width and height in meters.
