@@ -115,7 +115,7 @@ impl From<(&FuelElement, &FireSimulation)> for ElementStats {
 /// - `out_len` must be a valid, non-null pointer to a `usize` that this function will write to.
 /// - `out_array` must be a valid, non-null pointer to a `*const ElementStats` that this function will write to.
 ///
-/// # Example Usage (C++)
+/// Example:
 /// ```cpp
 /// uintptr_t len = 0;
 /// const ElementStats* burning = nullptr;
@@ -302,7 +302,7 @@ pub unsafe extern "C" fn fire_sim_get_element_stats(
 ///
 /// The grid cell size in meters, or 0.0 if `ptr` is null or invalid.
 ///
-/// # Example (C++)
+/// Example:
 /// ```cpp
 /// float cell_size = fire_sim_get_grid_cell_size(sim);
 /// printf("Simulation grid resolution: %.2f meters per cell\n", cell_size);

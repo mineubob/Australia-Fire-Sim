@@ -177,7 +177,7 @@ where
 ///
 /// **DO NOT FREE THIS POINTER** - it is managed internally.
 ///
-/// # Example (C++)
+/// Example:
 /// ```cpp
 /// FireSimInstance* sim = nullptr;
 /// FireSimErrorCode err = fire_sim_new(terrain, &sim);
@@ -203,7 +203,7 @@ pub extern "C" fn fire_sim_get_last_error() -> *const c_char {
 /// Error codes are stored per-thread (thread-local storage), so this is thread-safe.
 /// Each thread has its own independent error state.
 ///
-/// # Example (C++)
+/// Example:
 /// ```cpp
 /// FireSimInstance* sim = nullptr;
 /// FireSimErrorCode err = fire_sim_new(terrain, &sim);
