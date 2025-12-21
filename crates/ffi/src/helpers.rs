@@ -1,4 +1,5 @@
 use fire_sim_core::FireSimulation;
+use std::ffi::CString;
 
 use crate::error::{with_last_error_mut, DefaultFireSimError, FireSimError, FireSimErrorCode};
 use crate::instance::FireSimInstance;
@@ -7,10 +8,9 @@ use crate::instance::FireSimInstance;
 /// Internal helper for FFI functions to record failure details.
 /// Accepts any type implementing `FireSimError` trait.
 pub(crate) fn set_last_error(error: &impl FireSimError) {
-    with_last_error_mut(|(msg, code, cstring)| {
-        *msg = Some(error.msg());
+    with_last_error_mut(|(cstring, code)| {
+        *cstring = CString::new(error.msg()).ok();
         *code = error.code();
-        *cstring = None; // Clear old CString when setting new error
     });
 }
 
@@ -52,10 +52,9 @@ pub(crate) fn track_result<T, E: FireSimError>(
 /// Clear the thread-local error message and code.
 /// Internal helper called on successful operations.
 pub(crate) fn clear_last_error() {
-    with_last_error_mut(|(msg, code, cstring)| {
-        *msg = None;
-        *code = FireSimErrorCode::Ok;
+    with_last_error_mut(|(cstring, code)| {
         *cstring = None;
+        *code = FireSimErrorCode::Ok;
     });
 }
 
@@ -97,9 +96,9 @@ where
 ///
 /// Safety note: the caller must ensure the pointer originates from `fire_sim_new` and is not dangling.
 #[inline]
-pub(crate) fn instance_from_ptr<'a>(
+pub(crate) fn instance_from_ptr(
     ptr: *const FireSimInstance,
-) -> Result<&'a FireSimInstance, DefaultFireSimError> {
+) -> Result<&'static FireSimInstance, DefaultFireSimError> {
     if ptr.is_null() {
         return Err(DefaultFireSimError::null_pointer("ptr"));
     }
@@ -109,47 +108,38 @@ pub(crate) fn instance_from_ptr<'a>(
 }
 
 /// If valid instance, call `f` with a `&FireSimulation` and return the closure result.
-/// Returns `Err(DefaultFireSimError::lock_poisoned(...))` if the lock is poisoned (indicates a previous panic).
+/// Panics if the lock is poisoned (indicates a previous panic during lock acquisition).
 ///
 /// Thread-safe: acquires the internal `RwLock` read lock for the duration of the closure.
 ///
 /// Safety note: the caller must ensure the reference is valid.
 #[inline]
-pub(crate) fn with_fire_sim<R, F>(
-    instance: &FireSimInstance,
-    f: F,
-) -> Result<R, DefaultFireSimError>
+pub(crate) fn with_fire_sim<R, F>(instance: &FireSimInstance, f: F) -> R
 where
     F: FnOnce(&FireSimulation) -> R,
 {
     // Acquire the read lock for the duration of the closure.
-    // If the lock is poisoned, propagate an explicit error instead of panicking across FFI.
-    let sim = instance
-        .sim
-        .read()
-        .map_err(|_| DefaultFireSimError::lock_poisoned("FireSimulation RwLock"))?;
-    Ok(f(&sim))
+    // Panic if the lock is poisoned (acceptable for FFI safety - indicates previous panic).
+    let sim = instance.sim.read().expect("FireSimulation RwLock poisoned");
+    f(&sim)
 }
 
 /// If valid instance, call `f` with a `&mut FireSimulation` and return the closure result.
-/// Returns `Err(DefaultFireSimError::lock_poisoned(...))` if the lock is poisoned (indicates a previous panic).
+/// Panics if the lock is poisoned (indicates a previous panic during lock acquisition).
 ///
 /// Thread-safe: acquires the internal `RwLock` write lock for the duration of the closure.
 ///
 /// Safety note: the caller must ensure the reference is valid.
 #[inline]
-pub(crate) fn with_fire_sim_mut<R, F>(
-    instance: &FireSimInstance,
-    f: F,
-) -> Result<R, DefaultFireSimError>
+pub(crate) fn with_fire_sim_mut<R, F>(instance: &FireSimInstance, f: F) -> R
 where
     F: FnOnce(&mut FireSimulation) -> R,
 {
     // Acquire the write lock for the duration of the closure.
-    // If the lock is poisoned, propagate an explicit error instead of panicking across FFI.
+    // Panic if the lock is poisoned (acceptable for FFI safety - indicates previous panic).
     let mut sim = instance
         .sim
         .write()
-        .map_err(|_| DefaultFireSimError::lock_poisoned("FireSimulation RwLock"))?;
-    Ok(f(&mut sim))
+        .expect("FireSimulation RwLock poisoned");
+    f(&mut sim)
 }
