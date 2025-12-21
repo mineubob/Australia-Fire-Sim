@@ -112,19 +112,17 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
     out_len: *mut usize,
     out_array: *mut *const ElementStats,
 ) -> FireSimErrorCode {
-    // Check both parameters but set safe defaults before returning any errors
-    if out_array.is_null() {
-        // Set out_len to 0 if it's valid, even though we're returning an error
-        if !out_len.is_null() {
-            unsafe {
-                *out_len = 0;
-            }
-        }
-        return track_error(&DefaultFireSimError::null_pointer("out_array"));
-    }
-
+    // Validate both pointers before attempting to write to either
     if out_len.is_null() {
         return track_error(&DefaultFireSimError::null_pointer("out_len"));
+    }
+
+    if out_array.is_null() {
+        // Now safe to write to out_len since we've validated it above
+        unsafe {
+            *out_len = 0;
+        }
+        return track_error(&DefaultFireSimError::null_pointer("out_array"));
     }
 
     let result = handle_ffi_result_error(|| {

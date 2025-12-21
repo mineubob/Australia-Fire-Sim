@@ -115,7 +115,65 @@ impl FireSimInstance {
     ///
     /// Returns `FireSimErrorCode::NullPointer` if heightmap pointer is null.
     /// Returns `FireSimErrorCode::InvalidHeightmapDimensions` if heightmap dimensions are zero.
+    /// Returns `FireSimErrorCode::InvalidTerrainParameters` if width, height, or resolution are not positive.
     pub(crate) fn new(terrain: &Terrain) -> Result<Box<Self>, DefaultFireSimError> {
+        // Validate terrain parameters upfront to prevent invalid configurations.
+        // All width, height, and resolution values must be positive.
+        match *terrain {
+            Terrain::Flat {
+                width,
+                height,
+                resolution,
+                ..
+            }
+            | Terrain::SingleHill {
+                width,
+                height,
+                resolution,
+                ..
+            }
+            | Terrain::ValleyBetweenHills {
+                width,
+                height,
+                resolution,
+                ..
+            } => {
+                if width <= 0.0 {
+                    return Err(DefaultFireSimError::invalid_terrain_parameter(
+                        "width", width,
+                    ));
+                }
+                if height <= 0.0 {
+                    return Err(DefaultFireSimError::invalid_terrain_parameter(
+                        "height", height,
+                    ));
+                }
+                if resolution <= 0.0 {
+                    return Err(DefaultFireSimError::invalid_terrain_parameter(
+                        "resolution",
+                        resolution,
+                    ));
+                }
+            }
+            Terrain::FromHeightmap {
+                width, height, nx, ..
+            } => {
+                if width <= 0.0 {
+                    return Err(DefaultFireSimError::invalid_terrain_parameter(
+                        "width", width,
+                    ));
+                }
+                if height <= 0.0 {
+                    return Err(DefaultFireSimError::invalid_terrain_parameter(
+                        "height", height,
+                    ));
+                }
+                if nx == 0 {
+                    return Err(DefaultFireSimError::invalid_heightmap_dimensions(nx, 0));
+                }
+            }
+        }
+
         // Extract grid cell size from terrain configuration before converting to TerrainData.
         // Grid cell size controls the spatial resolution of the simulation.
         let grid_cell_size = match *terrain {
@@ -124,6 +182,7 @@ impl FireSimInstance {
             | Terrain::ValleyBetweenHills { resolution, .. } => resolution,
             Terrain::FromHeightmap { width, nx, .. } => {
                 // Calculate implicit resolution from terrain width and grid columns
+                // Safe: width > 0 and nx > 0 validated above
                 width / usize_to_f32(nx)
             }
         };
@@ -209,11 +268,9 @@ impl FireSimInstance {
             | Terrain::ValleyBetweenHills { width, height, .. }
             | Terrain::FromHeightmap { width, height, .. } => (width, height),
         };
-        // Defensive: grid_cell_size should be positive (validated by TerrainData construction above)
-        // but guard against division by zero with max(0.1, _) to ensure we get a reasonable capacity.
-        let safe_cell_size = grid_cell_size.max(0.1);
-        let grid_cols = (terrain_width / safe_cell_size).ceil() as usize;
-        let grid_rows = (terrain_height / safe_cell_size).ceil() as usize;
+        // Safe: terrain parameters validated at function entry, grid_cell_size is guaranteed positive
+        let grid_cols = (terrain_width / grid_cell_size).ceil() as usize;
+        let grid_rows = (terrain_height / grid_cell_size).ceil() as usize;
         // Use saturating multiplication to prevent overflow for very large terrains
         let estimated_max_cells = grid_cols.saturating_mul(grid_rows);
         // Conservative estimate: 10% of cells burning, minimum 100, maximum 10000
@@ -243,9 +300,9 @@ impl FireSimInstance {
 ///
 /// Returns
 /// - `FireSimErrorCode::Ok` (0) — success, `out_instance` contains valid pointer
-/// - `FireSimErrorCode::NullPointer` — heightmap pointer is null
+/// - `FireSimErrorCode::NullPointer` — heightmap pointer is null or `out_instance` parameter is null
 /// - `FireSimErrorCode::InvalidHeightmapDimensions` — heightmap dimensions are zero
-/// - `FireSimErrorCode::NullPointer` — `out_instance` parameter is null
+/// - `FireSimErrorCode::InvalidTerrainParameters` — width, height, or resolution are not positive
 ///
 /// Error Details
 /// - Call `fire_sim_get_last_error()` to retrieve human-readable error description

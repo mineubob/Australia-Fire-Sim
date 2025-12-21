@@ -76,6 +76,18 @@ impl DefaultFireSimError {
             msg: format!("Lock '{lock_name}' was poisoned by a panic in another thread"),
         }
     }
+
+    /// Create error for invalid terrain parameters.
+    ///
+    /// # Arguments
+    /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"resolution"`)
+    /// * `value` - The invalid value
+    pub fn invalid_terrain_parameter(param_name: &str, value: f32) -> Self {
+        Self {
+            code: FireSimErrorCode::InvalidTerrainParameters,
+            msg: format!("Terrain parameter '{param_name}' must be positive, got {value}"),
+        }
+    }
 }
 
 impl FireSimError for DefaultFireSimError {
@@ -104,6 +116,9 @@ pub enum FireSimErrorCode {
 
     /// Lock poisoned: internal synchronization primitive was poisoned by a panic.
     LockPoisoned = 3,
+
+    /// Invalid terrain parameters: width, height, or resolution must be positive.
+    InvalidTerrainParameters = 4,
 }
 
 impl From<DefaultFireSimError> for FireSimErrorCode {
