@@ -112,15 +112,12 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
     out_len: *mut usize,
     out_array: *mut *const ElementStats,
 ) -> FireSimErrorCode {
-    if out_len.is_null() {
-        return track_error(&DefaultFireSimError::null_pointer("out_len"));
+    if out_array.is_null() {
+        return track_error(&DefaultFireSimError::null_pointer("out_array"));
     }
 
-    if out_array.is_null() {
-        unsafe {
-            *out_len = 0;
-        }
-        return track_error(&DefaultFireSimError::null_pointer("out_array"));
+    if out_len.is_null() {
+        return track_error(&DefaultFireSimError::null_pointer("out_len"));
     }
 
     let result = handle_ffi_result_error(|| {
@@ -257,4 +254,34 @@ pub unsafe extern "C" fn fire_sim_get_element_stats(
 
         Ok::<(), DefaultFireSimError>(())
     })
+}
+
+/// Query the grid cell size (spatial resolution) used by the simulation.
+///
+/// This returns the resolution in meters per grid cell that was configured
+/// when the simulation instance was created.
+///
+/// # Safety
+///
+/// - `ptr` must be a valid pointer to a `FireSimInstance` created by `fire_sim_new`
+///   and not yet destroyed by `fire_sim_destroy`.
+///
+/// # Returns
+///
+/// The grid cell size in meters, or 0.0 if `ptr` is null or invalid.
+///
+/// # Example (C++)
+/// ```cpp
+/// float cell_size = fire_sim_get_grid_cell_size(sim);
+/// printf("Simulation grid resolution: %.2f meters per cell\n", cell_size);
+/// ```
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_get_grid_cell_size(ptr: *const FireSimInstance) -> f32 {
+    if ptr.is_null() {
+        return 0.0;
+    }
+    // SAFETY: We check that ptr is not null above.
+    // The caller must ensure ptr points to a valid FireSimInstance.
+    let instance = unsafe { &*ptr };
+    instance.grid_cell_size
 }

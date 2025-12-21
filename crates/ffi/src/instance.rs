@@ -37,15 +37,12 @@ fn usize_to_f32(v: usize) -> f32 {
 ///
 /// func _ready():
 ///     # Create flat terrain 1000m x 1000m
-///     # Note: Actual Terrain struct construction depends on your GDNative/GDExtension bindings
-///     var terrain = Terrain.new()
-///     terrain.type = Terrain.FLAT
-///     terrain.width = 1000.0
-///     terrain.height = 1000.0
+///     # Note: You will need GDNative/GDExtension bindings to construct the C Terrain enum.
+///     # The exact API depends on your binding layer (e.g., gdnative-rust, godot-cpp).
+///     # This is conceptual pseudocode - see your binding documentation for actual usage.
 ///     
-///     # In Godot you should call a GDNative/GDExtension wrapper that handles the C out-parameter.
-///     # For example, the wrapper can return both error code and instance handle:
-///     var result = FireSimFFI.fire_sim_new_godot(terrain)
+///     # Example wrapper function that creates Terrain and calls fire_sim_new:
+///     var result = FireSimFFI.create_flat_terrain(1000.0, 1000.0, 5.0, 0.0)
 ///     if result.error != FireSimFFI.FireSimErrorCode.Ok:
 ///         push_error("Failed to create fire simulation")
 ///         return
@@ -68,10 +65,12 @@ fn usize_to_f32(v: usize) -> f32 {
 /// // In BeginPlay or initialization
 /// void AFireSimActor::BeginPlay() {
 ///     // Create flat terrain 1000m x 1000m
-///     Terrain terrain;
-///     terrain.tag = Terrain::Tag::Flat;
-///     terrain.flat.width = 1000.0f;
-///     terrain.flat.height = 1000.0f;
+///     // Note: Rust #[repr(C)] enums are represented differently than C++ tagged unions.
+///     // You'll need to construct the enum using C-compatible helpers or match Rust's layout.
+///     // Consider creating a C wrapper or using rust-bindgen to generate correct bindings.
+///     
+///     // Example using a hypothetical C wrapper:
+///     Terrain terrain = create_flat_terrain(1000.0f, 1000.0f, 5.0f, 0.0f);
 ///     
 ///     FireSimErrorCode err = fire_sim_new(terrain, &FireSimPtr);
 ///     if (err != FireSimErrorCode::Ok) {
@@ -105,6 +104,8 @@ pub struct FireSimInstance {
     /// Protected by Mutex for thread-safe access across game engine threads.
     /// Reused across calls to `fire_sim_get_burning_elements`.
     pub(crate) burning_snapshot: Mutex<Vec<ElementStats>>,
+    /// Grid cell size in meters. Stored for querying the simulation's spatial resolution.
+    pub(crate) grid_cell_size: f32,
 }
 
 impl FireSimInstance {
@@ -198,16 +199,26 @@ impl FireSimInstance {
 
         let sim = FireSimulation::new(grid_cell_size, &terrain_data);
 
-        // Initial capacity for burning elements snapshot.
+        // Calculate initial capacity for burning elements snapshot based on terrain area.
         // This is a performance optimization to reduce allocations during simulation.
-        // The value 1000 is a reasonable default that balances memory usage with reallocation overhead.
-        // For large simulations (>10km²), consider increasing this value.
-        // For small simulations (<1km²), a smaller value like 100-500 may be more memory-efficient.
-        const INITIAL_BURNING_SNAPSHOT_CAPACITY: usize = 1000;
+        // Estimate: 10% of terrain grid cells could burn simultaneously in extreme fire conditions.
+        // Grid dimensions derived from terrain size and grid_cell_size.
+        let (terrain_width, terrain_height) = match *terrain {
+            Terrain::Flat { width, height, .. }
+            | Terrain::SingleHill { width, height, .. }
+            | Terrain::ValleyBetweenHills { width, height, .. }
+            | Terrain::FromHeightmap { width, height, .. } => (width, height),
+        };
+        let grid_cols = (terrain_width / grid_cell_size).ceil() as usize;
+        let grid_rows = (terrain_height / grid_cell_size).ceil() as usize;
+        let estimated_max_cells = grid_cols * grid_rows;
+        // Conservative estimate: 10% of cells burning, minimum 100, maximum 10000
+        let snapshot_capacity = (estimated_max_cells / 10).clamp(100, 10000);
 
         Ok(Box::new(Self {
             sim: RwLock::new(sim),
-            burning_snapshot: Mutex::new(Vec::with_capacity(INITIAL_BURNING_SNAPSHOT_CAPACITY)),
+            burning_snapshot: Mutex::new(Vec::with_capacity(snapshot_capacity)),
+            grid_cell_size,
         }))
     }
 }
