@@ -55,7 +55,9 @@ fn usize_to_f32_checked(param_name: &str, v: usize) -> Result<f32, DefaultFireSi
 /// var fire_sim: int = 0  # Opaque pointer to FireSimInstance
 ///
 /// func _ready():
-///     # Create flat terrain 1000m x 1000m
+///     # NOTE: This is conceptual GDNative/GDExtension pseudocode. `FireSimFFI.create_flat_terrain`
+///     # is a hypothetical wrapper you would implement in your own bindings to call the Rust FFI.
+///     # Create flat terrain 1000m x 1000m via your custom FireSimFFI binding.
 ///     var result = FireSimFFI.create_flat_terrain(1000.0, 1000.0, 5.0, 0.0)
 ///     if result.error != FireSimFFI.FireSimErrorCode.Ok:
 ///         push_error("Failed to create fire simulation")
