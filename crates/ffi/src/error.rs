@@ -66,11 +66,12 @@ impl DefaultFireSimError {
     /// Create error for invalid terrain parameters with a custom message.
     ///
     /// # Arguments
+    /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"nx"`)
     /// * `message` - A description of the validation error
-    pub fn invalid_terrain_parameter_msg(message: String) -> Self {
+    pub fn invalid_terrain_parameter_msg(param_name: &str, message: &str) -> Self {
         Self {
             code: FireSimErrorCode::InvalidTerrainParameters,
-            msg: message,
+            msg: format!("Terrain parameter {param_name}: {message}"),
         }
     }
 
@@ -80,9 +81,10 @@ impl DefaultFireSimError {
     /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"resolution"`)
     /// * `value` - The invalid value
     pub fn invalid_terrain_parameter(param_name: &str, value: f32) -> Self {
-        Self::invalid_terrain_parameter_msg(format!(
-            "Terrain parameter '{param_name}' must be finite and positive, got {value}"
-        ))
+        Self::invalid_terrain_parameter_msg(
+            param_name,
+            &format!("must be finite and positive, got {value}"),
+        )
     }
 
     /// Create error for invalid terrain parameters (usize values).
@@ -96,9 +98,10 @@ impl DefaultFireSimError {
         value: usize,
         constraint: &str,
     ) -> Self {
-        Self::invalid_terrain_parameter_msg(format!(
-            "Terrain parameter '{param_name}' {constraint}, got {value}"
-        ))
+        Self::invalid_terrain_parameter_msg(
+            param_name,
+            &format!("{constraint}, got {value}"),
+        )
     }
 }
 

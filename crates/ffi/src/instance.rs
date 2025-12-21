@@ -202,9 +202,8 @@ impl FireSimInstance {
                     _ => {
                         // Either overflow or zero dimensions
                         return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
-                            format!(
-                                "Terrain heightmap dimensions (nx={nx}, ny={ny}) are invalid (product is zero or causes overflow)"
-                            )
+                            "heightmap dimensions",
+                            &format!("(nx={nx}, ny={ny}) are invalid (product is zero or causes overflow)"),
                         ));
                     }
                 }
@@ -312,7 +311,8 @@ impl FireSimInstance {
         // Validate that the calculated dimensions are finite
         if !grid_cols_f.is_finite() || !grid_rows_f.is_finite() {
             return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
-                "grid dimension calculation produced non-finite values".to_string(),
+                "grid dimensions",
+                "calculation produced non-finite values",
             ));
         }
 
@@ -326,8 +326,8 @@ impl FireSimInstance {
             || !(0.0..=MAX_EXACT_F32_INT).contains(&grid_rows_f)
         {
             return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
-                "grid dimensions exceed maximum exactly representable in f32 (16777216)"
-                    .to_string(),
+                "grid dimensions",
+                "exceed maximum exactly representable in f32 (16777216)",
             ));
         }
 
