@@ -84,9 +84,9 @@ impl From<(&FuelElement, &FireSimulation)> for ElementStats {
 /// Safe to call from multiple threads (e.g., Unreal async tasks, Godot worker threads).
 ///
 /// Returns
-/// - `FireSimError::Ok` (0) on success with valid array in `out_array` and count in `out_len`
-/// - `FireSimError::NullPointer` if `ptr`, `out_len`, or `out_array` is null
-/// - `FireSimError::LockPoisoned` if the internal lock is poisoned
+/// - `FireSimErrorCode::Ok` (0) on success with valid array in `out_array` and count in `out_len`
+/// - `FireSimErrorCode::NullPointer` if `ptr`, `out_len`, or `out_array` is null
+/// - `FireSimErrorCode::LockPoisoned` if the internal lock is poisoned
 ///
 /// # Safety
 ///
@@ -98,8 +98,8 @@ impl From<(&FuelElement, &FireSimulation)> for ElementStats {
 /// ```cpp
 /// uintptr_t len = 0;
 /// const ElementStats* burning = nullptr;
-/// FireSimError err = fire_sim_get_burning_elements(sim, &len, &burning);
-/// if (err != FireSimError::Ok) {
+/// FireSimErrorCode err = fire_sim_get_burning_elements(sim, &len, &burning);
+/// if (err != FireSimErrorCode::Ok) {
 ///     fprintf(stderr, "Failed to get burning elements\n");
 ///     return;
 /// }
@@ -129,7 +129,7 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
         let mut snapshot = instance
             .burning_snapshot
             .lock()
-            .expect("burning_snapshot Mutex poisoned");
+            .map_err(|_| DefaultFireSimError::lock_poisoned("burning_snapshot Mutex"))?;
         snapshot.clear(); // O(1) - keeps capacity
 
         // Populate snapshot from current burning elements
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
                     .into_iter()
                     .map(|e| ElementStats::from((e, sim))),
             );
-        });
+        })?;
 
         // Set output values
         unsafe {
@@ -175,15 +175,16 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
 ///   (typically negligible, ~microseconds on modern systems).
 ///
 /// Returns
-/// - `FireSimError::Ok` (0) on success
-/// - `FireSimError::NullPointer` if `ptr` is null
+/// - `FireSimErrorCode::Ok` (0) on success
+/// - `FireSimErrorCode::NullPointer` if `ptr` is null
+/// - `FireSimErrorCode::LockPoisoned` if the internal lock is poisoned
 pub extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) -> FireSimErrorCode {
     handle_ffi_result_error(|| {
         let instance = instance_from_ptr(ptr)?;
         let mut snapshot = instance
             .burning_snapshot
             .lock()
-            .expect("burning_snapshot Mutex poisoned");
+            .map_err(|_| DefaultFireSimError::lock_poisoned("burning_snapshot Mutex"))?;
         snapshot.clear();
         snapshot.shrink_to_fit(); // Free unused capacity
         Ok::<(), DefaultFireSimError>(())
@@ -198,9 +199,9 @@ pub extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) -> FireSi
 /// - `out_found` (optional) receives whether the element was found. If null, ignored.
 ///
 /// Returns
-/// - `FireSimError::Ok` (0) on success (check `out_found` to see if element exists)
-/// - `FireSimError::NullPointer` if `ptr` or `out_stats` is null
-/// - `FireSimError::LockPoisoned` if the internal lock is poisoned
+/// - `FireSimErrorCode::Ok` (0) on success (check `out_found` to see if element exists)
+/// - `FireSimErrorCode::NullPointer` if `ptr` or `out_stats` is null
+/// - `FireSimErrorCode::LockPoisoned` if the internal lock is poisoned
 ///
 /// # Safety
 ///
@@ -239,6 +240,6 @@ pub unsafe extern "C" fn fire_sim_get_element_stats(
                 }
                 Ok::<(), DefaultFireSimError>(())
             }
-        })
+        })?
     })
 }

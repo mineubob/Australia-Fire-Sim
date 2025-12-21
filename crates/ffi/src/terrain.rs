@@ -1,3 +1,9 @@
+//! FFI-exposed terrain configuration types.
+//!
+//! This module defines the `Terrain` enum which is part of the public FFI API.
+//! It allows game engines to specify different terrain configurations when creating
+//! a fire simulation instance.
+
 /// Terrain configuration for the fire simulation.
 /// Defines the shape and parameters of the simulated landscape.
 #[repr(C)]

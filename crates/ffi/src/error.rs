@@ -1,5 +1,3 @@
-/// FFI error codes returned by fire simulation functions.
-/// Follows standard C convention: 0 = success, non-zero = error.
 use std::cell::RefCell;
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -16,10 +14,10 @@ use std::ptr;
 ///
 /// # Example
 /// ```rust
-/// // Simple error code
-/// let err = FireSimErrorCode::NullPointer;
+/// // Simple error code wrapped in DefaultFireSimError
+/// let err = DefaultFireSimError::null_pointer("ptr");
 /// assert_eq!(err.code(), FireSimErrorCode::NullPointer);
-/// assert_eq!(err.msg(), "Null pointer passed to function requiring non-null");
+/// assert_eq!(err.msg(), "Parameter 'ptr' cannot be null");
 /// ```
 pub(crate) trait FireSimError {
     /// Returns the error code to be returned across the FFI boundary.
@@ -67,6 +65,17 @@ impl DefaultFireSimError {
             msg: format!("Parameter '{param_name}' cannot be null"),
         }
     }
+
+    /// Create error for poisoned lock.
+    ///
+    /// # Arguments
+    /// * `lock_name` - The name of the lock that was poisoned (e.g., `"RwLock"`, `"Mutex"`)
+    pub fn lock_poisoned(lock_name: &str) -> Self {
+        Self {
+            code: FireSimErrorCode::LockPoisoned,
+            msg: format!("Lock '{lock_name}' was poisoned by a panic in another thread"),
+        }
+    }
 }
 
 impl FireSimError for DefaultFireSimError {
@@ -92,6 +101,9 @@ pub enum FireSimErrorCode {
 
     /// Invalid heightmap: dimensions are zero.
     InvalidHeightmapDimensions = 2,
+
+    /// Lock poisoned: internal synchronization primitive was poisoned by a panic.
+    LockPoisoned = 3,
 }
 
 impl From<DefaultFireSimError> for FireSimErrorCode {
@@ -101,23 +113,24 @@ impl From<DefaultFireSimError> for FireSimErrorCode {
 }
 
 thread_local! {
-    /// Thread-local storage for the most recent FFI error (message, code).
+    /// Thread-local storage for the most recent FFI error (message, code, C string representation).
     /// Allows callers to retrieve diagnostic information after operations that return null.
-    static LAST_ERROR: RefCell<(Option<String>, FireSimErrorCode)> = const { RefCell::new((None, FireSimErrorCode::Ok)) };
+    /// The CString is stored to prevent memory leaks when returning raw pointers via FFI.
+    static LAST_ERROR: RefCell<(Option<String>, FireSimErrorCode, Option<CString>)> = const { RefCell::new((None, FireSimErrorCode::Ok, None)) };
 }
 
-/// Internal helper to read `LAST_ERROR` thread-local storage (message, code).
+/// Internal helper to read `LAST_ERROR` thread-local storage (message, code, cstring).
 pub(crate) fn with_last_error<F, R>(f: F) -> R
 where
-    F: FnOnce(&(Option<String>, FireSimErrorCode)) -> R,
+    F: FnOnce(&(Option<String>, FireSimErrorCode, Option<CString>)) -> R,
 {
     LAST_ERROR.with_borrow(f)
 }
 
-/// Internal helper to mutate `LAST_ERROR` thread-local storage (message, code).
+/// Internal helper to mutate `LAST_ERROR` thread-local storage (message, code, cstring).
 pub(crate) fn with_last_error_mut<F, R>(f: F) -> R
 where
-    F: FnOnce(&mut (Option<String>, FireSimErrorCode)) -> R,
+    F: FnOnce(&mut (Option<String>, FireSimErrorCode, Option<CString>)) -> R,
 {
     LAST_ERROR.with_borrow_mut(f)
 }
@@ -142,8 +155,8 @@ where
 /// # Example (C++)
 /// ```cpp
 /// FireSimInstance* sim = nullptr;
-/// FireSimError err = fire_sim_new(terrain, &sim);
-/// if (err != FireSimError::Ok) {
+/// FireSimErrorCode err = fire_sim_new(terrain, &sim);
+/// if (err != FireSimErrorCode::Ok) {
 ///     const char* error = fire_sim_get_last_error();
 ///     if (error) {
 ///         printf("Fire sim creation failed: %s\n", error);
@@ -152,10 +165,21 @@ where
 /// ```
 #[no_mangle]
 pub extern "C" fn fire_sim_get_last_error() -> *const c_char {
-    with_last_error(|(msg, _code)| {
+    with_last_error_mut(|(msg, _code, cstring)| {
         msg.as_ref()
             .and_then(|s| CString::new(s.as_str()).ok())
-            .map_or(ptr::null(), |cs| cs.into_raw().cast_const())
+            .map_or(ptr::null(), |cs| {
+                // Store the CString in thread-local storage to prevent memory leak
+                *cstring = Some(cs);
+                // We just stored the CString in thread-local storage above,
+                // so under normal operation this will be `Some`. If it is
+                // unexpectedly `None`, return a null pointer rather than
+                // panicking across the FFI boundary.
+                match cstring.as_ref() {
+                    Some(stored) => stored.as_ptr(),
+                    None => ptr::null(),
+                }
+            })
     })
 }
 
@@ -172,13 +196,13 @@ pub extern "C" fn fire_sim_get_last_error() -> *const c_char {
 /// # Example (C++)
 /// ```cpp
 /// FireSimInstance* sim = nullptr;
-/// FireSimError err = fire_sim_new(terrain, &sim);
-/// if (err != FireSimError::Ok) {
-///     FireSimError last_err = fire_sim_get_last_error_code();
+/// FireSimErrorCode err = fire_sim_new(terrain, &sim);
+/// if (err != FireSimErrorCode::Ok) {
+///     FireSimErrorCode last_err = fire_sim_get_last_error_code();
 ///     // last_err == err
 /// }
 /// ```
 #[no_mangle]
 pub extern "C" fn fire_sim_get_last_error_code() -> FireSimErrorCode {
-    with_last_error(|(_msg, code)| *code)
+    with_last_error(|(_msg, code, _cstring)| *code)
 }

@@ -35,10 +35,13 @@ use crate::terrain::Terrain;
 ///     terrain.width = 1000.0
 ///     terrain.height = 1000.0
 ///     
-///     var err = FireSimFFI.fire_sim_new(terrain, fire_sim)
-///     if err != FireSimFFI.FireSimError.Ok:
+///     # In Godot you should call a GDNative/GDExtension wrapper that handles the C out-parameter.
+///     # For example, the wrapper can return both error code and instance handle:
+///     var result = FireSimFFI.fire_sim_new_godot(terrain)
+///     if result.error != FireSimFFI.FireSimErrorCode.Ok:
 ///         push_error("Failed to create fire simulation")
 ///         return
+///     fire_sim = result.instance
 ///
 /// func _process(delta):
 ///     # Safe to call from main thread
@@ -62,8 +65,8 @@ use crate::terrain::Terrain;
 ///     terrain.flat.width = 1000.0f;
 ///     terrain.flat.height = 1000.0f;
 ///     
-///     FireSimError err = fire_sim_new(terrain, &FireSimPtr);
-///     if (err != FireSimError::Ok) {
+///     FireSimErrorCode err = fire_sim_new(terrain, &FireSimPtr);
+///     if (err != FireSimErrorCode::Ok) {
 ///         UE_LOG(LogTemp, Error, TEXT("Failed to create fire simulation"));
 ///         return;
 ///     }
@@ -101,8 +104,8 @@ impl FireSimInstance {
     ///
     /// # Errors
     ///
-    /// Returns `FireSimError::NullPointer` if heightmap pointer is null.
-    /// Returns `FireSimError::InvalidHeightmapDimensions` if heightmap dimensions are zero.
+    /// Returns `FireSimErrorCode::NullPointer` if heightmap pointer is null.
+    /// Returns `FireSimErrorCode::InvalidHeightmapDimensions` if heightmap dimensions are zero.
     pub(crate) fn new(terrain: &Terrain) -> Result<Box<Self>, DefaultFireSimError> {
         let terrain = match *terrain {
             Terrain::Flat { width, height } => TerrainData::flat(width, height, 5.0, 0.0),
@@ -180,7 +183,7 @@ impl FireSimInstance {
 /// Create a new `FireSim` instance and return it via out-parameter.
 ///
 /// This function follows standard C error handling conventions:
-/// - Returns `FireSimError::Ok` (0) on success with valid instance in `out_instance`
+/// - Returns `FireSimErrorCode::Ok` (0) on success with valid instance in `out_instance`
 /// - Returns non-zero error code on failure with `out_instance` set to null
 ///
 /// Parameters
@@ -192,10 +195,10 @@ impl FireSimInstance {
 ///   - On failure: set to null
 ///
 /// Returns
-/// - `FireSimError::Ok` (0) — success, `out_instance` contains valid pointer
-/// - `FireSimError::NullPointer` — heightmap pointer is null
-/// - `FireSimError::InvalidHeightmapDimensions` — heightmap dimensions are zero
-/// - `FireSimError::NullPointer` — `out_instance` parameter is null
+/// - `FireSimErrorCode::Ok` (0) — success, `out_instance` contains valid pointer
+/// - `FireSimErrorCode::NullPointer` — heightmap pointer is null
+/// - `FireSimErrorCode::InvalidHeightmapDimensions` — heightmap dimensions are zero
+/// - `FireSimErrorCode::NullPointer` — `out_instance` parameter is null
 ///
 /// Error Details
 /// - Call `fire_sim_get_last_error()` to retrieve human-readable error description
@@ -211,8 +214,8 @@ impl FireSimInstance {
 /// Example (C++)
 /// ```cpp
 /// FireSimInstance* sim = nullptr;
-/// FireSimError err = fire_sim_new(terrain, &sim);
-/// if (err != FireSimError::Ok) {
+/// FireSimErrorCode err = fire_sim_new(terrain, &sim);
+/// if (err != FireSimErrorCode::Ok) {
 ///     const char* error_msg = fire_sim_get_last_error();
 ///     fprintf(stderr, "Failed to create simulation: %s\n", error_msg);
 ///     return;
