@@ -23,10 +23,10 @@
 /// Terrain terrain;
 /// memset(&terrain, 0, sizeof(Terrain));
 ///
-/// /* Set the tag/discriminant field to select the flat-terrain variant. */
-/// /* Then assign the associated fields (width, height, resolution, */
-/// /* base elevation, etc.) using the names and types defined in */
-/// /* the generated FireSimFFI.h header. */
+/// // Set the tag/discriminant field to select the flat-terrain variant.
+/// // Then assign the associated fields (width, height, resolution,
+/// // base elevation, etc.) using the names and types defined in
+/// // the generated FireSimFFI.h header.
 /// ```
 ///
 /// The exact struct, union, and field names are defined in the generated
