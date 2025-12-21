@@ -115,10 +115,10 @@ impl FireSimInstance {
     ///
     /// Returns `FireSimErrorCode::NullPointer` if heightmap pointer is null.
     /// Returns `FireSimErrorCode::InvalidHeightmapDimensions` if heightmap dimensions are zero.
-    /// Returns `FireSimErrorCode::InvalidTerrainParameters` if width, height, or resolution are not positive.
+    /// Returns `FireSimErrorCode::InvalidTerrainParameters` if width, height, or resolution are not finite and positive (rejects NaN, infinity, and non-positive values).
     pub(crate) fn new(terrain: &Terrain) -> Result<Box<Self>, DefaultFireSimError> {
         // Validate terrain parameters upfront to prevent invalid configurations.
-        // All width, height, and resolution values must be positive.
+        // All width, height, and resolution values must be finite and positive (rejects NaN, infinity, and non-positive values).
         // For heightmap, also validate and compute the total size early to avoid overflow.
         let validated_heightmap_len = match *terrain {
             Terrain::Flat {
