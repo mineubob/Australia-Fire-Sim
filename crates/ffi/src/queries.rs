@@ -221,7 +221,7 @@ pub unsafe extern "C" fn fire_sim_clear_snapshot(ptr: *const FireSimInstance) ->
         // - No borrows or references derived from the `instance` escape the function's scope.
         let instance = unsafe { instance_from_ptr(ptr)? };
         let mut snapshot = instance
-        .burning_snapshot
+            .burning_snapshot
             .lock()
             .map_err(|_| DefaultFireSimError::lock_poisoned("burning_snapshot Mutex"))?;
         snapshot.clear();
