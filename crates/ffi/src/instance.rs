@@ -338,7 +338,7 @@ impl FireSimInstance {
         // exactly-representable integer range for f32, the ceiled results are also at
         // most 16_777_216.0 and exactly representable.
         //
-        // Worst case: a value like 16_777_15.x is ceiled to 16_777_216.0, which is
+        // Worst case: a value like 16_777_215.x is ceiled to 16_777_216.0, which is
         // still exactly representable in f32 and safe to cast to usize.
         let grid_cols_f = grid_cols_unceil.ceil();
         let grid_rows_f = grid_rows_unceil.ceil();
