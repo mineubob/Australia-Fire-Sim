@@ -31,6 +31,7 @@ fn usize_to_f32(v: usize) -> Result<f32, DefaultFireSimError> {
 
     // This cast is safe because we validated v <= 2^24, which f32 can represent exactly.
     // The validation above documents the domain constraint and prevents precision loss.
+    #[expect(clippy::cast_precision_loss)]
     Ok(v as f32)
 }
 
@@ -315,16 +316,27 @@ impl FireSimInstance {
             ));
         }
 
-        // Validate that dimensions fit within usize bounds before casting
-        let max_usize_f = usize::MAX as f32;
-        if grid_cols_f > max_usize_f || grid_rows_f > max_usize_f {
+        // Validate that dimensions are within the range that can be represented
+        // exactly as integers in f32 (2^24 = 16,777,216). This ensures that the
+        // subsequent f32 -> usize cast does not silently change the value due to
+        // precision loss.
+        #[expect(clippy::cast_precision_loss)]
+        const MAX_EXACT_F32_INT: f32 = (1u32 << 24) as f32;
+        if !(0.0..=MAX_EXACT_F32_INT).contains(&grid_cols_f)
+            || !(0.0..=MAX_EXACT_F32_INT).contains(&grid_rows_f)
+        {
             return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
-                "grid dimensions exceed platform usize bounds".to_string(),
+                "grid dimensions exceed maximum exactly representable in f32 (16777216)"
+                    .to_string(),
             ));
         }
 
-        // Now safe to cast: values are finite and within usize range
+        // Now safe to cast: values are finite and within the integer-exact f32 range
+        #[expect(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_sign_loss)]
         let grid_cols = grid_cols_f as usize;
+        #[expect(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_sign_loss)]
         let grid_rows = grid_rows_f as usize;
 
         // Use saturating multiplication to prevent overflow for very large terrains

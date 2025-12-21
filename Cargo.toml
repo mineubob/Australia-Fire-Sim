@@ -13,7 +13,6 @@ similar_names = "allow"              # Variable naming style preference
 cast_possible_truncation = "allow"   # Acceptable in controlled contexts
 cast_sign_loss = "allow"             # Acceptable when values known positive
 cast_possible_wrap = "allow"         # Acceptable in controlled contexts
-cast_precision_loss = "allow"        # Acceptable when validated (e.g., usize_to_f32 checks v <= 2^24)
 missing_panics_doc = "allow"         # Tests and infallible panics
 too_many_lines = "allow"             # Large simulation functions are unavoidable
 items_after_statements = "allow"     # Physical constants in context is clearer
