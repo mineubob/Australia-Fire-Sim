@@ -7,23 +7,22 @@ use crate::helpers::{track_error, track_result};
 use crate::queries::ElementStats;
 use crate::terrain::Terrain;
 
-/// Local helper to centralize deliberate usize -> f32 conversions for grid calculations.
+/// Local helper to validate and convert `usize` -> `f32` for grid calculations.
 ///
 /// # Precision Validation
 ///
-/// This function validates that the input value can be exactly represented as f32.
-/// f32 can exactly represent all integers up to 2^24 (16,777,216).
+/// This function validates that the input value can be exactly represented as `f32`.
+/// `f32` can exactly represent all integers up to 2^24 (16,777,216).
 ///
-/// Terrain grid dimensions are validated during creation to stay within reasonable bounds.
-/// If a dimension exceeds 2^24, this function returns an error to prevent unreliable
-/// floating-point grid calculations from being used across the FFI boundary.
+/// On error this returns a `DefaultFireSimError::InvalidTerrainParameters` with a
+/// parameter-specific name so the caller can indicate which field failed validation.
 #[inline]
-fn usize_to_f32(v: usize) -> Result<f32, DefaultFireSimError> {
+fn usize_to_f32_checked(param_name: &str, v: usize) -> Result<f32, DefaultFireSimError> {
     const MAX_EXACT_F32: usize = 1 << 24; // 16,777,216 - largest integer exactly representable in f32
 
     if v > MAX_EXACT_F32 {
         return Err(DefaultFireSimError::invalid_terrain_parameter_usize(
-            "grid_dimension",
+            param_name,
             v,
             "exceeds maximum exactly representable in f32 (16777216)",
         ));
@@ -33,7 +32,7 @@ fn usize_to_f32(v: usize) -> Result<f32, DefaultFireSimError> {
     // The validation above documents the domain constraint and prevents precision loss.
     #[expect(clippy::cast_precision_loss)]
     Ok(v as f32)
-}
+} 
 
 /// The main fire simulation context.
 /// Holds the internal simulation state and manages fire behavior calculations.
@@ -219,7 +218,7 @@ impl FireSimInstance {
             Terrain::FromHeightmap { width, nx, .. } => {
                 // Calculate implicit resolution from terrain width and grid columns
                 // Safe: width > 0 and nx > 0 validated above
-                width / usize_to_f32(nx)?
+                width / usize_to_f32_checked("nx", nx)?
             }
         };
 
