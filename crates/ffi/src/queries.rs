@@ -112,11 +112,16 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
     out_len: *mut usize,
     out_array: *mut *const ElementStats,
 ) -> FireSimErrorCode {
+    // SAFETY: Both output pointers are validated before any write occurs.
+    // This prevents undefined behavior if either (or both) are null and
+    // guarantees a well-defined FFI contract: on an `out_array` null error
+    // we deterministically set `*out_len` to 0 before returning.
     if out_len.is_null() {
         return track_error(&DefaultFireSimError::null_pointer("out_len"));
     }
 
     if out_array.is_null() {
+        // Now safe to write to out_len since we've validated it above
         unsafe {
             *out_len = 0;
         }
@@ -257,4 +262,31 @@ pub unsafe extern "C" fn fire_sim_get_element_stats(
 
         Ok::<(), DefaultFireSimError>(())
     })
+}
+
+/// Query the grid cell size (spatial resolution) used by the simulation.
+///
+/// This returns the resolution in meters per grid cell that was configured
+/// when the simulation instance was created.
+///
+/// # Safety
+///
+/// - `ptr` must be a valid pointer to a `FireSimInstance` created by `fire_sim_new`
+///   and not yet destroyed by `fire_sim_destroy`.
+///
+/// # Returns
+///
+/// The grid cell size in meters, or 0.0 if `ptr` is null or invalid.
+///
+/// # Example (C++)
+/// ```cpp
+/// float cell_size = fire_sim_get_grid_cell_size(sim);
+/// printf("Simulation grid resolution: %.2f meters per cell\n", cell_size);
+/// ```
+#[no_mangle]
+pub unsafe extern "C" fn fire_sim_get_grid_cell_size(ptr: *const FireSimInstance) -> f32 {
+    // SAFETY: instance_from_ptr returns a Result and treats null or invalid pointers as Err.
+    // The caller must still ensure ptr is intended to point to a valid FireSimInstance.
+    // On Err (null or invalid pointer), map_or returns 0.0; on Ok, it returns instance.grid_cell_size.
+    instance_from_ptr(ptr).map_or(0.0, |instance| instance.grid_cell_size)
 }
