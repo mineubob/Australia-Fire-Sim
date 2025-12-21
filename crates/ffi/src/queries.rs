@@ -282,7 +282,8 @@ pub unsafe extern "C" fn fire_sim_get_element_stats(
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn fire_sim_get_grid_cell_size(ptr: *const FireSimInstance) -> f32 {
-    // SAFETY: We check that ptr is not null above.
-    // The caller must ensure ptr points to a valid FireSimInstance.
+    // SAFETY: instance_from_ptr handles null and invalid pointers, returning an error if ptr is null or invalid.
+    // The caller must still ensure ptr is intended to point to a valid FireSimInstance.
+    // On error we return 0.0 via map_or.
     instance_from_ptr(ptr).map_or(0.0, |instance| instance.grid_cell_size)
 }

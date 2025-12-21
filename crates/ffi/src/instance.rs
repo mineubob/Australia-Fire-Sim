@@ -139,17 +139,17 @@ impl FireSimInstance {
                 resolution,
                 ..
             } => {
-                if width <= 0.0 {
+                if !(width.is_finite() && width > 0.0) {
                     return Err(DefaultFireSimError::invalid_terrain_parameter(
                         "width", width,
                     ));
                 }
-                if height <= 0.0 {
+                if !(height.is_finite() && height > 0.0) {
                     return Err(DefaultFireSimError::invalid_terrain_parameter(
                         "height", height,
                     ));
                 }
-                if resolution <= 0.0 {
+                if !(resolution.is_finite() && resolution > 0.0) {
                     return Err(DefaultFireSimError::invalid_terrain_parameter(
                         "resolution",
                         resolution,
@@ -164,12 +164,12 @@ impl FireSimInstance {
                 ny,
                 ..
             } => {
-                if width <= 0.0 {
+                if !(width.is_finite() && width > 0.0) {
                     return Err(DefaultFireSimError::invalid_terrain_parameter(
                         "width", width,
                     ));
                 }
-                if height <= 0.0 {
+                if !(height.is_finite() && height > 0.0) {
                     return Err(DefaultFireSimError::invalid_terrain_parameter(
                         "height", height,
                     ));
