@@ -209,8 +209,11 @@ impl FireSimInstance {
             | Terrain::ValleyBetweenHills { width, height, .. }
             | Terrain::FromHeightmap { width, height, .. } => (width, height),
         };
-        let grid_cols = (terrain_width / grid_cell_size).ceil() as usize;
-        let grid_rows = (terrain_height / grid_cell_size).ceil() as usize;
+        // Defensive: grid_cell_size should be positive (validated by TerrainData construction above)
+        // but guard against division by zero with max(0.1, _) to ensure we get a reasonable capacity.
+        let safe_cell_size = grid_cell_size.max(0.1);
+        let grid_cols = (terrain_width / safe_cell_size).ceil() as usize;
+        let grid_rows = (terrain_height / safe_cell_size).ceil() as usize;
         // Use saturating multiplication to prevent overflow for very large terrains
         let estimated_max_cells = grid_cols.saturating_mul(grid_rows);
         // Conservative estimate: 10% of cells burning, minimum 100, maximum 10000
