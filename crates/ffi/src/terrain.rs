@@ -19,7 +19,7 @@
 /// Example (Conceptual):
 ///
 /// In C using the generated bindings (for example, from `cbindgen`), you would:
-/// ```cpp
+/// ```c
 /// Terrain terrain;
 /// memset(&terrain, 0, sizeof(Terrain));
 ///
