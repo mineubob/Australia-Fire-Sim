@@ -156,7 +156,7 @@ impl FireSimInstance {
                 }
             }
             Terrain::FromHeightmap {
-                width, height, nx, ..
+                width, height, nx, ny, ..
             } => {
                 if width <= 0.0 {
                     return Err(DefaultFireSimError::invalid_terrain_parameter(
@@ -168,8 +168,8 @@ impl FireSimInstance {
                         "height", height,
                     ));
                 }
-                if nx == 0 {
-                    return Err(DefaultFireSimError::invalid_heightmap_dimensions(nx, 0));
+                if nx == 0 || ny == 0 {
+                    return Err(DefaultFireSimError::invalid_heightmap_dimensions(nx, ny));
                 }
             }
         }
