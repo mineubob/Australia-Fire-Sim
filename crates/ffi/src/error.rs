@@ -41,20 +41,6 @@ pub(crate) struct DefaultFireSimError {
 }
 
 impl DefaultFireSimError {
-    /// Create error for invalid heightmap: dimensions are zero.
-    ///
-    /// # Arguments
-    /// * `nx` - The width dimension
-    /// * `ny` - The height dimension
-    pub fn invalid_heightmap_dimensions(nx: usize, ny: usize) -> Self {
-        Self {
-            code: FireSimErrorCode::InvalidHeightmapDimensions,
-            msg: format!(
-                "Terrain heightmap dimensions (nx={nx}, ny={ny}) are invalid (product is zero)"
-            ),
-        }
-    }
-
     /// Create error for null pointer passed where non-null required.
     ///
     /// # Arguments
@@ -77,18 +63,42 @@ impl DefaultFireSimError {
         }
     }
 
-    /// Create error for invalid terrain parameters.
+    /// Create error for invalid terrain parameters with a custom message.
+    ///
+    /// # Arguments
+    /// * `message` - A description of the validation error
+    pub fn invalid_terrain_parameter_msg(message: String) -> Self {
+        Self {
+            code: FireSimErrorCode::InvalidTerrainParameters,
+            msg: message,
+        }
+    }
+
+    /// Create error for invalid terrain parameters (f32 values).
     ///
     /// # Arguments
     /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"resolution"`)
     /// * `value` - The invalid value
     pub fn invalid_terrain_parameter(param_name: &str, value: f32) -> Self {
-        Self {
-            code: FireSimErrorCode::InvalidTerrainParameters,
-            msg: format!(
-                "Terrain parameter '{param_name}' must be finite and positive, got {value}"
-            ),
-        }
+        Self::invalid_terrain_parameter_msg(format!(
+            "Terrain parameter '{param_name}' must be finite and positive, got {value}"
+        ))
+    }
+
+    /// Create error for invalid terrain parameters (usize values).
+    ///
+    /// # Arguments
+    /// * `param_name` - The name of the invalid parameter (e.g., `"nx"`, `"ny"`, `"grid_dimension"`)
+    /// * `value` - The invalid value
+    /// * `constraint` - Description of the constraint (e.g., `"must be positive"`, `"exceeds maximum"`)
+    pub fn invalid_terrain_parameter_usize(
+        param_name: &str,
+        value: usize,
+        constraint: &str,
+    ) -> Self {
+        Self::invalid_terrain_parameter_msg(format!(
+            "Terrain parameter '{param_name}' {constraint}, got {value}"
+        ))
     }
 }
 
@@ -113,15 +123,12 @@ pub enum FireSimErrorCode {
     /// Invalid pointer: null pointer passed where non-null required.
     NullPointer = 1,
 
-    /// Invalid heightmap: dimensions are zero.
-    InvalidHeightmapDimensions = 2,
-
     /// Lock poisoned: internal synchronization primitive was poisoned by a panic.
-    LockPoisoned = 3,
+    LockPoisoned = 2,
 
-    /// Invalid terrain parameters: width, height, or resolution must be finite and positive
-    /// (not NaN, infinity, or <= 0).
-    InvalidTerrainParameters = 4,
+    /// Invalid terrain parameters: width, height, resolution, or dimensions must be valid
+    /// (finite and positive for f32, or within representable range for usize).
+    InvalidTerrainParameters = 3,
 }
 
 impl From<DefaultFireSimError> for FireSimErrorCode {

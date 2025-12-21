@@ -148,7 +148,7 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
                     .into_iter()
                     .map(|e| ElementStats::from((e, sim))),
             );
-        });
+        })?;
 
         // Set output values
         unsafe {
@@ -258,7 +258,7 @@ pub unsafe extern "C" fn fire_sim_get_element_stats(
                     }
                 }
             }
-        });
+        })?;
 
         Ok::<(), DefaultFireSimError>(())
     })

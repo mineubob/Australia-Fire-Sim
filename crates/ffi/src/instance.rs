@@ -7,12 +7,32 @@ use crate::helpers::{track_error, track_result};
 use crate::queries::ElementStats;
 use crate::terrain::Terrain;
 
-// Local helper to centralize deliberate usize -> f32 conversions for grid calculations.
-// These conversions are safe for terrain grids (typically < 10000x10000 cells, well within f32 precision).
+/// Local helper to centralize deliberate usize -> f32 conversions for grid calculations.
+///
+/// # Precision Validation
+///
+/// This function validates that the input value can be exactly represented as f32.
+/// f32 can exactly represent all integers up to 2^24 (16,777,216).
+///
+/// Terrain grid dimensions are validated during creation to stay within reasonable bounds.
+/// If a dimension exceeds 2^24, this function returns an error to prevent unreliable
+/// floating-point grid calculations from being used across the FFI boundary.
 #[inline]
-#[expect(clippy::cast_precision_loss)]
-fn usize_to_f32(v: usize) -> f32 {
-    v as f32
+fn usize_to_f32(v: usize) -> Result<f32, DefaultFireSimError> {
+    const MAX_EXACT_F32: usize = 1 << 24; // 16,777,216 - largest integer exactly representable in f32
+
+    if v > MAX_EXACT_F32 {
+        return Err(DefaultFireSimError::invalid_terrain_parameter_usize(
+            "grid_dimension",
+            v,
+            "exceeds maximum exactly representable in f32 (16777216)",
+        ));
+    }
+
+    // This cast is safe because we validated v <= 2^24, which f32 can represent exactly.
+    // The validation above documents the domain constraint and prevents precision loss.
+    #[allow(clippy::cast_precision_loss)]
+    Ok(v as f32)
 }
 
 /// The main fire simulation context.
@@ -114,8 +134,10 @@ impl FireSimInstance {
     /// # Errors
     ///
     /// Returns `FireSimErrorCode::NullPointer` if heightmap pointer is null.
-    /// Returns `FireSimErrorCode::InvalidHeightmapDimensions` if heightmap dimensions are zero.
-    /// Returns `FireSimErrorCode::InvalidTerrainParameters` if width, height, or resolution are not finite and positive (rejects NaN, infinity, and non-positive values).
+    /// Returns `FireSimErrorCode::InvalidTerrainParameters` if:
+    /// - width, height, or resolution are not finite and positive (rejects NaN, infinity, and non-positive values)
+    /// - heightmap dimensions are zero or their product causes overflow
+    /// - grid dimensions exceed the maximum exactly representable in f32 (2^24)
     pub(crate) fn new(terrain: &Terrain) -> Result<Box<Self>, DefaultFireSimError> {
         // Validate terrain parameters upfront to prevent invalid configurations.
         // All width, height, and resolution values must be finite and positive (rejects NaN, infinity, and non-positive values).
@@ -179,7 +201,11 @@ impl FireSimInstance {
                     Some(len) if len > 0 => Some(len),
                     _ => {
                         // Either overflow or zero dimensions
-                        return Err(DefaultFireSimError::invalid_heightmap_dimensions(nx, ny));
+                        return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
+                            format!(
+                                "Terrain heightmap dimensions (nx={nx}, ny={ny}) are invalid (product is zero or causes overflow)"
+                            )
+                        ));
                     }
                 }
             }
@@ -194,7 +220,7 @@ impl FireSimInstance {
             Terrain::FromHeightmap { width, nx, .. } => {
                 // Calculate implicit resolution from terrain width and grid columns
                 // Safe: width > 0 and nx > 0 validated above
-                width / usize_to_f32(nx)
+                width / usize_to_f32(nx)?
             }
         };
 
@@ -311,8 +337,10 @@ impl FireSimInstance {
 /// Returns
 /// - `FireSimErrorCode::Ok` (0) — success, `out_instance` contains valid pointer
 /// - `FireSimErrorCode::NullPointer` — heightmap pointer is null or `out_instance` parameter is null
-/// - `FireSimErrorCode::InvalidHeightmapDimensions` — heightmap dimensions are zero
-/// - `FireSimErrorCode::InvalidTerrainParameters` — width, height, or resolution are not finite and positive
+/// - `FireSimErrorCode::InvalidTerrainParameters` — terrain validation failed:
+///   - width, height, or resolution are not finite and positive
+///   - heightmap dimensions are zero or their product causes overflow
+///   - grid dimensions exceed maximum exactly representable in f32 (2^24)
 ///
 /// Error Details
 /// - Call `fire_sim_get_last_error()` to retrieve human-readable error description
