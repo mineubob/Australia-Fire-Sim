@@ -27,7 +27,7 @@ pub(crate) trait FireSimError {
     ///
     /// Default implementation uses the error code's `Display` implementation.
     /// Custom error types can override this to provide more specific messages.
-    fn msg(&self) -> String;
+    fn msg(&self) -> &str;
 }
 
 /// Default implementation of `FireSimError` for common FFI error scenarios.
@@ -83,8 +83,8 @@ impl FireSimError for DefaultFireSimError {
         self.code
     }
 
-    fn msg(&self) -> String {
-        self.msg.clone()
+    fn msg(&self) -> &str {
+        &self.msg
     }
 }
 
