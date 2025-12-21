@@ -32,7 +32,7 @@ fn usize_to_f32_checked(param_name: &str, v: usize) -> Result<f32, DefaultFireSi
     // The validation above documents the domain constraint and prevents precision loss.
     #[expect(clippy::cast_precision_loss)]
     Ok(v as f32)
-} 
+}
 
 /// The main fire simulation context.
 /// Holds the internal simulation state and manages fire behavior calculations.
