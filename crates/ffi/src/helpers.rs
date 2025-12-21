@@ -91,20 +91,32 @@ where
     }
 }
 
-/// Convert raw pointer to reference, validate it exists, and return the reference.
-/// Returns error if pointer is null.
+/// Convert a raw pointer to a borrowed `&FireSimInstance` after validating it is non-null.
+/// Returns `Err(DefaultFireSimError::NullPointer)` if `ptr` is null.
 ///
-/// Safety note: the caller must ensure the pointer originates from `fire_sim_new` and is not dangling.
+/// # Safety
+///
+/// This function is `unsafe` because it constructs a borrowed Rust reference from a raw pointer.
+/// Callers must uphold the following invariants:
+/// - `ptr` must be non-null (this function checks for null and returns an error).
+/// - `ptr` must be properly aligned and point to a *valid, initialized* `FireSimInstance`.
+/// - The memory referenced by `ptr` must remain valid for the lifetime of the returned reference.
+/// - The pointer should originate from this crate's `fire_sim_new` (or be otherwise compatible)
+///   and must not be freed or moved while the returned reference is in use.
+/// - Rust's aliasing rules must be respected (no mutable aliasing that would violate `&`).
+///
+/// The function performs only a null check and cannot statically verify alignment, provenance, or lifetime.
+/// Violating the invariants above is undefined behavior.
 #[inline]
-pub(crate) fn instance_from_ptr(
+pub(crate) unsafe fn instance_from_ptr<'a>(
     ptr: *const FireSimInstance,
-) -> Result<&'static FireSimInstance, DefaultFireSimError> {
+) -> Result<&'a FireSimInstance, DefaultFireSimError> {
     if ptr.is_null() {
         return Err(DefaultFireSimError::null_pointer("ptr"));
     }
 
     // SAFETY: pointer validity checked above, and caller guarantees it came from fire_sim_new
-    unsafe { Ok(&*ptr) }
+    Ok(&*ptr)
 }
 
 /// If valid instance, call `f` with a `&FireSimulation` and return the closure result.
