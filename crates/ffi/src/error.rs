@@ -98,10 +98,7 @@ impl DefaultFireSimError {
         value: usize,
         constraint: &str,
     ) -> Self {
-        Self::invalid_terrain_parameter_msg(
-            param_name,
-            &format!("{constraint}, got {value}"),
-        )
+        Self::invalid_terrain_parameter_msg(param_name, &format!("{constraint}, got {value}"))
     }
 }
 

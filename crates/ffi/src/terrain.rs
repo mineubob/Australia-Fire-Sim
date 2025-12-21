@@ -5,7 +5,30 @@
 //! a fire simulation instance.
 
 /// Terrain configuration for the fire simulation.
-/// Defines the shape and parameters of the simulated landscape.
+///
+/// Defines the shape and parameters of the simulated landscape. This enum is FFI-safe
+/// with a stable C-compatible memory layout (`#[repr(C)]`), allowing construction and
+/// use from C/C++/C# code.
+///
+/// # FFI Usage
+///
+/// When calling from C/C++, you must construct this enum carefully to match Rust's
+/// tagged union representation. Each variant has a discriminant (tag) followed by its fields.
+/// Use the appropriate language binding or FFI helper library to ensure correct memory layout.
+///
+/// # Example (Conceptual)
+///
+/// In C with proper bindings, you might create a flat terrain like:
+/// ```c
+/// Terrain terrain;
+/// terrain.tag = Terrain_Flat;  // Set discriminant
+/// terrain.flat.width = 1000.0;
+/// terrain.flat.height = 1000.0;
+/// terrain.flat.resolution = 5.0;
+/// terrain.flat.base_elevation = 0.0;
+/// ```
+///
+/// The exact syntax depends on your FFI binding generator (e.g., cbindgen, bindgen).
 #[repr(C)]
 pub enum Terrain {
     /// Flat terrain with specified width and height in meters.

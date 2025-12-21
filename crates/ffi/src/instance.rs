@@ -196,14 +196,21 @@ impl FireSimInstance {
                         "height", height,
                     ));
                 }
-                // Validate heightmap dimensions using checked_mul to detect overflow
+                // Validate heightmap dimensions:
+                // 1. Dimensions must be strictly positive (no zero-size grids).
+                // 2. The product nx * ny must not overflow usize.
+                if nx == 0 || ny == 0 {
+                    return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
+                        "heightmap dimensions",
+                        &format!("must be positive (nx={nx}, ny={ny})"),
+                    ));
+                }
                 match nx.checked_mul(ny) {
-                    Some(len) if len > 0 => Some(len),
-                    _ => {
-                        // Either overflow or zero dimensions
+                    Some(len) => Some(len),
+                    None => {
                         return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
                             "heightmap dimensions",
-                            &format!("(nx={nx}, ny={ny}) are invalid (product is zero or causes overflow)"),
+                            &format!("(nx={nx}, ny={ny}) cause overflow in product"),
                         ));
                     }
                 }
@@ -304,32 +311,34 @@ impl FireSimInstance {
             | Terrain::FromHeightmap { width, height, .. } => (width, height),
         };
 
-        // Calculate grid dimensions with validation to prevent overflow and ensure safe casting
-        let grid_cols_f = (terrain_width / grid_cell_size).ceil();
-        let grid_rows_f = (terrain_height / grid_cell_size).ceil();
+        // Calculate grid dimensions with validation to prevent overflow and ensure safe casting.
+        // We validate BEFORE applying ceil() to catch any precision loss in the division itself.
+        let grid_cols_unceil = terrain_width / grid_cell_size;
+        let grid_rows_unceil = terrain_height / grid_cell_size;
 
-        // Validate that the calculated dimensions are finite
-        if !grid_cols_f.is_finite() || !grid_rows_f.is_finite() {
+        // Validate that the division results are finite and within the exact f32 range
+        // BEFORE applying ceil(), to avoid precision loss affecting the final dimension.
+        #[expect(clippy::cast_precision_loss)]
+        const MAX_EXACT_F32_INT: f32 = (1u32 << 24) as f32;
+
+        if !grid_cols_unceil.is_finite() || !grid_rows_unceil.is_finite() {
             return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
                 "grid dimensions",
                 "calculation produced non-finite values",
             ));
         }
 
-        // Validate that dimensions are within the range that can be represented
-        // exactly as integers in f32 (2^24 = 16,777,216). This ensures that the
-        // subsequent f32 -> usize cast does not silently change the value due to
-        // precision loss.
-        #[expect(clippy::cast_precision_loss)]
-        const MAX_EXACT_F32_INT: f32 = (1u32 << 24) as f32;
-        if !(0.0..=MAX_EXACT_F32_INT).contains(&grid_cols_f)
-            || !(0.0..=MAX_EXACT_F32_INT).contains(&grid_rows_f)
-        {
+        if grid_cols_unceil > MAX_EXACT_F32_INT || grid_rows_unceil > MAX_EXACT_F32_INT {
             return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
                 "grid dimensions",
-                "exceed maximum exactly representable in f32 (16777216)",
+                "exceed maximum exactly representable in f32 (16777216) before ceiling",
             ));
         }
+
+        // Now apply ceil() - since the input is within exact range, the ceiled result
+        // will also be exactly representable (worst case: exact value -> exact value + 1)
+        let grid_cols_f = grid_cols_unceil.ceil();
+        let grid_rows_f = grid_rows_unceil.ceil();
 
         // Now safe to cast: values are finite and within the integer-exact f32 range
         #[expect(clippy::cast_possible_truncation)]

@@ -97,7 +97,7 @@ where
 /// # Safety
 ///
 /// This function is `unsafe` because it constructs a borrowed Rust reference from a raw pointer.
-/// Callers must uphold the following invariants:
+/// **Internal safety requirements for crate developers:**
 /// - `ptr` must be non-null (this function checks for null and returns an error).
 /// - `ptr` must be properly aligned and point to a *valid, initialized* `FireSimInstance`.
 /// - The memory referenced by `ptr` must remain valid for the lifetime of the returned reference.

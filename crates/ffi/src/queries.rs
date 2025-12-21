@@ -6,8 +6,13 @@ use crate::helpers::{handle_ffi_result_error, instance_from_ptr, track_error, wi
 use crate::instance::FireSimInstance;
 
 #[repr(C)]
-/// FFI-friendly snapshot of an element's runtime statistics.
-/// Keep this layout stable for C/C++/C# consumers.
+/// FFI-safe snapshot of a fuel element's runtime statistics at a point in time.
+///
+/// This struct provides a stable ABI-compatible layout (via `#[repr(C)]`) for retrieving
+/// simulation state across the FFI boundary. All fields use C-compatible types (usize, bool, f32)
+/// and the layout is guaranteed to remain stable for C/C++/C# consumers.
+///
+/// Returned by `fire_sim_get_element_stats` to query the current state of a specific fuel element.
 pub struct ElementStats {
     /// Element identifier (index).
     pub element_id: usize,
