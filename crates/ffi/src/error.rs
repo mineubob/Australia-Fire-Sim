@@ -171,7 +171,7 @@ pub extern "C" fn fire_sim_get_last_error() -> *const c_char {
 /// Retrieve the most recent FFI error code.
 ///
 /// Returns:
-/// - `FireSimError::Ok` (0) if no error has occurred
+/// - `FireSimErrorCode::Ok` (0) if no error has occurred
 /// - The specific error code from the last failed operation
 ///
 /// # Thread Safety
