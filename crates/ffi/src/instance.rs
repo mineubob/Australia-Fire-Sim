@@ -168,7 +168,9 @@ impl FireSimInstance {
                         "height", height,
                     ));
                 }
-                if nx == 0 || ny == 0 {
+                // Validate heightmap dimensions using checked_mul to detect overflow
+                let len = nx.checked_mul(ny).unwrap_or(0);
+                if len == 0 {
                     return Err(DefaultFireSimError::invalid_heightmap_dimensions(nx, ny));
                 }
             }
@@ -235,14 +237,12 @@ impl FireSimInstance {
                 base_elevation,
             } => {
                 // Safety: we accept a raw pointer from the caller. Convert to a slice and copy into a Vec.
-                // Validate input: return error if pointer is null or size is invalid.
-                let len = nx.checked_mul(ny).unwrap_or(0);
+                // Validate heightmap pointer is non-null (dimensions already validated above)
                 if heightmap_ptr.is_null() {
                     return Err(DefaultFireSimError::null_pointer("heightmap_ptr"));
                 }
-                if len == 0 {
-                    return Err(DefaultFireSimError::invalid_heightmap_dimensions(nx, ny));
-                }
+                // Safe: dimensions validated above ensure len > 0 and no overflow
+                let len = nx * ny;
                 let slice = unsafe { std::slice::from_raw_parts(heightmap_ptr, len) };
                 TerrainData::from_heightmap(
                     width,
