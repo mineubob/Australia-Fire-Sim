@@ -112,7 +112,10 @@ pub unsafe extern "C" fn fire_sim_get_burning_elements(
     out_len: *mut usize,
     out_array: *mut *const ElementStats,
 ) -> FireSimErrorCode {
-    // Validate both pointers before attempting to write to either
+    // SAFETY: Both output pointers are validated before any write occurs.
+    // This prevents undefined behavior if either (or both) are null and
+    // guarantees a well-defined FFI contract: on an `out_array` null error
+    // we deterministically set `*out_len` to 0 before returning.
     if out_len.is_null() {
         return track_error(&DefaultFireSimError::null_pointer("out_len"));
     }
