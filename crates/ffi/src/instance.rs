@@ -7,6 +7,14 @@ use crate::helpers::{track_error, track_result};
 use crate::queries::ElementStats;
 use crate::terrain::Terrain;
 
+// Local helper to centralize deliberate usize -> f32 conversions for grid calculations.
+// These conversions are safe for terrain grids (typically < 10000x10000 cells, well within f32 precision).
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
+}
+
 /// The main fire simulation context.
 /// Holds the internal simulation state and manages fire behavior calculations.
 ///
@@ -107,8 +115,25 @@ impl FireSimInstance {
     /// Returns `FireSimErrorCode::NullPointer` if heightmap pointer is null.
     /// Returns `FireSimErrorCode::InvalidHeightmapDimensions` if heightmap dimensions are zero.
     pub(crate) fn new(terrain: &Terrain) -> Result<Box<Self>, DefaultFireSimError> {
-        let terrain = match *terrain {
-            Terrain::Flat { width, height } => TerrainData::flat(width, height, 5.0, 0.0),
+        // Extract grid cell size from terrain configuration before converting to TerrainData.
+        // Grid cell size controls the spatial resolution of the simulation.
+        let grid_cell_size = match *terrain {
+            Terrain::Flat { resolution, .. }
+            | Terrain::SingleHill { resolution, .. }
+            | Terrain::ValleyBetweenHills { resolution, .. } => resolution,
+            Terrain::FromHeightmap { width, nx, .. } => {
+                // Calculate implicit resolution from terrain width and grid columns
+                width / usize_to_f32(nx)
+            }
+        };
+
+        let terrain_data = match *terrain {
+            Terrain::Flat {
+                width,
+                height,
+                resolution,
+                base_elevation,
+            } => TerrainData::flat(width, height, resolution, base_elevation),
 
             Terrain::SingleHill {
                 width,
@@ -171,11 +196,18 @@ impl FireSimInstance {
             }
         };
 
-        let sim = FireSimulation::new(5.0, &terrain);
+        let sim = FireSimulation::new(grid_cell_size, &terrain_data);
+
+        // Initial capacity for burning elements snapshot.
+        // This is a performance optimization to reduce allocations during simulation.
+        // The value 1000 is a reasonable default that balances memory usage with reallocation overhead.
+        // For large simulations (>10km²), consider increasing this value.
+        // For small simulations (<1km²), a smaller value like 100-500 may be more memory-efficient.
+        const INITIAL_BURNING_SNAPSHOT_CAPACITY: usize = 1000;
 
         Ok(Box::new(Self {
             sim: RwLock::new(sim),
-            burning_snapshot: Mutex::new(Vec::with_capacity(1000)),
+            burning_snapshot: Mutex::new(Vec::with_capacity(INITIAL_BURNING_SNAPSHOT_CAPACITY)),
         }))
     }
 }

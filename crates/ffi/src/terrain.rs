@@ -14,6 +14,10 @@ pub enum Terrain {
         width: f32,
         /// Height of the terrain in meters.
         height: f32,
+        /// Grid resolution in meters (cell size).
+        resolution: f32,
+        /// Base elevation of the terrain in meters.
+        base_elevation: f32,
     },
 
     /// Single hill terrain.
