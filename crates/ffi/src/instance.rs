@@ -211,7 +211,8 @@ impl FireSimInstance {
         };
         let grid_cols = (terrain_width / grid_cell_size).ceil() as usize;
         let grid_rows = (terrain_height / grid_cell_size).ceil() as usize;
-        let estimated_max_cells = grid_cols * grid_rows;
+        // Use saturating multiplication to prevent overflow for very large terrains
+        let estimated_max_cells = grid_cols.saturating_mul(grid_rows);
         // Conservative estimate: 10% of cells burning, minimum 100, maximum 10000
         let snapshot_capacity = (estimated_max_cells / 10).clamp(100, 10000);
 
