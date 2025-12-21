@@ -31,7 +31,6 @@ fn usize_to_f32(v: usize) -> Result<f32, DefaultFireSimError> {
 
     // This cast is safe because we validated v <= 2^24, which f32 can represent exactly.
     // The validation above documents the domain constraint and prevents precision loss.
-    #[allow(clippy::cast_precision_loss)]
     Ok(v as f32)
 }
 
@@ -304,9 +303,30 @@ impl FireSimInstance {
             | Terrain::ValleyBetweenHills { width, height, .. }
             | Terrain::FromHeightmap { width, height, .. } => (width, height),
         };
-        // Safe: terrain parameters validated at function entry, grid_cell_size is guaranteed positive
-        let grid_cols = (terrain_width / grid_cell_size).ceil() as usize;
-        let grid_rows = (terrain_height / grid_cell_size).ceil() as usize;
+
+        // Calculate grid dimensions with validation to prevent overflow and ensure safe casting
+        let grid_cols_f = (terrain_width / grid_cell_size).ceil();
+        let grid_rows_f = (terrain_height / grid_cell_size).ceil();
+
+        // Validate that the calculated dimensions are finite
+        if !grid_cols_f.is_finite() || !grid_rows_f.is_finite() {
+            return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
+                "grid dimension calculation produced non-finite values".to_string(),
+            ));
+        }
+
+        // Validate that dimensions fit within usize bounds before casting
+        let max_usize_f = usize::MAX as f32;
+        if grid_cols_f > max_usize_f || grid_rows_f > max_usize_f {
+            return Err(DefaultFireSimError::invalid_terrain_parameter_msg(
+                "grid dimensions exceed platform usize bounds".to_string(),
+            ));
+        }
+
+        // Now safe to cast: values are finite and within usize range
+        let grid_cols = grid_cols_f as usize;
+        let grid_rows = grid_rows_f as usize;
+
         // Use saturating multiplication to prevent overflow for very large terrains
         let estimated_max_cells = grid_cols.saturating_mul(grid_rows);
         // Conservative estimate: 10% of cells burning, minimum 100, maximum 10000
