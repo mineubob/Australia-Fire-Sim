@@ -27,7 +27,7 @@ pub unsafe extern "C" fn fire_sim_update(ptr: *const FireSimInstance, dt: f32) {
 
         with_fire_sim_mut(instance, |sim| {
             sim.update(dt);
-        });
+        })?;
 
         Ok::<(), DefaultFireSimError>(())
     });

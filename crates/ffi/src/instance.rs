@@ -7,12 +7,31 @@ use crate::helpers::{track_error, track_result};
 use crate::queries::ElementStats;
 use crate::terrain::Terrain;
 
-// Local helper to centralize deliberate usize -> f32 conversions for grid calculations.
-// These conversions are safe for terrain grids (typically < 10000x10000 cells, well within f32 precision).
+/// Local helper to centralize deliberate usize -> f32 conversions for grid calculations.
+///
+/// # Safety and Precision
+///
+/// This function validates that the input value can be exactly represented as f32.
+/// f32 can exactly represent all integers up to 2^24 (16,777,216).
+///
+/// Terrain grid dimensions are validated during creation to stay within reasonable bounds.
+/// If a dimension exceeds 2^24, this function will panic, indicating a configuration error
+/// that would cause unreliable floating-point grid calculations.
 #[inline]
-#[expect(clippy::cast_precision_loss)]
 fn usize_to_f32(v: usize) -> f32 {
-    v as f32
+    const MAX_EXACT_F32: usize = 1 << 24; // 16,777,216 - largest integer exactly representable in f32
+
+    assert!(
+        v <= MAX_EXACT_F32,
+        "terrain grid dimension {v} exceeds maximum exactly representable in f32 ({MAX_EXACT_F32})"
+    );
+
+    // This cast is safe because we validated v <= 2^24, which f32 can represent exactly.
+    // The validation above documents the domain constraint and prevents precision loss.
+    #[allow(clippy::cast_precision_loss)]
+    {
+        v as f32
+    }
 }
 
 /// The main fire simulation context.

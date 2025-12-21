@@ -50,7 +50,7 @@ impl DefaultFireSimError {
         Self {
             code: FireSimErrorCode::InvalidHeightmapDimensions,
             msg: format!(
-                "Terrain heightmap dimensions (nx={nx}, ny={ny}) are invalid (product is zero)"
+                "Terrain heightmap dimensions (nx={nx}, ny={ny}) are invalid (product is zero or causes overflow)"
             ),
         }
     }

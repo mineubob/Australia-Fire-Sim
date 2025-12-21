@@ -21,7 +21,7 @@ pub use error::{fire_sim_get_last_error, fire_sim_get_last_error_code, FireSimEr
 pub use instance::{fire_sim_destroy, fire_sim_new, FireSimInstance};
 pub use queries::{
     fire_sim_clear_snapshot, fire_sim_get_burning_elements, fire_sim_get_element_stats,
-    ElementStats,
+    fire_sim_get_grid_cell_size, ElementStats,
 };
 pub use simulation::fire_sim_update;
 pub use terrain::Terrain;

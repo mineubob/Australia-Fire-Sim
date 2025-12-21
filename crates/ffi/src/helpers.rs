@@ -120,38 +120,47 @@ pub(crate) unsafe fn instance_from_ptr<'a>(
 }
 
 /// If valid instance, call `f` with a `&FireSimulation` and return the closure result.
-/// Panics if the lock is poisoned (indicates a previous panic during lock acquisition).
+/// Returns an error if the lock is poisoned (indicates a previous panic during lock acquisition).
 ///
 /// Thread-safe: acquires the internal `RwLock` read lock for the duration of the closure.
 ///
 /// Safety note: the caller must ensure the reference is valid.
 #[inline]
-pub(crate) fn with_fire_sim<R, F>(instance: &FireSimInstance, f: F) -> R
+pub(crate) fn with_fire_sim<R, F>(
+    instance: &FireSimInstance,
+    f: F,
+) -> Result<R, DefaultFireSimError>
 where
     F: FnOnce(&FireSimulation) -> R,
 {
     // Acquire the read lock for the duration of the closure.
-    // Panic if the lock is poisoned (acceptable for FFI safety - indicates previous panic).
-    let sim = instance.sim.read().expect("FireSimulation RwLock poisoned");
-    f(&sim)
+    // Convert poisoned lock to an error instead of panicking to prevent UB across FFI boundary.
+    let sim = instance
+        .sim
+        .read()
+        .map_err(|_| DefaultFireSimError::lock_poisoned("fire_sim RwLock"))?;
+    Ok(f(&sim))
 }
 
 /// If valid instance, call `f` with a `&mut FireSimulation` and return the closure result.
-/// Panics if the lock is poisoned (indicates a previous panic during lock acquisition).
+/// Returns an error if the lock is poisoned (indicates a previous panic during lock acquisition).
 ///
 /// Thread-safe: acquires the internal `RwLock` write lock for the duration of the closure.
 ///
 /// Safety note: the caller must ensure the reference is valid.
 #[inline]
-pub(crate) fn with_fire_sim_mut<R, F>(instance: &FireSimInstance, f: F) -> R
+pub(crate) fn with_fire_sim_mut<R, F>(
+    instance: &FireSimInstance,
+    f: F,
+) -> Result<R, DefaultFireSimError>
 where
     F: FnOnce(&mut FireSimulation) -> R,
 {
     // Acquire the write lock for the duration of the closure.
-    // Panic if the lock is poisoned (acceptable for FFI safety - indicates previous panic).
+    // Convert poisoned lock to an error instead of panicking to prevent UB across FFI boundary.
     let mut sim = instance
         .sim
         .write()
-        .expect("FireSimulation RwLock poisoned");
-    f(&mut sim)
+        .map_err(|_| DefaultFireSimError::lock_poisoned("fire_sim RwLock"))?;
+    Ok(f(&mut sim))
 }
