@@ -85,7 +85,7 @@ impl DefaultFireSimError {
     pub fn invalid_terrain_parameter(param_name: &str, value: f32) -> Self {
         Self {
             code: FireSimErrorCode::InvalidTerrainParameters,
-            msg: format!("Terrain parameter '{param_name}' must be positive, got {value}"),
+            msg: format!("Terrain parameter '{param_name}' must be finite and positive, got {value}"),
         }
     }
 }
