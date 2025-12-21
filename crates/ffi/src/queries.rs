@@ -34,6 +34,23 @@ pub struct ElementStats {
     pub intensity: f32,
 }
 
+impl Default for ElementStats {
+    /// Creates a zeroed/empty `ElementStats` for when an element doesn't exist.
+    /// All fields are initialized to safe default values.
+    fn default() -> Self {
+        Self {
+            element_id: 0,
+            is_burning: false,
+            fuel_load: 0.0,
+            temperature: 0.0,
+            moisture: 0.0,
+            rate_of_spread: 0.0,
+            flame_length: 0.0,
+            intensity: 0.0,
+        }
+    }
+}
+
 impl From<(&FuelElement, &FireSimulation)> for ElementStats {
     fn from((element, sim): (&FuelElement, &FireSimulation)) -> Self {
         // Get wind at this element's position (m/s)
@@ -251,8 +268,10 @@ pub unsafe extern "C" fn fire_sim_get_element_stats(
                     }
                 }
             } else {
-                // Not an error - element just doesn't exist
+                // Not an error - element just doesn't exist.
+                // Zero-initialize out_stats to prevent undefined behavior if caller ignores out_found.
                 unsafe {
+                    *out_stats = ElementStats::default();
                     if !out_found.is_null() {
                         *out_found = false;
                     }
