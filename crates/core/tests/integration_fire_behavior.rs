@@ -674,7 +674,7 @@ fn test_weather_conditions_spread_rate() {
     let moderate_ffdi = ffdi_values[0];
     let severe_ffdi = ffdi_values[1];
     let catastrophic_ffdi = ffdi_values[2];
-    
+
     assert!(
         moderate_ffdi < 25.0,
         "Moderate FFDI should be <25, got {moderate_ffdi:.1}"
@@ -694,7 +694,7 @@ fn test_weather_conditions_spread_rate() {
     // At 11s, should have 1-5 elements (not full ignition)
     let moderate_t31 = results[0].2[1].1;
     let moderate_t60 = results[0].2[2].1;
-    
+
     assert!(
         moderate_t11 < 15,
         "Moderate should show gradual spread at t=11s, got {moderate_t11}"
@@ -751,7 +751,7 @@ fn test_weather_conditions_spread_rate() {
         severe_t60 >= 3,
         "Severe should show significant spread, got {severe_t60} elements at t=60s"
     );
-    
+
     // Validate progressive spread over time (no regression)
     assert!(
         catastrophic_t31 >= catastrophic_t11,
@@ -785,11 +785,11 @@ fn test_weather_conditions_spread_rate() {
     println!(
         "-> Spread gradient maintained: Moderate({moderate_count}) <= Severe({severe_count}) <= Catastrophic({catastrophic_count})"
     );
-    
+
     // 5. Validate spread rate multipliers between conditions
     let severe_vs_moderate_ratio = severe_t60 as f64 / moderate_t60.max(1) as f64;
     let catastrophic_vs_severe_ratio = catastrophic_t60 as f64 / severe_t60.max(1) as f64;
-    
+
     assert!(
         severe_vs_moderate_ratio >= 1.0,
         "Severe should spread faster than Moderate: {severe_vs_moderate_ratio:.2}x"
@@ -799,7 +799,7 @@ fn test_weather_conditions_spread_rate() {
         "Catastrophic should spread faster than Severe: {catastrophic_vs_severe_ratio:.2}x"
     );
     println!("-> Spread multipliers: Severe/Moderate={severe_vs_moderate_ratio:.2}x, Catastrophic/Severe={catastrophic_vs_severe_ratio:.2}x");
-    
+
     // 6. Validate that catastrophic conditions show substantially more spread than moderate
     let catastrophic_vs_moderate_ratio = catastrophic_t60 as f64 / moderate_t60.max(1) as f64;
     assert!(
