@@ -709,9 +709,9 @@ fn test_weather_conditions_spread_rate() {
     // The new atmospheric turbulence model (Phase 7) includes stability, mixing height, and
     // time-of-day effects, which adds realistic variability to spread patterns.
     // Physics-accurate simulation without artificial simplifications shows moderate but realistic
-    // spread rates. Catastrophic conditions (4+ elements) significantly exceed moderate (2 elements).
+    // spread rates. Catastrophic conditions (6+ elements) significantly exceed moderate (2 elements).
     assert!(
-        catastrophic_t60 >= 4,
+        catastrophic_t60 >= 6,
         "Catastrophic should show rapid spread, got {catastrophic_t60} elements at t=60s"
     );
     assert!(
