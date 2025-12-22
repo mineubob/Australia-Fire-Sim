@@ -320,6 +320,7 @@ pub(crate) fn calculate_total_heat_transfer(
 ///
 /// This function is now the primary hot-path `calculate_heat_transfer_raw` and
 /// accepts pre-computed `source_temp_t4` (`source_temp^4` in Kelvin) to avoid redundant calculations.
+/// Also accepts `source_temp_kelvin` directly to avoid expensive powf(0.25) for convection.
 #[inline(always)]
 #[expect(
     clippy::too_many_arguments,
@@ -327,7 +328,8 @@ pub(crate) fn calculate_total_heat_transfer(
 )]
 pub(crate) fn calculate_heat_transfer_raw(
     source_pos: Vec3,
-    source_temp_t4: f64, // Pre-computed source_temp^4 in Kelvin
+    source_temp_t4: f64,     // Pre-computed source_temp^4 in Kelvin
+    source_temp_kelvin: f64, // Source temperature in Kelvin (for convection)
     source_fuel_remaining: f32,
     source_flame_area_coeff: f32,
     target_pos: Vec3,
@@ -348,10 +350,11 @@ pub(crate) fn calculate_heat_transfer_raw(
         return 0.0;
     }
 
-    // OPTIMIZATION: Skip very close checks when source_temp_t4 indicates cold source
-    // T^4 < 100^4 (in K) is approximately ambient temperature
-    const COLD_THRESHOLD_T4: f64 = 2197947936.0; // (373.15 K)^4 ≈ 100°C
-    if source_temp_t4 < COLD_THRESHOLD_T4 {
+    // OPTIMIZATION: Skip heat transfer from sources below 100°C
+    // Elements below this temperature don't contribute meaningful radiant heat to fire spread
+    // Note: Using explicit calculation instead of const because powi() is not const-evaluable
+    let cold_threshold_t4 = 373.15_f64.powi(4); // (373.15 K)^4 = 100°C
+    if source_temp_t4 < cold_threshold_t4 {
         return 0.0;
     }
 
@@ -360,7 +363,9 @@ pub(crate) fn calculate_heat_transfer_raw(
         return 0.0;
     }
 
-    // Flame tilt calculation (same as original)
+    // Flame tilt calculation: model wind-driven flame angle that shifts the effective
+    // radiant source position downwind. Above 0.5 m/s wind, tilt increases linearly
+    // with wind speed, capped at 40% of horizontal separation to prevent unphysical over-tilting.
     let wind_speed_ms = wind.magnitude();
     let tilt_fraction = if wind_speed_ms > 0.5 {
         ((wind_speed_ms - 0.5) * 0.02).min(0.40)
@@ -403,7 +408,10 @@ pub(crate) fn calculate_heat_transfer_raw(
         return 0.0;
     }
 
-    // View factor and heat transfer (same as original)
+    // View factor and radiative heat transfer:
+    // Models geometric visibility between flame surface and target element.
+    // Larger flame area and closer distance increase view factor (capped at 1.0).
+    // Contact boost models enhanced heat transfer when flames directly touch target.
     let effective_flame_area = source_fuel_remaining * source_flame_area_coeff;
     let view_factor =
         (effective_flame_area / (std::f32::consts::PI * distance * distance)).min(MAX_VIEW_FACTOR);
@@ -421,11 +429,11 @@ pub(crate) fn calculate_heat_transfer_raw(
         calculate_absorption_efficiency(target_absorption_base, target_surface_area_vol);
     let radiation = flux * absorption_efficiency * 0.001;
 
-    // Convection (same as original)
+    // Convection: hot gases rising from source element heat targets above them
+    // Driven by temperature difference and attenuated by distance
     let vertical_diff = target_pos.z - source_pos.z;
     let convection = if vertical_diff > 0.0 {
-        let source_temp_from_t4 = source_temp_t4.powf(0.25);
-        let temp_diff = source_temp_from_t4 - (*temp_target_k);
+        let temp_diff = source_temp_kelvin - (*temp_target_k);
         if temp_diff > 0.0 {
             let convection_coeff = 25.0;
             let distance_attenuation = 1.0 / (1.0 + distance * distance);
@@ -442,7 +450,10 @@ pub(crate) fn calculate_heat_transfer_raw(
         0.0
     };
 
-    // Wind factor (same as original)
+    // Wind factor: Models asymmetric fire spread driven by wind direction.
+    // Based on McArthur (1967) and Rothermel (1972) elliptical fire spread models.
+    // Wind creates extreme directional variation: 4-8x boost downwind, 0.05x upwind.
+    // Length-to-width ratio (lw) increases exponentially with wind speed.
     let wind_factor = if wind_speed_ms < 0.1 {
         1.0
     } else {
@@ -481,7 +492,9 @@ pub(crate) fn calculate_heat_transfer_raw(
         }
     };
 
-    // Vertical/slope factor (same as original)
+    // Vertical/slope factor: Fire spreads 2.5-3x faster upslope than horizontally.
+    // Based on Rothermel slope factors and Butler et al. (2004) fire behavior research.
+    // Upward spread combines buoyant convection with flame-tilt preheating of fuels above.
     let horizontal_diff_sq = diff.x * diff.x + diff.y * diff.y;
     let horizontal = horizontal_diff_sq.sqrt();
 
@@ -659,9 +672,11 @@ mod tests {
         let src_remain = *source.fuel_remaining;
 
         let src_temp_t4 = (*source.temperature.to_kelvin()).powi(4);
+        let src_temp_kelvin = *source.temperature.to_kelvin();
         let horiz = calculate_heat_transfer_raw(
             src_pos,
             src_temp_t4,
+            src_temp_kelvin,
             src_remain,
             source.fuel.flame_area_coefficient,
             target_h.position,
@@ -675,6 +690,7 @@ mod tests {
         let vert = calculate_heat_transfer_raw(
             src_pos,
             src_temp_t4,
+            src_temp_kelvin,
             src_remain,
             source.fuel.flame_area_coefficient,
             target_v.position,
@@ -789,9 +805,11 @@ mod tests {
 
         // Calculate heat transfer from ground fire to each tree part (1 second dt)
         let ground_temp_t4 = (*ground.temperature.to_kelvin()).powi(4);
+        let ground_temp_kelvin = *ground.temperature.to_kelvin();
         let heat_to_trunk = calculate_heat_transfer_raw(
             src_pos,
             ground_temp_t4,
+            ground_temp_kelvin,
             src_remain,
             ground.fuel.flame_area_coefficient,
             trunk_lower.position,
@@ -804,6 +822,7 @@ mod tests {
         let heat_to_branch = calculate_heat_transfer_raw(
             src_pos,
             ground_temp_t4,
+            ground_temp_kelvin,
             src_remain,
             ground.fuel.flame_area_coefficient,
             branch.position,
@@ -816,6 +835,7 @@ mod tests {
         let heat_to_crown = calculate_heat_transfer_raw(
             src_pos,
             ground_temp_t4,
+            ground_temp_kelvin,
             src_remain,
             ground.fuel.flame_area_coefficient,
             crown.position,

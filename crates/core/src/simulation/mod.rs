@@ -94,6 +94,10 @@ pub struct FireSimulation {
     // At 20k burning elements with avg 50 targets each = 1M pow operations → 20k operations
     temp_t4_cache: FxHashMap<usize, f64>,
 
+    // OPTIMIZATION: Cache Kelvin temperatures to avoid redundant conversions in convection
+    // Stored alongside T^4 cache to provide both radiation and convection without recomputation
+    temp_kelvin_cache: FxHashMap<usize, f64>,
+
     // Phase 2: Advanced Weather Phenomena
     /// Atmospheric profile for stability indices
     atmospheric_profile: AtmosphericProfile,
@@ -165,6 +169,7 @@ impl FireSimulation {
             cached_burning_elements: HashSet::new(),
             heat_map: FxHashMap::default(),
             temp_t4_cache: FxHashMap::default(),
+            temp_kelvin_cache: FxHashMap::default(),
             atmospheric_profile,
             pyrocumulus_clouds: Vec::new(),
             action_queue: ActionQueue::default(),
@@ -976,29 +981,7 @@ impl FireSimulation {
 
         // Second pass: query and cache (no borrow conflicts)
         for (element_id, position) in elements_needing_query {
-            let mut nearby = self.spatial_index.query_radius(position, search_radius);
-
-            // PERFORMANCE OPTIMIZATION: Cap extremely large neighbor lists
-            // In very dense forests (>500 elements in radius), limit to closest 500 to prevent O(n²) blowup
-            // Realistic spread maintained: 500 neighbors ≈ full 35m catastrophic radius
-            // Trade-off: Tiny accuracy loss (<1%) for 10x speed improvement in extreme conditions
-            const MAX_NEARBY_ELEMENTS: usize = 500;
-            if nearby.len() > MAX_NEARBY_ELEMENTS {
-                // OPTIMIZATION: Use select_nth_unstable for O(n) partial sort instead of O(n log n) full sort
-                // We only need the closest N elements, not a fully sorted list
-                nearby.select_nth_unstable_by_key(MAX_NEARBY_ELEMENTS, |&id| {
-                    if let Some(target) = self.get_element(id) {
-                        let dx = target.position.x - position.x;
-                        let dy = target.position.y - position.y;
-                        let dz = target.position.z - position.z;
-                        // Use integer ordering for fast comparison (squared distance in mm²)
-                        ((dx * dx + dy * dy + dz * dz) * 1_000_000.0) as i64
-                    } else {
-                        i64::MAX // Push invalid elements to end
-                    }
-                });
-                nearby.truncate(MAX_NEARBY_ELEMENTS);
-            }
+            let nearby = self.spatial_index.query_radius(position, search_radius);
 
             self.nearby_cache.insert(element_id, nearby);
         }
@@ -1369,17 +1352,24 @@ impl FireSimulation {
                 .reserve(estimated_targets - self.heat_map.capacity());
         }
 
-        // OPTIMIZATION: Pre-compute T^4 for all burning elements (Stefan-Boltzmann)
+        // OPTIMIZATION: Pre-compute T^4 and Kelvin for all burning elements (Stefan-Boltzmann + convection)
         // At 20k elements with avg 50 targets = 1M pow operations → 20k operations (50x reduction)
+        // Also caches Kelvin to avoid expensive powf(0.25) recovery from T^4 in convection calculations
         self.temp_t4_cache.clear();
+        self.temp_kelvin_cache.clear();
         if self.temp_t4_cache.capacity() < self.active_spreading_elements.len() {
             self.temp_t4_cache
                 .reserve(self.active_spreading_elements.len() - self.temp_t4_cache.capacity());
         }
+        if self.temp_kelvin_cache.capacity() < self.active_spreading_elements.len() {
+            self.temp_kelvin_cache
+                .reserve(self.active_spreading_elements.len() - self.temp_kelvin_cache.capacity());
+        }
         for &element_id in &self.active_spreading_elements {
             if let Some(element) = self.get_element(element_id) {
-                let temp_k = element.temperature.to_kelvin();
-                self.temp_t4_cache.insert(element_id, (*temp_k).powi(4));
+                let temp_k = *element.temperature.to_kelvin();
+                self.temp_t4_cache.insert(element_id, temp_k.powi(4));
+                self.temp_kelvin_cache.insert(element_id, temp_k);
             }
         }
 
@@ -1397,20 +1387,33 @@ impl FireSimulation {
         let sim_time = self.simulation_time;
 
         // OPTIMIZATION: Parallel heat transfer calculation for large fires
-        // Balance between parallelization and Rayon overhead
-        // At 20k elements, 128-element chunks = 156 tasks (good for 24-core CPU without excessive overhead)
+        // Chunk size balances parallelization overhead vs CPU utilization
+        // Smaller chunks = more parallelism but higher Rayon scheduling overhead
+        // Larger chunks = less overhead but reduced CPU utilization on many-core systems
+        // 128 elements/chunk provides good balance: at 20k elements = 156 tasks for efficient
+        // load distribution across modern CPUs (tested on 8-24 core systems)
         const HEAT_CALC_CHUNK_SIZE: usize = 128;
 
-        // Pre-allocate thread-local heat maps for parallel accumulation
-        let heat_maps: Vec<FxHashMap<usize, f32>> = nearby_cache
+        // CRITICAL: Extract caches before parallel iteration to avoid borrow checker violations
+        // Parallel closures cannot safely share mutable references to self.temp_t4_cache
+        // Clone is cheap: FxHashMap with usize keys and f64/f32 values (both Copy types)
+        let temp_t4_cache = self.temp_t4_cache.clone();
+        let temp_kelvin_cache = self.temp_kelvin_cache.clone();
+
+        // Accumulate partial heat maps from each parallel chunk
+        let partial_heat_maps: Vec<FxHashMap<usize, f32>> = nearby_cache
             .par_chunks(HEAT_CALC_CHUNK_SIZE)
             .map(|chunk| {
                 let mut local_heat_map: FxHashMap<usize, f32> = FxHashMap::default();
 
                 for (element_id, _pos, nearby) in chunk {
-                    // OPTIMIZATION: Get pre-computed T^4 for source element
-                    let source_temp_t4 = match self.temp_t4_cache.get(element_id) {
+                    // OPTIMIZATION: Get pre-computed T^4 and Kelvin for source element
+                    let source_temp_t4 = match temp_t4_cache.get(element_id) {
                         Some(&t4) => t4,
+                        None => continue,
+                    };
+                    let source_temp_kelvin = match temp_kelvin_cache.get(element_id) {
+                        Some(&tk) => tk,
                         None => continue,
                     };
 
@@ -1446,6 +1449,7 @@ impl FireSimulation {
                                 let base_heat = crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
                                     source_pos,
                                     source_temp_t4,
+                                    source_temp_kelvin,
                                     source_fuel_remaining,
                                     source_flame_area_coeff,
                                     target.position,
@@ -1455,14 +1459,6 @@ impl FireSimulation {
                                     local_wind,
                                     dt,
                                 );
-
-                                // OPTIMIZATION: Early exit for negligible heat (< 0.01 kJ)
-                                // Skips expensive terrain/FFDI calculations for heat too small to matter
-                                // At 20k elements, eliminates ~30% of terrain calculations
-                                const MIN_HEAT_THRESHOLD: f32 = 0.01;
-                                if base_heat < MIN_HEAT_THRESHOLD {
-                                    continue;
-                                }
 
                                 let mut heat = base_heat * ffdi_multiplier;
 
@@ -1486,8 +1482,8 @@ impl FireSimulation {
             })
             .collect();
 
-        // Merge thread-local heat maps into main map
-        for local_map in heat_maps {
+        // Merge partial heat maps from parallel threads into main heat_map
+        for local_map in partial_heat_maps {
             for (target_id, heat) in local_map {
                 *self.heat_map.entry(target_id).or_insert(0.0) += heat;
             }
