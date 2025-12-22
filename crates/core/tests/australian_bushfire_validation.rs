@@ -716,6 +716,6 @@ fn test_full_simulation_catastrophic_conditions() {
     // produces moderate but realistic spread rates consistent with element-based fire models.
     assert!(
         burning_count >= 6,
-        "Catastrophic conditions: expected ≥4 burning elements, got {burning_count}"
+        "Catastrophic conditions: expected ≥6 burning elements, got {burning_count}"
     );
 }
