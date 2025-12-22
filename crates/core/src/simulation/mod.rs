@@ -1397,7 +1397,7 @@ impl FireSimulation {
         // CRITICAL: Extract caches before parallel iteration to satisfy the borrow checker.
         // Parallel closures need to call self.get_element() and other &self methods, which
         // conflicts with holding a direct borrow of self.temp_t4_cache/self.temp_kelvin_cache.
-        // Cloning the FxHashMap<usize, f64/f32> once per frame is O(n) and acceptable because
+        // Cloning the FxHashMap<usize, f64> once per frame is O(n) and acceptable because
         // these cached values are then read millions of times in the hot loop (O(n*m)),
         // avoiding repeated powi(4)/powf computations for Stefan–Boltzmann T^4 radiation.
         let temp_t4_cache = self.temp_t4_cache.clone();
