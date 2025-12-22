@@ -1344,7 +1344,9 @@ impl FireSimulation {
         // OPTIMIZATION: Pre-extract source element data to avoid repeated get_element() calls
         // Build a compact cache of just the data needed for heat transfer calculations
         // This reduces borrow checker conflicts and improves cache locality
-        let mut source_cache: FxHashMap<usize, (Vec3, Celsius, f32, f32)> = 
+        // Also pre-compute T^4 values for Stefan-Boltzmann (expensive powi(4) operation)
+        type SourceData = (Vec3, Celsius, f32, f32, f64); // position, temp, fuel_remaining, flame_coeff, temp_k^4
+        let mut source_cache: FxHashMap<usize, SourceData> = 
             FxHashMap::with_capacity_and_hasher(nearby_cache.len(), Default::default());
         
         // Also cache all potential target elements to avoid get_element() calls in hot loop
@@ -1352,6 +1354,8 @@ impl FireSimulation {
         
         for (element_id, _, nearby) in &nearby_cache {
             if let Some(source) = self.get_element(*element_id) {
+                let temp_k = *source.temperature.to_kelvin();
+                let temp_k_pow4 = temp_k.powi(4);
                 source_cache.insert(
                     *element_id,
                     (
@@ -1359,6 +1363,7 @@ impl FireSimulation {
                         source.temperature,
                         *source.fuel_remaining,
                         source.fuel.flame_area_coefficient,
+                        temp_k_pow4,
                     ),
                 );
             }
@@ -1368,13 +1373,15 @@ impl FireSimulation {
             }
         }
         
-        // Build target cache with all necessary data
-        type TargetData = (Vec3, Celsius, f32, f32, f32, f32, f32);
+        // Build target cache with all necessary data including pre-computed T^4
+        type TargetData = (Vec3, Celsius, f32, f32, f32, f32, f32, f64); // ..., temp_k^4
         let mut target_cache: FxHashMap<usize, TargetData> = 
             FxHashMap::with_capacity_and_hasher(target_set.len(), Default::default());
         
         for &target_id in &target_set {
             if let Some(target) = self.get_element(target_id) {
+                let temp_k = *target.temperature.to_kelvin();
+                let temp_k_pow4 = temp_k.powi(4);
                 target_cache.insert(
                     target_id,
                     (
@@ -1385,6 +1392,7 @@ impl FireSimulation {
                         *target.fuel.absorption_efficiency_base,
                         *target.slope_angle,
                         *target.aspect_angle,
+                        temp_k_pow4,
                     ),
                 );
             }
@@ -1404,9 +1412,10 @@ impl FireSimulation {
         let sim_time = self.simulation_time;
 
         // OPTIMIZATION: Parallel heat transfer calculation for large fires
-        // Balance between parallelization and Rayon overhead
-        // At 20k elements, 128-element chunks = 156 tasks (good for 24-core CPU without excessive overhead)
-        const HEAT_CALC_CHUNK_SIZE: usize = 128;
+        // Smaller chunk size for better parallelization, especially at lower element counts
+        // At 1000 elements, 32-element chunks = 32 tasks for efficient distribution
+        // At 10k elements, 32-element chunks = 312 tasks for maximum CPU utilization
+        const HEAT_CALC_CHUNK_SIZE: usize = 32;
 
         // Pre-allocate thread-local heat maps for parallel accumulation
         let partial_heat_maps: Vec<FxHashMap<usize, f32>> = nearby_cache
@@ -1419,7 +1428,7 @@ impl FireSimulation {
 
                 for (element_id, _pos, nearby) in chunk {
                     // Get source element data from cache (already extracted)
-                    if let Some(&(source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff)) =
+                    if let Some(&(source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff, _source_temp_t4)) =
                         source_cache.get(element_id)
                     {
                         // Phase 7: Apply turbulent wind fluctuations
@@ -1433,7 +1442,7 @@ impl FireSimulation {
                             }
 
                             // Get target data from cache (avoids expensive get_element() call)
-                            if let Some(&(target_pos, target_temp, target_fuel_remaining, target_sav, target_absorption, target_slope, target_aspect)) =
+                            if let Some(&(target_pos, target_temp, target_fuel_remaining, target_sav, target_absorption, target_slope, target_aspect, _target_temp_t4)) =
                                 target_cache.get(&target_id)
                             {
                                 use crate::core_types::units::Kilograms;
@@ -1442,6 +1451,7 @@ impl FireSimulation {
                                     continue;
                                 }
 
+                                // Use original heat transfer function to maintain exact physics
                                 let base_heat = crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
                                     source_pos,
                                     source_temp,
