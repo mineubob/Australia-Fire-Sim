@@ -89,15 +89,6 @@ pub struct FireSimulation {
     // At 60 FPS with 20k elements, this saves 60 allocations/sec of large hash maps
     heat_map: FxHashMap<usize, f32>,
 
-    // OPTIMIZATION: Cache T^4 values for Stefan-Boltzmann calculations
-    // Pre-compute source.temperature^4 once per frame instead of for every source-target pair
-    // At 20k burning elements with avg 50 targets each = 1M pow operations → 20k operations
-    temp_t4_cache: FxHashMap<usize, f64>,
-
-    // OPTIMIZATION: Cache Kelvin temperatures to avoid redundant conversions in convection
-    // Stored alongside T^4 cache to provide both radiation and convection without recomputation
-    temp_kelvin_cache: FxHashMap<usize, f64>,
-
     // Phase 2: Advanced Weather Phenomena
     /// Atmospheric profile for stability indices
     atmospheric_profile: AtmosphericProfile,
@@ -168,8 +159,6 @@ impl FireSimulation {
             current_frame: 0,
             cached_burning_elements: HashSet::new(),
             heat_map: FxHashMap::default(),
-            temp_t4_cache: FxHashMap::default(),
-            temp_kelvin_cache: FxHashMap::default(),
             atmospheric_profile,
             pyrocumulus_clouds: Vec::new(),
             action_queue: ActionQueue::default(),
@@ -1352,27 +1341,6 @@ impl FireSimulation {
                 .reserve(estimated_targets - self.heat_map.capacity());
         }
 
-        // OPTIMIZATION: Pre-compute T^4 and Kelvin for all burning elements (Stefan-Boltzmann + convection)
-        // At 20k elements with avg 50 targets = 1M pow operations → 20k operations (50x reduction)
-        // Also caches Kelvin to avoid expensive powf(0.25) recovery from T^4 in convection calculations
-        self.temp_t4_cache.clear();
-        self.temp_kelvin_cache.clear();
-        if self.temp_t4_cache.capacity() < self.active_spreading_elements.len() {
-            self.temp_t4_cache
-                .reserve(self.active_spreading_elements.len() - self.temp_t4_cache.capacity());
-        }
-        if self.temp_kelvin_cache.capacity() < self.active_spreading_elements.len() {
-            self.temp_kelvin_cache
-                .reserve(self.active_spreading_elements.len() - self.temp_kelvin_cache.capacity());
-        }
-        for &element_id in &self.active_spreading_elements {
-            if let Some(element) = self.get_element(element_id) {
-                let temp_k = *element.temperature.to_kelvin();
-                self.temp_t4_cache.insert(element_id, temp_k.powi(4));
-                self.temp_kelvin_cache.insert(element_id, temp_k);
-            }
-        }
-
         // Phase 7: Get turbulent wind model for realistic fire spread irregularity
         // Turbulence scales with FFDI, atmospheric stability, mixing height, and time of day
         // This gives realistic spatial and temporal variation in fire spread
@@ -1394,15 +1362,6 @@ impl FireSimulation {
         // load distribution across modern CPUs (tested on 8-24 core systems)
         const HEAT_CALC_CHUNK_SIZE: usize = 128;
 
-        // CRITICAL: Extract caches before parallel iteration to satisfy the borrow checker.
-        // Parallel closures need to call self.get_element() and other &self methods, which
-        // conflicts with holding a direct borrow of self.temp_t4_cache/self.temp_kelvin_cache.
-        // Cloning the FxHashMap<usize, f64> once per frame is O(n) and acceptable because
-        // these cached values are then read millions of times in the hot loop (O(n*m)),
-        // avoiding repeated powi(4)/powf computations for Stefan–Boltzmann T^4 radiation.
-        let temp_t4_cache = self.temp_t4_cache.clone();
-        let temp_kelvin_cache = self.temp_kelvin_cache.clone();
-
         // Accumulate partial heat maps from each parallel chunk
         let partial_heat_maps: Vec<FxHashMap<usize, f32>> = nearby_cache
             .par_chunks(HEAT_CALC_CHUNK_SIZE)
@@ -1410,26 +1369,17 @@ impl FireSimulation {
                 let mut local_heat_map: FxHashMap<usize, f32> = FxHashMap::default();
 
                 for (element_id, _pos, nearby) in chunk {
-                    // OPTIMIZATION: Get pre-computed T^4 and Kelvin for source element
-                    let source_temp_t4 = match temp_t4_cache.get(element_id) {
-                        Some(&t4) => t4,
-                        None => continue,
-                    };
-                    let source_temp_kelvin = match temp_kelvin_cache.get(element_id) {
-                        Some(&tk) => tk,
-                        None => continue,
-                    };
-
                     // Get source element data (read-only)
                     let source_data = self.get_element(*element_id).map(|source| {
                         (
                             source.position,
+                            source.temperature,
                             *source.fuel_remaining,
                             source.fuel.flame_area_coefficient,
                         )
                     });
 
-                    if let Some((source_pos, source_fuel_remaining, source_flame_area_coeff)) =
+                    if let Some((source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff)) =
                         source_data
                     {
                         // Phase 7: Apply turbulent wind fluctuations
@@ -1451,8 +1401,7 @@ impl FireSimulation {
 
                                 let base_heat = crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
                                     source_pos,
-                                    source_temp_t4,
-                                    source_temp_kelvin,
+                                    source_temp,
                                     source_fuel_remaining,
                                     source_flame_area_coeff,
                                     target.position,

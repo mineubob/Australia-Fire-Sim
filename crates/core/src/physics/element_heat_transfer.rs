@@ -34,12 +34,6 @@ const MAX_VIEW_FACTOR: f32 = 1.0;
 /// Reference: Anderson (1982) "Aids to determining fuel models"
 const REFERENCE_SAV_FOR_ABSORPTION: f32 = 1000.0;
 
-/// Temperature threshold (in T^4 form) below which sources don't contribute meaningful radiant heat
-/// Corresponds to 100°C (373.15 K). Pre-computed as (373.15)^4 for performance in hot loop.
-/// Elements below this temperature are too cool to meaningfully contribute to fire spread.
-/// Manual calculation: 373.15^4 ≈ 1.9388e10 (using f64 for precision matching Stefan-Boltzmann)
-const COLD_THRESHOLD_T4: f64 = 1.9388034498651e10;
-
 /// Calculate absorption efficiency for heat transfer based on fuel properties
 ///
 /// Base absorption efficiency is fuel-specific (0-1):
@@ -320,22 +314,21 @@ pub(crate) fn calculate_total_heat_transfer(
     total_heat.max(0.0)
 }
 
-/// HIGHLY OPTIMIZED: Calculate heat transfer using pre-computed T^4 values
-/// Eliminates expensive pow(4) operations - source T^4 is pre-computed once per frame
-/// At 20k burning elements with avg 50 targets: 1M pow ops → 20k pow ops (50x reduction)
+/// OPTIMIZED: Calculate heat transfer using raw data instead of `FuelElement` structures
+/// Eliminates 500,000+ temporary structure allocations per frame at 12.5k burning elements
+/// Inline attribute ensures this hot function is optimized (called millions of times per frame)
 ///
-/// This function is now the primary hot-path `calculate_heat_transfer_raw` and
-/// accepts pre-computed `source_temp_t4` (`source_temp^4` in Kelvin) to avoid redundant calculations.
-/// Also accepts `source_temp_kelvin` directly to avoid expensive powf(0.25) for convection.
+/// # Parameters
+/// * `source_flame_area_coeff` - Fuel-specific flame geometry coefficient (grass=9.0, forest=5.0)
+/// * `target_absorption_base` - Fuel-specific base absorption efficiency (grass=0.90, forest=0.70)
 #[inline(always)]
 #[expect(
     clippy::too_many_arguments,
-    reason = "Performance-critical hot path - struct allocation would add overhead"
+    reason = "Performance-critical hot path - struct allocation would add 500k+ allocations/frame overhead"
 )]
 pub(crate) fn calculate_heat_transfer_raw(
     source_pos: Vec3,
-    source_temp_t4: f64,     // Pre-computed source_temp^4 in Kelvin
-    source_temp_kelvin: f64, // Source temperature in Kelvin (for convection)
+    source_temp: Celsius,
     source_fuel_remaining: f32,
     source_flame_area_coeff: f32,
     target_pos: Vec3,
@@ -356,9 +349,8 @@ pub(crate) fn calculate_heat_transfer_raw(
         return 0.0;
     }
 
-    // OPTIMIZATION: Skip heat transfer from sources below 100°C
-    // Elements below this temperature don't contribute meaningful radiant heat to fire spread
-    if source_temp_t4 < COLD_THRESHOLD_T4 {
+    // OPTIMIZATION: Skip very close checks when source is cold
+    if source_temp < 100.0 {
         return 0.0;
     }
 
@@ -367,25 +359,45 @@ pub(crate) fn calculate_heat_transfer_raw(
         return 0.0;
     }
 
-    // Flame tilt calculation: model wind-driven flame angle that shifts the effective
-    // radiant source position downwind. Above 0.5 m/s wind, tilt increases linearly
-    // with wind speed, capped at 40% of horizontal separation to prevent unphysical over-tilting.
+    // === FLAME TILT: Key physics for wind-driven fire shape ===
+    //
+    // When wind blows, flames tilt in the wind direction, effectively shifting
+    // the radiating surface downwind. This is the PRIMARY mechanism that creates
+    // elongated fire shapes - not just heat multipliers.
+    //
+    // Flame tilt angle formula (from Albini & Baughman 1979):
+    //   tan(θ) = U / sqrt(g * L)
+    // where U = wind speed, g = gravity, L = flame height
+    //
+    // CRITICAL: Tilt distance is scaled relative to distance to target
+    // This prevents tilt from "overshooting" nearby fuel:
+    //   - Close targets (2m): tilt up to 0.5m toward them
+    //   - Mid targets (10m): tilt up to 2.5m toward them
+    //   - Far targets (20m): tilt up to 5m toward them
+    //
+    // This creates the elongated fire shape while maintaining proper near-field heating.
     let wind_speed_ms = wind.magnitude();
+
+    // Maximum tilt fraction: 25% of original distance, scaled by wind
+    // At 10 m/s: 0.25 × distance; at 20 m/s: 0.40 × distance (capped)
     let tilt_fraction = if wind_speed_ms > 0.5 {
+        // Tilt increases with wind, caps at 40% of distance
         ((wind_speed_ms - 0.5) * 0.02).min(0.40)
     } else {
         0.0
     };
 
+    // Calculate effective source position with flame tilt
     let (diff, distance) = if tilt_fraction > 0.001 && wind_speed_ms > 0.5 {
         let wind_dir = Vec3::new(wind.x / wind_speed_ms, wind.y / wind_speed_ms, 0.0);
+        // Tilt distance proportional to original horizontal distance
         let horizontal_dist = original_distance_sq.sqrt();
         let flame_tilt_distance = horizontal_dist * tilt_fraction;
 
         let effective_source_pos = Vec3::new(
             source_pos.x + wind_dir.x * flame_tilt_distance,
             source_pos.y + wind_dir.y * flame_tilt_distance,
-            source_pos.z,
+            source_pos.z, // z unchanged - tilt is horizontal
         );
 
         let new_diff = target_pos - effective_source_pos;
@@ -400,53 +412,116 @@ pub(crate) fn calculate_heat_transfer_raw(
         return 0.0;
     }
 
-    // === RADIATION CALCULATION (Stefan-Boltzmann with cached T^4) ===
-    // OPTIMIZATION: Use pre-computed source_temp_t4 instead of computing source^4
+    // === RADIATION CALCULATION (Stefan-Boltzmann) ===
+    // Use f64 for the T^4 computation, then downcast for the hot path performance
+    let temp_source_k = source_temp.to_kelvin();
     let temp_target_k = target_temp.to_kelvin();
-    let target_temp_t4 = (*temp_target_k).powi(4);
 
-    let radiant_power_f64 = STEFAN_BOLTZMANN * EMISSIVITY * (source_temp_t4 - target_temp_t4);
+    let radiant_power_f64 =
+        STEFAN_BOLTZMANN * EMISSIVITY * ((*temp_source_k).powi(4) - (*temp_target_k).powi(4));
+
     let radiant_power = radiant_power_f64 as f32;
 
     if radiant_power <= 0.0 {
         return 0.0;
     }
 
-    // View factor and radiative heat transfer:
-    // Models geometric visibility between flame surface and target element.
-    // Larger flame area and closer distance increase view factor (capped at 1.0).
-    // Contact boost models enhanced heat transfer when flames directly touch target.
-    let effective_flame_area = source_fuel_remaining * source_flame_area_coeff;
-    let view_factor =
-        (effective_flame_area / (std::f32::consts::PI * distance * distance)).min(MAX_VIEW_FACTOR);
+    // View factor (geometric attenuation)
+    //
+    // CRITICAL FIX: Flames are PLANAR radiators, not point sources!
+    // Point source formula (wrong): F = A / (4πr²)
+    // Planar radiator formula (correct): F = A / (πr²)
+    //
+    // For fire spread, consider the FLAME not just the fuel:
+    //   - Grass fires: 3kg burning creates 2-5m flames
+    //   - Flames are optically thick radiators
+    //   - Flame surface area >> fuel surface area
+    //
+    // Using Byram's intensity to estimate flame characteristics:
+    //   I = H × w × R (heat content × fuel load × rate)
+    //   L = 0.0775 × I^0.46 (flame height)
+    //
+    // For a 3kg grass fire at typical intensity (~4500 kW/m):
+    //   - Flame height: ~4.5m (Byram)
+    //   - Flame width: ~2m (typical)
+    //   - Radiating area: ~18 m² (both sides)
+    //
+    // Coefficient calibrated to match Rothermel spread rate predictions:
+    //   - fuel_remaining × flame_area_coefficient gives realistic flame areas
+    //   - Grass fires: 8-10 (wide, short flames)
+    //   - Forest fires: 4-6 (tall, narrow flames)
+    //   - 3kg grass → 27 m² (matches Byram/Rothermel predictions)
+    //   - This ensures heat transfer matches expected spread rates (5-100 m/min for grass)
+    // Very small fuel masses produce proportionally small flame areas and heat transfer
+    let effective_flame_area = source_fuel_remaining * source_flame_area_coeff; // m²
 
+    // Planar view factor: A / (πr²) for extended radiator facing target
+    // This is 4× higher than point source and matches fire radiation physics
+    // Reference: Drysdale (2011) "Introduction to Fire Dynamics" - radiative heat transfer
+    let view_factor = effective_flame_area / (std::f32::consts::PI * distance * distance);
+    // View factor cannot exceed 1.0 (100% visibility - geometric constraint)
+    let view_factor = view_factor.min(MAX_VIEW_FACTOR);
+
+    // === DIRECT FLAME CONTACT MULTIPLIER ===
+    // For elements within ~1.5m, flames physically engulf adjacent fuel.
+    // This simulates continuous fuel beds (grass, shrubs) where fire spreads
+    // through direct flame contact, not just radiation.
+    //
+    // Base multiplier: 3x at 0m, tapering to 1x at 1.5m (no boost beyond)
+    // NOTE: Directional effects (flame tilt) are handled by the Anderson (1983)
+    // elliptical model in wind_factor below - no need for duplicate logic here.
     let flame_contact_boost = if distance < 1.5 {
-        1.0 + 2.0 * (1.0 - distance / 1.5)
+        1.0 + 2.0 * (1.0 - distance / 1.5) // 3x at 0m, 1x at 1.5m
     } else {
         1.0
     };
 
+    // === DIRECTIONAL EMISSION BIAS ===
+    // NOTE: Directional effects are now handled entirely by the Anderson (1983)
+    // elliptical model in wind_factor below. The flame tilt effect is implicitly
+    // captured in the empirical L/W relationship derived from field observations.
+    //
+    // We keep a minimal emission bias for very close elements where flame
+    // contact physics dominate over radiation physics.
     let directional_emission = 1.0;
+
     let flux = radiant_power * view_factor * flame_contact_boost * directional_emission;
 
+    // Target absorption based on fuel characteristics
     let absorption_efficiency =
         calculate_absorption_efficiency(target_absorption_base, target_surface_area_vol);
+
+    // Convert W/m² to kW (kJ/s) - radiation is power per unit area
+    // CRITICAL: Must match units with convection term (which also converts to kW)
     let radiation = flux * absorption_efficiency * 0.001;
 
-    // Convection: hot gases rising from source element heat targets above them
-    // Driven by temperature difference and attenuated by distance
+    // === CONVECTION CALCULATION (vertical only) ===
+    // Natural convection from hot gases rising - attenuates with distance
     let vertical_diff = target_pos.z - source_pos.z;
     let convection = if vertical_diff > 0.0 {
-        let temp_diff = source_temp_kelvin - (*temp_target_k);
+        let temp_diff = source_temp - target_temp;
         if temp_diff > 0.0 {
-            let convection_coeff = 25.0;
+            // Natural convection coefficient for wildfire conditions (W/(m²·K))
+            // h ≈ 1.32 * (ΔT/L)^0.25 for natural convection
+            // Typical range: 5-50 W/(m²·K) for natural convection
+            let convection_coeff = 25.0; // Conservative for element-to-element
+
+            // CRITICAL: Convection attenuates with distance (plume disperses)
+            // Using inverse-square-like attenuation to match radiation physics
+            // At 1m: full effect; at 2m: 25%; at 4m: 6.25%; at 8m: 1.56%
             let distance_attenuation = 1.0 / (1.0 + distance * distance);
-            (convection_coeff
-                * temp_diff as f32
-                * absorption_efficiency
+
+            // Normalize surface area factor (same as radiation absorption)
+            // High SAV = more surface for convective heating
+            // Uses fuel-specific absorption efficiency scaled by SAV
+            let convective_area_factor =
+                calculate_absorption_efficiency(target_absorption_base, target_surface_area_vol);
+
+            convection_coeff
+                * (*temp_diff as f32)
+                * convective_area_factor
                 * distance_attenuation
-                * 0.001)
-                .max(0.0)
+                * 0.001
         } else {
             0.0
         }
@@ -454,63 +529,115 @@ pub(crate) fn calculate_heat_transfer_raw(
         0.0
     };
 
-    // Wind factor: Models asymmetric fire spread driven by wind direction.
-    // Based on McArthur (1967) and Rothermel (1972) elliptical fire spread models.
-    // Wind creates extreme directional variation: 4-8x boost downwind, 0.05x upwind.
-    // Length-to-width ratio (lw) increases exponentially with wind speed.
+    // === WIND FACTOR (Anderson 1983 Elliptical Model) ===
+    // Real wind-driven fires form elliptical shapes. The length-to-width ratio (L/W)
+    // determines the relative spread rates in different directions.
+    //
+    // Reference: Anderson, H.E. (1983) "Predicting Wind-Driven Wild Land Fire Size and Shape"
+    // Also: Alexander, M.E. (1985) "Estimating the length-to-breadth ratio of elliptical
+    //       forest fire patterns"
+    //
+    // Key relationships from ellipse geometry (ignition at rear focus):
+    //   V_back = V_head × (L/W - √((L/W)² - 1)) / (L/W + √((L/W)² - 1))
+    //   V_flank = (V_head + V_back) / (2 × L/W)
+    //
+    // At L/W = 8 (catastrophic winds):
+    //   V_back ≈ 0.015 × V_head (backing fire is only 1.5% of head fire!)
+    //   V_flank ≈ 0.063 × V_head (flanking fire is only 6.3% of head fire!)
+    let direction = (target_pos - source_pos).normalize();
+    let wind_speed_ms = wind.magnitude();
+    let wind_normalized = if wind_speed_ms > 0.1 {
+        wind.normalize()
+    } else {
+        Vec3::new(0.0, 0.0, 0.0)
+    };
+    let alignment = direction.dot(&wind_normalized);
+
     let wind_factor = if wind_speed_ms < 0.1 {
+        // No wind - symmetric spread
         1.0
     } else {
-        let direction = diff.normalize();
-        let wind_normalized = wind.normalize();
-        let alignment = direction.dot(&wind_normalized);
-
-        let wind_mph = wind_speed_ms * 2.237;
+        // Calculate L/W ratio using Anderson (1983) formula
+        // Original formula uses midflame wind speed in mph
+        // L/W = 0.936 × exp(0.2566 × U_mf) + 0.461 × exp(-0.1548 × U_mf) - 0.397
+        // Capped at 8.0 (maximum observed in field studies)
+        let wind_mph = wind_speed_ms * 2.237; // Convert m/s to mph
         let lw_raw = 0.936 * (0.2566 * wind_mph).exp() + 0.461 * (-0.1548 * wind_mph).exp() - 0.397;
         let lw = lw_raw.clamp(1.0, 8.0);
+
+        // Calculate relative spread rates from ellipse geometry
+        // These are the ratios of backing/flanking speed to head fire speed
         let lw_sq = lw * lw;
         let sqrt_term = (lw_sq - 1.0).max(0.0).sqrt();
 
+        // V_back / V_head ratio (theoretical from Anderson 1983)
         let back_ratio_theoretical = if lw > 1.001 {
             (lw - sqrt_term) / (lw + sqrt_term)
         } else {
-            1.0
+            1.0 // Circular fire
         };
 
+        // V_flank / V_head ratio (theoretical from ellipse geometry)
         let flank_ratio_theoretical = if lw > 1.001 {
             (1.0 + back_ratio_theoretical) / (2.0 * lw)
         } else {
-            1.0
+            1.0 // Circular fire
         };
 
+        // CORRECTION: In element-based simulation, heat accumulates from many sources.
+        // To achieve realistic fire shapes, we square the ratios to compensate for
+        // cumulative heating effects that allow flanks to catch up.
+        // This produces more elongated shapes matching real fire observations.
         let back_ratio = back_ratio_theoretical * back_ratio_theoretical;
         let flank_ratio = flank_ratio_theoretical * flank_ratio_theoretical;
 
+        // Map alignment [-1, 1] to spread ratio
+        // alignment = 1.0 (downwind/head): multiplier based on head fire physics
+        // alignment = 0.0 (lateral/flank): use flank_ratio
+        // alignment = -1.0 (upwind/back): use back_ratio
+        //
+        // CRITICAL: Use sharper transition to create more elliptical fire shapes.
+        // Real fires have a distinct head fire that races ahead; the transition
+        // from head to flank is not gradual but relatively abrupt.
+        // Using cosine^2 smoothstep for sharper falloff outside ~30° cone.
         if alignment >= 0.0 {
-            let head_boost = 1.0 + wind_speed_ms.sqrt() * 1.2;
+            // Downwind quadrant: head fire dominates in narrow cone
+            // Increase head_boost coefficient for more extreme elongation
+            let head_boost = 1.0 + wind_speed_ms.sqrt() * 1.2; // ~5.8x at 20 m/s
+
+            // Sharp transition: most boost within 30° of downwind (alignment > 0.87)
+            // alignment^6 for even sharper concentration
             let t = alignment.powi(6);
             flank_ratio * (1.0 - t) + head_boost * t
         } else {
-            let t = -alignment;
+            // Upwind quadrant: interpolate between flank (0) and back (-1)
+            let t = -alignment; // 0 at lateral, 1 at upwind
             flank_ratio * (1.0 - t) + back_ratio * t
         }
     };
 
-    // Vertical/slope factor: Fire spreads 2.5-3x faster upslope than horizontally.
-    // Based on Rothermel slope factors and Butler et al. (2004) fire behavior research.
-    // Upward spread combines buoyant convection with flame-tilt preheating of fuels above.
+    // === VERTICAL/SLOPE COMBINED FACTOR ===
+    // Fire spreads faster upward due to:
+    // 1. Convection (hot gases rise, preheat fuel above)
+    // 2. Flame tilt toward upslope fuel
+    // 3. Reduced convective cooling upward
+    //
+    // These effects overlap, so we use MAX(vertical, slope) rather than multiplying
+    // Literature (Rothermel 1972, Finney 2015): combined upward boost 2-6× typical
     let horizontal_diff_sq = diff.x * diff.x + diff.y * diff.y;
     let horizontal = horizontal_diff_sq.sqrt();
 
+    // Vertical factor (for nearly vertical transfers)
     let vertical_factor = if vertical_diff > 0.0 {
         let height_boost = (vertical_diff * 0.08).min(0.7);
-        1.8 + height_boost
+        1.8 + height_boost // 1.8× to 2.5×
     } else if vertical_diff < 0.0 {
         0.7 * (1.0 / (1.0 + vertical_diff.abs() * 0.2))
     } else {
         1.0
     };
 
+    // Slope factor (for angled transfers with significant horizontal component)
     let slope_factor = if horizontal > 0.5 {
         let slope_angle_rad = (vertical_diff / horizontal).atan();
         let slope_angle = slope_angle_rad.to_degrees();
@@ -518,16 +645,20 @@ pub(crate) fn calculate_heat_transfer_raw(
         if slope_angle > 0.0 {
             let effective_angle = slope_angle.min(45.0);
             let factor = 1.0 + (effective_angle / 10.0).powf(1.5) * 2.0;
-            factor.min(6.0)
+            factor.min(6.0) // Cap at 6×
         } else {
             (1.0 + slope_angle / 30.0).max(0.3)
         }
     } else {
-        1.0
+        1.0 // Purely vertical: use vertical_factor only
     };
 
+    // Use the larger of the two factors, not their product
+    // This prevents double-counting the upward spread advantage
     let directional_factor = vertical_factor.max(slope_factor);
 
+    // Total heat transfer
+    // directional_factor combines vertical and slope effects (max, not product)
     let total_heat = (radiation + convection) * wind_factor * directional_factor * dt;
     total_heat.max(0.0)
 }
@@ -675,12 +806,9 @@ mod tests {
         let src_pos = source.position;
         let src_remain = *source.fuel_remaining;
 
-        let src_temp_t4 = (*source.temperature.to_kelvin()).powi(4);
-        let src_temp_kelvin = *source.temperature.to_kelvin();
         let horiz = calculate_heat_transfer_raw(
             src_pos,
-            src_temp_t4,
-            src_temp_kelvin,
+            source.temperature,
             src_remain,
             source.fuel.flame_area_coefficient,
             target_h.position,
@@ -693,8 +821,7 @@ mod tests {
 
         let vert = calculate_heat_transfer_raw(
             src_pos,
-            src_temp_t4,
-            src_temp_kelvin,
+            source.temperature,
             src_remain,
             source.fuel.flame_area_coefficient,
             target_v.position,
@@ -808,12 +935,9 @@ mod tests {
         let src_sav = *ground.fuel.surface_area_to_volume;
 
         // Calculate heat transfer from ground fire to each tree part (1 second dt)
-        let ground_temp_t4 = (*ground.temperature.to_kelvin()).powi(4);
-        let ground_temp_kelvin = *ground.temperature.to_kelvin();
         let heat_to_trunk = calculate_heat_transfer_raw(
             src_pos,
-            ground_temp_t4,
-            ground_temp_kelvin,
+            ground.temperature,
             src_remain,
             ground.fuel.flame_area_coefficient,
             trunk_lower.position,
@@ -825,8 +949,7 @@ mod tests {
         );
         let heat_to_branch = calculate_heat_transfer_raw(
             src_pos,
-            ground_temp_t4,
-            ground_temp_kelvin,
+            ground.temperature,
             src_remain,
             ground.fuel.flame_area_coefficient,
             branch.position,
@@ -838,8 +961,7 @@ mod tests {
         );
         let heat_to_crown = calculate_heat_transfer_raw(
             src_pos,
-            ground_temp_t4,
-            ground_temp_kelvin,
+            ground.temperature,
             src_remain,
             ground.fuel.flame_area_coefficient,
             crown.position,
