@@ -1347,7 +1347,10 @@ impl FireSimulation {
         let mut source_cache: FxHashMap<usize, (Vec3, Celsius, f32, f32)> = 
             FxHashMap::with_capacity_and_hasher(nearby_cache.len(), Default::default());
         
-        for (element_id, _, _) in &nearby_cache {
+        // Also cache all potential target elements to avoid get_element() calls in hot loop
+        let mut target_set: HashSet<usize> = HashSet::with_capacity(nearby_cache.len() * 10);
+        
+        for (element_id, _, nearby) in &nearby_cache {
             if let Some(source) = self.get_element(*element_id) {
                 source_cache.insert(
                     *element_id,
@@ -1356,6 +1359,32 @@ impl FireSimulation {
                         source.temperature,
                         *source.fuel_remaining,
                         source.fuel.flame_area_coefficient,
+                    ),
+                );
+            }
+            // Collect all target IDs
+            for &target_id in nearby {
+                target_set.insert(target_id);
+            }
+        }
+        
+        // Build target cache with all necessary data
+        type TargetData = (Vec3, Celsius, f32, f32, f32, f32, f32);
+        let mut target_cache: FxHashMap<usize, TargetData> = 
+            FxHashMap::with_capacity_and_hasher(target_set.len(), Default::default());
+        
+        for &target_id in &target_set {
+            if let Some(target) = self.get_element(target_id) {
+                target_cache.insert(
+                    target_id,
+                    (
+                        target.position,
+                        target.temperature,
+                        *target.fuel_remaining,
+                        *target.fuel.surface_area_to_volume,
+                        *target.fuel.absorption_efficiency_base,
+                        *target.slope_angle,
+                        *target.aspect_angle,
                     ),
                 );
             }
@@ -1403,10 +1432,13 @@ impl FireSimulation {
                                 continue;
                             }
 
-                            if let Some(target) = self.get_element(target_id) {
+                            // Get target data from cache (avoids expensive get_element() call)
+                            if let Some(&(target_pos, target_temp, target_fuel_remaining, target_sav, target_absorption, target_slope, target_aspect)) =
+                                target_cache.get(&target_id)
+                            {
                                 use crate::core_types::units::Kilograms;
 
-                                if target.fuel_remaining < Kilograms::new(0.01) {
+                                if target_fuel_remaining < *Kilograms::new(0.01) {
                                     continue;
                                 }
 
@@ -1415,10 +1447,10 @@ impl FireSimulation {
                                     source_temp,
                                     source_fuel_remaining,
                                     source_flame_area_coeff,
-                                    target.position,
-                                    target.temperature,
-                                    *target.fuel.surface_area_to_volume,
-                                    *target.fuel.absorption_efficiency_base,
+                                    target_pos,
+                                    target_temp,
+                                    target_sav,
+                                    target_absorption,
                                     local_wind,
                                     dt,
                                 );
@@ -1428,9 +1460,9 @@ impl FireSimulation {
                                 let terrain_multiplier =
                                     crate::physics::terrain_spread_multiplier_cached(
                                         &source_pos,
-                                        &target.position,
-                                        *target.slope_angle,
-                                        *target.aspect_angle,
+                                        &target_pos,
+                                        target_slope,
+                                        target_aspect,
                                         &local_wind,
                                     );
                                 heat *= terrain_multiplier;
