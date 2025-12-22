@@ -34,6 +34,12 @@ const MAX_VIEW_FACTOR: f32 = 1.0;
 /// Reference: Anderson (1982) "Aids to determining fuel models"
 const REFERENCE_SAV_FOR_ABSORPTION: f32 = 1000.0;
 
+/// Temperature threshold (in T^4 form) below which sources don't contribute meaningful radiant heat
+/// Corresponds to 100°C (373.15 K). Pre-computed as (373.15)^4 for performance in hot loop.
+/// Elements below this temperature are too cool to meaningfully contribute to fire spread.
+/// Manual calculation: 373.15^4 ≈ 1.9388e10 (using f64 for precision matching Stefan-Boltzmann)
+const COLD_THRESHOLD_T4: f64 = 1.9388034498651e10;
+
 /// Calculate absorption efficiency for heat transfer based on fuel properties
 ///
 /// Base absorption efficiency is fuel-specific (0-1):
@@ -352,9 +358,7 @@ pub(crate) fn calculate_heat_transfer_raw(
 
     // OPTIMIZATION: Skip heat transfer from sources below 100°C
     // Elements below this temperature don't contribute meaningful radiant heat to fire spread
-    // Note: Using explicit calculation instead of const because powi() is not const-evaluable
-    let cold_threshold_t4 = 373.15_f64.powi(4); // (373.15 K)^4 = 100°C
-    if source_temp_t4 < cold_threshold_t4 {
+    if source_temp_t4 < COLD_THRESHOLD_T4 {
         return 0.0;
     }
 
