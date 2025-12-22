@@ -977,7 +977,7 @@ impl FireSimulation {
         // Second pass: query and cache (no borrow conflicts)
         for (element_id, position) in elements_needing_query {
             let mut nearby = self.spatial_index.query_radius(position, search_radius);
-            
+
             // PERFORMANCE OPTIMIZATION: Cap extremely large neighbor lists
             // In very dense forests (>500 elements in radius), limit to closest 500 to prevent O(n²) blowup
             // Realistic spread maintained: 500 neighbors ≈ full 35m catastrophic radius
@@ -999,7 +999,7 @@ impl FireSimulation {
                 });
                 nearby.truncate(MAX_NEARBY_ELEMENTS);
             }
-            
+
             self.nearby_cache.insert(element_id, nearby);
         }
 
@@ -1365,16 +1365,16 @@ impl FireSimulation {
             .sum::<usize>();
         self.heat_map.clear();
         if self.heat_map.capacity() < estimated_targets {
-            self.heat_map.reserve(estimated_targets - self.heat_map.capacity());
+            self.heat_map
+                .reserve(estimated_targets - self.heat_map.capacity());
         }
 
         // OPTIMIZATION: Pre-compute T^4 for all burning elements (Stefan-Boltzmann)
         // At 20k elements with avg 50 targets = 1M pow operations → 20k operations (50x reduction)
         self.temp_t4_cache.clear();
         if self.temp_t4_cache.capacity() < self.active_spreading_elements.len() {
-            self.temp_t4_cache.reserve(
-                self.active_spreading_elements.len() - self.temp_t4_cache.capacity(),
-            );
+            self.temp_t4_cache
+                .reserve(self.active_spreading_elements.len() - self.temp_t4_cache.capacity());
         }
         for &element_id in &self.active_spreading_elements {
             if let Some(element) = self.get_element(element_id) {

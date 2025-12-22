@@ -314,23 +314,6 @@ pub(crate) fn calculate_total_heat_transfer(
     total_heat.max(0.0)
 }
 
-/// OPTIMIZED: Calculate heat transfer using raw data instead of `FuelElement` structures
-/// Eliminates 500,000+ temporary structure allocations per frame at 12.5k burning elements
-/// Inline attribute ensures this hot function is optimized (called millions of times per frame)
-///
-/// # Parameters
-/// * `source_flame_area_coeff` - Fuel-specific flame geometry coefficient (grass=9.0, forest=5.0)
-/// * `target_absorption_base` - Fuel-specific base absorption efficiency (grass=0.90, forest=0.70)
-///
-/// NOTE: Superseded by `calculate_heat_transfer_with_t4_cache` for better performance.
-/// Kept for backward compatibility and tests.
-// NOTE: `calculate_heat_transfer_raw` implementation removed in favor of
-// the T^4-optimized hot-path below. All callsites should use the
-// T^4-based function (renamed to `calculate_heat_transfer_raw`) which
-// accepts pre-computed source_temp^4 (in Kelvin) for best performance.
-
-
-
 /// HIGHLY OPTIMIZED: Calculate heat transfer using pre-computed T^4 values
 /// Eliminates expensive pow(4) operations - source T^4 is pre-computed once per frame
 /// At 20k burning elements with avg 50 targets: 1M pow ops → 20k pow ops (50x reduction)
