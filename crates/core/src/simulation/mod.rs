@@ -1355,14 +1355,11 @@ impl FireSimulation {
         let sim_time = self.simulation_time;
 
         // OPTIMIZATION: Parallel heat transfer calculation for large fires
-        // Chunk size balances parallelization overhead vs CPU utilization
-        // Smaller chunks = more parallelism but higher Rayon scheduling overhead
-        // Larger chunks = less overhead but reduced CPU utilization on many-core systems
-        // 128 elements/chunk provides good balance: at 20k elements = 156 tasks for efficient
-        // load distribution across modern CPUs (tested on 8-24 core systems)
+        // Balance between parallelization and Rayon overhead
+        // At 20k elements, 128-element chunks = 156 tasks (good for 24-core CPU without excessive overhead)
         const HEAT_CALC_CHUNK_SIZE: usize = 128;
 
-        // Accumulate partial heat maps from each parallel chunk
+        // Pre-allocate thread-local heat maps for parallel accumulation
         let partial_heat_maps: Vec<FxHashMap<usize, f32>> = nearby_cache
             .par_chunks(HEAT_CALC_CHUNK_SIZE)
             .map(|chunk| {
