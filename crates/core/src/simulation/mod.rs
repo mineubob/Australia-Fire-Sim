@@ -1394,9 +1394,12 @@ impl FireSimulation {
         // load distribution across modern CPUs (tested on 8-24 core systems)
         const HEAT_CALC_CHUNK_SIZE: usize = 128;
 
-        // CRITICAL: Extract caches before parallel iteration to avoid borrow checker violations
-        // Parallel closures cannot safely share mutable references to self.temp_t4_cache
-        // Clone is cheap: FxHashMap with usize keys and f64/f32 values (both Copy types)
+        // CRITICAL: Extract caches before parallel iteration to satisfy the borrow checker.
+        // Parallel closures need to call self.get_element() and other &self methods, which
+        // conflicts with holding a direct borrow of self.temp_t4_cache/self.temp_kelvin_cache.
+        // Cloning the FxHashMap<usize, f64/f32> once per frame is O(n) and acceptable because
+        // these cached values are then read millions of times in the hot loop (O(n*m)),
+        // avoiding repeated powi(4)/powf computations for Stefan–Boltzmann T^4 radiation.
         let temp_t4_cache = self.temp_t4_cache.clone();
         let temp_kelvin_cache = self.temp_kelvin_cache.clone();
 
