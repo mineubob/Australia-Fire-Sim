@@ -1341,6 +1341,26 @@ impl FireSimulation {
                 .reserve(estimated_targets - self.heat_map.capacity());
         }
 
+        // OPTIMIZATION: Pre-extract source element data to avoid repeated get_element() calls
+        // Build a compact cache of just the data needed for heat transfer calculations
+        // This reduces borrow checker conflicts and improves cache locality
+        let mut source_cache: FxHashMap<usize, (Vec3, Celsius, f32, f32)> = 
+            FxHashMap::with_capacity_and_hasher(nearby_cache.len(), Default::default());
+        
+        for (element_id, _, _) in &nearby_cache {
+            if let Some(source) = self.get_element(*element_id) {
+                source_cache.insert(
+                    *element_id,
+                    (
+                        source.position,
+                        source.temperature,
+                        *source.fuel_remaining,
+                        source.fuel.flame_area_coefficient,
+                    ),
+                );
+            }
+        }
+
         // Phase 7: Get turbulent wind model for realistic fire spread irregularity
         // Turbulence scales with FFDI, atmospheric stability, mixing height, and time of day
         // This gives realistic spatial and temporal variation in fire spread
@@ -1363,21 +1383,15 @@ impl FireSimulation {
         let partial_heat_maps: Vec<FxHashMap<usize, f32>> = nearby_cache
             .par_chunks(HEAT_CALC_CHUNK_SIZE)
             .map(|chunk| {
-                let mut local_heat_map: FxHashMap<usize, f32> = FxHashMap::default();
+                // Pre-size local heat map based on estimated targets in this chunk
+                let chunk_targets: usize = chunk.iter().map(|(_, _, nearby)| nearby.len()).sum();
+                let mut local_heat_map: FxHashMap<usize, f32> = 
+                    FxHashMap::with_capacity_and_hasher(chunk_targets, Default::default());
 
                 for (element_id, _pos, nearby) in chunk {
-                    // Get source element data (read-only)
-                    let source_data = self.get_element(*element_id).map(|source| {
-                        (
-                            source.position,
-                            source.temperature,
-                            *source.fuel_remaining,
-                            source.fuel.flame_area_coefficient,
-                        )
-                    });
-
-                    if let Some((source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff)) =
-                        source_data
+                    // Get source element data from cache (already extracted)
+                    if let Some(&(source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff)) =
+                        source_cache.get(element_id)
                     {
                         // Phase 7: Apply turbulent wind fluctuations
                         let local_wind =
