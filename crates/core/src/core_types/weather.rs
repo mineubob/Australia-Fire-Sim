@@ -16,10 +16,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// Reference: Australian Bureau of Meteorology and `McArthur` (1967) FFDI classification.
 pub mod ffdi_ranges {
-    use std::ops::{Range, RangeFrom, RangeTo};
+    use std::ops::{Range, RangeFrom};
 
     /// "Low" fire danger rating range (0.0 to 5.0, exclusive upper bound)
-    pub const LOW: RangeTo<f32> = ..5.0;
+    pub const LOW: Range<f32> = 0.0..5.0;
 
     /// "Moderate" fire danger rating range (5.0 to 12.0)
     pub const MODERATE: Range<f32> = 5.0..12.0;
