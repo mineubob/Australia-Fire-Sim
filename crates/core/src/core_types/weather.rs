@@ -13,30 +13,31 @@ use serde::{Deserialize, Serialize};
 ///
 /// These constants define the boundaries between fire danger rating categories and should be used
 /// consistently across the codebase for validation, testing, and categorization.
+/// Note: Rust `Range` types use **inclusive lower bound and exclusive upper bound** [a, b).
 ///
 /// Reference: Australian Bureau of Meteorology and `McArthur` (1967) FFDI classification.
 pub mod ffdi_ranges {
     use std::ops::{Range, RangeFrom};
 
-    /// "Low" fire danger rating range (0.0 to 5.0, exclusive upper bound)
+    /// "Low" fire danger rating range `[0.0, 5.0)` (0.0 inclusive to 5.0 exclusive)
     pub const LOW: Range<f32> = 0.0..5.0;
 
-    /// "Moderate" fire danger rating range (5.0 to 12.0)
+    /// "Moderate" fire danger rating range `[5.0, 12.0)` (5.0 inclusive to 12.0 exclusive)
     pub const MODERATE: Range<f32> = 5.0..12.0;
 
-    /// "High" fire danger rating range (12.0 to 24.0)
+    /// "High" fire danger rating range `[12.0, 24.0)` (12.0 inclusive to 24.0 exclusive)
     pub const HIGH: Range<f32> = 12.0..24.0;
 
-    /// "Very High" fire danger rating range (24.0 to 50.0)
+    /// "Very High" fire danger rating range `[24.0, 50.0)` (24.0 inclusive to 50.0 exclusive)
     pub const VERY_HIGH: Range<f32> = 24.0..50.0;
 
-    /// "Severe" fire danger rating range (50.0 to 100.0)
+    /// "Severe" fire danger rating range `[50.0, 100.0)` (50.0 inclusive to 100.0 exclusive)
     pub const SEVERE: Range<f32> = 50.0..100.0;
 
-    /// "Extreme" fire danger rating range (100.0 to 150.0)
+    /// "Extreme" fire danger rating range `[100.0, 150.0)` (100.0 inclusive to 150.0 exclusive)
     pub const EXTREME: Range<f32> = 100.0..150.0;
 
-    /// "Catastrophic" (Code Red) fire danger rating (150.0 and above)
+    /// "Catastrophic" (Code Red) fire danger rating `[150.0, ∞)` (150.0 inclusive, no upper bound)
     pub const CATASTROPHIC: RangeFrom<f32> = 150.0..;
 }
 

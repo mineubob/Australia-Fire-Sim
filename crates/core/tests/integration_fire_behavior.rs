@@ -796,8 +796,22 @@ fn test_weather_conditions_spread_rate() {
     );
 
     // 6. Validate spread rate multipliers between conditions
-    let severe_vs_moderate_ratio = severe_t60 as f64 / moderate_t60.max(1) as f64;
-    let catastrophic_vs_severe_ratio = catastrophic_t60 as f64 / severe_t60.max(1) as f64;
+    // First check that fire actually spread under each condition
+    assert!(
+        moderate_t60 > 0,
+        "Fire should spread under Moderate conditions, got {moderate_t60} ignited elements at t=60s"
+    );
+    assert!(
+        severe_t60 > 0,
+        "Fire should spread under Severe conditions, got {severe_t60} ignited elements at t=60s"
+    );
+    assert!(
+        catastrophic_t60 > 0,
+        "Fire should spread under Catastrophic conditions, got {catastrophic_t60} ignited elements at t=60s"
+    );
+
+    let severe_vs_moderate_ratio = severe_t60 as f64 / moderate_t60 as f64;
+    let catastrophic_vs_severe_ratio = catastrophic_t60 as f64 / severe_t60 as f64;
 
     assert!(
         severe_vs_moderate_ratio >= 1.0,
