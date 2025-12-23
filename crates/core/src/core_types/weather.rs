@@ -1153,7 +1153,7 @@ impl WeatherSystem {
     pub fn fire_danger_rating(&self) -> &str {
         let ffdi = self.calculate_ffdi();
         match ffdi {
-            f if ffdi_ranges::LOW.contains(&f) => "Low",
+            f if f < ffdi_ranges::LOW.end => "Low",
             f if ffdi_ranges::MODERATE.contains(&f) => "Moderate",
             f if ffdi_ranges::HIGH.contains(&f) => "High",
             f if ffdi_ranges::VERY_HIGH.contains(&f) => "Very High",
