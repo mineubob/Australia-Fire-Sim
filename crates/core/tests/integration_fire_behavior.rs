@@ -574,6 +574,7 @@ fn test_weather_conditions_spread_rate() {
     ];
 
     let mut results = Vec::new();
+    let mut ffdi_values = Vec::new();
 
     for (name, temp, humidity, wind) in conditions {
         println!("\n--- Testing {name} conditions ---");
@@ -603,7 +604,9 @@ fn test_weather_conditions_spread_rate() {
 
         // Set weather
         let weather = WeatherSystem::new(temp, humidity, wind, 270.0, 8.0);
+        let ffdi = weather.calculate_ffdi();
         sim.set_weather(weather);
+        ffdi_values.push(ffdi);
 
         // Ignite center element
         let center_id = element_ids[12]; // Center of 5x5 grid
@@ -665,18 +668,48 @@ fn test_weather_conditions_spread_rate() {
         catastrophic_count >= 1,
         "Catastrophic: Should have at least 1 burning, got {catastrophic_count}"
     );
-    println!("✓ All conditions show fire activity");
+    println!("-> All conditions show fire activity");
 
-    // 2. Moderate conditions should show GRADUAL spread (not mass ignition)
+    // 2. FFDI values should align with expected categories
+    let moderate_ffdi = ffdi_values[0];
+    let severe_ffdi = ffdi_values[1];
+    let catastrophic_ffdi = ffdi_values[2];
+
+    assert!(
+        moderate_ffdi < 25.0,
+        "Moderate FFDI should be <25, got {moderate_ffdi:.1}"
+    );
+    assert!(
+        severe_ffdi >= 50.0 && severe_ffdi < 100.0,
+        "Severe FFDI should be 50-100, got {severe_ffdi:.1}"
+    );
+    assert!(
+        catastrophic_ffdi >= 100.0,
+        "Catastrophic FFDI should be >=100, got {catastrophic_ffdi:.1}"
+    );
+    println!("-> FFDI values: Moderate={moderate_ffdi:.1}, Severe={severe_ffdi:.1}, Catastrophic={catastrophic_ffdi:.1}");
+
+    // 3. Moderate conditions should show GRADUAL spread (not mass ignition)
     // Expected: Progressive flame front, ~50 m/min = 10m in ~12s
     // At 11s, should have 1-5 elements (not full ignition)
+    let moderate_t31 = results[0].2[1].1;
+    let moderate_t60 = results[0].2[2].1;
+
     assert!(
         moderate_t11 < 15,
-        "Moderate should show gradual spread, got {moderate_t11} at t=11s"
+        "Moderate should show gradual spread at t=11s, got {moderate_t11}"
     );
-    println!("✓ Moderate: Progressive spread ({moderate_t11} at t=11s)");
+    assert!(
+        moderate_t31 <= moderate_t60,
+        "Moderate should show progressive spread: t=31s ({moderate_t31}) <= t=60s ({moderate_t60})"
+    );
+    assert!(
+        moderate_t60 < 25,
+        "Moderate should NOT show mass ignition at t=60s, got {moderate_t60} (limit: 25 elements)"
+    );
+    println!("-> Moderate: Progressive spread ({moderate_t11} -> {moderate_t31} -> {moderate_t60} elements)");
 
-    // 3. CATASTROPHIC conditions SHOULD show rapid/mass ignition
+    // 4. CATASTROPHIC conditions SHOULD show rapid/mass ignition
     // Cruz et al. (2012): Black Saturday showed "profuse short range spotting"
     // with 3-8 firebrands/m² creating "pseudo flame fronts"
     // Expected behavior: Near-simultaneous ignition under extreme conditions
@@ -687,7 +720,7 @@ fn test_weather_conditions_spread_rate() {
     // The key validation is OVERALL rapid spread, not exact element count at one timestep.
     // Convert counts (usize) into f64 for a ratio — counts are small so direct casts are safe.
     let catastrophic_multiplier = catastrophic_t11 as f64 / (severe_t11.max(1) as f64);
-    println!("✓ Catastrophic spread multiplier vs Severe: {catastrophic_multiplier:.2}x at t=11s");
+    println!("-> Catastrophic spread multiplier vs Severe: {catastrophic_multiplier:.2}x at t=11s");
 
     // Validate that catastrophic conditions show rapid spread
     // Check at t=60s for comparison with 2m element spacing
@@ -698,17 +731,18 @@ fn test_weather_conditions_spread_rate() {
     let severe_t60 = results[1].2[2].1; // Severe at 60s
 
     println!(
-        "  → Catastrophic: {catastrophic_t11} elements at t=11s, {catastrophic_t31} at t=31s, {catastrophic_t60} at t=60s"
+        "  -> Catastrophic: {catastrophic_t11} elements at t=11s, {catastrophic_t31} at t=31s, {catastrophic_t60} at t=60s"
     );
     println!(
-        "  → Severe: {severe_t11} elements at t=11s, {severe_t31} at t=31s, {severe_t60} at t=60s"
+        "  -> Severe: {severe_t11} elements at t=11s, {severe_t31} at t=31s, {severe_t60} at t=60s"
     );
 
     // Validate spread: significant spread by t=60s under extreme conditions
     // Note: Element-based fire spread is inherently more variable than continuous front models
     // The new atmospheric turbulence model (Phase 7) includes stability, mixing height, and
     // time-of-day effects, which adds realistic variability to spread patterns.
-    // Expect strong spread (6+ elements) but not necessarily the full continuous-front rate.
+    // Physics-accurate simulation without artificial simplifications shows moderate but realistic
+    // spread rates. Catastrophic conditions (6+ elements) significantly exceed moderate (2 elements).
     assert!(
         catastrophic_t60 >= 6,
         "Catastrophic should show rapid spread, got {catastrophic_t60} elements at t=60s"
@@ -718,23 +752,63 @@ fn test_weather_conditions_spread_rate() {
         "Severe should show significant spread, got {severe_t60} elements at t=60s"
     );
 
-    println!("  → CITATION: Cruz et al. (2012) Black Saturday - mass ignition documented");
-    println!("  → CITATION: Cruz et al. (2022) 20% Rule - 60 km/h wind = 200 m/min spread");
+    // Validate progressive spread over time (no regression)
+    assert!(
+        catastrophic_t31 >= catastrophic_t11,
+        "Catastrophic spread should progress: t=11s ({catastrophic_t11}) <= t=31s ({catastrophic_t31})"
+    );
+    assert!(
+        catastrophic_t60 >= catastrophic_t31,
+        "Catastrophic spread should progress: t=31s ({catastrophic_t31}) <= t=60s ({catastrophic_t60})"
+    );
+    assert!(
+        severe_t31 >= severe_t11,
+        "Severe spread should progress: t=11s ({severe_t11}) <= t=31s ({severe_t31})"
+    );
+    assert!(
+        severe_t60 >= severe_t31,
+        "Severe spread should progress: t=31s ({severe_t31}) <= t=60s ({severe_t60})"
+    );
 
-    // 4. Severity gradient should be maintained (higher severity = more spread)
+    println!("  -> CITATION: Cruz et al. (2012) Black Saturday - mass ignition documented");
+    println!("  -> CITATION: Cruz et al. (2022) 20% Rule - 60 km/h wind = 200 m/min spread");
+
+    // 5. Severity gradient should be maintained (higher severity = more spread)
     assert!(
         catastrophic_count >= severe_count,
-        "Catastrophic should spread more than Severe"
+        "Catastrophic ({catastrophic_count}) should spread >= Severe ({severe_count})"
     );
     assert!(
         severe_count >= moderate_count,
-        "Severe should spread more than Moderate"
+        "Severe ({severe_count}) should spread >= Moderate ({moderate_count})"
     );
     println!(
-        "\n✓ Spread gradient maintained: Moderate({moderate_count}) < Severe({severe_count}) <= Catastrophic({catastrophic_count})"
+        "-> Spread gradient maintained: Moderate({moderate_count}) <= Severe({severe_count}) <= Catastrophic({catastrophic_count})"
     );
 
-    println!("\n✅ Weather conditions test PASSED - Spread rates match scientific literature");
+    // 6. Validate spread rate multipliers between conditions
+    let severe_vs_moderate_ratio = severe_t60 as f64 / moderate_t60.max(1) as f64;
+    let catastrophic_vs_severe_ratio = catastrophic_t60 as f64 / severe_t60.max(1) as f64;
+
+    assert!(
+        severe_vs_moderate_ratio >= 1.0,
+        "Severe should spread faster than Moderate: {severe_vs_moderate_ratio:.2}x"
+    );
+    assert!(
+        catastrophic_vs_severe_ratio >= 1.0,
+        "Catastrophic should spread faster than Severe: {catastrophic_vs_severe_ratio:.2}x"
+    );
+    println!("-> Spread multipliers: Severe/Moderate={severe_vs_moderate_ratio:.2}x, Catastrophic/Severe={catastrophic_vs_severe_ratio:.2}x");
+
+    // 7. Validate that catastrophic conditions show substantially more spread than moderate
+    let catastrophic_vs_moderate_ratio = catastrophic_t60 as f64 / moderate_t60.max(1) as f64;
+    assert!(
+        catastrophic_vs_moderate_ratio >= 2.0,
+        "Catastrophic should spread significantly faster than Moderate: {catastrophic_vs_moderate_ratio:.2}x (need >=2.0x)"
+    );
+    println!("-> Catastrophic/Moderate spread ratio: {catastrophic_vs_moderate_ratio:.2}x (>=2.0x required)");
+
+    println!("\n==> Weather conditions test PASSED - Spread rates match scientific literature");
     println!("   Moderate: Progressive flame front (realistic)");
     println!("   Severe/Catastrophic: Rapid spread with profuse spotting (realistic)");
 }
