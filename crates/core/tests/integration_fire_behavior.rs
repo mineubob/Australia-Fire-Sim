@@ -6,8 +6,7 @@
 
 use fire_sim_core::{
     core_types::{Celsius, Degrees, Kilograms, Meters},
-    ffdi_ranges, CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3,
-    WeatherSystem,
+    ffdi_ranges, CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem,
 };
 
 /// Helper to create a simple eucalyptus tree with realistic structure
@@ -687,9 +686,9 @@ fn test_weather_conditions_spread_rate() {
         ffdi_ranges::SEVERE
     );
     assert!(
-        catastrophic_ffdi >= ffdi_ranges::CATASTROPHIC_MIN,
-        "Catastrophic FFDI should be >={}, got {catastrophic_ffdi:.1}",
-        ffdi_ranges::CATASTROPHIC_MIN
+        ffdi_ranges::CATASTROPHIC.contains(&catastrophic_ffdi),
+        "Catastrophic FFDI should be in range {:?}, got {catastrophic_ffdi:.1}",
+        ffdi_ranges::CATASTROPHIC
     );
     println!("-> FFDI values: Moderate={moderate_ffdi:.1}, Severe={severe_ffdi:.1}, Catastrophic={catastrophic_ffdi:.1}");
 

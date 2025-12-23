@@ -16,10 +16,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// Reference: Australian Bureau of Meteorology and `McArthur` (1967) FFDI classification.
 pub mod ffdi_ranges {
-    use std::ops::Range;
+    use std::ops::{Range, RangeFrom, RangeTo};
 
-    /// "Low" fire danger rating range (0.0 to 5.0)
-    pub const LOW: Range<f32> = 0.0..5.0;
+    /// "Low" fire danger rating range (0.0 to 5.0, exclusive upper bound)
+    pub const LOW: RangeTo<f32> = ..5.0;
 
     /// "Moderate" fire danger rating range (5.0 to 12.0)
     pub const MODERATE: Range<f32> = 5.0..12.0;
@@ -36,8 +36,8 @@ pub mod ffdi_ranges {
     /// "Extreme" fire danger rating range (100.0 to 150.0)
     pub const EXTREME: Range<f32> = 100.0..150.0;
 
-    /// "Catastrophic" (Code Red) fire danger rating minimum threshold (150.0+)
-    pub const CATASTROPHIC_MIN: f32 = 150.0;
+    /// "Catastrophic" (Code Red) fire danger rating (150.0 and above)
+    pub const CATASTROPHIC: RangeFrom<f32> = 150.0..;
 }
 
 /// Climate pattern types affecting weather
