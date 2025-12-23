@@ -707,7 +707,7 @@ fn test_weather_conditions_spread_rate() {
         "Moderate should show progressive spread: t=31s ({moderate_t31}) <= t=60s ({moderate_t60})"
     );
     // The test terrain uses a fixed 5×5 element grid (25 total elements).
-    // Under MODERATE FFDI conditions we expect significant spread but NOT complete
+    // Under the "Moderate" fire weather scenario we expect significant spread but NOT complete
     // grid ignition within 60 seconds. If the grid resolution in this test changes,
     // this limit should be updated to reflect the new total element count.
     const MODERATE_MAX_IGNITED_ELEMENTS_AT_60S: usize = 25;
@@ -810,10 +810,11 @@ fn test_weather_conditions_spread_rate() {
 
     // 7. Validate that catastrophic conditions show substantially more spread than moderate
     // This 2.0x minimum multiplier is based on empirical fire behavior observations showing that
-    // catastrophic conditions (FFDI 100+) produce at least twice the fire spread rate compared to
+    // catastrophic conditions (FFDI 150+) produce at least twice the fire spread rate compared to
     // moderate conditions (FFDI 5-12). This reflects the exponential relationship between FFDI
-    // and rate of spread in the McArthur model, where extreme conditions dramatically accelerate
-    // fire propagation through increased flame intensity, ember generation, and convective coupling.
+    // and rate of spread in the McArthur model, where extreme (FFDI 100-149) and catastrophic
+    // conditions dramatically accelerate fire propagation through increased flame intensity,
+    // ember generation, and convective coupling.
     const MIN_CATASTROPHIC_TO_MODERATE_SPREAD_MULTIPLIER: f64 = 2.0;
     let catastrophic_vs_moderate_ratio = catastrophic_t60 as f64 / moderate_t60.max(1) as f64;
     assert!(

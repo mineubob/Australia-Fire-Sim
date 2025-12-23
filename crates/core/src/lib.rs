@@ -32,7 +32,7 @@ pub use core_types::Ember;
 pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
 pub use core_types::{ClimatePattern, WeatherPreset, WeatherSystem};
 
-// Re-export FFDI ranges for validation and testing
+/// Re-export FFDI ranges for validation and testing
 pub use core_types::weather::ffdi_ranges;
 
 // Re-export simulation types (public API)
