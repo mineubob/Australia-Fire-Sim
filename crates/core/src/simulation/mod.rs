@@ -29,7 +29,7 @@ use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField,
 use crate::physics::{calculate_layer_transition_probability, CanopyLayer};
 use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
 use rayon::prelude::*;
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::collections::HashSet;
 
 // ============================================================================
@@ -1348,7 +1348,10 @@ impl FireSimulation {
             FxHashMap::with_capacity_and_hasher(nearby_cache.len(), FxBuildHasher);
 
         // Also cache all potential target elements to avoid get_element() calls in hot loop
-        let mut target_set: HashSet<usize> = HashSet::with_capacity(estimated_targets);
+        // Capacity estimate accounts for overlap: many elements appear as targets for multiple
+        // sources. Use 2x estimated_targets as upper bound to reduce hash table resizing overhead.
+        let mut target_set: FxHashSet<usize> =
+            FxHashSet::with_capacity_and_hasher(estimated_targets * 2, FxBuildHasher);
 
         for (element_id, _, nearby) in &nearby_cache {
             if let Some(source) = self.get_element(*element_id) {
@@ -1404,10 +1407,18 @@ impl FireSimulation {
         let sim_time = self.simulation_time;
 
         // OPTIMIZATION: Parallel heat transfer calculation for large fires
-        // Balance between parallelization overhead and CPU utilization.
-        // Use a moderately small chunk size (32 elements) to provide good load balancing
-        // across threads. While larger chunks reduce Rayon scheduling overhead, this value
-        // provides reasonable performance across different fire scales and hardware configurations.
+        //
+        // This parallelization improves CPU utilization for large fires but comes with trade-offs:
+        // 1. The source_cache and target_cache are shared read-only across threads, which may cause
+        //    cache line contention when multiple threads access the same elements.
+        // 2. Thread-local heat maps are merged sequentially after parallel computation, adding overhead
+        //    that may negate benefits for small fires.
+        // 3. Heat transfer is fundamentally memory-bound (cache lookups, hash map access), so
+        //    parallelization gains may be limited by memory bandwidth rather than CPU cores.
+        //
+        // Use a moderately small chunk size (32 elements) to provide good load balancing across threads.
+        // While larger chunks reduce Rayon scheduling overhead, this value provides reasonable
+        // performance across different fire scales and hardware configurations.
         const HEAT_CALC_CHUNK_SIZE: usize = 32;
 
         // Check if DEBUG_HEAT is enabled (done once outside parallel section)
@@ -1539,6 +1550,11 @@ impl FireSimulation {
         //
         // PILOTED IGNITION: Heat is coming from adjacent burning elements, so has_pilot_flame=true
         // This uses the lower ignition_temperature threshold (Janssens 1991)
+        //
+        // We collect drain() into a Vec to satisfy Rust's borrow checker: drain() requires
+        // a mutable borrow of heat_map, while get_element_mut() requires a mutable borrow
+        // of elements. The Vec allocation is small (one entry per heated element) and is
+        // necessary to avoid simultaneous mutable borrows of self.
         let heat_transfers: Vec<(usize, f32)> = self.heat_map.drain().collect();
         for (target_id, total_heat) in heat_transfers {
             if let Some(target) = self.get_element_mut(target_id) {
