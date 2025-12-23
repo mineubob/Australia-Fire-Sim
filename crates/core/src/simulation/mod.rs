@@ -29,7 +29,7 @@ use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField,
 use crate::physics::{calculate_layer_transition_probability, CanopyLayer};
 use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
 use rayon::prelude::*;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::collections::HashSet;
 
 // ============================================================================
@@ -1344,13 +1344,12 @@ impl FireSimulation {
         // OPTIMIZATION: Pre-extract source element data to avoid repeated get_element() calls
         // Build a compact cache of just the data needed for heat transfer calculations
         // This reduces borrow checker conflicts and improves cache locality
-        type SourceData = (Vec3, Celsius, f32, f32); // position, temp, fuel_remaining, flame_coeff
-        let mut source_cache: FxHashMap<usize, SourceData> = 
-            FxHashMap::with_capacity_and_hasher(nearby_cache.len(), Default::default());
-        
+        let mut source_cache: FxHashMap<usize, (Vec3, Celsius, f32, f32)> =
+            FxHashMap::with_capacity_and_hasher(nearby_cache.len(), FxBuildHasher);
+
         // Also cache all potential target elements to avoid get_element() calls in hot loop
         let mut target_set: HashSet<usize> = HashSet::with_capacity(nearby_cache.len() * 10);
-        
+
         for (element_id, _, nearby) in &nearby_cache {
             if let Some(source) = self.get_element(*element_id) {
                 source_cache.insert(
@@ -1368,12 +1367,12 @@ impl FireSimulation {
                 target_set.insert(target_id);
             }
         }
-        
+
         // Build target cache with all necessary data
         type TargetData = (Vec3, Celsius, f32, f32, f32, f32, f32);
-        let mut target_cache: FxHashMap<usize, TargetData> = 
-            FxHashMap::with_capacity_and_hasher(target_set.len(), Default::default());
-        
+        let mut target_cache: FxHashMap<usize, TargetData> =
+            FxHashMap::with_capacity_and_hasher(target_set.len(), FxBuildHasher);
+
         for &target_id in &target_set {
             if let Some(target) = self.get_element(target_id) {
                 target_cache.insert(
@@ -1405,10 +1404,9 @@ impl FireSimulation {
         let sim_time = self.simulation_time;
 
         // OPTIMIZATION: Parallel heat transfer calculation for large fires
-        // Smaller chunk size for better parallelization, especially at lower element counts
-        // At 1000 elements, 32-element chunks = 32 tasks for efficient distribution
-        // At 10k elements, 32-element chunks = 312 tasks for maximum CPU utilization
-        const HEAT_CALC_CHUNK_SIZE: usize = 32;
+        // Balance between parallelization and Rayon overhead
+        // At 20k elements, 128-element chunks = 156 tasks (good for 24-core CPU without excessive overhead)
+        const HEAT_CALC_CHUNK_SIZE: usize = 128;
 
         // Pre-allocate thread-local heat maps for parallel accumulation
         let partial_heat_maps: Vec<FxHashMap<usize, f32>> = nearby_cache
@@ -1416,8 +1414,8 @@ impl FireSimulation {
             .map(|chunk| {
                 // Pre-size local heat map based on estimated targets in this chunk
                 let chunk_targets: usize = chunk.iter().map(|(_, _, nearby)| nearby.len()).sum();
-                let mut local_heat_map: FxHashMap<usize, f32> = 
-                    FxHashMap::with_capacity_and_hasher(chunk_targets, Default::default());
+                let mut local_heat_map: FxHashMap<usize, f32> =
+                    FxHashMap::with_capacity_and_hasher(chunk_targets, FxBuildHasher);
 
                 for (element_id, _pos, nearby) in chunk {
                     // Get source element data from cache (already extracted)
@@ -1444,7 +1442,6 @@ impl FireSimulation {
                                     continue;
                                 }
 
-                                // Use original heat transfer function to maintain exact physics
                                 let base_heat = crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
                                     source_pos,
                                     source_temp,
