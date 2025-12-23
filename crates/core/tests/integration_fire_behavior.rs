@@ -6,7 +6,7 @@
 
 use fire_sim_core::{
     core_types::{Celsius, Degrees, Kilograms, Meters},
-    CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem,
+    ffdi_ranges, CombustionPhase, FireSimulation, Fuel, FuelPart, TerrainData, Vec3, WeatherSystem,
 };
 
 /// Helper to create a simple eucalyptus tree with realistic structure
@@ -676,16 +676,19 @@ fn test_weather_conditions_spread_rate() {
     let catastrophic_ffdi = ffdi_values[2];
 
     assert!(
-        moderate_ffdi < 25.0,
-        "Moderate FFDI should be <25, got {moderate_ffdi:.1}"
+        moderate_ffdi < ffdi_ranges::VERY_HIGH.start,
+        "Moderate FFDI should be <{}, got {moderate_ffdi:.1}",
+        ffdi_ranges::VERY_HIGH.start
     );
     assert!(
-        severe_ffdi >= 50.0 && severe_ffdi < 100.0,
-        "Severe FFDI should be 50-100, got {severe_ffdi:.1}"
+        ffdi_ranges::SEVERE.contains(&severe_ffdi),
+        "Severe FFDI should be in range {:?}, got {severe_ffdi:.1}",
+        ffdi_ranges::SEVERE
     );
     assert!(
-        catastrophic_ffdi >= 100.0,
-        "Catastrophic FFDI should be >=100, got {catastrophic_ffdi:.1}"
+        ffdi_ranges::CATASTROPHIC.contains(&catastrophic_ffdi),
+        "Catastrophic FFDI should be in range {:?}, got {catastrophic_ffdi:.1}",
+        ffdi_ranges::CATASTROPHIC
     );
     println!("-> FFDI values: Moderate={moderate_ffdi:.1}, Severe={severe_ffdi:.1}, Catastrophic={catastrophic_ffdi:.1}");
 
@@ -703,9 +706,14 @@ fn test_weather_conditions_spread_rate() {
         moderate_t31 <= moderate_t60,
         "Moderate should show progressive spread: t=31s ({moderate_t31}) <= t=60s ({moderate_t60})"
     );
+    // The test terrain uses a fixed 5×5 element grid (25 total elements).
+    // Under the "Moderate" fire weather scenario we expect significant spread but NOT complete
+    // grid ignition within 60 seconds. If the grid resolution in this test changes,
+    // this limit should be updated to reflect the new total element count.
+    const MODERATE_MAX_IGNITED_ELEMENTS_AT_60S: usize = 25;
     assert!(
-        moderate_t60 < 25,
-        "Moderate should NOT show mass ignition at t=60s, got {moderate_t60} (limit: 25 elements)"
+        moderate_t60 < MODERATE_MAX_IGNITED_ELEMENTS_AT_60S,
+        "Moderate should NOT show mass ignition at t=60s, got {moderate_t60} (limit: {MODERATE_MAX_IGNITED_ELEMENTS_AT_60S} elements)"
     );
     println!("-> Moderate: Progressive spread ({moderate_t11} -> {moderate_t31} -> {moderate_t60} elements)");
 
@@ -801,12 +809,19 @@ fn test_weather_conditions_spread_rate() {
     println!("-> Spread multipliers: Severe/Moderate={severe_vs_moderate_ratio:.2}x, Catastrophic/Severe={catastrophic_vs_severe_ratio:.2}x");
 
     // 7. Validate that catastrophic conditions show substantially more spread than moderate
+    // This 2.0x minimum multiplier is based on empirical fire behavior observations showing that
+    // catastrophic conditions (FFDI 150+) produce at least twice the fire spread rate compared to
+    // moderate conditions (FFDI 5-12). This reflects the exponential relationship between FFDI
+    // and rate of spread in the McArthur model, where extreme (FFDI 100-149) and catastrophic
+    // conditions dramatically accelerate fire propagation through increased flame intensity,
+    // ember generation, and convective coupling.
+    const MIN_CATASTROPHIC_TO_MODERATE_SPREAD_MULTIPLIER: f64 = 2.0;
     let catastrophic_vs_moderate_ratio = catastrophic_t60 as f64 / moderate_t60.max(1) as f64;
     assert!(
-        catastrophic_vs_moderate_ratio >= 2.0,
-        "Catastrophic should spread significantly faster than Moderate: {catastrophic_vs_moderate_ratio:.2}x (need >=2.0x)"
+        catastrophic_vs_moderate_ratio >= MIN_CATASTROPHIC_TO_MODERATE_SPREAD_MULTIPLIER,
+        "Catastrophic should spread significantly faster than Moderate: {catastrophic_vs_moderate_ratio:.2}x (need >={MIN_CATASTROPHIC_TO_MODERATE_SPREAD_MULTIPLIER}x)"
     );
-    println!("-> Catastrophic/Moderate spread ratio: {catastrophic_vs_moderate_ratio:.2}x (>=2.0x required)");
+    println!("-> Catastrophic/Moderate spread ratio: {catastrophic_vs_moderate_ratio:.2}x (>={MIN_CATASTROPHIC_TO_MODERATE_SPREAD_MULTIPLIER}x required)");
 
     println!("\n==> Weather conditions test PASSED - Spread rates match scientific literature");
     println!("   Moderate: Progressive flame front (realistic)");

@@ -9,6 +9,37 @@ use crate::core_types::units::{
 };
 use serde::{Deserialize, Serialize};
 
+/// FFDI (Forest Fire Danger Index) threshold constants based on Australian Bureau of Meteorology standards.
+///
+/// These constants define the boundaries between fire danger rating categories and should be used
+/// consistently across the codebase for validation, testing, and categorization.
+///
+/// Reference: Australian Bureau of Meteorology and `McArthur` (1967) FFDI classification.
+pub mod ffdi_ranges {
+    use std::ops::{Range, RangeFrom};
+
+    /// "Low" fire danger rating range (0.0 to 5.0, exclusive upper bound)
+    pub const LOW: Range<f32> = 0.0..5.0;
+
+    /// "Moderate" fire danger rating range (5.0 to 12.0)
+    pub const MODERATE: Range<f32> = 5.0..12.0;
+
+    /// "High" fire danger rating range (12.0 to 24.0)
+    pub const HIGH: Range<f32> = 12.0..24.0;
+
+    /// "Very High" fire danger rating range (24.0 to 50.0)
+    pub const VERY_HIGH: Range<f32> = 24.0..50.0;
+
+    /// "Severe" fire danger rating range (50.0 to 100.0)
+    pub const SEVERE: Range<f32> = 50.0..100.0;
+
+    /// "Extreme" fire danger rating range (100.0 to 150.0)
+    pub const EXTREME: Range<f32> = 100.0..150.0;
+
+    /// "Catastrophic" (Code Red) fire danger rating (150.0 and above)
+    pub const CATASTROPHIC: RangeFrom<f32> = 150.0..;
+}
+
 /// Climate pattern types affecting weather
 ///
 /// These represent major climate phenomena that influence fire weather across seasons:
@@ -1114,17 +1145,21 @@ impl WeatherSystem {
         ffdi.max(0.0)
     }
 
-    /// Get fire danger rating string
+    /// Get fire danger rating string based on FFDI thresholds
+    ///
+    /// Uses Australian Bureau of Meteorology standard FFDI ranges.
+    /// See [`ffdi_ranges`] module for threshold constants.
     #[must_use]
     pub fn fire_danger_rating(&self) -> &str {
-        match self.calculate_ffdi() {
-            f if f < 5.0 => "Low",
-            f if f < 12.0 => "Moderate",
-            f if f < 24.0 => "High",
-            f if f < 50.0 => "Very High",
-            f if f < 100.0 => "Severe",
-            f if f < 150.0 => "Extreme",
-            _ => "CATASTROPHIC", // Code Red
+        let ffdi = self.calculate_ffdi();
+        match ffdi {
+            _ if ffdi_ranges::LOW.contains(&ffdi) => "Low",
+            _ if ffdi_ranges::MODERATE.contains(&ffdi) => "Moderate",
+            _ if ffdi_ranges::HIGH.contains(&ffdi) => "High",
+            _ if ffdi_ranges::VERY_HIGH.contains(&ffdi) => "Very High",
+            _ if ffdi_ranges::SEVERE.contains(&ffdi) => "Severe",
+            _ if ffdi_ranges::EXTREME.contains(&ffdi) => "Extreme",
+            _ => "CATASTROPHIC", // Code Red (>= 150.0)
         }
     }
 
