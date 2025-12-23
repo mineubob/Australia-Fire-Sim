@@ -705,7 +705,7 @@ fn test_weather_conditions_spread_rate() {
     );
     assert!(
         moderate_t60 < 25,
-        "Moderate should NOT show mass ignition at t=60s, got {moderate_t60}/25 elements"
+        "Moderate should NOT show mass ignition at t=60s, got {moderate_t60} (limit: 25 elements)"
     );
     println!("-> Moderate: Progressive spread ({moderate_t11} -> {moderate_t31} -> {moderate_t60} elements)");
 
