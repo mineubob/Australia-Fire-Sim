@@ -1153,12 +1153,12 @@ impl WeatherSystem {
     pub fn fire_danger_rating(&self) -> &str {
         let ffdi = self.calculate_ffdi();
         match ffdi {
-            f if ffdi_ranges::LOW.contains(&f) => "Low",
-            f if ffdi_ranges::MODERATE.contains(&f) => "Moderate",
-            f if ffdi_ranges::HIGH.contains(&f) => "High",
-            f if ffdi_ranges::VERY_HIGH.contains(&f) => "Very High",
-            f if ffdi_ranges::SEVERE.contains(&f) => "Severe",
-            f if ffdi_ranges::EXTREME.contains(&f) => "Extreme",
+            _ if ffdi_ranges::LOW.contains(&ffdi) => "Low",
+            _ if ffdi_ranges::MODERATE.contains(&ffdi) => "Moderate",
+            _ if ffdi_ranges::HIGH.contains(&ffdi) => "High",
+            _ if ffdi_ranges::VERY_HIGH.contains(&ffdi) => "Very High",
+            _ if ffdi_ranges::SEVERE.contains(&ffdi) => "Severe",
+            _ if ffdi_ranges::EXTREME.contains(&ffdi) => "Extreme",
             _ => "CATASTROPHIC", // Code Red (>= 150.0)
         }
     }
