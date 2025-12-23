@@ -689,7 +689,7 @@ fn test_weather_conditions_spread_rate() {
     );
     println!("-> FFDI values: Moderate={moderate_ffdi:.1}, Severe={severe_ffdi:.1}, Catastrophic={catastrophic_ffdi:.1}");
 
-    // 2. Moderate conditions should show GRADUAL spread (not mass ignition)
+    // 3. Moderate conditions should show GRADUAL spread (not mass ignition)
     // Expected: Progressive flame front, ~50 m/min = 10m in ~12s
     // At 11s, should have 1-5 elements (not full ignition)
     let moderate_t31 = results[0].2[1].1;
@@ -709,7 +709,7 @@ fn test_weather_conditions_spread_rate() {
     );
     println!("-> Moderate: Progressive spread ({moderate_t11} -> {moderate_t31} -> {moderate_t60} elements)");
 
-    // 3. CATASTROPHIC conditions SHOULD show rapid/mass ignition
+    // 4. CATASTROPHIC conditions SHOULD show rapid/mass ignition
     // Cruz et al. (2012): Black Saturday showed "profuse short range spotting"
     // with 3-8 firebrands/m² creating "pseudo flame fronts"
     // Expected behavior: Near-simultaneous ignition under extreme conditions
@@ -773,7 +773,7 @@ fn test_weather_conditions_spread_rate() {
     println!("  -> CITATION: Cruz et al. (2012) Black Saturday - mass ignition documented");
     println!("  -> CITATION: Cruz et al. (2022) 20% Rule - 60 km/h wind = 200 m/min spread");
 
-    // 4. Severity gradient should be maintained (higher severity = more spread)
+    // 5. Severity gradient should be maintained (higher severity = more spread)
     assert!(
         catastrophic_count >= severe_count,
         "Catastrophic ({catastrophic_count}) should spread >= Severe ({severe_count})"
@@ -786,7 +786,7 @@ fn test_weather_conditions_spread_rate() {
         "-> Spread gradient maintained: Moderate({moderate_count}) <= Severe({severe_count}) <= Catastrophic({catastrophic_count})"
     );
 
-    // 5. Validate spread rate multipliers between conditions
+    // 6. Validate spread rate multipliers between conditions
     let severe_vs_moderate_ratio = severe_t60 as f64 / moderate_t60.max(1) as f64;
     let catastrophic_vs_severe_ratio = catastrophic_t60 as f64 / severe_t60.max(1) as f64;
 
@@ -800,7 +800,7 @@ fn test_weather_conditions_spread_rate() {
     );
     println!("-> Spread multipliers: Severe/Moderate={severe_vs_moderate_ratio:.2}x, Catastrophic/Severe={catastrophic_vs_severe_ratio:.2}x");
 
-    // 6. Validate that catastrophic conditions show substantially more spread than moderate
+    // 7. Validate that catastrophic conditions show substantially more spread than moderate
     let catastrophic_vs_moderate_ratio = catastrophic_t60 as f64 / moderate_t60.max(1) as f64;
     assert!(
         catastrophic_vs_moderate_ratio >= 2.0,

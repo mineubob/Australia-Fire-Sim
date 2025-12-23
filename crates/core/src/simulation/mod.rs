@@ -1348,7 +1348,7 @@ impl FireSimulation {
             FxHashMap::with_capacity_and_hasher(nearby_cache.len(), FxBuildHasher);
 
         // Also cache all potential target elements to avoid get_element() calls in hot loop
-        let mut target_set: HashSet<usize> = HashSet::with_capacity(nearby_cache.len() * 10);
+        let mut target_set: HashSet<usize> = HashSet::with_capacity(estimated_targets);
 
         for (element_id, _, nearby) in &nearby_cache {
             if let Some(source) = self.get_element(*element_id) {
