@@ -1404,19 +1404,27 @@ impl FireSimulation {
         let sim_time = self.simulation_time;
 
         // OPTIMIZATION: Parallel heat transfer calculation for large fires
-        // Balance between parallelization overhead and CPU utilization
-        // Smaller chunks (32 elements) provide better parallelization at lower element counts
-        // while still maintaining efficiency at scale
+        // Balance between parallelization overhead and CPU utilization.
+        // Use a moderately small chunk size (32 elements) to provide good load balancing
+        // across threads. While larger chunks reduce Rayon scheduling overhead, this value
+        // provides reasonable performance across different fire scales and hardware configurations.
         const HEAT_CALC_CHUNK_SIZE: usize = 32;
 
+        // Check if DEBUG_HEAT is enabled (done once outside parallel section)
+        #[cfg(debug_assertions)]
+        let debug_heat_enabled = std::env::var("DEBUG_HEAT").is_ok();
+
         // Pre-allocate thread-local heat maps for parallel accumulation
-        let partial_heat_maps: Vec<FxHashMap<usize, f32>> = nearby_cache
+        let results: Vec<(FxHashMap<usize, f32>, Vec<String>)> = nearby_cache
             .par_chunks(HEAT_CALC_CHUNK_SIZE)
             .map(|chunk| {
                 // Pre-size local heat map based on estimated targets in this chunk
                 let chunk_targets: usize = chunk.iter().map(|(_, _, nearby)| nearby.len()).sum();
                 let mut local_heat_map: FxHashMap<usize, f32> =
                     FxHashMap::with_capacity_and_hasher(chunk_targets, FxBuildHasher);
+
+                #[cfg(debug_assertions)]
+                let mut debug_messages: Vec<String> = Vec::new();
 
                 for (element_id, _pos, nearby) in chunk {
                     // Get source element data from cache (already extracted)
@@ -1437,9 +1445,7 @@ impl FireSimulation {
                             if let Some(&(target_pos, target_temp, target_fuel_remaining, target_sav, target_absorption, target_slope, target_aspect)) =
                                 target_cache.get(&target_id)
                             {
-                                use crate::core_types::units::Kilograms;
-
-                                if target_fuel_remaining < *Kilograms::new(0.01) {
+                                if target_fuel_remaining < 0.01_f32 {
                                     continue;
                                 }
 
@@ -1468,18 +1474,59 @@ impl FireSimulation {
                                     );
                                 heat *= terrain_multiplier;
 
+                                // DEBUG: Collect heat transfer information for debug output
+                                #[cfg(debug_assertions)]
+                                if debug_heat_enabled && base_heat > 0.0 {
+                                    let direction = target_pos - source_pos;
+                                    let wind_norm = local_wind.normalize();
+                                    let alignment = if local_wind.magnitude() > 0.1 {
+                                        direction.normalize().dot(&wind_norm)
+                                    } else {
+                                        0.0
+                                    };
+                                    let dir_type = if alignment > 0.5 {
+                                        "DWIND"
+                                    } else if alignment < -0.5 {
+                                        "UWIND"
+                                    } else {
+                                        "FLANK"
+                                    };
+                                    debug_messages.push(format!(
+                                        "Heat {:?}->{:?} ({} align={:.2}): base={:.4} final={:.4} kJ src=({:.0},{:.0}) tgt=({:.0},{:.0})",
+                                        element_id, target_id, dir_type, alignment, base_heat, heat,
+                                        source_pos.x, source_pos.y, target_pos.x, target_pos.y
+                                    ));
+                                }
+
                                 *local_heat_map.entry(target_id).or_insert(0.0) += heat;
                             }
                         }
                     }
                 }
 
-                local_heat_map
+                #[cfg(debug_assertions)]
+                {
+                    (local_heat_map, debug_messages)
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    (local_heat_map, Vec::new())
+                }
             })
             .collect();
 
+        // Print debug messages collected from parallel threads
+        #[cfg(debug_assertions)]
+        if debug_heat_enabled {
+            for (_, messages) in &results {
+                for msg in messages {
+                    eprintln!("{msg}");
+                }
+            }
+        }
+
         // Merge partial heat maps from parallel threads into main heat_map
-        for local_map in partial_heat_maps {
+        for (local_map, _) in results {
             for (target_id, heat) in local_map {
                 *self.heat_map.entry(target_id).or_insert(0.0) += heat;
             }

@@ -676,9 +676,9 @@ fn test_weather_conditions_spread_rate() {
     let catastrophic_ffdi = ffdi_values[2];
 
     assert!(
-        moderate_ffdi < ffdi_ranges::VERY_HIGH.start,
-        "Moderate FFDI should be <{}, got {moderate_ffdi:.1}",
-        ffdi_ranges::VERY_HIGH.start
+        ffdi_ranges::MODERATE.contains(&moderate_ffdi),
+        "Moderate FFDI should be in range {:?}, got {moderate_ffdi:.1}",
+        ffdi_ranges::MODERATE
     );
     assert!(
         ffdi_ranges::SEVERE.contains(&severe_ffdi),
@@ -707,10 +707,11 @@ fn test_weather_conditions_spread_rate() {
         "Moderate should show progressive spread: t=31s ({moderate_t31}) <= t=60s ({moderate_t60})"
     );
     // The test terrain uses a fixed 5×5 element grid (25 total elements).
-    // Under the "Moderate" fire weather scenario we expect significant spread but NOT complete
-    // grid ignition within 60 seconds. If the grid resolution in this test changes,
-    // this limit should be updated to reflect the new total element count.
-    const MODERATE_MAX_IGNITED_ELEMENTS_AT_60S: usize = 25;
+    // Under the "Moderate" fire weather scenario we expect significant spread but NOT mass
+    // ignition within 60 seconds. We limit this to approximately 60% coverage to ensure
+    // moderate conditions don't result in near-complete grid ignition.
+    // If the grid resolution in this test changes, this limit should be updated accordingly.
+    const MODERATE_MAX_IGNITED_ELEMENTS_AT_60S: usize = 15;
     assert!(
         moderate_t60 < MODERATE_MAX_IGNITED_ELEMENTS_AT_60S,
         "Moderate should NOT show mass ignition at t=60s, got {moderate_t60} (limit: {MODERATE_MAX_IGNITED_ELEMENTS_AT_60S} elements)"
