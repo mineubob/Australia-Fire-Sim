@@ -1558,22 +1558,23 @@ impl FireSimulation {
         for (target_id, total_heat) in heat_map.drain() {
             if let Some(target) = self.get_element_mut(target_id) {
                 let was_ignited = target.ignited;
-                let temp_before = *target.temperature;
-                let moisture_before = *target.moisture_fraction;
+                let temp_before = target.temperature;
+                let moisture_before = target.moisture_fraction;
+                
                 // Piloted ignition: heat from burning neighbors provides pilot flame
                 target.apply_heat(total_heat, dt, ffdi_multiplier, true);
 
                 // DEBUG: Print target element updates
                 if std::env::var("DEBUG_TARGET").is_ok() && total_heat > 0.5 {
                     eprintln!(
-                        "TARGET {}: heat={:.2} temp={:.1}->{:.1} moisture={:.4}->{:.4} ignition={:.1} ignited={}",
+                        "TARGET {}: heat={} temp={}->{} moisture={}->{} ignition={} ignited={}",
                         target_id,
                         total_heat,
                         temp_before,
-                        *target.temperature,
+                        target.temperature,
                         moisture_before,
-                        *target.moisture_fraction,
-                        *target.fuel.ignition_temperature,
+                        target.moisture_fraction,
+                        target.fuel.ignition_temperature,
                         target.ignited
                     );
                 }
