@@ -1560,7 +1560,7 @@ impl FireSimulation {
                 let was_ignited = target.ignited;
                 let temp_before = target.temperature;
                 let moisture_before = target.moisture_fraction;
-                
+
                 // Piloted ignition: heat from burning neighbors provides pilot flame
                 target.apply_heat(total_heat, dt, ffdi_multiplier, true);
 
