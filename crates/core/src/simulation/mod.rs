@@ -1384,7 +1384,16 @@ impl FireSimulation {
                             *target.aspect_angle,
                         )
                     } else {
-                        // This shouldn't happen in practice, but provide default values
+                        // This indicates a logical inconsistency: nearby_cache referenced a target_id
+                        // for which no FuelElement exists. We keep a "no-heat" dummy record in release
+                        // builds to avoid changing behavior, but fail fast in debug to surface the bug.
+                        debug_assert!(
+                            false,
+                            "FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement"
+                        );
+                        eprintln!(
+                            "Warning: FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement; using dummy target data with zero fuel."
+                        );
                         (Vec3::zeros(), Celsius::new(20.0), 0.0, 0.0, 0.0, 0.0, 0.0)
                     }
                 });
