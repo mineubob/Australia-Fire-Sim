@@ -41,6 +41,10 @@ use std::collections::HashSet;
 /// that intensifies crown fire development. Based on Ellis (2011).
 const LADDER_FUEL_TEMP_BOOST_FACTOR: f32 = 0.2; // Up to 20% temperature boost
 
+/// Minimum fuel remaining (kg) below which elements are treated as effectively depleted.
+/// This prevents unnecessary heat calculations and ignition attempts for negligible fuel.
+const MIN_FUEL_REMAINING: Kilograms = Kilograms::new(0.01);
+
 /// Ultra-realistic fire simulation with full atmospheric modeling
 pub struct FireSimulation {
     // Atmospheric grid
@@ -1133,7 +1137,7 @@ impl FireSimulation {
                     element.temperature = Celsius::new(new_temp);
                 }
 
-                if element.fuel_remaining < Kilograms::new(0.01) {
+                if element.fuel_remaining < MIN_FUEL_REMAINING {
                     element.ignited = false;
                     should_extinguish = true;
                 }
@@ -1456,7 +1460,7 @@ impl FireSimulation {
                             if let Some(&(target_pos, target_temp, target_fuel_remaining, target_sav, target_absorption, target_slope, target_aspect)) =
                                 target_cache.get(&target_id)
                             {
-                                if target_fuel_remaining < 0.01_f32 {
+                                if target_fuel_remaining < *MIN_FUEL_REMAINING {
                                     continue;
                                 }
 
@@ -1886,10 +1890,8 @@ impl FireSimulation {
 
                     // Check for any unburned neighbor (early exit optimization)
                     let has_unburned_neighbor = nearby.iter().any(|&id| {
-                        use crate::core_types::units::Kilograms;
-
                         if let Some(neighbor) = self.get_element(id) {
-                            !neighbor.ignited && neighbor.fuel_remaining > Kilograms::new(0.01)
+                            !neighbor.ignited && neighbor.fuel_remaining > MIN_FUEL_REMAINING
                         } else {
                             false
                         }
