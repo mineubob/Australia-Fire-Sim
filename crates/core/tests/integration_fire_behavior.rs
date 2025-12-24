@@ -831,7 +831,7 @@ fn test_weather_conditions_spread_rate() {
     // conditions dramatically accelerate fire propagation through increased flame intensity,
     // ember generation, and convective coupling.
     const MIN_CATASTROPHIC_TO_MODERATE_SPREAD_MULTIPLIER: f64 = 2.0;
-    let catastrophic_vs_moderate_ratio = catastrophic_t60 as f64 / moderate_t60.max(1) as f64;
+    let catastrophic_vs_moderate_ratio = catastrophic_t60 as f64 / moderate_t60 as f64;
     assert!(
         catastrophic_vs_moderate_ratio >= MIN_CATASTROPHIC_TO_MODERATE_SPREAD_MULTIPLIER,
         "Catastrophic should spread significantly faster than Moderate: {catastrophic_vs_moderate_ratio:.2}x (need >={MIN_CATASTROPHIC_TO_MODERATE_SPREAD_MULTIPLIER}x)"

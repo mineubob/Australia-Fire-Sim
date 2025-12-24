@@ -29,7 +29,7 @@ use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField,
 use crate::physics::{calculate_layer_transition_probability, CanopyLayer};
 use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
 use rayon::prelude::*;
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::collections::HashSet;
 
 // ============================================================================
@@ -1351,11 +1351,12 @@ impl FireSimulation {
         let mut source_cache: FxHashMap<usize, (Vec3, Celsius, f32, f32)> =
             FxHashMap::with_capacity_and_hasher(nearby_cache.len(), FxBuildHasher);
 
-        // Also cache all potential target elements to avoid get_element() calls in hot loop
-        // Capacity estimate accounts for overlap: many elements appear as targets for multiple
-        // sources. Use 2x estimated_targets as upper bound to reduce hash table resizing overhead.
-        let mut target_set: FxHashSet<usize> =
-            FxHashSet::with_capacity_and_hasher(estimated_targets * 2, FxBuildHasher);
+        // Also cache all potential target elements to avoid get_element() calls in hot loop.
+        // estimated_targets is the sum of all neighbor list lengths and therefore an upper bound
+        // on the number of unique target IDs (overlap across sources can only reduce this count).
+        type TargetData = (Vec3, Celsius, f32, f32, f32, f32, f32);
+        let mut target_cache: FxHashMap<usize, TargetData> =
+            FxHashMap::with_capacity_and_hasher(estimated_targets, FxBuildHasher);
 
         for (element_id, _, nearby) in &nearby_cache {
             if let Some(source) = self.get_element(*element_id) {
@@ -1369,31 +1370,33 @@ impl FireSimulation {
                     ),
                 );
             }
-            // Collect all target IDs
+            // Build target cache directly during iteration to avoid duplicate work
             for &target_id in nearby {
-                target_set.insert(target_id);
-            }
-        }
-
-        // Build target cache with all necessary data
-        type TargetData = (Vec3, Celsius, f32, f32, f32, f32, f32);
-        let mut target_cache: FxHashMap<usize, TargetData> =
-            FxHashMap::with_capacity_and_hasher(target_set.len(), FxBuildHasher);
-
-        for &target_id in &target_set {
-            if let Some(target) = self.get_element(target_id) {
-                target_cache.insert(
-                    target_id,
-                    (
-                        target.position,
-                        target.temperature,
-                        *target.fuel_remaining,
-                        *target.fuel.surface_area_to_volume,
-                        *target.fuel.absorption_efficiency_base,
-                        *target.slope_angle,
-                        *target.aspect_angle,
-                    ),
-                );
+                target_cache.entry(target_id).or_insert_with(|| {
+                    if let Some(target) = self.get_element(target_id) {
+                        (
+                            target.position,
+                            target.temperature,
+                            *target.fuel_remaining,
+                            *target.fuel.surface_area_to_volume,
+                            *target.fuel.absorption_efficiency_base,
+                            *target.slope_angle,
+                            *target.aspect_angle,
+                        )
+                    } else {
+                        // This indicates a logical inconsistency: nearby_cache referenced a target_id
+                        // for which no FuelElement exists. We keep a "no-heat" dummy record in release
+                        // builds to avoid changing behavior, but fail fast in debug to surface the bug.
+                        debug_assert!(
+                            false,
+                            "FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement"
+                        );
+                        eprintln!(
+                            "Warning: FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement; using dummy target data with zero fuel."
+                        );
+                        (Vec3::zeros(), Celsius::new(20.0), 0.0, 0.0, 0.0, 0.0, 0.0)
+                    }
+                });
             }
         }
 
@@ -1555,30 +1558,32 @@ impl FireSimulation {
         // PILOTED IGNITION: Heat is coming from adjacent burning elements, so has_pilot_flame=true
         // This uses the lower ignition_temperature threshold (Janssens 1991)
         //
-        // We collect drain() into a Vec to satisfy Rust's borrow checker: drain() requires
-        // a mutable borrow of heat_map, while get_element_mut() requires a mutable borrow
-        // of elements. The Vec allocation is small (one entry per heated element) and is
-        // necessary to avoid simultaneous mutable borrows of self.
-        let heat_transfers: Vec<(usize, f32)> = self.heat_map.drain().collect();
-        for (target_id, total_heat) in heat_transfers {
+        // We temporarily take ownership of the heat_map to avoid simultaneous mutable
+        // borrows of self while applying heat (get_element_mut borrows self mutably).
+        // Using std::mem::take avoids allocating an intermediate Vec and keeps the
+        // number of heap allocations proportional to the number of ignition events,
+        // not the number of heated elements.
+        let mut heat_map = std::mem::take(&mut self.heat_map);
+        for (target_id, total_heat) in heat_map.drain() {
             if let Some(target) = self.get_element_mut(target_id) {
                 let was_ignited = target.ignited;
-                let temp_before = *target.temperature;
-                let moisture_before = *target.moisture_fraction;
+                let temp_before = target.temperature;
+                let moisture_before = target.moisture_fraction;
+
                 // Piloted ignition: heat from burning neighbors provides pilot flame
                 target.apply_heat(total_heat, dt, ffdi_multiplier, true);
 
                 // DEBUG: Print target element updates
                 if std::env::var("DEBUG_TARGET").is_ok() && total_heat > 0.5 {
                     eprintln!(
-                        "TARGET {}: heat={:.2} temp={:.1}->{:.1} moisture={:.4}->{:.4} ignition={:.1} ignited={}",
+                        "TARGET {}: heat={} temp={}->{} moisture={}->{} ignition={} ignited={}",
                         target_id,
                         total_heat,
                         temp_before,
-                        *target.temperature,
+                        target.temperature,
                         moisture_before,
-                        *target.moisture_fraction,
-                        *target.fuel.ignition_temperature,
+                        target.moisture_fraction,
+                        target.fuel.ignition_temperature,
                         target.ignited
                     );
                 }
@@ -1596,6 +1601,8 @@ impl FireSimulation {
                 }
             }
         }
+        // Return the now-empty heat_map to self for reuse in the next step
+        self.heat_map = heat_map;
 
         // 5. Update grid atmospheric processes (staggered for smooth frame times)
         // PERFORMANCE FIX: Diffusion and buoyancy alternate to spread work across frames.
