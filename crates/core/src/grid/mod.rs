@@ -1,5 +1,6 @@
 //! Grid-based simulation modules
 
+pub mod fuel_loader;
 pub(crate) mod simulation_grid;
 pub(crate) mod terrain;
 pub mod wind_field;

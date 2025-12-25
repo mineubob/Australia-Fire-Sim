@@ -909,6 +909,82 @@ impl FireSimulation {
         }
     }
 
+    // ========================================================================
+    // Phase 2: Fire Front Visual Data Export
+    // ========================================================================
+
+    /// Get fire front visual data for game engine rendering
+    ///
+    /// Extracts fire boundary vertices, velocity vectors, and intensity values
+    /// from the current level set solver state.
+    ///
+    /// # Returns
+    /// `FireFrontVisualData` with vertices, velocities, and intensities, or `None` if level set disabled
+    ///
+    /// # Example
+    /// ```ignore
+    /// if let Some(visual_data) = sim.get_fire_front_visual_data() {
+    ///     for (vertex, velocity, intensity) in visual_data.vertices.iter()
+    ///         .zip(&visual_data.velocities)
+    ///         .zip(&visual_data.intensities)
+    ///         .map(|((v, vel), i)| (v, vel, i))
+    ///     {
+    ///         // Render fire front segment
+    ///         render_fire_segment(vertex, velocity, intensity);
+    ///     }
+    /// }
+    /// ```
+    #[must_use]
+    pub fn get_fire_front_visual_data(&self) -> Option<crate::gpu::FireFrontVisualData> {
+        let solver = self.level_set_solver.as_ref()?;
+
+        // Get current phi field
+        let phi = solver.read_phi();
+        let (width, height) = solver.dimensions();
+        let grid_spacing = solver.grid_spacing();
+
+        // Extract contour vertices
+        let vertices = crate::gpu::extract_fire_front_contour(&phi, width, height, grid_spacing);
+
+        // Create visual data
+        let mut visual_data = crate::gpu::FireFrontVisualData::new(self.simulation_time);
+
+        // Calculate velocity and intensity for each vertex
+        for vertex in vertices {
+            // Convert world position to grid coordinates
+            let grid_x = (vertex.x / grid_spacing).round() as u32;
+            let grid_y = (vertex.y / grid_spacing).round() as u32;
+
+            // Calculate velocity at this point
+            let velocity = crate::gpu::calculate_fire_velocity(
+                &phi,
+                &self.level_set_spread_rates,
+                grid_x,
+                grid_y,
+                width,
+                height,
+            );
+
+            // Calculate Byram intensity
+            // I = h × w × r where h = heat content, w = fuel load, r = spread rate
+            // Simplified: use spread rate as proxy for intensity
+            let spread_rate = if grid_x < width && grid_y < height {
+                let idx = (grid_y * width + grid_x) as usize;
+                self.level_set_spread_rates.get(idx).copied().unwrap_or(0.0)
+            } else {
+                0.0
+            };
+
+            // Approximate intensity (kW/m) = 18000 × spread_rate
+            // Based on typical Australian fuel loads and heat content
+            let intensity = 18000.0 * spread_rate;
+
+            visual_data.add_vertex(vertex, velocity, intensity);
+        }
+
+        Some(visual_data)
+    }
+
     /// Update level set spread rates from current fire state
     ///
     /// Calculates spread rates for each grid cell based on burning fuel elements
