@@ -1404,7 +1404,7 @@ impl FireSimulation {
                                 "FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement"
                             );
                         }
-                        
+
                         #[cfg(not(debug_assertions))]
                         {
                             eprintln!(
