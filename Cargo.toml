@@ -37,6 +37,11 @@ nalgebra = { version = "0.34", features = ["serde-serialize"] }
 rand = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 rustc-hash = "2.0"
+wgpu = "0.19"
+bytemuck = { version = "1.14", features = ["derive"] }
+zstd = "0.13"
+bitvec = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
 
 [profile.profiling]
 inherits = "dev"

@@ -15,8 +15,19 @@ rand.workspace = true
 serde.workspace = true
 rustc-hash.workspace = true
 tracing = "0.1.44"
+wgpu.workspace = true
+bytemuck.workspace = true
+zstd.workspace = true
+bitvec.workspace = true
+chrono.workspace = true
+pollster = "0.3"  # For blocking on async GPU operations
+gdal = { version = "0.16", optional = true }
 
 [dev-dependencies]
 approx = "0.5"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ctor = "0.1"
+
+[features]
+default = []
+geotiff = ["gdal"]
