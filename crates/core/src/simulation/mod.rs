@@ -977,7 +977,6 @@ impl FireSimulation {
         // Second pass: query and cache (no borrow conflicts)
         for (element_id, position) in elements_needing_query {
             let nearby = self.spatial_index.query_radius(position, search_radius);
-
             self.nearby_cache.insert(element_id, nearby);
         }
 
