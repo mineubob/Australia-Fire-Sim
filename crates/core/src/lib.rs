@@ -32,6 +32,9 @@ pub use core_types::Ember;
 pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
 pub use core_types::{ClimatePattern, WeatherPreset, WeatherSystem};
 
+/// Re-export FFDI ranges for validation and testing
+pub use core_types::weather::ffdi_ranges;
+
 // Re-export simulation types (public API)
 pub use grid::{GridCell, SimulationGrid, TerrainData};
 pub use grid::{PlameSource, StabilityClass, WindField, WindFieldConfig};
@@ -46,3 +49,18 @@ pub use physics::CombustionPhase;
 
 // Re-export multiplayer types (for FFI)
 pub use simulation::{PlayerAction, PlayerActionType};
+#[cfg(test)]
+mod test_tracing {
+    // Initialize tracing for all tests in this crate so `tracing` logs are available
+    // when running `cargo test`. This runs only in test builds and executes once
+    // at test binary startup using the `ctor` crate.
+    use ctor::ctor;
+
+    #[ctor]
+    fn init_tracing() {
+        // Initialize tracing subscriber; respect RUST_LOG / default env filter.
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .try_init();
+    }
+}

@@ -24,7 +24,9 @@ use crate::core_types::noise::{FuelVariation, TurbulentWind};
 use crate::core_types::spatial::SpatialIndex;
 use crate::core_types::units::{Celsius, CelsiusDelta, Kilograms, Percent};
 use crate::core_types::weather::WeatherSystem;
-use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise};
+use crate::core_types::{
+    get_oxygen_limited_burn_rate, simulate_plume_rise, Degrees, Fraction, SurfaceAreaToVolume,
+};
 use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField, WindFieldConfig};
 use crate::physics::{calculate_layer_transition_probability, CanopyLayer};
 use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
@@ -40,6 +42,10 @@ use std::collections::HashSet;
 /// Ladder fuels (e.g., stringybark bark strips) create vertical fuel continuity
 /// that intensifies crown fire development. Based on Ellis (2011).
 const LADDER_FUEL_TEMP_BOOST_FACTOR: f32 = 0.2; // Up to 20% temperature boost
+
+/// Minimum fuel remaining (kg) below which elements are treated as effectively depleted.
+/// This prevents unnecessary heat calculations and ignition attempts for negligible fuel.
+const MIN_FUEL_REMAINING: Kilograms = Kilograms::new(0.01);
 
 /// Ultra-realistic fire simulation with full atmospheric modeling
 pub struct FireSimulation {
@@ -84,6 +90,10 @@ pub struct FireSimulation {
     // mark_active_cells is expensive (spatial bucketing, neighbor iteration)
     // but only needs to update when burning elements change (ignition/extinguish)
     cached_burning_elements: HashSet<usize>,
+
+    // OPTIMIZATION: Reusable heat map to avoid allocations every frame
+    // At 60 FPS with 20k elements, this saves 60 allocations/sec of large hash maps
+    heat_map: FxHashMap<usize, f32>,
 
     // Phase 2: Advanced Weather Phenomena
     /// Atmospheric profile for stability indices
@@ -154,6 +164,7 @@ impl FireSimulation {
             nearby_cache: FxHashMap::default(),
             current_frame: 0,
             cached_burning_elements: HashSet::new(),
+            heat_map: FxHashMap::default(),
             atmospheric_profile,
             pyrocumulus_clouds: Vec::new(),
             action_queue: ActionQueue::default(),
@@ -1086,9 +1097,11 @@ impl FireSimulation {
             let fuel_consumed = actual_burn_rate * smoldering_burn_mult * dt;
 
             // DEBUG: Print combustion values
-            if std::env::var("DEBUG_COMBUSTION").is_ok() {
+            #[cfg(debug_assertions)]
+            if tracing::level_enabled!(tracing::Level::DEBUG) {
                 if let Some(el) = self.get_element(element_id) {
-                    eprintln!(
+                    tracing::debug!(
+                        target: "fire_sim_core::combustion",
                         "COMBUST {}: temp={:.1} ignition={:.1} base_burn={:.6} oxygen_factor={:.4} smold_mult={:.4} dt={:.1} fuel_consumed={:.6}",
                         element_id,
                         el.temperature,
@@ -1127,7 +1140,7 @@ impl FireSimulation {
                     element.temperature = Celsius::new(new_temp);
                 }
 
-                if element.fuel_remaining < Kilograms::new(0.01) {
+                if element.fuel_remaining < MIN_FUEL_REMAINING {
                     element.ignited = false;
                     should_extinguish = true;
                 }
@@ -1323,14 +1336,93 @@ impl FireSimulation {
         // Heat transfer calculation is memory-bound (reading elements), not CPU-bound
         // Sequential access has better cache locality than parallel collection
 
-        // OPTIMIZATION: Use FxHashMap for integer keys (faster hashing) and accurate sizing
-        // Pre-compute exact capacity needed to avoid any resizing during accumulation
+        // OPTIMIZATION: Reuse heat_map from previous frame to avoid allocations
+        // Clear and ensure capacity instead of creating new HashMap each frame
         let estimated_targets = nearby_cache
             .iter()
             .map(|(_, _, nearby)| nearby.len())
             .sum::<usize>();
-        let mut heat_map: FxHashMap<usize, f32> =
+        self.heat_map.clear();
+        if self.heat_map.capacity() < estimated_targets {
+            self.heat_map
+                .reserve(estimated_targets - self.heat_map.capacity());
+        }
+
+        // OPTIMIZATION: Pre-extract source element data to avoid repeated get_element() calls
+        // Build a compact cache of just the data needed for heat transfer calculations
+        // This reduces borrow checker conflicts and improves cache locality
+        let mut source_cache: FxHashMap<usize, (Vec3, Celsius, Kilograms, f32)> =
+            FxHashMap::with_capacity_and_hasher(nearby_cache.len(), FxBuildHasher);
+
+        // Also cache all potential target elements to avoid get_element() calls in hot loop.
+        // estimated_targets is the sum of all neighbor list lengths and therefore an upper bound
+        // on the number of unique target IDs (overlap across sources can only reduce this count).
+        type TargetData = (
+            Vec3,
+            Celsius,
+            Kilograms,
+            SurfaceAreaToVolume,
+            Fraction,
+            Degrees,
+            Degrees,
+        );
+        let mut target_cache: FxHashMap<usize, TargetData> =
             FxHashMap::with_capacity_and_hasher(estimated_targets, FxBuildHasher);
+
+        for (element_id, _, nearby) in &nearby_cache {
+            if let Some(source) = self.get_element(*element_id) {
+                source_cache.insert(
+                    *element_id,
+                    (
+                        source.position,
+                        source.temperature,
+                        source.fuel_remaining,
+                        source.fuel.flame_area_coefficient,
+                    ),
+                );
+            }
+            // Build target cache directly during iteration to avoid duplicate work
+            for &target_id in nearby {
+                target_cache.entry(target_id).or_insert_with(|| {
+                    if let Some(target) = self.get_element(target_id) {
+                        (
+                            target.position,
+                            target.temperature,
+                            target.fuel_remaining,
+                            target.fuel.surface_area_to_volume,
+                            target.fuel.absorption_efficiency_base,
+                            target.slope_angle,
+                            target.aspect_angle,
+                        )
+                    } else {
+                        // This indicates a logical inconsistency: nearby_cache referenced a target_id
+                        // for which no FuelElement exists. We keep a "no-heat" dummy record in
+                        // release builds to avoid changing behavior, but fail fast in debug to
+                        // surface the bug.
+                        #[cfg(debug_assertions)]
+                        {
+                            panic!(
+                                "FireSimulation heat transfer: target_id {target_id} has no corresponding FuelElement"
+                            );
+                        }
+
+                        #[cfg(not(debug_assertions))]
+                        {
+                            tracing::warn!("FireSimulation heat transfer: target_id {target_id} has no corresponding FuelElement; using dummy target data with zero fuel.");
+                            (
+                                Vec3::zeros(),
+                                self.weather.temperature,
+                                Kilograms::new(0.0),
+                                SurfaceAreaToVolume::new(0.0),
+                                Fraction::new(0.0),
+                                Degrees::new(0.0),
+                                Degrees::new(0.0)
+                            )
+                        }
+                    }
+                });
+            }
+        }
 
         // Phase 7: Get turbulent wind model for realistic fire spread irregularity
         // Turbulence scales with FFDI, atmospheric stability, mixing height, and time of day
@@ -1345,108 +1437,140 @@ impl FireSimulation {
         );
         let sim_time = self.simulation_time;
 
-        // Sequential iteration with better cache locality
-        for (element_id, _pos, nearby) in &nearby_cache {
-            // Get source element data (read-only)
-            let source_data = self.get_element(*element_id).map(|source| {
-                (
-                    source.position,
-                    source.temperature,
-                    *source.fuel_remaining,
-                    source.fuel.flame_area_coefficient,
-                )
-            });
+        // OPTIMIZATION: Parallel heat transfer calculation for large fires
+        //
+        // This parallelization improves CPU utilization for large fires but comes with trade-offs:
+        // 1. The source_cache and target_cache are shared read-only across threads, which may cause
+        //    cache line contention when multiple threads access the same elements.
+        // 2. Thread-local heat maps are merged sequentially after parallel computation, adding overhead
+        //    that may negate benefits for small fires.
+        // 3. Heat transfer is fundamentally memory-bound (cache lookups, hash map access), so
+        //    parallelization gains may be limited by memory bandwidth rather than CPU cores.
+        //
+        // Use a moderately small chunk size (32 elements) to provide good load balancing across threads.
+        // While larger chunks reduce Rayon scheduling overhead, this value provides reasonable
+        // performance across different fire scales and hardware configurations.
+        const HEAT_CALC_CHUNK_SIZE: usize = 32;
 
-            if let Some((source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff)) =
-                source_data
-            {
-                // Phase 7: Apply turbulent wind fluctuations at source position
-                // This creates spatially and temporally varying wind that produces
-                // irregular fire perimeters matching real-world observations
-                // Reference: Byram (1954), Schroeder & Buck (1970)
-                let local_wind =
-                    turbulent_wind.apply(wind_vector, source_pos.x, source_pos.y, sim_time);
+        // Check if heat_transfer debug is enabled (done once outside parallel section)
+        #[cfg(debug_assertions)]
+        let debug_heat_enabled = tracing::level_enabled!(tracing::Level::DEBUG);
 
-                // Calculate heat for all nearby targets
-                for &target_id in nearby {
-                    if target_id == *element_id {
-                        continue;
-                    }
+        // Pre-allocate thread-local heat maps for parallel accumulation
+        let results: Vec<(FxHashMap<usize, f32>, Vec<String>)> = nearby_cache
+            .par_chunks(HEAT_CALC_CHUNK_SIZE)
+            .map(|chunk| {
+                // Pre-size local heat map based on estimated targets in this chunk
+                let chunk_targets: usize = chunk.iter().map(|(_, _, nearby)| nearby.len()).sum();
+                let mut local_heat_map: FxHashMap<usize, f32> =
+                    FxHashMap::with_capacity_and_hasher(chunk_targets, FxBuildHasher);
 
-                    // Get target element data (read-only)
-                    // Heat transfer to BOTH ignited and non-ignited elements
-                    // Ignited elements need continuous heating to maintain/increase temperature
-                    if let Some(target) = self.get_element(target_id) {
-                        use crate::core_types::units::Kilograms;
+                #[cfg(debug_assertions)]
+                let mut debug_messages: Vec<String> = Vec::new();
 
-                        if target.fuel_remaining < Kilograms::new(0.01) {
-                            continue;
-                        }
+                for (element_id, _pos, nearby) in chunk {
+                    // Get source element data from cache (already extracted)
+                    if let Some(&(source_pos, source_temp, source_fuel_remaining, source_flame_area_coeff)) =
+                        source_cache.get(element_id)
+                    {
+                        // Phase 7: Apply turbulent wind fluctuations
+                        let local_wind =
+                            turbulent_wind.apply(wind_vector, source_pos.x, source_pos.y, sim_time);
 
-                        // OPTIMIZED: Use raw data instead of temporary FuelElement structures
-                        // Eliminates 500,000+ allocations per frame at 12.5k burning elements
-                        // Phase 7: Uses local_wind (with turbulent fluctuations) for irregular spread
-                        let base_heat =
-                            crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
-                                source_pos,
-                                source_temp,
-                                source_fuel_remaining,
-                                source_flame_area_coeff,
-                                target.position,
-                                target.temperature,
-                                *target.fuel.surface_area_to_volume,
-                                *target.fuel.absorption_efficiency_base,
-                                local_wind,
-                                dt,
-                            );
+                        // Calculate heat for all nearby targets
+                        for &target_id in nearby {
+                            if target_id == *element_id {
+                                continue;
+                            }
 
-                        // Apply FFDI multiplier for Australian fire danger scaling
-                        // (FFDI multiplier ranges from 0.5× at Low to 8.0× at Catastrophic)
-                        let mut heat = base_heat * ffdi_multiplier;
+                            // Get target data from cache (avoids expensive get_element() call)
+                            if let Some(&(target_pos, target_temp, target_fuel_remaining, target_sav, target_absorption, target_slope, target_aspect)) =
+                                target_cache.get(&target_id)
+                            {
+                                if target_fuel_remaining < MIN_FUEL_REMAINING {
+                                    continue;
+                                }
 
-                        // Phase 3: Apply terrain-based slope effect on fire spread
-                        // OPTIMIZED: Uses cached slope/aspect from FuelElement (computed once at creation)
-                        // Eliminates 82.8% performance bottleneck from repeated Horn's method terrain lookups
-                        // Phase 7: Uses local_wind for consistent turbulent effects
-                        let terrain_multiplier = crate::physics::terrain_spread_multiplier_cached(
-                            &source_pos,
-                            &target.position,
-                            *target.slope_angle,
-                            *target.aspect_angle,
-                            &local_wind,
-                        );
-                        heat *= terrain_multiplier;
+                                let base_heat = crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
+                                    source_pos,
+                                    source_temp,
+                                    *source_fuel_remaining,
+                                    source_flame_area_coeff,
+                                    target_pos,
+                                    target_temp,
+                                    *target_sav,
+                                    *target_absorption,
+                                    local_wind,
+                                    dt,
+                                );
 
-                        // DEBUG: Print heat transfer for first few steps
-                        #[cfg(debug_assertions)]
-                        if base_heat > 0.0 && !target.ignited && std::env::var("DEBUG_HEAT").is_ok()
-                        {
-                            let direction = target.position - source_pos;
-                            let wind_norm = local_wind.normalize();
-                            let alignment = if local_wind.magnitude() > 0.1 {
-                                direction.normalize().dot(&wind_norm)
-                            } else {
-                                0.0
-                            };
-                            let dir_type = if alignment > 0.5 {
-                                "DWIND"
-                            } else if alignment < -0.5 {
-                                "UWIND"
-                            } else {
-                                "FLANK"
-                            };
-                            eprintln!(
-                                "Heat {element_id:?}->{target_id:?} ({dir_type} align={alignment:.2}): base={base_heat:.4} final={heat:.4} kJ src=({:.0},{:.0}) tgt=({:.0},{:.0})",
-                                source_pos.x, source_pos.y, target.position.x, target.position.y
-                            );
-                        }
+                                let mut heat = base_heat * ffdi_multiplier;
 
-                        if heat > 0.0 {
-                            // Accumulate heat using entry API for single hash lookup
-                            *heat_map.entry(target_id).or_insert(0.0) += heat;
+                                let terrain_multiplier =
+                                    crate::physics::terrain_spread_multiplier_cached(
+                                        &source_pos,
+                                        &target_pos,
+                                        *target_slope,
+                                        *target_aspect,
+                                        &local_wind,
+                                    );
+                                heat *= terrain_multiplier;
+
+                                // DEBUG: Collect heat transfer information for debug output
+                                #[cfg(debug_assertions)]
+                                if debug_heat_enabled && base_heat > 0.0 {
+                                    let direction = target_pos - source_pos;
+                                    let wind_norm = local_wind.normalize();
+                                    let alignment = if local_wind.magnitude() > 0.1 {
+                                        direction.normalize().dot(&wind_norm)
+                                    } else {
+                                        0.0
+                                    };
+                                    let dir_type = if alignment > 0.5 {
+                                        "DWIND"
+                                    } else if alignment < -0.5 {
+                                        "UWIND"
+                                    } else {
+                                        "FLANK"
+                                    };
+                                    debug_messages.push(format!(
+                                        "Heat {:?}->{:?} ({} align={:.2}): base={:.4} final={:.4} kJ src=({:.0},{:.0}) tgt=({:.0},{:.0})",
+                                        element_id, target_id, dir_type, alignment, base_heat, heat,
+                                        source_pos.x, source_pos.y, target_pos.x, target_pos.y
+                                    ));
+                                }
+
+                                *local_heat_map.entry(target_id).or_insert(0.0) += heat;
+                            }
                         }
                     }
                 }
+
+                #[cfg(debug_assertions)]
+                {
+                    (local_heat_map, debug_messages)
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    (local_heat_map, Vec::new())
+                }
+            })
+            .collect();
+
+        // Print debug messages collected from parallel threads
+        #[cfg(debug_assertions)]
+        if debug_heat_enabled {
+            for (_, messages) in &results {
+                for msg in messages {
+                    tracing::debug!(target: "fire_sim_core::heat_transfer", %msg);
+                }
+            }
+        }
+
+        // Merge partial heat maps from parallel threads into main heat_map
+        for (local_map, _) in results {
+            for (target_id, heat) in local_map {
+                *self.heat_map.entry(target_id).or_insert(0.0) += heat;
             }
         }
 
@@ -1457,25 +1581,37 @@ impl FireSimulation {
         //
         // PILOTED IGNITION: Heat is coming from adjacent burning elements, so has_pilot_flame=true
         // This uses the lower ignition_temperature threshold (Janssens 1991)
-        for (target_id, total_heat) in heat_map {
+        //
+        // We temporarily take ownership of the heat_map to avoid simultaneous mutable
+        // borrows of self while applying heat (get_element_mut borrows self mutably).
+        // Using std::mem::take avoids allocating an intermediate Vec and keeps the
+        // number of heap allocations proportional to the number of ignition events,
+        // not the number of heated elements.
+        let mut heat_map = std::mem::take(&mut self.heat_map);
+        for (target_id, total_heat) in heat_map.drain() {
             if let Some(target) = self.get_element_mut(target_id) {
                 let was_ignited = target.ignited;
-                let temp_before = *target.temperature;
-                let moisture_before = *target.moisture_fraction;
+
+                // DEBUG: Capture pre-heat state (only in debug builds so values aren't compiled in release)
+                #[cfg(debug_assertions)]
+                let (temp_before, moisture_before) = (target.temperature, target.moisture_fraction);
+
                 // Piloted ignition: heat from burning neighbors provides pilot flame
                 target.apply_heat(total_heat, dt, ffdi_multiplier, true);
 
-                // DEBUG: Print target element updates
-                if std::env::var("DEBUG_TARGET").is_ok() && total_heat > 0.5 {
-                    eprintln!(
-                        "TARGET {}: heat={:.2} temp={:.1}->{:.1} moisture={:.4}->{:.4} ignition={:.1} ignited={}",
+                // DEBUG: Print target element updates (debug-only compile-time; filtered at runtime by target)
+                #[cfg(debug_assertions)]
+                if total_heat > 0.5 {
+                    tracing::debug!(
+                        target: "fire_sim_core::target_update",
+                        "TARGET {}: heat={:.2} temp={}->{} moisture={}->{} ignition={} ignited={}",
                         target_id,
                         total_heat,
                         temp_before,
-                        *target.temperature,
+                        target.temperature,
                         moisture_before,
-                        *target.moisture_fraction,
-                        *target.fuel.ignition_temperature,
+                        target.moisture_fraction,
+                        target.fuel.ignition_temperature,
                         target.ignited
                     );
                 }
@@ -1493,6 +1629,8 @@ impl FireSimulation {
                 }
             }
         }
+        // Return the now-empty heat_map to self for reuse in the next step
+        self.heat_map = heat_map;
 
         // 5. Update grid atmospheric processes (staggered for smooth frame times)
         // PERFORMANCE FIX: Diffusion and buoyancy alternate to spread work across frames.
@@ -1787,10 +1925,8 @@ impl FireSimulation {
 
                     // Check for any unburned neighbor (early exit optimization)
                     let has_unburned_neighbor = nearby.iter().any(|&id| {
-                        use crate::core_types::units::Kilograms;
-
                         if let Some(neighbor) = self.get_element(id) {
-                            !neighbor.ignited && neighbor.fuel_remaining > Kilograms::new(0.01)
+                            !neighbor.ignited && neighbor.fuel_remaining > MIN_FUEL_REMAINING
                         } else {
                             false
                         }

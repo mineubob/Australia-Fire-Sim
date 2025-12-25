@@ -263,9 +263,10 @@ impl FuelElement {
 
             // DEBUG: Print evaporation calculation
             #[cfg(debug_assertions)]
-            if std::env::var("DEBUG_EVAP").is_ok() && effective_heat > 1.0 {
-                eprintln!(
-                    "EVAP: heat={:.2} kJ, fuel={:.2} kg, moisture_mass={:.4} kg, evap_energy={:.2} kJ, evaporated={:.4} kg, moisture {:.4}->{:.4}",
+            if effective_heat > 1.0 {
+                tracing::debug!(
+                    target: "fire_sim_core::evap",
+                    "heat={:.2} kJ, fuel={:.2} kg, moisture_mass={:.4} kg, evap_energy={:.2} kJ, evaporated={:.4} kg, moisture {:.4}->{:.4}",
                     effective_heat, *self.fuel_remaining, moisture_mass, evaporation_energy, moisture_evaporated, *old_moisture, *self.moisture_fraction
                 );
             }

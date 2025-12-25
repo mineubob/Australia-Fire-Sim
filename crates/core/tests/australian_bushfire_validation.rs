@@ -711,10 +711,11 @@ fn test_full_simulation_catastrophic_conditions() {
         })
         .count();
 
-    // Under catastrophic conditions with proper downwind alignment, expect at least 5 burning
-    // (center + some downwind neighbors)
+    // Under catastrophic conditions with proper downwind alignment, expect at least 6 burning
+    // (center + downwind neighbors). Physics-accurate simulation without artificial simplifications
+    // produces moderate but realistic spread rates consistent with element-based fire models.
     assert!(
-        burning_count >= 5,
-        "Catastrophic conditions: expected ≥5 burning elements, got {burning_count}"
+        burning_count >= 6,
+        "Catastrophic conditions: expected ≥6 burning elements, got {burning_count}"
     );
 }

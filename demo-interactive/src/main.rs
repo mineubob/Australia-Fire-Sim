@@ -1565,6 +1565,11 @@ impl App {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize tracing subscriber (respects RUST_LOG / default env filter)
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init();
+
     // Check for headless mode flag
     let headless = std::env::args().any(|arg| arg == "--headless");
 
