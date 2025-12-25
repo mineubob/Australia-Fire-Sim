@@ -16,7 +16,9 @@
 pub mod arrival_time;
 pub mod context;
 pub mod level_set;
+pub mod rothermel;
 
 pub use arrival_time::{predict_arrival_time, ArrivalPrediction};
 pub use context::GpuContext;
 pub use level_set::{CpuLevelSetSolver, LevelSetSolver};
+pub use rothermel::GpuRothermelSolver;
