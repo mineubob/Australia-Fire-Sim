@@ -24,7 +24,9 @@ use crate::core_types::noise::{FuelVariation, TurbulentWind};
 use crate::core_types::spatial::SpatialIndex;
 use crate::core_types::units::{Celsius, CelsiusDelta, Kilograms, Percent};
 use crate::core_types::weather::WeatherSystem;
-use crate::core_types::{get_oxygen_limited_burn_rate, simulate_plume_rise};
+use crate::core_types::{
+    get_oxygen_limited_burn_rate, simulate_plume_rise, Degrees, Fraction, SurfaceAreaToVolume,
+};
 use crate::grid::{GridCell, PlameSource, SimulationGrid, TerrainData, WindField, WindFieldConfig};
 use crate::physics::{calculate_layer_transition_probability, CanopyLayer};
 use crate::weather::{AtmosphericProfile, PyrocumulusCloud};
@@ -1348,13 +1350,21 @@ impl FireSimulation {
         // OPTIMIZATION: Pre-extract source element data to avoid repeated get_element() calls
         // Build a compact cache of just the data needed for heat transfer calculations
         // This reduces borrow checker conflicts and improves cache locality
-        let mut source_cache: FxHashMap<usize, (Vec3, Celsius, f32, f32)> =
+        let mut source_cache: FxHashMap<usize, (Vec3, Celsius, Kilograms, f32)> =
             FxHashMap::with_capacity_and_hasher(nearby_cache.len(), FxBuildHasher);
 
         // Also cache all potential target elements to avoid get_element() calls in hot loop.
         // estimated_targets is the sum of all neighbor list lengths and therefore an upper bound
         // on the number of unique target IDs (overlap across sources can only reduce this count).
-        type TargetData = (Vec3, Celsius, f32, f32, f32, f32, f32);
+        type TargetData = (
+            Vec3,
+            Celsius,
+            Kilograms,
+            SurfaceAreaToVolume,
+            Fraction,
+            Degrees,
+            Degrees,
+        );
         let mut target_cache: FxHashMap<usize, TargetData> =
             FxHashMap::with_capacity_and_hasher(estimated_targets, FxBuildHasher);
 
@@ -1365,7 +1375,7 @@ impl FireSimulation {
                     (
                         source.position,
                         source.temperature,
-                        *source.fuel_remaining,
+                        source.fuel_remaining,
                         source.fuel.flame_area_coefficient,
                     ),
                 );
@@ -1377,11 +1387,11 @@ impl FireSimulation {
                         (
                             target.position,
                             target.temperature,
-                            *target.fuel_remaining,
-                            *target.fuel.surface_area_to_volume,
-                            *target.fuel.absorption_efficiency_base,
-                            *target.slope_angle,
-                            *target.aspect_angle,
+                            target.fuel_remaining,
+                            target.fuel.surface_area_to_volume,
+                            target.fuel.absorption_efficiency_base,
+                            target.slope_angle,
+                            target.aspect_angle,
                         )
                     } else {
                         // This indicates a logical inconsistency: nearby_cache referenced a target_id
@@ -1394,7 +1404,7 @@ impl FireSimulation {
                         eprintln!(
                             "Warning: FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement; using dummy target data with zero fuel."
                         );
-                        (Vec3::zeros(), Celsius::new(20.0), 0.0, 0.0, 0.0, 0.0, 0.0)
+                        (Vec3::zeros(), self.weather.temperature, Kilograms::new(0.0), SurfaceAreaToVolume::new(0.0), Fraction::new(0.0), Degrees::new(0.0), Degrees::new(0.0))
                     }
                 });
             }
@@ -1463,19 +1473,19 @@ impl FireSimulation {
                             if let Some(&(target_pos, target_temp, target_fuel_remaining, target_sav, target_absorption, target_slope, target_aspect)) =
                                 target_cache.get(&target_id)
                             {
-                                if target_fuel_remaining < *MIN_FUEL_REMAINING {
+                                if target_fuel_remaining < MIN_FUEL_REMAINING {
                                     continue;
                                 }
 
                                 let base_heat = crate::physics::element_heat_transfer::calculate_heat_transfer_raw(
                                     source_pos,
                                     source_temp,
-                                    source_fuel_remaining,
+                                    *source_fuel_remaining,
                                     source_flame_area_coeff,
                                     target_pos,
                                     target_temp,
-                                    target_sav,
-                                    target_absorption,
+                                    *target_sav,
+                                    *target_absorption,
                                     local_wind,
                                     dt,
                                 );
@@ -1486,8 +1496,8 @@ impl FireSimulation {
                                     crate::physics::terrain_spread_multiplier_cached(
                                         &source_pos,
                                         &target_pos,
-                                        target_slope,
-                                        target_aspect,
+                                        *target_slope,
+                                        *target_aspect,
                                         &local_wind,
                                     );
                                 heat *= terrain_multiplier;
