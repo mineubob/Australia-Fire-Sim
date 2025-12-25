@@ -1604,7 +1604,7 @@ impl FireSimulation {
                 if total_heat > 0.5 {
                     tracing::debug!(
                         target: "fire_sim_core::target_update",
-                        "{} {} {} {} {} {} {} {}",
+                        "TARGET {}: heat={:.2} temp={}->{} moisture={}->{} ignition={} ignited={}",
                         target_id,
                         total_heat,
                         temp_before,
