@@ -13,8 +13,10 @@
 //! - Same inputs produce same outputs across different GPU vendors
 //! - Validated against CPU reference implementation
 
+pub mod arrival_time;
 pub mod context;
 pub mod level_set;
 
+pub use arrival_time::{predict_arrival_time, ArrivalPrediction};
 pub use context::GpuContext;
-pub use level_set::LevelSetSolver;
+pub use level_set::{CpuLevelSetSolver, LevelSetSolver};

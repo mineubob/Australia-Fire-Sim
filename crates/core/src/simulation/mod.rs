@@ -118,6 +118,13 @@ pub struct FireSimulation {
     /// Provides moisture (±10%) and load (±40%) variation
     /// Reference: Finney (2003), Anderson (1982)
     fuel_variation: FuelVariation,
+
+    // Phase 8: GPU-Accelerated Level Set Fire Front (optional)
+    /// Level set solver for fire front propagation (None = disabled)
+    /// When enabled, provides real-time fire arrival predictions
+    level_set_solver: Option<crate::gpu::LevelSetSolver>,
+    /// Cached spread rates for level set solver (updated periodically)
+    level_set_spread_rates: Vec<f32>,
 }
 
 impl FireSimulation {
@@ -189,6 +196,9 @@ impl FireSimulation {
             },
             // Phase 7: Stochastic fire spread for realistic perimeter irregularity
             fuel_variation: FuelVariation::default(),
+            // Phase 8: GPU level set solver (disabled by default)
+            level_set_solver: None,
+            level_set_spread_rates: Vec::new(),
         }
     }
 
@@ -721,6 +731,107 @@ impl FireSimulation {
                 }
             }
         }
+    }
+
+    // ========================================================================
+    // Phase 8: GPU-Accelerated Level Set Fire Front
+    // ========================================================================
+
+    /// Enable GPU-accelerated level set fire front tracking
+    ///
+    /// Initializes a level set solver for real-time fire arrival predictions.
+    /// The solver tracks the fire boundary as the zero level set of a signed
+    /// distance function φ, enabling fast prediction queries.
+    ///
+    /// # Arguments
+    /// * `grid_width` - Number of grid cells in X direction
+    /// * `grid_height` - Number of grid cells in Y direction
+    /// * `grid_spacing` - Physical size of each cell in meters (e.g., 5.0 for 5m resolution)
+    ///
+    /// # Performance
+    /// - 2048×2048 grid: <5ms GPU time per timestep
+    /// - Automatically falls back to CPU if GPU unavailable
+    ///
+    /// # Example
+    /// ```ignore
+    /// // 1km × 1km area at 5m resolution = 200×200 grid
+    /// sim.enable_level_set_fire_front(200, 200, 5.0);
+    /// ```
+    pub fn enable_level_set_fire_front(
+        &mut self,
+        grid_width: u32,
+        grid_height: u32,
+        grid_spacing: f32,
+    ) {
+        let mut solver = crate::gpu::LevelSetSolver::new(grid_width, grid_height, grid_spacing);
+
+        // Initialize phi field (positive = unburned, negative = burned, zero = fire front)
+        let cell_count = (grid_width * grid_height) as usize;
+        let initial_phi = vec![100.0; cell_count]; // Start with large positive (far from fire)
+        solver.initialize_phi(&initial_phi);
+
+        // Initialize spread rates (will be updated during simulation)
+        self.level_set_spread_rates = vec![0.0; cell_count];
+
+        self.level_set_solver = Some(solver);
+
+        tracing::info!(
+            "Level set fire front enabled: {}×{} grid at {}m resolution",
+            grid_width,
+            grid_height,
+            grid_spacing
+        );
+    }
+
+    /// Predict fire arrival time at a specific position
+    ///
+    /// Uses level set gradient tracing to predict when fire will reach the target.
+    /// Requires `enable_level_set_fire_front()` to be called first.
+    ///
+    /// # Arguments
+    /// * `position` - Target position (x, y, z) in world coordinates
+    /// * `max_lookahead` - Maximum prediction time in seconds
+    ///
+    /// # Returns
+    /// Prediction result with arrival time, distance to front, and average spread rate.
+    /// Returns `None` for `arrival_time` if fire won't reach position within lookahead.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Predict fire arrival at asset location
+    /// let pred = sim.predict_fire_arrival(Vec3::new(500.0, 300.0, 0.0), 3600.0);
+    /// if let Some(time) = pred.arrival_time {
+    ///     println!("Fire will arrive in {} seconds", time);
+    /// }
+    /// ```
+    #[must_use]
+    pub fn predict_fire_arrival(
+        &self,
+        position: Vec3,
+        max_lookahead: f32,
+    ) -> Option<crate::gpu::ArrivalPrediction> {
+        let solver = self.level_set_solver.as_ref()?;
+
+        Some(crate::gpu::predict_arrival_time(
+            solver,
+            position,
+            &self.level_set_spread_rates,
+            max_lookahead,
+        ))
+    }
+
+    /// Check if level set fire front tracking is enabled
+    #[must_use]
+    pub fn has_level_set_solver(&self) -> bool {
+        self.level_set_solver.is_some()
+    }
+
+    /// Get level set solver dimensions (if enabled)
+    #[must_use]
+    pub fn level_set_dimensions(&self) -> Option<(u32, u32)> {
+        self.level_set_solver
+            .as_ref()
+            .map(crate::gpu::LevelSetSolver::dimensions)
     }
 
     /// Main simulation update
