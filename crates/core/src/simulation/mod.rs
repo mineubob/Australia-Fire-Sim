@@ -125,6 +125,8 @@ pub struct FireSimulation {
     level_set_solver: Option<crate::gpu::LevelSetSolver>,
     /// Cached spread rates for level set solver (updated periodically)
     level_set_spread_rates: Vec<f32>,
+    /// Suppression grid for GPU fire front integration
+    suppression_grid: Option<crate::gpu::SuppressionGrid>,
 }
 
 impl FireSimulation {
@@ -199,6 +201,7 @@ impl FireSimulation {
             // Phase 8: GPU level set solver (disabled by default)
             level_set_solver: None,
             level_set_spread_rates: Vec::new(),
+            suppression_grid: None,
         }
     }
 
@@ -773,6 +776,13 @@ impl FireSimulation {
         // Initialize spread rates (will be updated during simulation)
         self.level_set_spread_rates = vec![0.0; cell_count];
 
+        // Initialize suppression grid with same dimensions
+        self.suppression_grid = Some(crate::gpu::SuppressionGrid::new(
+            grid_width,
+            grid_height,
+            grid_spacing,
+        ));
+
         self.level_set_solver = Some(solver);
 
         tracing::info!(
@@ -832,6 +842,71 @@ impl FireSimulation {
         self.level_set_solver
             .as_ref()
             .map(crate::gpu::LevelSetSolver::dimensions)
+    }
+
+    // ========================================================================
+    // Phase 8: Suppression Integration with GPU Fire Front
+    // ========================================================================
+
+    /// Apply suppression at a specific location (for GPU fire front)
+    ///
+    /// Updates the suppression grid to reduce fire spread rates in the affected area.
+    ///
+    /// # Arguments
+    /// * `position` - World position where suppression is applied
+    /// * `effectiveness` - Suppression effectiveness (0-1, where 1 = 100% reduction)
+    /// * `radius` - Radius of effect in meters
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Apply water drop with 70% effectiveness in 10m radius
+    /// sim.apply_suppression_gpu(Vec3::new(100.0, 100.0, 0.0), 0.7, 10.0);
+    /// ```
+    pub fn apply_suppression_gpu(&mut self, position: Vec3, effectiveness: f32, radius: f32) {
+        if let Some(grid) = &mut self.suppression_grid {
+            grid.set_effectiveness_at_position(position, effectiveness, radius);
+        }
+    }
+
+    /// Query suppression effectiveness at a specific position
+    ///
+    /// Returns the current suppression effectiveness affecting fire spread at this location.
+    ///
+    /// # Arguments
+    /// * `position` - World position to query
+    ///
+    /// # Returns
+    /// Suppression effectiveness data (0-1 scale)
+    #[must_use]
+    pub fn query_suppression_effectiveness(
+        &self,
+        position: Vec3,
+    ) -> crate::gpu::SuppressionEffectiveness {
+        self.suppression_grid
+            .as_ref()
+            .map_or(crate::gpu::SuppressionEffectiveness::none(), |grid| {
+                grid.query_effectiveness(position)
+            })
+    }
+
+    /// Update suppression grid with degradation over time
+    ///
+    /// Should be called periodically to simulate evaporation and UV degradation.
+    ///
+    /// # Arguments
+    /// * `dt` - Time step in seconds
+    /// * `evaporation_rate` - Rate of effectiveness loss per second (default: 0.0001)
+    pub fn update_suppression_degradation(&mut self, dt: f32, evaporation_rate: f32) {
+        if let Some(grid) = &mut self.suppression_grid {
+            grid.apply_degradation(dt, evaporation_rate);
+        }
+    }
+
+    /// Clear all suppression (remove all suppression effectiveness)
+    pub fn clear_suppression(&mut self) {
+        if let Some(grid) = &mut self.suppression_grid {
+            grid.clear();
+        }
     }
 
     /// Main simulation update
