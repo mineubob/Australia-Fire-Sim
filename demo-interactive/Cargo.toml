@@ -16,3 +16,5 @@ path = "src/main.rs"
 fire-sim-core = { path = "../crates/core" }
 nalgebra.workspace = true
 ratatui = "0.29"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

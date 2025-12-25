@@ -1097,9 +1097,11 @@ impl FireSimulation {
             let fuel_consumed = actual_burn_rate * smoldering_burn_mult * dt;
 
             // DEBUG: Print combustion values
-            if std::env::var("DEBUG_COMBUSTION").is_ok() {
+            #[cfg(debug_assertions)]
+            if tracing::level_enabled!(tracing::Level::DEBUG) {
                 if let Some(el) = self.get_element(element_id) {
-                    eprintln!(
+                    tracing::debug!(
+                        target: "fire_sim_core::combustion",
                         "COMBUST {}: temp={:.1} ignition={:.1} base_burn={:.6} oxygen_factor={:.4} smold_mult={:.4} dt={:.1} fuel_consumed={:.6}",
                         element_id,
                         el.temperature,
@@ -1400,15 +1402,13 @@ impl FireSimulation {
                         #[cfg(debug_assertions)]
                         {
                             panic!(
-                                "FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement"
+                                "FireSimulation heat transfer: target_id {target_id} has no corresponding FuelElement"
                             );
                         }
 
                         #[cfg(not(debug_assertions))]
                         {
-                            eprintln!(
-                                "Warning: FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement; using dummy target data with zero fuel."
-                            );
+                            tracing::warn!("FireSimulation heat transfer: target_id {target_id} has no corresponding FuelElement; using dummy target data with zero fuel.");
                             (Vec3::zeros(), self.weather.temperature, Kilograms::new(0.0), SurfaceAreaToVolume::new(0.0), Fraction::new(0.0), Degrees::new(0.0), Degrees::new(0.0))
                         }
                     }
@@ -1444,9 +1444,9 @@ impl FireSimulation {
         // performance across different fire scales and hardware configurations.
         const HEAT_CALC_CHUNK_SIZE: usize = 32;
 
-        // Check if DEBUG_HEAT is enabled (done once outside parallel section)
+        // Check if heat_transfer debug is enabled (done once outside parallel section)
         #[cfg(debug_assertions)]
-        let debug_heat_enabled = std::env::var("DEBUG_HEAT").is_ok();
+        let debug_heat_enabled = tracing::level_enabled!(tracing::Level::DEBUG);
 
         // Pre-allocate thread-local heat maps for parallel accumulation
         let results: Vec<(FxHashMap<usize, f32>, Vec<String>)> = nearby_cache
@@ -1554,7 +1554,7 @@ impl FireSimulation {
         if debug_heat_enabled {
             for (_, messages) in &results {
                 for msg in messages {
-                    eprintln!("{msg}");
+                    tracing::debug!(target: "fire_sim_core::heat_transfer", %msg);
                 }
             }
         }
@@ -1583,16 +1583,20 @@ impl FireSimulation {
         for (target_id, total_heat) in heat_map.drain() {
             if let Some(target) = self.get_element_mut(target_id) {
                 let was_ignited = target.ignited;
-                let temp_before = target.temperature;
-                let moisture_before = target.moisture_fraction;
+
+                // DEBUG: Capture pre-heat state (only in debug builds so values aren't compiled in release)
+                #[cfg(debug_assertions)]
+                let (temp_before, moisture_before) = (target.temperature, target.moisture_fraction);
 
                 // Piloted ignition: heat from burning neighbors provides pilot flame
                 target.apply_heat(total_heat, dt, ffdi_multiplier, true);
 
-                // DEBUG: Print target element updates
-                if std::env::var("DEBUG_TARGET").is_ok() && total_heat > 0.5 {
-                    eprintln!(
-                        "TARGET {}: heat={} temp={}->{} moisture={}->{} ignition={} ignited={}",
+                // DEBUG: Print target element updates (debug-only compile-time; filtered at runtime by target)
+                #[cfg(debug_assertions)]
+                if total_heat > 0.5 {
+                    tracing::debug!(
+                        target: "fire_sim_core::target_update",
+                        "{} {} {} {} {} {} {} {}",
                         target_id,
                         total_heat,
                         temp_before,
