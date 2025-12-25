@@ -1409,7 +1409,15 @@ impl FireSimulation {
                         #[cfg(not(debug_assertions))]
                         {
                             tracing::warn!("FireSimulation heat transfer: target_id {target_id} has no corresponding FuelElement; using dummy target data with zero fuel.");
-                            (Vec3::zeros(), self.weather.temperature, Kilograms::new(0.0), SurfaceAreaToVolume::new(0.0), Fraction::new(0.0), Degrees::new(0.0), Degrees::new(0.0))
+                            (
+                                Vec3::zeros(),
+                                self.weather.temperature,
+                                Kilograms::new(0.0),
+                                SurfaceAreaToVolume::new(0.0),
+                                Fraction::new(0.0),
+                                Degrees::new(0.0),
+                                Degrees::new(0.0)
+                            )
                         }
                     }
                 });
