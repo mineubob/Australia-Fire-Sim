@@ -49,11 +49,11 @@ pub use physics::CombustionPhase;
 
 // Re-export multiplayer types (for FFI)
 pub use simulation::{PlayerAction, PlayerActionType};
-// Initialize tracing for all tests in this crate so `tracing` logs are available
-// when running `cargo test`. This runs only in test builds and executes once
-// at test binary startup using the `ctor` crate.
 #[cfg(test)]
 mod test_tracing {
+    // Initialize tracing for all tests in this crate so `tracing` logs are available
+    // when running `cargo test`. This runs only in test builds and executes once
+    // at test binary startup using the `ctor` crate.
     use ctor::ctor;
 
     #[ctor]
