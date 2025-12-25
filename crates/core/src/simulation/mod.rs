@@ -1395,16 +1395,23 @@ impl FireSimulation {
                         )
                     } else {
                         // This indicates a logical inconsistency: nearby_cache referenced a target_id
-                        // for which no FuelElement exists. We keep a "no-heat" dummy record in release
-                        // builds to avoid changing behavior, but fail fast in debug to surface the bug.
-                        debug_assert!(
-                            false,
-                            "FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement"
-                        );
-                        eprintln!(
-                            "Warning: FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement; using dummy target data with zero fuel."
-                        );
-                        (Vec3::zeros(), self.weather.temperature, Kilograms::new(0.0), SurfaceAreaToVolume::new(0.0), Fraction::new(0.0), Degrees::new(0.0), Degrees::new(0.0))
+                        // for which no FuelElement exists. We keep a "no-heat" dummy record in
+                        // release builds to avoid changing behavior, but fail fast in debug to
+                        // surface the bug.
+                        #[cfg(debug_assertions)]
+                        {
+                            panic!(
+                                "FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement"
+                            );
+                        }
+                        
+                        #[cfg(not(debug_assertions))]
+                        {
+                            eprintln!(
+                                "Warning: FireSimulationUltra heat transfer: target_id {target_id} has no corresponding FuelElement; using dummy target data with zero fuel."
+                            );
+                            (Vec3::zeros(), self.weather.temperature, Kilograms::new(0.0), SurfaceAreaToVolume::new(0.0), Fraction::new(0.0), Degrees::new(0.0), Degrees::new(0.0))
+                        }
                     }
                 });
             }
