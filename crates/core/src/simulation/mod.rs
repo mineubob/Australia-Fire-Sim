@@ -909,6 +909,58 @@ impl FireSimulation {
         }
     }
 
+    /// Update level set spread rates from current fire state
+    ///
+    /// Calculates spread rates for each grid cell based on burning fuel elements
+    /// using Rothermel model. This synchronizes the GPU level set solver with
+    /// the element-based fire simulation.
+    fn update_level_set_from_fire_state(&mut self) {
+        // Only update if level set solver is enabled
+        if self.level_set_solver.is_none() {
+            return;
+        }
+
+        let (width, height) = self.level_set_dimensions().unwrap();
+        let cell_count = (width * height) as usize;
+
+        // Initialize all cells to zero
+        self.level_set_spread_rates.resize(cell_count, 0.0);
+
+        // Get wind vector for spread rate calculations
+        let wind_speed = self.weather.wind_vector().magnitude();
+
+        // Map burning elements to grid cells and calculate spread rates
+        for element in self.elements.iter().flatten() {
+            if !element.ignited {
+                continue;
+            }
+
+            // Convert element position to grid coordinates
+            let solver = self.level_set_solver.as_ref().unwrap();
+            let grid_spacing = solver.grid_spacing();
+            let grid_x = (element.position.x / grid_spacing).floor() as usize;
+            let grid_y = (element.position.y / grid_spacing).floor() as usize;
+
+            // Bounds check
+            if grid_x >= width as usize || grid_y >= height as usize {
+                continue;
+            }
+
+            // Calculate spread rate using Rothermel model
+            let spread_rate = crate::physics::rothermel::rothermel_spread_rate(
+                &element.fuel,
+                *element.moisture_fraction,
+                wind_speed,
+                *element.slope_angle,
+                *self.weather.temperature as f32,
+            );
+
+            // Update grid cell (use maximum if multiple elements map to same cell)
+            let idx = grid_y * width as usize + grid_x;
+            self.level_set_spread_rates[idx] = self.level_set_spread_rates[idx].max(spread_rate);
+        }
+    }
+
     /// Main simulation update
     ///
     /// # Fire Ignition Mechanisms
@@ -977,6 +1029,39 @@ impl FireSimulation {
         self.weather.update(dt);
         let wind_vector = self.weather.wind_vector();
         let ffdi_multiplier = self.weather.spread_rate_multiplier();
+
+        // 1b. Update GPU level set fire front (Phase 1)
+        if self.level_set_solver.is_some() {
+            // Update spread rates from current fire state
+            self.update_level_set_from_fire_state();
+
+            // Apply suppression to spread rates if available
+            let solver = self.level_set_solver.as_mut().unwrap();
+            if let Some(ref grid) = self.suppression_grid {
+                let suppressed_rates = crate::gpu::apply_suppression_to_spread_rates(
+                    &self.level_set_spread_rates,
+                    grid.effectiveness_field(),
+                );
+                solver.update_spread_rates(&suppressed_rates);
+            } else {
+                solver.update_spread_rates(&self.level_set_spread_rates);
+            }
+
+            // Advance level set solver
+            solver.step(dt);
+        }
+
+        // Update suppression degradation
+        if self.suppression_grid.is_some() {
+            // Evaporation rate depends on temperature and wind
+            // Base rate: 0.0001 = 0.01% per second
+            // Increases with temperature and wind
+            let temp_celsius: f32 = *self.weather.temperature as f32;
+            let temp_factor = 1.0 + ((temp_celsius - 20.0) / 50.0).max(0.0);
+            let wind_factor = 1.0 + (wind_vector.magnitude() / 20.0).min(1.0);
+            let evap_rate = 0.0001 * temp_factor * wind_factor;
+            self.update_suppression_degradation(dt, evap_rate);
+        }
 
         // CRITICAL: No artificial heat boost multipliers!
         // Physics formulas (Stefan-Boltzmann, Rothermel) naturally scale with dt
