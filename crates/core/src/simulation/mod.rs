@@ -746,6 +746,16 @@ impl FireSimulation {
         self.current_frame
     }
 
+    /// Check whether GPU backend is being used for heavy computations
+    ///
+    /// Currently this returns `true` when the GPU-accelerated level set solver
+    /// is active. The level set solver uses an automatic GPU/CPU fallback so
+    /// this method reflects the active backend in use.
+    #[must_use]
+    pub fn is_using_gpu(&self) -> bool {
+        self.level_set_solver.is_gpu()
+    }
+
     /// Predict potential spot fire locations based on current embers
     ///
     /// Uses Albini (1983) trajectory integration to predict where active embers
@@ -2838,6 +2848,16 @@ mod tests {
 
         assert_eq!(sim.burning_elements.len(), 1);
         assert!(sim.get_element(id).unwrap().ignited);
+    }
+
+    #[test]
+    fn test_is_using_gpu_accessor() {
+        // Create a modest terrain and simulation and verify the accessor
+        // mirrors the internal level set solver backend selection.
+        let terrain = TerrainData::flat(64.0, 64.0, 5.0, 0.0);
+        let sim = FireSimulation::new(5.0, &terrain);
+
+        assert_eq!(sim.is_using_gpu(), sim.level_set_solver.is_gpu());
     }
 
     #[test]

@@ -438,8 +438,8 @@ pub struct CpuLevelSetSolver {
     height: u32,
     grid_spacing: f32,
     fixed_scale: i32,
-    phi: Vec<i32>,        // Store in fixed-point (matching GPU)
-    phi_temp: Vec<i32>,   // Store in fixed-point (matching GPU)
+    phi: Vec<i32>,          // Store in fixed-point (matching GPU)
+    phi_temp: Vec<i32>,     // Store in fixed-point (matching GPU)
     spread_rates: Vec<i32>, // Store in fixed-point (matching GPU)
 }
 
@@ -482,7 +482,7 @@ impl CpuLevelSetSolver {
         let h = self.height as i32;
         let scale = self.fixed_scale;
         let scale_f = scale as f32;
-        
+
         // Convert dt and dx to fixed-point (matching shader)
         let dt_fixed = (dt * scale_f).round() as i32;
         let dx_fixed = (self.grid_spacing * scale_f).round() as i32;
@@ -513,10 +513,10 @@ impl CpuLevelSetSolver {
         for j in 0..h {
             for i in 0..w {
                 let idx = (j * w + i) as usize;
-                
+
                 // Get phi values (already in fixed-point)
                 let phi_c = self.phi[idx];
-                
+
                 // Get neighbors with bounds checking (clamping like GPU shader)
                 let get_phi = |x: i32, y: i32| -> i32 {
                     let x_clamped = x.clamp(0, w - 1);
@@ -524,7 +524,7 @@ impl CpuLevelSetSolver {
                     let idx = (y_clamped * w + x_clamped) as usize;
                     self.phi[idx]
                 };
-                
+
                 let phi_xm = get_phi(i - 1, j);
                 let phi_xp = get_phi(i + 1, j);
                 let phi_ym = get_phi(i, j - 1);
@@ -540,25 +540,25 @@ impl CpuLevelSetSolver {
                 // This captures sharp discontinuities correctly (matches GPU shader)
                 let grad_x = if d_xm.abs() > d_xp.abs() { d_xm } else { d_xp };
                 let grad_y = if d_ym.abs() > d_yp.abs() { d_ym } else { d_yp };
-                
+
                 // |∇φ|² using fixed_mul to prevent overflow (matches GPU shader)
                 let dx2 = fixed_mul(grad_x, grad_x);
                 let dy2 = fixed_mul(grad_y, grad_y);
                 let grad_mag_sq = dx2 + dy2;
-                
+
                 // Integer sqrt (matches GPU exactly)
                 let sqrt_val = int_sqrt(grad_mag_sq);
-                
+
                 // Gradient magnitude: d/dx in fixed-point
                 // Use i64 intermediate to prevent overflow with large gradients
                 // With scale=1024=2^10: sqrt(scale)=32 exactly (no approximation!)
                 let sqrt_scale = 32_i64; // sqrt(1024) = 32 exactly
-                let grad_mag_fixed = if dx_fixed != 0 { 
+                let grad_mag_fixed = if dx_fixed != 0 {
                     ((sqrt_val as i64 * sqrt_scale * scale as i64) / dx_fixed as i64) as i32
-                } else { 
-                    0 
+                } else {
+                    0
                 };
-                
+
                 // Level set update: φ_new = φ_old - dt * R * |∇φ|
                 let r_fixed = self.spread_rates[idx];
                 let r_grad = fixed_mul(r_fixed, grad_mag_fixed);

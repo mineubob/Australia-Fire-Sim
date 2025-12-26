@@ -504,6 +504,7 @@ impl App {
         let weather = WeatherPreset::perth_metro();
         let sim = create_test_simulation(width, height, weather.clone());
         let element_count = sim.get_all_elements().len();
+        let using_gpu = sim.is_using_gpu();
 
         Self {
             sim,
@@ -516,7 +517,8 @@ impl App {
             messages: vec![
                 "Welcome to Bushfire Simulation!".to_string(),
                 format!(
-                    "Created simulation with {element_count} elements on {width}x{height} terrain"
+                    "Created simulation with {element_count} elements on {width}x{height} terrain with {}", 
+        using_gpu.then(|| "GPU").unwrap_or("no GPU")
                 ),
                 "Type 'help' for available commands.".to_string(),
             ],
@@ -1594,8 +1596,9 @@ fn run_headless() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new_with_mode(width, height, true);
 
     println!(
-        "Created simulation with {} elements on {width}x{height} terrain",
-        app.sim.get_all_elements().len()
+        "Created simulation with {} elements on {width}x{height} terrain with {}",
+        app.sim.get_all_elements().len(),
+        app.sim.is_using_gpu().then(|| "GPU").unwrap_or("no GPU")
     );
     println!("Enter commands (type 'help' for available commands, 'quit' to exit):");
     println!();
@@ -1810,7 +1813,8 @@ fn ui(f: &mut Frame, app: &App) {
 /// Draw the header
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let mut header_text = format!(
-        " Fire Simulation | Step: {} | Time: {:.1}s | Elements: {} | Burning: {} | Embers: {} ",
+        " Fire Simulation | GPU: {} | Step: {} | Time: {:.1}s | Elements: {} | Burning: {} | Embers: {} ",
+        app.sim.is_using_gpu().then(|| "ON").unwrap_or("OFF"),
         app.step_count,
         app.elapsed_time,
         app.sim.get_all_elements().len(),
