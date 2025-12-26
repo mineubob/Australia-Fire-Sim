@@ -105,7 +105,10 @@ impl PersistentWorldState {
             .count();
 
         // Convert to hectares (10,000 m² = 1 hectare)
-        (cells_burned as f32 * cell_area_sq_m) / 10000.0
+        #[allow(clippy::cast_precision_loss)] // Precision loss acceptable for area calculation
+        {
+            (cells_burned as f32 * cell_area_sq_m) / 10000.0
+        }
     }
 
     /// Reset all fuel to full
@@ -162,15 +165,15 @@ mod tests {
         let mut state = PersistentWorldState::new(10, 10);
 
         state.apply_damage(5, 5, 0.3);
-        assert_eq!(state.get_fuel_remaining(5, 5), 0.7);
+        assert!((state.get_fuel_remaining(5, 5) - 0.7).abs() < 1e-6);
 
         // Apply more damage
         state.apply_damage(5, 5, 0.5);
-        assert_eq!(state.get_fuel_remaining(5, 5), 0.2);
+        assert!((state.get_fuel_remaining(5, 5) - 0.2).abs() < 1e-6);
 
         // Can't go below 0
         state.apply_damage(5, 5, 1.0);
-        assert_eq!(state.get_fuel_remaining(5, 5), 0.0);
+        assert!((state.get_fuel_remaining(5, 5) - 0.0).abs() < 1e-6);
     }
 
     #[test]

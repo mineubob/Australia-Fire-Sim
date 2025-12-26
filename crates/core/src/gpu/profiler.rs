@@ -25,7 +25,7 @@ pub struct DispatchStats {
 pub struct GpuProfiler {
     /// Current frame dispatch stats
     frame_stats: Vec<DispatchStats>,
-    /// Historical average times per operation (name -> avg_us)
+    /// Historical average times per operation (name -> `avg_us`)
     averages: HashMap<String, f64>,
     /// Number of samples for each operation
     sample_counts: HashMap<String, usize>,
@@ -54,8 +54,7 @@ impl QualityPreset {
     /// Get grid resolution for this preset
     pub fn grid_resolution(&self) -> u32 {
         match self {
-            QualityPreset::Ultra => 2048,
-            QualityPreset::High => 2048,
+            QualityPreset::Ultra | QualityPreset::High => 2048,
             QualityPreset::Medium => 1024,
             QualityPreset::Low => 512,
         }
@@ -65,9 +64,7 @@ impl QualityPreset {
     pub fn texture_quality(&self) -> TextureQuality {
         match self {
             QualityPreset::Ultra => TextureQuality::Uncompressed,
-            QualityPreset::High => TextureQuality::BC4,
-            QualityPreset::Medium => TextureQuality::BC4,
-            QualityPreset::Low => TextureQuality::BC4,
+            QualityPreset::High | QualityPreset::Medium | QualityPreset::Low => TextureQuality::BC4,
         }
     }
 }
@@ -137,7 +134,10 @@ impl GpuProfiler {
         let count = self.sample_counts.entry(timer.name.clone()).or_insert(0);
         *count += 1;
         let avg = self.averages.entry(timer.name).or_insert(0.0);
-        *avg = (*avg * (*count - 1) as f64 + time_us as f64) / *count as f64;
+        #[allow(clippy::cast_precision_loss)] // Precision loss acceptable for perf metrics
+        {
+            *avg = (*avg * (*count - 1) as f64 + time_us as f64) / *count as f64;
+        }
     }
 
     /// End frame and return performance stats
@@ -175,8 +175,7 @@ impl GpuProfiler {
         self.quality_preset = match self.quality_preset {
             QualityPreset::Ultra => QualityPreset::High,
             QualityPreset::High => QualityPreset::Medium,
-            QualityPreset::Medium => QualityPreset::Low,
-            QualityPreset::Low => QualityPreset::Low, // Can't go lower
+            QualityPreset::Medium | QualityPreset::Low => QualityPreset::Low, // Can't go lower
         };
     }
 
@@ -185,8 +184,7 @@ impl GpuProfiler {
         self.quality_preset = match self.quality_preset {
             QualityPreset::Low => QualityPreset::Medium,
             QualityPreset::Medium => QualityPreset::High,
-            QualityPreset::High => QualityPreset::Ultra,
-            QualityPreset::Ultra => QualityPreset::Ultra, // Already max
+            QualityPreset::High | QualityPreset::Ultra => QualityPreset::Ultra, // Already max
         };
     }
 
@@ -225,16 +223,19 @@ pub struct GpuStats {
 
 impl GpuStats {
     /// Get total GPU time in milliseconds
+    #[allow(clippy::cast_precision_loss)] // Precision loss acceptable for display
     pub fn total_gpu_time_ms(&self) -> f64 {
         self.total_gpu_time_us as f64 / 1000.0
     }
 
     /// Get target budget in milliseconds
+    #[allow(clippy::cast_precision_loss)] // Precision loss acceptable for display
     pub fn target_budget_ms(&self) -> f64 {
         self.target_budget_us as f64 / 1000.0
     }
 
     /// Get budget utilization as percentage
+    #[allow(clippy::cast_precision_loss)] // Precision loss acceptable for percentage calc
     pub fn budget_utilization(&self) -> f64 {
         (self.total_gpu_time_us as f64 / self.target_budget_us as f64) * 100.0
     }

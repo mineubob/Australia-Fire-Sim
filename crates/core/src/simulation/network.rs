@@ -184,6 +184,7 @@ impl StateDelta {
 }
 
 /// State delta builder for tracking changes during a frame
+#[allow(dead_code)] // grid_width/grid_height reserved for future bounds checking
 pub struct StateDeltaBuilder {
     delta: StateDelta,
     tile_size: u32,
@@ -271,7 +272,7 @@ mod tests {
         });
 
         let serialized = delta.serialize_uncompressed().unwrap();
-        assert!(serialized.len() > 0);
+        assert!(!serialized.is_empty());
     }
 
     #[test]
