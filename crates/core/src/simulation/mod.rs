@@ -131,14 +131,15 @@ pub struct FireSimulation {
     /// Reference: Finney (2003), Anderson (1982)
     fuel_variation: FuelVariation,
 
-    // Phase 8: GPU-Accelerated Level Set Fire Front (optional)
-    /// Level set solver for fire front propagation (None = disabled)
-    /// When enabled, provides real-time fire arrival predictions
-    level_set_solver: Option<crate::gpu::LevelSetSolver>,
+    // Phase 8: GPU-Accelerated Level Set Fire Front (MANDATORY - always enabled)
+    /// Level set solver for fire front propagation
+    /// Provides real-time fire arrival predictions and fire front tracking
+    /// Uses GPU acceleration with automatic CPU fallback
+    level_set_solver: crate::gpu::LevelSetSolver,
     /// Cached spread rates for level set solver (updated periodically)
     level_set_spread_rates: Vec<f32>,
-    /// Suppression grid for GPU fire front integration
-    suppression_grid: Option<crate::gpu::SuppressionGrid>,
+    /// Suppression grid for fire front integration (MANDATORY)
+    suppression_grid: crate::gpu::SuppressionGrid,
 
     // Phase 9-14: Additional GPU Features
     /// GPU performance profiler for monitoring and adaptive quality
@@ -226,18 +227,47 @@ impl FireSimulation {
             },
             // Phase 7: Stochastic fire spread for realistic perimeter irregularity
             fuel_variation: FuelVariation::default(),
-            // Phase 8: GPU level set solver (disabled by default)
-            level_set_solver: None,
-            level_set_spread_rates: Vec::new(),
-            suppression_grid: None,
-            // Phase 9-14: Additional features (disabled by default)
-            gpu_profiler: None,
+            // Phase 8: GPU level set solver (MANDATORY - always enabled for realistic fire front tracking)
+            level_set_solver: {
+                // Use terrain dimensions to determine grid size
+                // Default to 5m grid spacing for good balance of accuracy and performance
+                let grid_spacing = 5.0;
+                let grid_width = (terrain.width / grid_spacing).ceil() as u32;
+                let grid_height = (terrain.height / grid_spacing).ceil() as u32;
+
+                // Create level set solver with automatic GPU/CPU fallback
+                let mut solver =
+                    crate::gpu::LevelSetSolver::new(grid_width, grid_height, grid_spacing);
+
+                // Initialize phi field (positive = unburned)
+                let cell_count = (grid_width * grid_height) as usize;
+                let initial_phi = vec![100.0; cell_count];
+                solver.initialize_phi(&initial_phi);
+
+                solver
+            },
+            level_set_spread_rates: {
+                // Initialize spread rates matching level set dimensions
+                let grid_spacing = 5.0;
+                let grid_width = (terrain.width / grid_spacing).ceil() as u32;
+                let grid_height = (terrain.height / grid_spacing).ceil() as u32;
+                vec![0.0; (grid_width * grid_height) as usize]
+            },
+            suppression_grid: {
+                // Initialize suppression grid matching level set dimensions
+                let grid_spacing = 5.0;
+                let grid_width = (terrain.width / grid_spacing).ceil() as u32;
+                let grid_height = (terrain.height / grid_spacing).ceil() as u32;
+                crate::gpu::SuppressionGrid::new(grid_width, grid_height, grid_spacing)
+            },
+            // Phase 9-14: Additional features
+            gpu_profiler: None, // Optional performance monitoring
             difficulty_mode: DifficultyMode::default(),
             asset_registry: AssetRegistry::new(),
-            network_delta_builder: None,
-            persistent_world: None,
-            replay_recorder: None,
-            replay_player: None,
+            network_delta_builder: None, // Optional multiplayer sync
+            persistent_world: None,      // Optional campaign mode
+            replay_recorder: None,       // Optional replay recording
+            replay_player: None,         // Optional replay playback
         }
     }
 
@@ -812,14 +842,11 @@ impl FireSimulation {
         // Initialize spread rates (will be updated during simulation)
         self.level_set_spread_rates = vec![0.0; cell_count];
 
-        // Initialize suppression grid with same dimensions
-        self.suppression_grid = Some(crate::gpu::SuppressionGrid::new(
-            grid_width,
-            grid_height,
-            grid_spacing,
-        ));
+        // Reconfigure suppression grid with same dimensions
+        self.suppression_grid =
+            crate::gpu::SuppressionGrid::new(grid_width, grid_height, grid_spacing);
 
-        self.level_set_solver = Some(solver);
+        self.level_set_solver = solver;
 
         tracing::info!(
             "Level set fire front enabled: {}×{} grid at {}m resolution",
@@ -856,7 +883,7 @@ impl FireSimulation {
         position: Vec3,
         max_lookahead: f32,
     ) -> Option<crate::gpu::ArrivalPrediction> {
-        let solver = self.level_set_solver.as_ref()?;
+        let solver = &self.level_set_solver;
 
         Some(crate::gpu::predict_arrival_time(
             solver,
@@ -869,15 +896,14 @@ impl FireSimulation {
     /// Check if level set fire front tracking is enabled
     #[must_use]
     pub fn has_level_set_solver(&self) -> bool {
-        self.level_set_solver.is_some()
+        true // Level set always enabled
     }
 
-    /// Get level set solver dimensions (if enabled)
+    /// Get level set solver dimensions
     #[must_use]
     pub fn level_set_dimensions(&self) -> Option<(u32, u32)> {
-        self.level_set_solver
-            .as_ref()
-            .map(crate::gpu::LevelSetSolver::dimensions)
+        // Level set is always enabled now
+        Some(self.level_set_solver.dimensions())
     }
 
     // ========================================================================
@@ -898,8 +924,9 @@ impl FireSimulation {
     /// // Apply water drop with 70% effectiveness in 10m radius
     /// sim.apply_suppression_gpu(Vec3::new(100.0, 100.0, 0.0), 0.7, 10.0);
     /// ```
-    pub fn apply_suppression_gpu(&mut self, position: Vec3, effectiveness: f32, radius: f32) {
-        if let Some(grid) = &mut self.suppression_grid {
+    pub fn apply_suppression(&mut self, position: Vec3, effectiveness: f32, radius: f32) {
+        let grid = &mut self.suppression_grid;
+        {
             grid.set_effectiveness_at_position(position, effectiveness, radius);
         }
     }
@@ -918,11 +945,8 @@ impl FireSimulation {
         &self,
         position: Vec3,
     ) -> crate::gpu::SuppressionEffectiveness {
-        self.suppression_grid
-            .as_ref()
-            .map_or(crate::gpu::SuppressionEffectiveness::none(), |grid| {
-                grid.query_effectiveness(position)
-            })
+        // Suppression is always enabled now
+        self.suppression_grid.query_effectiveness(position)
     }
 
     /// Update suppression grid with degradation over time
@@ -933,16 +957,13 @@ impl FireSimulation {
     /// * `dt` - Time step in seconds
     /// * `evaporation_rate` - Rate of effectiveness loss per second (default: 0.0001)
     pub fn update_suppression_degradation(&mut self, dt: f32, evaporation_rate: f32) {
-        if let Some(grid) = &mut self.suppression_grid {
-            grid.apply_degradation(dt, evaporation_rate);
-        }
+        self.suppression_grid
+            .apply_degradation(dt, evaporation_rate);
     }
 
     /// Clear all suppression (remove all suppression effectiveness)
     pub fn clear_suppression(&mut self) {
-        if let Some(grid) = &mut self.suppression_grid {
-            grid.clear();
-        }
+        self.suppression_grid.clear();
     }
 
     // ========================================================================
@@ -972,7 +993,7 @@ impl FireSimulation {
     /// ```
     #[must_use]
     pub fn get_fire_front_visual_data(&self) -> Option<crate::gpu::FireFrontVisualData> {
-        let solver = self.level_set_solver.as_ref()?;
+        let solver = &self.level_set_solver;
 
         // Get current phi field
         let phi = solver.read_phi();
@@ -1028,9 +1049,7 @@ impl FireSimulation {
     /// the element-based fire simulation.
     fn update_level_set_from_fire_state(&mut self) {
         // Only update if level set solver is enabled
-        if self.level_set_solver.is_none() {
-            return;
-        }
+        // Level set is always enabled now
 
         let (width, height) = self.level_set_dimensions().unwrap();
         let cell_count = (width * height) as usize;
@@ -1048,7 +1067,7 @@ impl FireSimulation {
             }
 
             // Convert element position to grid coordinates
-            let solver = self.level_set_solver.as_ref().unwrap();
+            let solver = &self.level_set_solver;
             let grid_spacing = solver.grid_spacing();
             let grid_x = (element.position.x / grid_spacing).floor() as usize;
             let grid_y = (element.position.y / grid_spacing).floor() as usize;
@@ -1143,28 +1162,26 @@ impl FireSimulation {
         let ffdi_multiplier = self.weather.spread_rate_multiplier();
 
         // 1b. Update GPU level set fire front (Phase 1)
-        if self.level_set_solver.is_some() {
+        // Level set is always enabled now
+        {
             // Update spread rates from current fire state
             self.update_level_set_from_fire_state();
 
-            // Apply suppression to spread rates if available
-            let solver = self.level_set_solver.as_mut().unwrap();
-            if let Some(ref grid) = self.suppression_grid {
-                let suppressed_rates = crate::gpu::apply_suppression_to_spread_rates(
-                    &self.level_set_spread_rates,
-                    grid.effectiveness_field(),
-                );
-                solver.update_spread_rates(&suppressed_rates);
-            } else {
-                solver.update_spread_rates(&self.level_set_spread_rates);
-            }
+            // Apply suppression to spread rates (suppression is always enabled)
+            let solver = &mut self.level_set_solver;
+            let grid = &self.suppression_grid;
+            let suppressed_rates = crate::gpu::apply_suppression_to_spread_rates(
+                &self.level_set_spread_rates,
+                grid.effectiveness_field(),
+            );
+            solver.update_spread_rates(&suppressed_rates);
 
             // Advance level set solver
             solver.step(dt);
         }
 
-        // Update suppression degradation
-        if self.suppression_grid.is_some() {
+        // Update suppression degradation (suppression always enabled)
+        {
             // Evaporation rate depends on temperature and wind
             // Base rate: 0.0001 = 0.01% per second
             // Increases with temperature and wind
@@ -2381,13 +2398,13 @@ impl FireSimulation {
     ///
     /// Tracks compute shader dispatch times and automatically adjusts quality
     /// based on performance budget (default: 8ms for 60 FPS).
-    pub fn enable_gpu_profiling(&mut self) {
+    pub fn enable_profiling(&mut self) {
         self.gpu_profiler = Some(crate::gpu::GpuProfiler::new());
     }
 
     /// Get GPU performance statistics for the last frame
     #[must_use]
-    pub fn get_gpu_stats(&self) -> Option<crate::gpu::GpuStats> {
+    pub fn get_profiler_stats(&self) -> Option<crate::gpu::GpuStats> {
         // Note: Would return actual stats from profiler in full implementation
         None
     }
@@ -2416,7 +2433,8 @@ impl FireSimulation {
     /// Starts tracking changes to fire state for efficient network sync.
     /// Target: <100KB per frame with delta compression.
     pub fn enable_network_sync(&mut self) {
-        if let Some(ref solver) = self.level_set_solver {
+        let solver = &self.level_set_solver;
+        {
             let (width, height) = solver.dimensions();
             self.network_delta_builder =
                 Some(StateDeltaBuilder::new(self.current_frame, width, height));
@@ -2606,16 +2624,13 @@ impl FireSimulation {
     /// keyframes for the replay. Between keyframes, deltas are recorded.
     pub fn capture_replay_snapshot(&mut self) {
         if let Some(recorder) = &mut self.replay_recorder {
-            // Extract level set phi field
-            let phi_field = if let Some(solver) = &self.level_set_solver {
-                solver
-                    .read_phi()
-                    .iter()
-                    .map(|&v| (v * 1000.0) as i32)
-                    .collect()
-            } else {
-                Vec::new()
-            };
+            // Extract level set phi field (level set is always enabled now)
+            let solver = &self.level_set_solver;
+            let phi_field: Vec<i32> = solver
+                .read_phi()
+                .iter()
+                .map(|&v| (v * 1000.0) as i32)
+                .collect();
 
             // Extract fuel element states
             let element_states: Vec<ElementState> = self
