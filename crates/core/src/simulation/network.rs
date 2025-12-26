@@ -4,10 +4,11 @@
 //! Target: <100KB per frame for 10km² fire simulation.
 
 use bitvec::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
 /// Network state delta for multiplayer synchronization
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateDelta {
     /// Dirty tile flags (64×64 tiles for a 2048×2048 grid)
     pub dirty_tiles: BitVec,
@@ -20,7 +21,7 @@ pub struct StateDelta {
 }
 
 /// A change in the phi field (level set signed distance)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhiChange {
     /// Tile index (0-4095 for 64×64 grid of tiles)
     pub tile_idx: u16,
@@ -29,7 +30,7 @@ pub struct PhiChange {
 }
 
 /// A change in a fuel element state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElementChange {
     /// Element ID
     pub element_id: usize,

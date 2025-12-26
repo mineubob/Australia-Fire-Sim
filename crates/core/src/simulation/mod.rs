@@ -15,6 +15,7 @@ pub mod assets;
 pub mod difficulty;
 pub mod network;
 pub mod persistence;
+pub mod replay;
 
 // Re-export public types from action_queue
 pub use action_queue::{PlayerAction, PlayerActionType};
@@ -26,6 +27,7 @@ pub use assets::{Asset, AssetRegistry, AssetThreat, AssetType, ThreatLevel};
 pub use difficulty::DifficultyMode;
 pub use network::{ElementChange, PhiChange, StateDelta, StateDeltaBuilder};
 pub use persistence::{PersistenceError, PersistentWorldState};
+pub use replay::{ElementState, GpuStateSnapshot, ReplayFile, ReplayMetadata, ReplayPlayer};
 
 use crate::core_types::element::{FuelElement, FuelPart, Vec3};
 use crate::core_types::ember::Ember;
@@ -149,6 +151,10 @@ pub struct FireSimulation {
     network_delta_builder: Option<StateDeltaBuilder>,
     /// Persistent world state tracking (None = disabled)
     persistent_world: Option<PersistentWorldState>,
+    /// Replay recorder for match analysis (None = not recording)
+    replay_recorder: Option<ReplayFile>,
+    /// Replay player for playback (None = not playing)
+    replay_player: Option<ReplayPlayer>,
 }
 
 impl FireSimulation {
@@ -230,6 +236,8 @@ impl FireSimulation {
             asset_registry: AssetRegistry::new(),
             network_delta_builder: None,
             persistent_world: None,
+            replay_recorder: None,
+            replay_player: None,
         }
     }
 
@@ -2562,6 +2570,204 @@ impl FireSimulation {
         self.persistent_world
             .as_ref()
             .map_or(0.0, |w| w.total_burned_hectares)
+    }
+
+    // ========================================================================
+    // Replay System APIs (Step 12)
+    // ========================================================================
+
+    /// Start recording a replay
+    ///
+    /// Creates a new replay file and begins capturing state snapshots.
+    /// Recording continues until `stop_replay()` or `save_replay()` is called.
+    pub fn start_replay_recording(&mut self, scenario_name: String) {
+        let terrain_width = self.grid.width;
+        let terrain_height = self.grid.height;
+        self.replay_recorder = Some(ReplayFile::new(
+            scenario_name,
+            terrain_width,
+            terrain_height,
+        ));
+    }
+
+    /// Stop recording without saving
+    pub fn stop_replay_recording(&mut self) {
+        self.replay_recorder = None;
+    }
+
+    /// Check if currently recording
+    pub fn is_recording_replay(&self) -> bool {
+        self.replay_recorder.is_some()
+    }
+
+    /// Capture current state as a replay snapshot
+    ///
+    /// This should be called periodically (e.g., every 10 frames) to create
+    /// keyframes for the replay. Between keyframes, deltas are recorded.
+    pub fn capture_replay_snapshot(&mut self) {
+        if let Some(recorder) = &mut self.replay_recorder {
+            // Extract level set phi field
+            let phi_field = if let Some(solver) = &self.level_set_solver {
+                solver
+                    .read_phi()
+                    .iter()
+                    .map(|&v| (v * 1000.0) as i32)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+            // Extract fuel element states
+            let element_states: Vec<ElementState> = self
+                .elements
+                .iter()
+                .enumerate()
+                .filter_map(|(id, elem)| {
+                    elem.as_ref().map(|e| ElementState {
+                        id,
+                        temperature: (*e.temperature() * 100.0) as i32,
+                        moisture: (*e.moisture_fraction() * 10000.0) as u16,
+                        is_burning: self.burning_elements.contains(&id),
+                    })
+                })
+                .collect();
+
+            // Extract wind field (optional - can be recalculated deterministically)
+            let wind_field = None; // Wind is deterministic from weather system
+
+            let snapshot = GpuStateSnapshot {
+                frame: self.current_frame,
+                sim_time: self.simulation_time,
+                phi_field,
+                element_states,
+                wind_field,
+            };
+
+            recorder.add_snapshot(snapshot);
+        }
+    }
+
+    /// Save replay to file
+    ///
+    /// Writes the recorded replay data to a .bfsreplay file with zstd compression.
+    /// Returns error if not currently recording or if file I/O fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no replay is currently being recorded or if file I/O fails.
+    pub fn save_replay(&mut self, path: &str) -> Result<(), String> {
+        if let Some(recorder) = self.replay_recorder.take() {
+            recorder
+                .save(path)
+                .map_err(|e| format!("Failed to save replay: {e}"))?;
+            Ok(())
+        } else {
+            Err("No replay recording in progress".to_string())
+        }
+    }
+
+    /// Load a replay file for playback
+    ///
+    /// Loads a .bfsreplay file and prepares it for playback.
+    /// Stops any current recording.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file I/O fails, decompression fails, or deserialization fails.
+    pub fn load_replay(&mut self, path: &str) -> Result<(), String> {
+        // Stop any recording
+        self.replay_recorder = None;
+
+        let replay_file =
+            ReplayFile::load(path).map_err(|e| format!("Failed to load replay: {e}"))?;
+
+        self.replay_player = Some(ReplayPlayer::new(replay_file));
+        Ok(())
+    }
+
+    /// Step replay to a specific frame
+    ///
+    /// Jumps to the specified frame in the replay. Returns the snapshot at that frame,
+    /// or None if the frame is out of bounds or no replay is loaded.
+    pub fn step_replay_to_frame(&mut self, frame: u32) -> Option<&GpuStateSnapshot> {
+        self.replay_player
+            .as_mut()
+            .and_then(|player| player.step_to_frame(frame))
+    }
+
+    /// Get current replay frame number
+    pub fn get_current_replay_frame(&self) -> u32 {
+        self.replay_player
+            .as_ref()
+            .map_or(0, replay::ReplayPlayer::current_frame)
+    }
+
+    /// Get total number of frames in loaded replay
+    pub fn get_total_replay_frames(&self) -> u32 {
+        self.replay_player
+            .as_ref()
+            .map_or(0, replay::ReplayPlayer::total_frames)
+    }
+
+    /// Advance replay by one frame
+    pub fn step_replay_forward(&mut self) -> Option<&GpuStateSnapshot> {
+        self.replay_player
+            .as_mut()
+            .and_then(|player| player.step_forward())
+    }
+
+    /// Go back one frame in replay
+    pub fn step_replay_backward(&mut self) -> Option<&GpuStateSnapshot> {
+        self.replay_player
+            .as_mut()
+            .and_then(|player| player.step_backward())
+    }
+
+    /// Set replay playback speed (0.1x to 10x)
+    pub fn set_replay_speed(&mut self, speed: f32) {
+        if let Some(player) = &mut self.replay_player {
+            player.set_speed(speed);
+        }
+    }
+
+    /// Get current replay playback speed
+    pub fn get_replay_speed(&self) -> f32 {
+        self.replay_player
+            .as_ref()
+            .map_or(1.0, replay::ReplayPlayer::speed)
+    }
+
+    /// Pause replay playback
+    pub fn pause_replay(&mut self) {
+        if let Some(player) = &mut self.replay_player {
+            player.pause();
+        }
+    }
+
+    /// Resume replay playback
+    pub fn resume_replay(&mut self) {
+        if let Some(player) = &mut self.replay_player {
+            player.resume();
+        }
+    }
+
+    /// Check if replay is paused
+    pub fn is_replay_paused(&self) -> bool {
+        self.replay_player
+            .as_ref()
+            .is_some_and(replay::ReplayPlayer::is_paused)
+    }
+
+    /// Reset replay to beginning
+    pub fn reset_replay(&mut self) {
+        if let Some(player) = &mut self.replay_player {
+            player.reset();
+        }
+    }
+
+    /// Unload current replay
+    pub fn unload_replay(&mut self) {
+        self.replay_player = None;
     }
 }
 
