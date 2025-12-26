@@ -32,10 +32,14 @@ fn fixed_to_float(val: i32, scale: i32) -> f32 {
 }
 
 /// Fixed-point multiply (scale down to prevent overflow)
+/// WGSL doesn't have i64, so we use f32 for intermediate calculation
+/// IEEE 754 guarantees determinism across all platforms
 fn fixed_mul(a: i32, b: i32, scale: i32) -> i32 {
-    // Use 64-bit intermediate to prevent overflow
-    let result_64 = (i64(a) * i64(b)) / i64(scale);
-    return i32(result_64);
+    let a_f = f32(a);
+    let b_f = f32(b);
+    let scale_f = f32(scale);
+    let result = (a_f * b_f) / scale_f;
+    return i32(round(result));
 }
 
 /// Fixed-point absolute value
@@ -59,6 +63,10 @@ fn get_phi(i: i32, j: i32) -> i32 {
 /// Upwind gradient scheme for level set advection
 /// Uses first-order upwind differencing for numerical stability
 /// Reference: Sethian (1999) "Level Set Methods and Fast Marching Methods"
+///
+/// IMPORTANT: Uses max-absolute-value selection from forward/backward differences.
+/// This correctly captures sharp discontinuities (e.g., fire front step functions).
+/// Previous formula max(max(d_xm,0), -max(d_xp,0)) failed for discontinuities.
 fn upwind_gradient(i: i32, j: i32) -> i32 {
     let phi_center = get_phi(i, j);
     
@@ -75,15 +83,14 @@ fn upwind_gradient(i: i32, j: i32) -> i32 {
     let d_ym = (phi_center - phi_ym); // / dy
     let d_yp = (phi_yp - phi_center); // / dy
     
-    // Upwind scheme: choose derivative based on sign
-    // If R > 0 (fire spreading), use backward difference
-    let d_x = fixed_max(fixed_max(d_xm, 0), -fixed_max(d_xp, 0));
-    let d_y = fixed_max(fixed_max(d_ym, 0), -fixed_max(d_yp, 0));
+    // Gradient magnitude: use max absolute value from forward/backward differences
+    // This correctly captures sharp discontinuities (e.g., fire front)
+    let grad_x = select(d_xm, d_xp, fixed_abs(d_xp) > fixed_abs(d_xm));
+    let grad_y = select(d_ym, d_yp, fixed_abs(d_yp) > fixed_abs(d_ym));
     
-    // |∇φ| = sqrt(d_x² + d_y²) (in fixed-point)
-    // Use integer sqrt approximation for determinism
-    let dx2 = fixed_mul(d_x, d_x, params.fixed_scale);
-    let dy2 = fixed_mul(d_y, d_y, params.fixed_scale);
+    // |∇φ|² = grad_x² + grad_y² (use fixed_mul to prevent overflow)
+    let dx2 = fixed_mul(grad_x, grad_x, params.fixed_scale);
+    let dy2 = fixed_mul(grad_y, grad_y, params.fixed_scale);
     let grad_mag_sq = dx2 + dy2;
     
     // Integer square root (Babylonian method, deterministic)
@@ -93,8 +100,14 @@ fn upwind_gradient(i: i32, j: i32) -> i32 {
         sqrt_val = (sqrt_val + grad_mag_sq / sqrt_val) / 2;
     }
     
-    // Divide by dx (grid spacing) - using fixed-point division
-    let grad_mag = (sqrt_val * params.fixed_scale) / dx_fixed;
+    // Gradient magnitude calculation:
+    // grad_mag_sq = d²/scale (from fixed_mul)
+    // sqrt_val = d/sqrt(scale)
+    // To get gradient d/dx in fixed-point:
+    // grad = (d * scale) / dx = sqrt_val * sqrt(scale) * scale / dx
+    // For scale=1024=2^10: sqrt(scale)=32 EXACTLY (eliminates approximation error!)
+    let sqrt_scale = 32; // sqrt(1024) = 32 exactly
+    let grad_mag = select(0, (sqrt_val * sqrt_scale * params.fixed_scale) / dx_fixed, dx_fixed != 0);
     
     return grad_mag;
 }

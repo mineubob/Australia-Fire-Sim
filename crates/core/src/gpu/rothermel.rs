@@ -8,25 +8,65 @@
 //! Formula: `R(x,y,t) = R_base × wind_factor × slope_factor × (1 + 0.25×κ) × vortex_boost`
 
 use super::GpuContext;
+use crate::core_types::fuel::Fuel;
 use bytemuck::{Pod, Zeroable};
 use std::sync::Arc;
 
+/// Extract Rothermel parameters from Fuel instances for GPU upload
+/// Converts SI units to Rothermel's imperial units (ft, BTU/lb, etc.)
+fn extract_rothermel_params(fuel: &Fuel) -> (f32, f32, f32, f32, f32, f32) {
+    // sigma: surface area to volume ratio (m²/m³ → 1/ft by dividing by 3.28084)
+    let sigma = *fuel.surface_area_to_volume / 3.28084;
+
+    // delta: fuel bed depth (m → ft)
+    let delta = *fuel.fuel_bed_depth * 3.28084;
+
+    // mx_dead: base moisture content (already fraction 0-1)
+    let mx_dead = *fuel.base_moisture;
+
+    // mx_extinction: moisture of extinction (already fraction 0-1)
+    let mx_extinction = *fuel.moisture_of_extinction;
+
+    // heat_content: (kJ/kg → BTU/lb)
+    // 1 kJ/kg = 0.429923 BTU/lb
+    let heat_content = *fuel.heat_content * 0.429923;
+
+    // fuel_load: bulk density × fuel bed depth (kg/m³ · m → lb/ft²)
+    // kg/m³ · m = kg/m² → lb/ft² (multiply by 0.204816)
+    let fuel_load = (*fuel.bulk_density * *fuel.fuel_bed_depth) * 0.204816;
+
+    (
+        sigma,
+        delta,
+        mx_dead,
+        mx_extinction,
+        heat_content,
+        fuel_load,
+    )
+}
+
 /// Fuel properties for Rothermel calculation (matches shader layout)
+/// Aligned to 16-byte boundaries for WGSL uniform requirements
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct FuelParams {
-    // Per fuel type properties (up to 8 fuel types)
-    sigma: [f32; 8],         // Surface-area-to-volume ratio (1/ft)
-    delta: [f32; 8],         // Fuel bed depth (ft)
-    mx_dead: [f32; 8],       // Dead fuel moisture content
-    mx_extinction: [f32; 8], // Moisture of extinction
-    heat_content: [f32; 8],  // Heat of combustion (BTU/lb)
-    fuel_load: [f32; 8],     // Fuel load (lb/ft²)
+    // Packed vec4<f32> arrays for alignment
+    sigma_pack0: [f32; 4],         // sigma[0-3]
+    sigma_pack1: [f32; 4],         // sigma[4-7]
+    delta_pack0: [f32; 4],         // delta[0-3]
+    delta_pack1: [f32; 4],         // delta[4-7]
+    mx_dead_pack0: [f32; 4],       // mx_dead[0-3]
+    mx_dead_pack1: [f32; 4],       // mx_dead[4-7]
+    mx_extinction_pack0: [f32; 4], // mx_extinction[0-3]
+    mx_extinction_pack1: [f32; 4], // mx_extinction[4-7]
+    heat_content_pack0: [f32; 4],  // heat_content[0-3]
+    heat_content_pack1: [f32; 4],  // heat_content[4-7]
+    fuel_load_pack0: [f32; 4],     // fuel_load[0-3]
+    fuel_load_pack1: [f32; 4],     // fuel_load[4-7]
     // Global parameters
-    width: u32,
-    height: u32,
-    dx: f32,          // Grid spacing (meters)
-    fixed_scale: i32, // Fixed-point scale
+    dimensions: [u32; 2], // width, height
+    dx: f32,              // Grid spacing
+    fixed_scale: i32,     // Fixed-point scale
 }
 
 /// GPU-accelerated Rothermel spread rate calculator
@@ -275,6 +315,7 @@ impl GpuRothermelSolver {
     /// # Arguments
     /// * `phi` - Level set field (for curvature calculation)
     /// * `fuel_types` - Fuel type ID per grid cell (0-7)
+    /// * `fuels` - Array of 8 Fuel instances corresponding to IDs 0-7
     /// * `wind_field` - Wind velocity (u, v) per cell in m/s
     /// * `slope` - Terrain slope (dz/dx, dz/dy) per cell
     /// * `vorticity` - Vorticity field (s⁻¹) per cell
@@ -285,6 +326,7 @@ impl GpuRothermelSolver {
         &self,
         phi: &[f32],
         fuel_types: &[u32],
+        fuels: &[Fuel; 8],
         wind_field: &[[f32; 2]],
         slope: &[[f32; 2]],
         vorticity: &[f32],
@@ -329,20 +371,25 @@ impl GpuRothermelSolver {
             bytemuck::cast_slice(vorticity),
         );
 
-        // Setup fuel parameters (using default values for demonstration)
+        // Extract and destructure fuel parameters from provided Fuel instances
+        let [(sigma0, delta0, mx_dead0, mx_ext0, heat0, load0), (sigma1, delta1, mx_dead1, mx_ext1, heat1, load1), (sigma2, delta2, mx_dead2, mx_ext2, heat2, load2), (sigma3, delta3, mx_dead3, mx_ext3, heat3, load3), (sigma4, delta4, mx_dead4, mx_ext4, heat4, load4), (sigma5, delta5, mx_dead5, mx_ext5, heat5, load5), (sigma6, delta6, mx_dead6, mx_ext6, heat6, load6), (sigma7, delta7, mx_dead7, mx_ext7, heat7, load7)] =
+            fuels.each_ref().map(extract_rothermel_params);
+
+        // Pack into vec4-aligned arrays for GPU upload
         let params = FuelParams {
-            sigma: [
-                2000.0, 1500.0, 1800.0, 1200.0, 2500.0, 1000.0, 3000.0, 2200.0,
-            ],
-            delta: [1.0, 2.0, 1.5, 3.0, 0.5, 2.5, 0.8, 1.2],
-            mx_dead: [0.05, 0.07, 0.06, 0.08, 0.04, 0.09, 0.05, 0.06],
-            mx_extinction: [0.25, 0.30, 0.28, 0.35, 0.20, 0.40, 0.22, 0.27],
-            heat_content: [
-                8000.0, 8500.0, 8200.0, 9000.0, 7500.0, 9500.0, 7800.0, 8300.0,
-            ],
-            fuel_load: [0.05, 0.10, 0.08, 0.15, 0.03, 0.20, 0.04, 0.09],
-            width: self.width,
-            height: self.height,
+            sigma_pack0: [sigma0, sigma1, sigma2, sigma3],
+            sigma_pack1: [sigma4, sigma5, sigma6, sigma7],
+            delta_pack0: [delta0, delta1, delta2, delta3],
+            delta_pack1: [delta4, delta5, delta6, delta7],
+            mx_dead_pack0: [mx_dead0, mx_dead1, mx_dead2, mx_dead3],
+            mx_dead_pack1: [mx_dead4, mx_dead5, mx_dead6, mx_dead7],
+            mx_extinction_pack0: [mx_ext0, mx_ext1, mx_ext2, mx_ext3],
+            mx_extinction_pack1: [mx_ext4, mx_ext5, mx_ext6, mx_ext7],
+            heat_content_pack0: [heat0, heat1, heat2, heat3],
+            heat_content_pack1: [heat4, heat5, heat6, heat7],
+            fuel_load_pack0: [load0, load1, load2, load3],
+            fuel_load_pack1: [load4, load5, load6, load7],
+            dimensions: [self.width, self.height],
             dx: self.grid_spacing,
             fixed_scale: self.fixed_scale,
         };

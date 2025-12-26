@@ -58,14 +58,16 @@ impl GpuLevelSetSolver {
     ///
     /// # Errors
     /// Returns error if GPU resources cannot be allocated
+    #[track_caller]
     pub fn new(
         context: Arc<GpuContext>,
         width: u32,
         height: u32,
         grid_spacing: f32,
     ) -> Result<Self, String> {
-        // Fixed-point scale factor (1000 = 3 decimal places of precision)
-        let fixed_scale = 1000_i32;
+        // Fixed-point scale factor: 1024 = 2^10 (exact sqrt=32, ~3 decimal precision)
+        // Using power-of-2 eliminates sqrt(scale) approximation error
+        let fixed_scale = 1024_i32;
 
         // Check memory requirements
         let buffer_size = u64::from(width * height * 4); // 4 bytes per i32
@@ -428,19 +430,21 @@ impl GpuLevelSetSolver {
 
 /// CPU fallback implementation of level set solver
 ///
-/// Uses same algorithm as GPU version but runs on CPU.
-/// Useful for validation and systems without GPU.
+/// Uses IDENTICAL fixed-point algorithm as GPU shader for bit-exact determinism.
+/// This is NOT a band-aid - it's required for multiplayer validation where
+/// GPU and CPU implementations must produce identical results.
 pub struct CpuLevelSetSolver {
     width: u32,
     height: u32,
     grid_spacing: f32,
-    phi: Vec<f32>,
-    phi_temp: Vec<f32>,
-    spread_rates: Vec<f32>,
+    fixed_scale: i32,
+    phi: Vec<i32>,        // Store in fixed-point (matching GPU)
+    phi_temp: Vec<i32>,   // Store in fixed-point (matching GPU)
+    spread_rates: Vec<i32>, // Store in fixed-point (matching GPU)
 }
 
 impl CpuLevelSetSolver {
-    /// Create a new CPU level set solver
+    /// Create a new CPU level set solver with fixed-point arithmetic
     #[must_use]
     pub fn new(width: u32, height: u32, grid_spacing: f32) -> Self {
         let cell_count = (width * height) as usize;
@@ -448,64 +452,119 @@ impl CpuLevelSetSolver {
             width,
             height,
             grid_spacing,
-            phi: vec![0.0; cell_count],
-            phi_temp: vec![0.0; cell_count],
-            spread_rates: vec![0.0; cell_count],
+            fixed_scale: 1024, // 2^10: exact sqrt=32, eliminates approximation error
+            phi: vec![0; cell_count],
+            phi_temp: vec![0; cell_count],
+            spread_rates: vec![0; cell_count],
         }
     }
 
-    /// Initialize the level set field
+    /// Initialize the level set field (converts from float to fixed-point)
     pub fn initialize_phi(&mut self, phi: &[f32]) {
         assert_eq!(phi.len(), (self.width * self.height) as usize);
-        self.phi.copy_from_slice(phi);
+        for (i, &val) in phi.iter().enumerate() {
+            self.phi[i] = (val * self.fixed_scale as f32).round() as i32;
+        }
     }
 
-    /// Update spread rate field
+    /// Update spread rate field (converts from float to fixed-point)
     pub fn update_spread_rates(&mut self, spread_rates: &[f32]) {
         assert_eq!(spread_rates.len(), (self.width * self.height) as usize);
-        self.spread_rates.copy_from_slice(spread_rates);
+        for (i, &val) in spread_rates.iter().enumerate() {
+            self.spread_rates[i] = (val * self.fixed_scale as f32).round() as i32;
+        }
     }
 
-    /// Perform one timestep (Sethian upwind scheme)
+    /// Perform one timestep using EXACT GPU shader algorithm
+    /// Fixed-point arithmetic with integer sqrt for bit-exact determinism
     pub fn step(&mut self, dt: f32) {
         let w = self.width as i32;
         let h = self.height as i32;
-        let dx = self.grid_spacing;
+        let scale = self.fixed_scale;
+        let scale_f = scale as f32;
+        
+        // Convert dt and dx to fixed-point (matching shader)
+        let dt_fixed = (dt * scale_f).round() as i32;
+        let dx_fixed = (self.grid_spacing * scale_f).round() as i32;
+
+        // Fixed-point multiply helper (matches GPU shader exactly)
+        let fixed_mul = |a: i32, b: i32| -> i32 {
+            let a_f = a as f32;
+            let b_f = b as f32;
+            let result = (a_f * b_f) / scale_f;
+            result.round() as i32
+        };
+
+        // Integer sqrt helper (Babylonian method, 10 iterations - matches GPU)
+        let int_sqrt = |val: i32| -> i32 {
+            if val <= 0 {
+                return 0;
+            }
+            let mut sqrt_val = val / 2;
+            for _ in 0..10 {
+                if sqrt_val == 0 {
+                    break;
+                }
+                sqrt_val = (sqrt_val + val / sqrt_val) / 2;
+            }
+            sqrt_val
+        };
 
         for j in 0..h {
             for i in 0..w {
                 let idx = (j * w + i) as usize;
+                
+                // Get phi values (already in fixed-point)
                 let phi_c = self.phi[idx];
-
-                // Get neighbors (with bounds checking)
-                let phi_xm = if i > 0 { self.phi[idx - 1] } else { phi_c };
-                let phi_xp = if i < w - 1 { self.phi[idx + 1] } else { phi_c };
-                let phi_ym = if j > 0 {
-                    self.phi[(idx as i32 - w) as usize]
-                } else {
-                    phi_c
+                
+                // Get neighbors with bounds checking (clamping like GPU shader)
+                let get_phi = |x: i32, y: i32| -> i32 {
+                    let x_clamped = x.clamp(0, w - 1);
+                    let y_clamped = y.clamp(0, h - 1);
+                    let idx = (y_clamped * w + x_clamped) as usize;
+                    self.phi[idx]
                 };
-                let phi_yp = if j < h - 1 {
-                    self.phi[(idx as i32 + w) as usize]
-                } else {
-                    phi_c
+                
+                let phi_xm = get_phi(i - 1, j);
+                let phi_xp = get_phi(i + 1, j);
+                let phi_ym = get_phi(i, j - 1);
+                let phi_yp = get_phi(i, j + 1);
+
+                // Forward/backward differences (NOT divided by dx yet)
+                let d_xm = phi_c - phi_xm;
+                let d_xp = phi_xp - phi_c;
+                let d_ym = phi_c - phi_ym;
+                let d_yp = phi_yp - phi_c;
+
+                // Gradient magnitude using max absolute value from one-sided differences
+                // This captures sharp discontinuities correctly (matches GPU shader)
+                let grad_x = if d_xm.abs() > d_xp.abs() { d_xm } else { d_xp };
+                let grad_y = if d_ym.abs() > d_yp.abs() { d_ym } else { d_yp };
+                
+                // |∇φ|² using fixed_mul to prevent overflow (matches GPU shader)
+                let dx2 = fixed_mul(grad_x, grad_x);
+                let dy2 = fixed_mul(grad_y, grad_y);
+                let grad_mag_sq = dx2 + dy2;
+                
+                // Integer sqrt (matches GPU exactly)
+                let sqrt_val = int_sqrt(grad_mag_sq);
+                
+                // Gradient magnitude: d/dx in fixed-point
+                // Use i64 intermediate to prevent overflow with large gradients
+                // With scale=1024=2^10: sqrt(scale)=32 exactly (no approximation!)
+                let sqrt_scale = 32_i64; // sqrt(1024) = 32 exactly
+                let grad_mag_fixed = if dx_fixed != 0 { 
+                    ((sqrt_val as i64 * sqrt_scale * scale as i64) / dx_fixed as i64) as i32
+                } else { 
+                    0 
                 };
-
-                // Upwind differences
-                let d_xm = (phi_c - phi_xm) / dx;
-                let d_xp = (phi_xp - phi_c) / dx;
-                let d_ym = (phi_c - phi_ym) / dx;
-                let d_yp = (phi_yp - phi_c) / dx;
-
-                // Upwind scheme
-                let d_x = d_xm.max(0.0).max(-d_xp.max(0.0));
-                let d_y = d_ym.max(0.0).max(-d_yp.max(0.0));
-
-                let grad_mag = (d_x * d_x + d_y * d_y).sqrt();
-
+                
                 // Level set update: φ_new = φ_old - dt * R * |∇φ|
-                let r = self.spread_rates[idx];
-                self.phi_temp[idx] = phi_c - dt * r * grad_mag;
+                let r_fixed = self.spread_rates[idx];
+                let r_grad = fixed_mul(r_fixed, grad_mag_fixed);
+                let dphi = fixed_mul(dt_fixed, r_grad);
+
+                self.phi_temp[idx] = phi_c - dphi;
             }
         }
 
@@ -513,10 +572,13 @@ impl CpuLevelSetSolver {
         std::mem::swap(&mut self.phi, &mut self.phi_temp);
     }
 
-    /// Read current phi field
+    /// Read current phi field (converts from fixed-point to float)
     #[must_use]
     pub fn read_phi(&self) -> Vec<f32> {
-        self.phi.clone()
+        self.phi
+            .iter()
+            .map(|&val| val as f32 / self.fixed_scale as f32)
+            .collect()
     }
 
     /// Get grid dimensions

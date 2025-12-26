@@ -14,19 +14,52 @@
 @group(0) @binding(5) var<storage, read_write> spread_rate: array<u32>; // Output spread rate (fixed-point)
 
 // Fuel properties (passed as uniform buffer)
+// Aligned to 16-byte boundaries for WGSL uniform requirements
 struct FuelParams {
     // Per fuel type properties (up to 8 fuel types)
-    sigma: array<f32, 8>,              // Surface-area-to-volume ratio (1/ft)
-    delta: array<f32, 8>,              // Fuel bed depth (ft)
-    mx_dead: array<f32, 8>,            // Dead fuel moisture content
-    mx_extinction: array<f32, 8>,      // Moisture of extinction
-    heat_content: array<f32, 8>,       // Heat of combustion (BTU/lb)
-    fuel_load: array<f32, 8>,          // Fuel load (lb/ft²)
-    // Global parameters
-    width: u32,
-    height: u32,
-    dx: f32,                           // Grid spacing (meters)
-    fixed_scale: i32,                  // Fixed-point scale
+    // vec4<f32> ensures proper alignment (4x f32 = 16 bytes)
+    sigma_pack0: vec4<f32>,         // sigma[0-3]
+    sigma_pack1: vec4<f32>,         // sigma[4-7]
+    delta_pack0: vec4<f32>,         // delta[0-3]
+    delta_pack1: vec4<f32>,         // delta[4-7]
+    mx_dead_pack0: vec4<f32>,       // mx_dead[0-3]
+    mx_dead_pack1: vec4<f32>,       // mx_dead[4-7]
+    mx_extinction_pack0: vec4<f32>, // mx_extinction[0-3]
+    mx_extinction_pack1: vec4<f32>, // mx_extinction[4-7]
+    heat_content_pack0: vec4<f32>,  // heat_content[0-3]
+    heat_content_pack1: vec4<f32>,  // heat_content[4-7]
+    fuel_load_pack0: vec4<f32>,     // fuel_load[0-3]
+    fuel_load_pack1: vec4<f32>,     // fuel_load[4-7]
+    // Global parameters (aligned to vec4)
+    dimensions: vec2<u32>,          // width, height
+    dx: f32,                        // Grid spacing (meters)
+    fixed_scale: i32,               // Fixed-point scale
+}
+
+// Helper functions to access packed arrays
+fn get_sigma(fuel_id: u32) -> f32 {
+    if (fuel_id < 4u) { return params.sigma_pack0[fuel_id]; }
+    return params.sigma_pack1[fuel_id - 4u];
+}
+fn get_delta(fuel_id: u32) -> f32 {
+    if (fuel_id < 4u) { return params.delta_pack0[fuel_id]; }
+    return params.delta_pack1[fuel_id - 4u];
+}
+fn get_mx_dead(fuel_id: u32) -> f32 {
+    if (fuel_id < 4u) { return params.mx_dead_pack0[fuel_id]; }
+    return params.mx_dead_pack1[fuel_id - 4u];
+}
+fn get_mx_extinction(fuel_id: u32) -> f32 {
+    if (fuel_id < 4u) { return params.mx_extinction_pack0[fuel_id]; }
+    return params.mx_extinction_pack1[fuel_id - 4u];
+}
+fn get_heat_content(fuel_id: u32) -> f32 {
+    if (fuel_id < 4u) { return params.heat_content_pack0[fuel_id]; }
+    return params.heat_content_pack1[fuel_id - 4u];
+}
+fn get_fuel_load(fuel_id: u32) -> f32 {
+    if (fuel_id < 4u) { return params.fuel_load_pack0[fuel_id]; }
+    return params.fuel_load_pack1[fuel_id - 4u];
 }
 
 @group(0) @binding(6) var<uniform> params: FuelParams;
@@ -43,9 +76,9 @@ fn float_to_fixed(val: f32, scale: i32) -> i32 {
 
 // Get phi value at grid position with bounds checking
 fn get_phi(i: i32, j: i32) -> i32 {
-    let x = clamp(i, 0, i32(params.width) - 1);
-    let y = clamp(j, 0, i32(params.height) - 1);
-    let idx = u32(y) * params.width + u32(x);
+    let x = clamp(i, 0, i32(params.dimensions.x) - 1);
+    let y = clamp(j, 0, i32(params.dimensions.y) - 1);
+    let idx = u32(y) * params.dimensions.x + u32(x);
     return phi[idx];
 }
 
@@ -97,13 +130,13 @@ fn rothermel_spread_rate(
     wind_dir: vec2<f32>,
     slope_vec: vec2<f32>,
 ) -> f32 {
-    // Get fuel properties
-    let sigma = params.sigma[fuel_idx];
-    let delta = params.delta[fuel_idx];
-    let mx = params.mx_dead[fuel_idx];
-    let mx_ext = params.mx_extinction[fuel_idx];
-    let h = params.heat_content[fuel_idx];
-    let w_o = params.fuel_load[fuel_idx];
+    // Get fuel properties using helper functions
+    let sigma = get_sigma(fuel_idx);
+    let delta = get_delta(fuel_idx);
+    let mx = get_mx_dead(fuel_idx);
+    let mx_ext = get_mx_extinction(fuel_idx);
+    let h = get_heat_content(fuel_idx);
+    let w_o = get_fuel_load(fuel_idx);
     
     // Moisture damping coefficient
     let eta_m = 1.0 - 2.59 * (mx / mx_ext) + 5.11 * (mx / mx_ext) * (mx / mx_ext) - 3.52 * (mx / mx_ext) * (mx / mx_ext) * (mx / mx_ext);
@@ -165,11 +198,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let j = i32(global_id.y);
     
     // Bounds check
-    if (global_id.x >= params.width || global_id.y >= params.height) {
+    if (global_id.x >= params.dimensions.x || global_id.y >= params.dimensions.y) {
         return;
     }
     
-    let idx = global_id.y * params.width + global_id.x;
+    let idx = global_id.y * params.dimensions.x + global_id.x;
     
     // Get fuel type
     let fuel_type = fuel_type_grid[idx];
