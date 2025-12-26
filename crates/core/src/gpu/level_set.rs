@@ -463,7 +463,7 @@ impl CpuLevelSetSolver {
     pub fn initialize_phi(&mut self, phi: &[f32]) {
         assert_eq!(phi.len(), (self.width * self.height) as usize);
         for (i, &val) in phi.iter().enumerate() {
-            self.phi[i] = (val * self.fixed_scale as f32).round() as i32;
+            self.phi[i] = (val * f64::from(self.fixed_scale) as f32).round() as i32;
         }
     }
 
@@ -471,7 +471,7 @@ impl CpuLevelSetSolver {
     pub fn update_spread_rates(&mut self, spread_rates: &[f32]) {
         assert_eq!(spread_rates.len(), (self.width * self.height) as usize);
         for (i, &val) in spread_rates.iter().enumerate() {
-            self.spread_rates[i] = (val * self.fixed_scale as f32).round() as i32;
+            self.spread_rates[i] = (val * f64::from(self.fixed_scale) as f32).round() as i32;
         }
     }
 
@@ -481,7 +481,7 @@ impl CpuLevelSetSolver {
         let w = self.width as i32;
         let h = self.height as i32;
         let scale = self.fixed_scale;
-        let scale_f = scale as f32;
+        let scale_f = f64::from(scale) as f32;
 
         // Convert dt and dx to fixed-point (matching shader)
         let dt_fixed = (dt * scale_f).round() as i32;
@@ -489,8 +489,8 @@ impl CpuLevelSetSolver {
 
         // Fixed-point multiply helper (matches GPU shader exactly)
         let fixed_mul = |a: i32, b: i32| -> i32 {
-            let a_f = a as f32;
-            let b_f = b as f32;
+            let a_f = f64::from(a) as f32;
+            let b_f = f64::from(b) as f32;
             let result = (a_f * b_f) / scale_f;
             result.round() as i32
         };
@@ -505,7 +505,7 @@ impl CpuLevelSetSolver {
                 if sqrt_val == 0 {
                     break;
                 }
-                sqrt_val = (sqrt_val + val / sqrt_val) / 2;
+                sqrt_val = i32::midpoint(sqrt_val, val / sqrt_val);
             }
             sqrt_val
         };
@@ -554,7 +554,7 @@ impl CpuLevelSetSolver {
                 // With scale=1024=2^10: sqrt(scale)=32 exactly (no approximation!)
                 let sqrt_scale = 32_i64; // sqrt(1024) = 32 exactly
                 let grad_mag_fixed = if dx_fixed != 0 {
-                    ((sqrt_val as i64 * sqrt_scale * scale as i64) / dx_fixed as i64) as i32
+                    ((i64::from(sqrt_val) * sqrt_scale * i64::from(scale)) / i64::from(dx_fixed)) as i32
                 } else {
                     0
                 };
@@ -577,7 +577,7 @@ impl CpuLevelSetSolver {
     pub fn read_phi(&self) -> Vec<f32> {
         self.phi
             .iter()
-            .map(|&val| val as f32 / self.fixed_scale as f32)
+            .map(|&val| f64::from(val) as f32 / f64::from(self.fixed_scale) as f32)
             .collect()
     }
 
