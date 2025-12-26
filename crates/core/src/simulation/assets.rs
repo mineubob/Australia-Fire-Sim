@@ -39,16 +39,16 @@ pub enum AssetType {
 /// Threat level classification based on arrival time
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ThreatLevel {
-    /// Fire will arrive in <5 minutes
-    Immediate,
-    /// Fire will arrive in 5-15 minutes
-    High,
-    /// Fire will arrive in 15-30 minutes
-    Moderate,
-    /// Fire will arrive in >30 minutes
-    Low,
     /// Fire not expected to reach asset
     None,
+    /// Fire will arrive in >30 minutes
+    Low,
+    /// Fire will arrive in 15-30 minutes
+    Moderate,
+    /// Fire will arrive in 5-15 minutes
+    High,
+    /// Fire will arrive in <5 minutes
+    Immediate,
 }
 
 impl ThreatLevel {
@@ -272,7 +272,7 @@ mod tests {
             avg_spread_rate: 0.5,
         };
 
-        let critical_threat = AssetThreat::new(0, critical_asset, pred.clone());
+        let critical_threat = AssetThreat::new(0, critical_asset, pred);
         let normal_threat = AssetThreat::new(1, normal_asset, pred);
 
         // Critical asset should have much higher priority

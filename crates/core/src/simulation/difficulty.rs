@@ -7,7 +7,7 @@ use crate::core_types::units::{Celsius, Percent};
 use crate::core_types::weather::WeatherSystem;
 
 /// Difficulty mode for gameplay scaling
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DifficultyMode {
     /// Trainee mode: Easier conditions for learning
     /// - +20% fuel moisture
@@ -16,6 +16,7 @@ pub enum DifficultyMode {
     Trainee,
 
     /// Veteran mode: Realistic conditions (no scaling)
+    #[default]
     Veteran,
 
     /// Black Saturday mode: Extreme conditions based on 2009 Black Saturday fires
@@ -49,16 +50,14 @@ impl DifficultyMode {
     pub fn suppression_effectiveness_multiplier(&self) -> f32 {
         match self {
             DifficultyMode::Trainee => 1.30,
-            DifficultyMode::Veteran => 1.00,
-            DifficultyMode::BlackSaturday => 1.00,
+            DifficultyMode::Veteran | DifficultyMode::BlackSaturday => 1.00,
         }
     }
 
     /// Get ember spotting distance multiplier
     pub fn ember_spotting_multiplier(&self) -> f32 {
         match self {
-            DifficultyMode::Trainee => 1.00,
-            DifficultyMode::Veteran => 1.00,
+            DifficultyMode::Trainee | DifficultyMode::Veteran => 1.00,
             DifficultyMode::BlackSaturday => 1.50,
         }
     }
@@ -66,8 +65,7 @@ impl DifficultyMode {
     /// Get minimum FFDI for this mode (None if no minimum)
     pub fn min_ffdi(&self) -> Option<f32> {
         match self {
-            DifficultyMode::Trainee => None,
-            DifficultyMode::Veteran => None,
+            DifficultyMode::Trainee | DifficultyMode::Veteran => None,
             DifficultyMode::BlackSaturday => Some(150.0),
         }
     }
@@ -88,7 +86,7 @@ impl DifficultyMode {
                 // Scale temperature and reduce humidity to increase FFDI
                 let scale_factor = min_ffdi / current_ffdi.max(1.0);
                 weather.temperature =
-                    Celsius::new(*weather.temperature * (scale_factor as f64).min(1.5));
+                    Celsius::new(*weather.temperature * f64::from(scale_factor).min(1.5));
                 weather.humidity = Percent::new(*weather.humidity * 0.5_f32.max(0.05));
             }
         }
@@ -102,12 +100,6 @@ impl DifficultyMode {
     /// Apply difficulty scaling to suppression effectiveness
     pub fn apply_to_suppression(&self, effectiveness: f32) -> f32 {
         (effectiveness * self.suppression_effectiveness_multiplier()).min(1.0)
-    }
-}
-
-impl Default for DifficultyMode {
-    fn default() -> Self {
-        DifficultyMode::Veteran
     }
 }
 
@@ -150,9 +142,9 @@ mod tests {
         let black_saturday = DifficultyMode::BlackSaturday;
 
         let base_moisture = 0.10;
-        assert_eq!(trainee.apply_to_fuel_moisture(base_moisture), 0.12);
-        assert_eq!(veteran.apply_to_fuel_moisture(base_moisture), 0.10);
-        assert_eq!(black_saturday.apply_to_fuel_moisture(base_moisture), 0.08);
+        assert!((trainee.apply_to_fuel_moisture(base_moisture) - 0.12).abs() < 1e-6);
+        assert!((veteran.apply_to_fuel_moisture(base_moisture) - 0.10).abs() < 1e-6);
+        assert!((black_saturday.apply_to_fuel_moisture(base_moisture) - 0.08).abs() < 1e-6);
     }
 
     #[test]
@@ -161,7 +153,7 @@ mod tests {
         let base_eff = 0.70;
 
         let scaled = trainee.apply_to_suppression(base_eff);
-        assert_eq!(scaled, 0.91);
+        assert!((scaled - 0.91).abs() < 1e-6);
 
         // Should cap at 1.0
         let high_eff = 0.90;
