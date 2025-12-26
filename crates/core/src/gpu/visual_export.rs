@@ -166,10 +166,24 @@ pub fn extract_fire_front_contour(
 
             // Calculate interpolated edge midpoints when needed
             // Edge numbering: 0=bottom, 1=right, 2=top, 3=left
-            let edge_bottom = |t: f32| Vec3::new((x_f32 + t) * grid_spacing, y_f32 * grid_spacing, 0.0);
-            let edge_right = |t: f32| Vec3::new((x_f32 + 1.0) * grid_spacing, (y_f32 + t) * grid_spacing, 0.0);
-            let edge_top = |t: f32| Vec3::new((x_f32 + 1.0 - t) * grid_spacing, (y_f32 + 1.0) * grid_spacing, 0.0);
-            let edge_left = |t: f32| Vec3::new(x_f32 * grid_spacing, (y_f32 + 1.0 - t) * grid_spacing, 0.0);
+            let edge_bottom =
+                |t: f32| Vec3::new((x_f32 + t) * grid_spacing, y_f32 * grid_spacing, 0.0);
+            let edge_right = |t: f32| {
+                Vec3::new(
+                    (x_f32 + 1.0) * grid_spacing,
+                    (y_f32 + t) * grid_spacing,
+                    0.0,
+                )
+            };
+            let edge_top = |t: f32| {
+                Vec3::new(
+                    (x_f32 + 1.0 - t) * grid_spacing,
+                    (y_f32 + 1.0) * grid_spacing,
+                    0.0,
+                )
+            };
+            let edge_left =
+                |t: f32| Vec3::new(x_f32 * grid_spacing, (y_f32 + 1.0 - t) * grid_spacing, 0.0);
 
             // Generate vertices for each configuration based on which edges cross zero
             // Configurations 1-14 (excluding 0 and 15) define line segments through cell
