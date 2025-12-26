@@ -21,6 +21,8 @@ zstd.workspace = true
 bitvec.workspace = true
 chrono.workspace = true
 pollster = "0.3"  # For blocking on async GPU operations
+glam = "0.29.3"
+serde_json = "1.0"
 gdal = { version = "0.16", optional = true }
 
 [dev-dependencies]

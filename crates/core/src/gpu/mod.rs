@@ -16,6 +16,7 @@
 pub mod arrival_time;
 pub mod context;
 pub mod level_set;
+pub mod profiler;
 pub mod rothermel;
 pub mod suppression;
 pub mod visual_export;
@@ -23,6 +24,7 @@ pub mod visual_export;
 pub use arrival_time::{predict_arrival_time, ArrivalPrediction};
 pub use context::GpuContext;
 pub use level_set::{CpuLevelSetSolver, LevelSetSolver};
+pub use profiler::{DispatchStats, GpuProfiler, GpuStats, QualityPreset, TextureQuality};
 pub use rothermel::GpuRothermelSolver;
 pub use suppression::{
     apply_suppression_to_spread_rates, SuppressionEffectiveness, SuppressionGrid,
