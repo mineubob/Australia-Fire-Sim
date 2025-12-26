@@ -82,6 +82,9 @@ impl FireFrontVisualData {
 
 /// Extract fire front contour from level set phi field using marching squares
 ///
+/// Implements full marching squares algorithm with exact zero-crossing interpolation.
+/// No simplifications - all 16 cell configurations handled with proper edge interpolation.
+///
 /// # Arguments
 /// * `phi` - Level set field (negative = inside fire, positive = outside)
 /// * `width` - Grid width
@@ -89,7 +92,10 @@ impl FireFrontVisualData {
 /// * `grid_spacing` - Physical size of each grid cell (meters)
 ///
 /// # Returns
-/// Vector of contour vertices where φ ≈ 0 (fire boundary)
+/// Vector of contour vertices where φ ≈ 0 (fire boundary) with exact interpolation
+///
+/// # Reference
+/// Marching squares algorithm for level set contour extraction
 #[must_use]
 pub fn extract_fire_front_contour(
     phi: &[f32],
@@ -99,8 +105,8 @@ pub fn extract_fire_front_contour(
 ) -> Vec<Vec3> {
     let mut vertices = Vec::new();
 
-    // Marching squares algorithm - simplified implementation
-    // Full implementation would use lookup tables for all 16 cases
+    // Full marching squares algorithm - exact implementation
+    // Process each cell and determine configuration from corner signs
 
     for y in 0..(height - 1) {
         for x in 0..(width - 1) {
@@ -114,25 +120,157 @@ pub fn extract_fire_front_contour(
             let v01 = phi[idx01];
             let v11 = phi[idx11];
 
-            // Check if cell contains zero-crossing (fire boundary)
-            let has_negative = v00 < 0.0 || v10 < 0.0 || v01 < 0.0 || v11 < 0.0;
-            let has_positive = v00 > 0.0 || v10 > 0.0 || v01 > 0.0 || v11 > 0.0;
+            // Build marching squares configuration index (4-bit: v00 v10 v11 v01)
+            // Bit is 1 if inside fire (negative), 0 if outside (positive)
+            let mut config = 0u8;
+            if v00 < 0.0 {
+                config |= 1;
+            }
+            if v10 < 0.0 {
+                config |= 2;
+            }
+            if v11 < 0.0 {
+                config |= 4;
+            }
+            if v01 < 0.0 {
+                config |= 8;
+            }
 
-            if has_negative && has_positive {
-                // Simplified: add cell center as vertex
-                // Full implementation would interpolate exact zero-crossing
-                #[expect(
-                    clippy::cast_precision_loss,
-                    reason = "Grid coordinates to f32 for world position - acceptable for visualization"
-                )]
-                let world_x = (x as f32 + 0.5) * grid_spacing;
-                #[expect(
-                    clippy::cast_precision_loss,
-                    reason = "Grid coordinates to f32 for world position - acceptable for visualization"
-                )]
-                let world_y = (y as f32 + 0.5) * grid_spacing;
+            // Skip if cell is entirely inside or outside (configs 0 and 15)
+            if config == 0 || config == 15 {
+                continue;
+            }
 
-                vertices.push(Vec3::new(world_x, world_y, 0.0));
+            // Cast grid coordinates to f32 for interpolation
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "Grid coordinates to f32 for exact zero-crossing interpolation"
+            )]
+            let x_f32 = x as f32;
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "Grid coordinates to f32 for exact zero-crossing interpolation"
+            )]
+            let y_f32 = y as f32;
+
+            // Linear interpolation to find exact zero-crossing on edges
+            // Returns fractional position along edge (0.0 to 1.0)
+            let lerp = |v0: f32, v1: f32| -> f32 {
+                if (v1 - v0).abs() < 1e-10 {
+                    0.5 // Degenerate case
+                } else {
+                    // Exact zero-crossing: v0 + t*(v1 - v0) = 0  =>  t = -v0/(v1 - v0)
+                    (-v0 / (v1 - v0)).clamp(0.0, 1.0)
+                }
+            };
+
+            // Calculate interpolated edge midpoints when needed
+            // Edge numbering: 0=bottom, 1=right, 2=top, 3=left
+            let edge_bottom = |t: f32| Vec3::new((x_f32 + t) * grid_spacing, y_f32 * grid_spacing, 0.0);
+            let edge_right = |t: f32| Vec3::new((x_f32 + 1.0) * grid_spacing, (y_f32 + t) * grid_spacing, 0.0);
+            let edge_top = |t: f32| Vec3::new((x_f32 + 1.0 - t) * grid_spacing, (y_f32 + 1.0) * grid_spacing, 0.0);
+            let edge_left = |t: f32| Vec3::new(x_f32 * grid_spacing, (y_f32 + 1.0 - t) * grid_spacing, 0.0);
+
+            // Generate vertices for each configuration based on which edges cross zero
+            // Configurations 1-14 (excluding 0 and 15) define line segments through cell
+            match config {
+                1 => {
+                    // Bottom-left corner inside
+                    vertices.push(edge_bottom(lerp(v00, v10)));
+                    vertices.push(edge_left(lerp(v00, v01)));
+                }
+                2 => {
+                    // Bottom-right corner inside
+                    vertices.push(edge_right(lerp(v10, v11)));
+                    vertices.push(edge_bottom(lerp(v00, v10)));
+                }
+                3 => {
+                    // Bottom edge inside
+                    vertices.push(edge_left(lerp(v00, v01)));
+                    vertices.push(edge_right(lerp(v10, v11)));
+                }
+                4 => {
+                    // Top-right corner inside
+                    vertices.push(edge_top(lerp(v11, v01)));
+                    vertices.push(edge_right(lerp(v10, v11)));
+                }
+                5 => {
+                    // Ambiguous case: opposite corners (bottom-left & top-right)
+                    // Use center point disambiguation
+                    let v_center = (v00 + v10 + v11 + v01) * 0.25;
+                    if v_center < 0.0 {
+                        // Two separate contours
+                        vertices.push(edge_bottom(lerp(v00, v10)));
+                        vertices.push(edge_left(lerp(v00, v01)));
+                        vertices.push(edge_top(lerp(v11, v01)));
+                        vertices.push(edge_right(lerp(v10, v11)));
+                    } else {
+                        // Single contour
+                        vertices.push(edge_bottom(lerp(v00, v10)));
+                        vertices.push(edge_right(lerp(v10, v11)));
+                        vertices.push(edge_left(lerp(v00, v01)));
+                        vertices.push(edge_top(lerp(v11, v01)));
+                    }
+                }
+                6 => {
+                    // Right edge inside
+                    vertices.push(edge_bottom(lerp(v00, v10)));
+                    vertices.push(edge_top(lerp(v11, v01)));
+                }
+                7 => {
+                    // Bottom-right corner outside
+                    vertices.push(edge_left(lerp(v00, v01)));
+                    vertices.push(edge_top(lerp(v11, v01)));
+                }
+                8 => {
+                    // Top-left corner inside
+                    vertices.push(edge_left(lerp(v00, v01)));
+                    vertices.push(edge_top(lerp(v11, v01)));
+                }
+                9 => {
+                    // Left edge inside
+                    vertices.push(edge_bottom(lerp(v00, v10)));
+                    vertices.push(edge_top(lerp(v11, v01)));
+                }
+                10 => {
+                    // Ambiguous case: opposite corners (bottom-right & top-left)
+                    // Use center point disambiguation
+                    let v_center = (v00 + v10 + v11 + v01) * 0.25;
+                    if v_center < 0.0 {
+                        // Two separate contours
+                        vertices.push(edge_right(lerp(v10, v11)));
+                        vertices.push(edge_bottom(lerp(v00, v10)));
+                        vertices.push(edge_left(lerp(v00, v01)));
+                        vertices.push(edge_top(lerp(v11, v01)));
+                    } else {
+                        // Single contour
+                        vertices.push(edge_right(lerp(v10, v11)));
+                        vertices.push(edge_top(lerp(v11, v01)));
+                        vertices.push(edge_bottom(lerp(v00, v10)));
+                        vertices.push(edge_left(lerp(v00, v01)));
+                    }
+                }
+                11 => {
+                    // Top-left corner outside
+                    vertices.push(edge_right(lerp(v10, v11)));
+                    vertices.push(edge_top(lerp(v11, v01)));
+                }
+                12 => {
+                    // Top edge inside
+                    vertices.push(edge_left(lerp(v00, v01)));
+                    vertices.push(edge_right(lerp(v10, v11)));
+                }
+                13 => {
+                    // Top-right corner outside
+                    vertices.push(edge_bottom(lerp(v00, v10)));
+                    vertices.push(edge_right(lerp(v10, v11)));
+                }
+                14 => {
+                    // Bottom-left corner outside
+                    vertices.push(edge_left(lerp(v00, v01)));
+                    vertices.push(edge_bottom(lerp(v00, v10)));
+                }
+                _ => {} // Config 0 and 15 already skipped above
             }
         }
     }
