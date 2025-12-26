@@ -1598,7 +1598,11 @@ fn run_headless() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "Created simulation with {} elements on {width}x{height} terrain with {}",
         app.sim.get_all_elements().len(),
-        if app.sim.is_using_gpu() { "GPU" } else { "no GPU" }
+        if app.sim.is_using_gpu() {
+            "GPU"
+        } else {
+            "no GPU"
+        }
     );
     println!("Enter commands (type 'help' for available commands, 'quit' to exit):");
     println!();

@@ -554,7 +554,8 @@ impl CpuLevelSetSolver {
                 // With scale=1024=2^10: sqrt(scale)=32 exactly (no approximation!)
                 let sqrt_scale = 32_i64; // sqrt(1024) = 32 exactly
                 let grad_mag_fixed = if dx_fixed != 0 {
-                    ((i64::from(sqrt_val) * sqrt_scale * i64::from(scale)) / i64::from(dx_fixed)) as i32
+                    ((i64::from(sqrt_val) * sqrt_scale * i64::from(scale)) / i64::from(dx_fixed))
+                        as i32
                 } else {
                     0
                 };
