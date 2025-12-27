@@ -887,20 +887,21 @@ impl FireSimulation {
     ///     println!("Fire will arrive in {} seconds", time);
     /// }
     /// ```
+    /// Predict when fire will arrive at a target position
+    ///
+    /// Level set is always enabled (mandatory), so this always returns a prediction.
     #[must_use]
     pub fn predict_fire_arrival(
         &self,
         position: Vec3,
         max_lookahead: f32,
-    ) -> Option<crate::gpu::ArrivalPrediction> {
-        let solver = &self.level_set_solver;
-
-        Some(crate::gpu::predict_arrival_time(
-            solver,
+    ) -> crate::gpu::ArrivalPrediction {
+        crate::gpu::predict_arrival_time(
+            &self.level_set_solver,
             position,
             &self.level_set_spread_rates,
             max_lookahead,
-        ))
+        )
     }
 
     /// Check if level set fire front tracking is enabled
@@ -910,10 +911,11 @@ impl FireSimulation {
     }
 
     /// Get level set solver dimensions
+    ///
+    /// Level set is always enabled (mandatory), so this always returns dimensions.
     #[must_use]
-    pub fn level_set_dimensions(&self) -> Option<(u32, u32)> {
-        // Level set is always enabled now
-        Some(self.level_set_solver.dimensions())
+    pub fn level_set_dimensions(&self) -> (u32, u32) {
+        self.level_set_solver.dimensions()
     }
 
     // ========================================================================
@@ -1001,14 +1003,14 @@ impl FireSimulation {
     ///     }
     /// }
     /// ```
+    ///
+    /// Level set is always enabled (mandatory), so this always returns visual data.
     #[must_use]
-    pub fn get_fire_front_visual_data(&self) -> Option<crate::gpu::FireFrontVisualData> {
-        let solver = &self.level_set_solver;
-
+    pub fn get_fire_front_visual_data(&self) -> crate::gpu::FireFrontVisualData {
         // Get current phi field
-        let phi = solver.read_phi();
-        let (width, height) = solver.dimensions();
-        let grid_spacing = solver.grid_spacing();
+        let phi = self.level_set_solver.read_phi();
+        let (width, height) = self.level_set_solver.dimensions();
+        let grid_spacing = self.level_set_solver.grid_spacing();
 
         // Extract contour vertices
         let vertices = crate::gpu::extract_fire_front_contour(&phi, width, height, grid_spacing);
@@ -1049,7 +1051,7 @@ impl FireSimulation {
             visual_data.add_vertex(vertex, velocity, intensity);
         }
 
-        Some(visual_data)
+        visual_data
     }
 
     /// Update level set spread rates from current fire state
@@ -1058,10 +1060,8 @@ impl FireSimulation {
     /// using Rothermel model. This synchronizes the GPU level set solver with
     /// the element-based fire simulation.
     fn update_level_set_from_fire_state(&mut self) {
-        // Only update if level set solver is enabled
         // Level set is always enabled now
-
-        let (width, height) = self.level_set_dimensions().unwrap();
+        let (width, height) = self.level_set_dimensions();
         let cell_count = (width * height) as usize;
 
         // Initialize all cells to zero
@@ -1077,8 +1077,7 @@ impl FireSimulation {
             }
 
             // Convert element position to grid coordinates
-            let solver = &self.level_set_solver;
-            let grid_spacing = solver.grid_spacing();
+            let grid_spacing = self.level_set_solver.grid_spacing();
             let grid_x = (element.position.x / grid_spacing).floor() as usize;
             let grid_y = (element.position.y / grid_spacing).floor() as usize;
 
@@ -1178,16 +1177,14 @@ impl FireSimulation {
             self.update_level_set_from_fire_state();
 
             // Apply suppression to spread rates (suppression is always enabled)
-            let solver = &mut self.level_set_solver;
-            let grid = &self.suppression_grid;
             let suppressed_rates = crate::gpu::apply_suppression_to_spread_rates(
                 &self.level_set_spread_rates,
-                grid.effectiveness_field(),
+                self.suppression_grid.effectiveness_field(),
             );
-            solver.update_spread_rates(&suppressed_rates);
+            self.level_set_solver.update_spread_rates(&suppressed_rates);
 
             // Advance level set solver
-            solver.step(dt);
+            self.level_set_solver.step(dt);
         }
 
         // Update suppression degradation (suppression always enabled)
@@ -2529,10 +2526,9 @@ impl FireSimulation {
         let mut threats = Vec::new();
 
         for (id, asset) in self.asset_registry.assets().iter().enumerate() {
-            // Predict fire arrival for this asset
-            if let Some(prediction) = self.predict_fire_arrival(asset.position, 3600.0) {
-                threats.push(AssetThreat::new(id, asset.clone(), prediction));
-            }
+            // Predict fire arrival for this asset (level set is always enabled)
+            let prediction = self.predict_fire_arrival(asset.position, 3600.0);
+            threats.push(AssetThreat::new(id, asset.clone(), prediction));
         }
 
         // Sort by priority (highest first)
@@ -2635,8 +2631,8 @@ impl FireSimulation {
     pub fn capture_replay_snapshot(&mut self) {
         if let Some(recorder) = &mut self.replay_recorder {
             // Extract level set phi field (level set is always enabled now)
-            let solver = &self.level_set_solver;
-            let phi_field: Vec<i32> = solver
+            let phi_field: Vec<i32> = self
+                .level_set_solver
                 .read_phi()
                 .iter()
                 .map(|&v| (v * 1000.0) as i32)
