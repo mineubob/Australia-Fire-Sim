@@ -187,6 +187,7 @@ impl CelsiusDelta {
     /// Create a temperature delta (can be any value, positive or negative)
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f64) -> Self {
         CelsiusDelta(value)
     }
@@ -476,6 +477,7 @@ impl KelvinDelta {
     /// Create a temperature delta (can be any value)
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f64) -> Self {
         KelvinDelta(value)
     }
@@ -897,6 +899,7 @@ impl Kilograms {
     /// Create a new mass in kilograms. Asserts value >= 0 (non-negative mass).
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(value >= 0.0, "Kilograms::new: negative mass is invalid");
         Kilograms(value)
@@ -1325,6 +1328,7 @@ impl MetersPerSecond {
     /// Create a new velocity
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         MetersPerSecond(value)
     }
@@ -2004,6 +2008,7 @@ impl Fraction {
     /// Create a new fraction. Asserts value is within [0, 1].
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0 && value <= 1.0,
@@ -2134,6 +2139,7 @@ impl Percent {
     /// Create a new percentage
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         Percent(value)
     }
@@ -2253,6 +2259,7 @@ impl Degrees {
     /// Create a new angle in degrees
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         Degrees(value)
     }
@@ -2334,6 +2341,7 @@ impl Radians {
     /// Create a new angle in radians
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         Radians(value)
     }
@@ -2456,6 +2464,7 @@ impl SurfaceAreaToVolume {
     /// Create a new surface area to volume ratio. Asserts value >= 0 (non-negative SAV).
     #[inline]
     #[must_use]
+    #[track_caller]
     pub const fn new(value: f32) -> Self {
         assert!(
             value >= 0.0,

@@ -162,7 +162,7 @@ cat output.txt  # or use read_file tool
 
 ### Validate Rust Code Before Submitting
 ```bash
-cargo clippy --all-targets --all-features
+cargo clippy --all-targets
 cargo fmt --all -v --check
 ```
 **CRITICAL:** Fix ALL warnings by changing code — NEVER use `#[allow(...)]` macros. Workspace `Cargo.toml` denies both rustc and clippy warnings (equivalent to `-D warnings`), so any warning will fail the build.

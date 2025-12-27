@@ -21,6 +21,7 @@
 pub mod core_types;
 
 // Ultra-realistic simulation modules (organized in subfolders)
+pub mod gpu; // GPU-accelerated fire front computation (Phase 8)
 pub(crate) mod grid;
 pub mod physics; // Made pub for FFI access to SuppressionAgent
 pub mod simulation;
