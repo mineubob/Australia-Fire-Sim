@@ -16,7 +16,7 @@
 
 use fire_sim_core::gpu::{CpuLevelSetSolver, LevelSetSolver};
 
-/// Tolerance for φ field comparison  
+/// Tolerance for φ field comparison\
 /// CPU and GPU both use fixed-point arithmetic with scale=1024=2^10.
 /// With this power-of-2 scale, sqrt(1024)=32 exactly (eliminates sqrt approximation!).
 /// Remaining error: integer sqrt (10 iterations Babylonian) has finite precision.
