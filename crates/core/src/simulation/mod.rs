@@ -1,6 +1,25 @@
 //! Ultra-realistic fire simulation integrating all advanced systems
 //!
-//! `FireSimulationUltra` combines:
+//! This module provides both the legacy element-based `FireSimulation` and the new
+//! field-based `FieldSimulation` systems.
+//!
+//! # Fire Simulation Systems
+//!
+//! - **`FieldSimulation`** (NEW): GPU/CPU-accelerated field-based physics with level set fire fronts
+//! - **`FireSimulation`** (LEGACY): Element-based system with discrete fuel elements
+//!
+//! ## `FieldSimulation` (Recommended)
+//!
+//! `FieldSimulation` uses continuous 2D fields for:
+//! - Temperature distribution (Stefan-Boltzmann radiation, thermal diffusion)
+//! - Fuel consumption and combustion
+//! - Fire front tracking via level sets
+//! - Automatic GPU acceleration with CPU fallback
+//!
+//! ## `FireSimulation` (Legacy)
+//!
+//! The original element-based system is maintained for compatibility.
+//! It combines:
 //! - 3D atmospheric grid with terrain elevation
 //! - Discrete fuel elements with grid coupling
 //! - Chemistry-based combustion
@@ -11,11 +30,15 @@
 //! - Multiplayer action queue system (Phase 5)
 
 pub mod action_queue;
+pub mod field_simulation;
 
 // Re-export public types from action_queue
 pub use action_queue::{PlayerAction, PlayerActionType};
 // Keep ActionQueue internal
 pub(crate) use action_queue::ActionQueue;
+
+// Re-export new field-based simulation
+pub use field_simulation::FieldSimulation;
 
 use crate::core_types::element::{FuelElement, FuelPart, Vec3};
 use crate::core_types::ember::Ember;

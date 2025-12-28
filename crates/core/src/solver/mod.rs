@@ -30,6 +30,7 @@ mod cpu;
 mod fields;
 mod heat_transfer;
 mod level_set;
+pub mod marching_squares;
 mod quality;
 #[allow(clippy::module_name_repetitions)]
 mod r#trait;
@@ -41,6 +42,7 @@ mod gpu;
 pub use context::GpuInitResult;
 pub use cpu::CpuFieldSolver;
 pub use fields::FieldData;
+pub use marching_squares::{extract_fire_front, FireFront};
 pub use quality::QualityPreset;
 pub use r#trait::FieldSolver;
 
