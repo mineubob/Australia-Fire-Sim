@@ -25,7 +25,6 @@ pub struct FieldSimulation {
 
     /// Ember system (sparse, remains on CPU)
     embers: Vec<Ember>,
-    #[allow(dead_code)]
     next_ember_id: u32,
 
     /// Extracted fire front for visualization

@@ -21,8 +21,9 @@ impl ProfilerScope {
     }
 
     /// Gets elapsed time in milliseconds.
+    #[allow(clippy::cast_precision_loss)]
     pub fn elapsed_ms(&self) -> f64 {
-        self.start.elapsed().as_secs_f64() * 1000.0
+        self.start.elapsed().as_millis() as f64
     }
 }
 

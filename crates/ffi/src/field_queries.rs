@@ -2,10 +2,9 @@
 ///
 /// Provides C-compatible queries for fire front vertices, temperature grids,
 /// level set fields, and simulation statistics.
-use std::ptr;
 use std::slice;
 
-use crate::error::DefaultFireSimError;
+use crate::error::{DefaultFireSimError, FireSimErrorCode};
 use crate::field_simulation::FireSimFieldInstance;
 use crate::helpers::track_error;
 
@@ -66,20 +65,28 @@ pub struct FieldSimStats {
 ///
 /// # Arguments
 /// * `instance` - The simulation instance (must not be null)
+/// * `out_data` - Output pointer for FireFrontData (must not be null)
 ///
 /// # Returns
-/// Pointer to FireFrontData, or null on error.
+/// FireSimErrorCode::Ok on success, error code otherwise.
+/// If successful, *out_data contains pointer to FireFrontData.
 /// Caller must call fire_sim_free_fire_front() to free memory.
 ///
 /// # Safety
-/// `instance` must be a valid pointer from fire_sim_field_new()
+/// - `instance` must be a valid pointer from fire_sim_field_new()
+/// - `out_data` must be a valid output pointer
 #[no_mangle]
 pub extern "C" fn fire_sim_field_get_fire_front(
     instance: *const FireSimFieldInstance,
-) -> *mut FireFrontData {
+    out_data: *mut *mut FireFrontData,
+) -> FireSimErrorCode {
     if instance.is_null() {
         track_error(&DefaultFireSimError::null_pointer("instance"));
-        return ptr::null_mut();
+        return FireSimErrorCode::NullPointer;
+    }
+    if out_data.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("out_data"));
+        return FireSimErrorCode::NullPointer;
     }
 
     let instance_ref = unsafe { &*instance };
@@ -110,10 +117,16 @@ pub extern "C" fn fire_sim_field_get_fire_front(
     let count = vertices.len() as u32;
     let vertices_ptr = Box::into_raw(vertices.into_boxed_slice()) as *mut FireFrontVertex;
 
-    Box::into_raw(Box::new(FireFrontData {
+    let data = Box::into_raw(Box::new(FireFrontData {
         vertices: vertices_ptr,
         count,
-    }))
+    }));
+
+    unsafe {
+        *out_data = data;
+    }
+
+    FireSimErrorCode::Ok
 }
 
 /// Frees fire front data allocated by fire_sim_field_get_fire_front().
@@ -145,39 +158,49 @@ pub extern "C" fn fire_sim_free_fire_front(data: *mut FireFrontData) {
 ///
 /// # Arguments
 /// * `instance` - The simulation instance (must not be null)
-/// * `width` - Output: grid width (must not be null)
-/// * `height` - Output: grid height (must not be null)
+/// * `out_grid` - Output: pointer to float array (must not be null)
+/// * `out_width` - Output: grid width (must not be null)
+/// * `out_height` - Output: grid height (must not be null)
 ///
 /// # Returns
-/// Pointer to float array of size (width * height), or null on error.
+/// FireSimErrorCode::Ok on success, error code otherwise.
+/// If successful, *out_grid contains pointer to float array of size (width * height).
 /// Caller must call fire_sim_free_grid() to free memory.
 ///
 /// # Safety
 /// - `instance` must be a valid pointer
-/// - `width` and `height` must be valid output pointers
+/// - `out_grid`, `out_width`, and `out_height` must be valid output pointers
 #[no_mangle]
 pub extern "C" fn fire_sim_field_get_temperature_grid(
     instance: *const FireSimFieldInstance,
-    width: *mut u32,
-    height: *mut u32,
-) -> *mut f32 {
-    if instance.is_null() || width.is_null() || height.is_null() {
-        track_error(&DefaultFireSimError::null_pointer("parameter"));
-        return ptr::null_mut();
+    out_grid: *mut *mut f32,
+    out_width: *mut u32,
+    out_height: *mut u32,
+) -> FireSimErrorCode {
+    if instance.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("instance"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if out_grid.is_null() || out_width.is_null() || out_height.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("output parameter"));
+        return FireSimErrorCode::NullPointer;
     }
 
     let instance_ref = unsafe { &*instance };
     let temperature_data = instance_ref.simulation.read_temperature();
     let (w, h, _cell_size) = instance_ref.simulation.grid_dimensions();
 
-    unsafe {
-        *width = w;
-        *height = h;
-    }
-
     // Copy data to heap-allocated array
     let grid_vec: Vec<f32> = temperature_data.iter().copied().collect();
-    Box::into_raw(grid_vec.into_boxed_slice()) as *mut f32
+    let grid_ptr = Box::into_raw(grid_vec.into_boxed_slice()) as *mut f32;
+
+    unsafe {
+        *out_grid = grid_ptr;
+        *out_width = w;
+        *out_height = h;
+    }
+
+    FireSimErrorCode::Ok
 }
 
 /// Gets the level set φ field (2D array of floats).
@@ -189,39 +212,49 @@ pub extern "C" fn fire_sim_field_get_temperature_grid(
 ///
 /// # Arguments
 /// * `instance` - The simulation instance (must not be null)
-/// * `width` - Output: grid width (must not be null)
-/// * `height` - Output: grid height (must not be null)
+/// * `out_grid` - Output: pointer to float array (must not be null)
+/// * `out_width` - Output: grid width (must not be null)
+/// * `out_height` - Output: grid height (must not be null)
 ///
 /// # Returns
-/// Pointer to float array of size (width * height), or null on error.
+/// FireSimErrorCode::Ok on success, error code otherwise.
+/// If successful, *out_grid contains pointer to float array of size (width * height).
 /// Caller must call fire_sim_free_grid() to free memory.
 ///
 /// # Safety
 /// - `instance` must be a valid pointer
-/// - `width` and `height` must be valid output pointers
+/// - `out_grid`, `out_width`, and `out_height` must be valid output pointers
 #[no_mangle]
 pub extern "C" fn fire_sim_field_read_level_set(
     instance: *const FireSimFieldInstance,
-    width: *mut u32,
-    height: *mut u32,
-) -> *mut f32 {
-    if instance.is_null() || width.is_null() || height.is_null() {
-        track_error(&DefaultFireSimError::null_pointer("parameter"));
-        return ptr::null_mut();
+    out_grid: *mut *mut f32,
+    out_width: *mut u32,
+    out_height: *mut u32,
+) -> FireSimErrorCode {
+    if instance.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("instance"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if out_grid.is_null() || out_width.is_null() || out_height.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("output parameter"));
+        return FireSimErrorCode::NullPointer;
     }
 
     let instance_ref = unsafe { &*instance };
     let level_set_data = instance_ref.simulation.read_level_set();
     let (w, h, _cell_size) = instance_ref.simulation.grid_dimensions();
 
-    unsafe {
-        *width = w;
-        *height = h;
-    }
-
     // Copy data to heap-allocated array
     let grid_vec: Vec<f32> = level_set_data.iter().copied().collect();
-    Box::into_raw(grid_vec.into_boxed_slice()) as *mut f32
+    let grid_ptr = Box::into_raw(grid_vec.into_boxed_slice()) as *mut f32;
+
+    unsafe {
+        *out_grid = grid_ptr;
+        *out_width = w;
+        *out_height = h;
+    }
+
+    FireSimErrorCode::Ok
 }
 
 /// Frees grid data allocated by fire_sim_field_get_temperature_grid() or
@@ -246,20 +279,28 @@ pub extern "C" fn fire_sim_free_grid(grid: *mut f32, size: u32) {
 ///
 /// # Arguments
 /// * `instance` - The simulation instance (must not be null)
+/// * `out_stats` - Output pointer for FieldSimStats (must not be null)
 ///
 /// # Returns
-/// Pointer to FieldSimStats, or null on error.
+/// FireSimErrorCode::Ok on success, error code otherwise.
+/// If successful, *out_stats contains pointer to FieldSimStats.
 /// Caller must call fire_sim_free_stats() to free memory.
 ///
 /// # Safety
-/// `instance` must be a valid pointer from fire_sim_field_new()
+/// - `instance` must be a valid pointer from fire_sim_field_new()
+/// - `out_stats` must be a valid output pointer
 #[no_mangle]
 pub extern "C" fn fire_sim_field_get_stats(
     instance: *const FireSimFieldInstance,
-) -> *mut FieldSimStats {
+    out_stats: *mut *mut FieldSimStats,
+) -> FireSimErrorCode {
     if instance.is_null() {
         track_error(&DefaultFireSimError::null_pointer("instance"));
-        return ptr::null_mut();
+        return FireSimErrorCode::NullPointer;
+    }
+    if out_stats.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("out_stats"));
+        return FireSimErrorCode::NullPointer;
     }
 
     let instance_ref = unsafe { &*instance };
@@ -272,7 +313,13 @@ pub extern "C" fn fire_sim_field_get_stats(
         is_gpu: instance_ref.simulation.is_gpu_accelerated(),
     };
 
-    Box::into_raw(Box::new(stats))
+    let stats_ptr = Box::into_raw(Box::new(stats));
+
+    unsafe {
+        *out_stats = stats_ptr;
+    }
+
+    FireSimErrorCode::Ok
 }
 
 /// Frees statistics data allocated by fire_sim_field_get_stats().
