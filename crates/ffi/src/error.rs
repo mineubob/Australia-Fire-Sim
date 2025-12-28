@@ -52,58 +52,6 @@ impl DefaultFireSimError {
         }
     }
 
-    /// Create error for poisoned lock.
-    ///
-    /// # Arguments
-    /// * `lock_name` - The name of the lock that was poisoned (e.g., `"RwLock"`, `"Mutex"`)
-    #[allow(dead_code)]
-    pub fn lock_poisoned(lock_name: &str) -> Self {
-        Self {
-            code: FireSimErrorCode::LockPoisoned,
-            msg: format!("Lock '{lock_name}' was poisoned by a panic in another thread"),
-        }
-    }
-
-    /// Create error for invalid terrain parameters with a custom message.
-    ///
-    /// # Arguments
-    /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"nx"`)
-    /// * `message` - A description of the validation error
-    pub fn invalid_terrain_parameter_msg(param_name: &str, message: &str) -> Self {
-        Self {
-            code: FireSimErrorCode::InvalidTerrainParameters,
-            msg: format!("Terrain parameter {param_name}: {message}"),
-        }
-    }
-
-    /// Create error for invalid terrain parameters (f32 values).
-    ///
-    /// # Arguments
-    /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"resolution"`)
-    /// * `value` - The invalid value
-    #[allow(dead_code)]
-    pub fn invalid_terrain_parameter(param_name: &str, value: f32) -> Self {
-        Self::invalid_terrain_parameter_msg(
-            param_name,
-            &format!("must be finite and positive, got {value}"),
-        )
-    }
-
-    /// Create error for invalid terrain parameters (usize values).
-    ///
-    /// # Arguments
-    /// * `param_name` - The name of the invalid parameter (e.g., `"nx"`, `"ny"`, `"grid_dimension"`)
-    /// * `value` - The invalid value
-    /// * `constraint` - Description of the constraint (e.g., `"must be positive"`, `"exceeds maximum"`)
-    #[allow(dead_code)]
-    pub fn invalid_terrain_parameter_usize(
-        param_name: &str,
-        value: usize,
-        constraint: &str,
-    ) -> Self {
-        Self::invalid_terrain_parameter_msg(param_name, &format!("{constraint}, got {value}"))
-    }
-
     /// Create error for invalid parameter.
     ///
     /// # Arguments

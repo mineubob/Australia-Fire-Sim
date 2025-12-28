@@ -292,68 +292,6 @@ pub fn compute_spread_rate_cpu(
 ///
 /// # References
 ///
-/// - Sussman, Smereka & Osher (1994)
-/// - Sethian (1999)
-#[allow(dead_code)]
-#[allow(clippy::too_many_arguments)]
-pub fn reinitialize_signed_distance_cpu(
-    phi_in: &[f32],
-    phi_out: &mut [f32],
-    phi_original: &[f32],
-    width: usize,
-    height: usize,
-    cell_size: f32,
-    dt_pseudo: f32,
-) {
-    let dx = cell_size;
-
-    for y in 0..height {
-        for x in 0..width {
-            let idx = y * width + x;
-
-            // Skip boundary cells
-            if x == 0 || x == width - 1 || y == 0 || y == height - 1 {
-                phi_out[idx] = phi_in[idx];
-                continue;
-            }
-
-            let phi = phi_in[idx];
-            let phi0 = phi_original[idx];
-
-            // Get neighbors
-            let phi_left = phi_in[idx - 1];
-            let phi_right = phi_in[idx + 1];
-            let phi_up = phi_in[idx - width];
-            let phi_down = phi_in[idx + width];
-
-            // Compute gradient components
-            let dx_minus = (phi - phi_left) / dx;
-            let dx_plus = (phi_right - phi) / dx;
-            let dy_minus = (phi - phi_up) / dx;
-            let dy_plus = (phi_down - phi) / dx;
-
-            // Smoothed sign function
-            let epsilon = dx;
-            let s = phi0 / f32::sqrt(phi0 * phi0 + epsilon * epsilon);
-
-            // Upwind scheme based on sign
-            let grad_mag = if s > 0.0 {
-                let gx = f32::max(f32::max(dx_minus, 0.0), -f32::min(dx_plus, 0.0));
-                let gy = f32::max(f32::max(dy_minus, 0.0), -f32::min(dy_plus, 0.0));
-                f32::sqrt(gx * gx + gy * gy)
-            } else {
-                let gx = f32::max(-f32::min(dx_minus, 0.0), f32::max(dx_plus, 0.0));
-                let gy = f32::max(-f32::min(dy_minus, 0.0), f32::max(dy_plus, 0.0));
-                f32::sqrt(gx * gx + gy * gy)
-            };
-
-            // Reinitialization equation: ∂φ/∂τ = sign(φ₀)(1 - |∇φ|)
-            let dphi = s * (1.0 - grad_mag) * dt_pseudo;
-            phi_out[idx] = phi + dphi;
-        }
-    }
-}
-
 /// Synchronize level set with temperature field for ignition
 ///
 /// Updates φ to include cells that have reached ignition temperature.
@@ -586,65 +524,6 @@ mod tests {
             spread_rate[left_idx] > 0.0,
             "Adjacent cell should have positive spread rate: {}",
             spread_rate[left_idx]
-        );
-    }
-
-    #[test]
-    fn test_reinitialization_maintains_gradient() {
-        // Test that reinitialization restores |∇φ| ≈ 1
-        let width = 11;
-        let height = 11;
-        let size = width * height;
-
-        // Create a distorted level set field
-        let mut phi = vec![0.0; size];
-        let mut phi_out = vec![0.0; size];
-
-        // Initialize with circular signed distance
-        let cx = width / 2;
-        let cy = height / 2;
-        for y in 0..height {
-            for x in 0..width {
-                let idx = y * width + x;
-                let dx = x as f32 - cx as f32;
-                let dy = y as f32 - cy as f32;
-                let dist = (dx * dx + dy * dy).sqrt();
-                // Distorted: multiply by factor != 1
-                phi[idx] = (dist - 3.0) * 2.0; // Distortion factor
-            }
-        }
-
-        let phi_original = phi.clone();
-
-        // Run several reinitialization steps
-        let cell_size = 1.0;
-        let dt_pseudo = 0.5 * cell_size;
-
-        for _ in 0..5 {
-            reinitialize_signed_distance_cpu(
-                &phi,
-                &mut phi_out,
-                &phi_original,
-                width,
-                height,
-                cell_size,
-                dt_pseudo,
-            );
-            phi.copy_from_slice(&phi_out);
-        }
-
-        // Check that gradient magnitude is closer to 1.0
-        // Test a few points
-        let test_idx = 5 * width + 6; // Point near front
-        let phi_left = phi[test_idx - 1];
-        let phi_right = phi[test_idx + 1];
-        let grad_x = (phi_right - phi_left) / (2.0 * cell_size);
-
-        // Gradient should be reasonable (not exactly 1, but closer than before)
-        assert!(
-            grad_x.abs() > 0.1 && grad_x.abs() < 5.0,
-            "Gradient magnitude should be reasonable after reinitialization: {}",
-            grad_x.abs()
         );
     }
 
