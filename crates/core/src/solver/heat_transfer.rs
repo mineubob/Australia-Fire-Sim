@@ -370,17 +370,11 @@ mod tests {
         );
 
         // All boundary cells should be set to ambient temperature
-        // Top edge
-        #[expect(
-            clippy::needless_range_loop,
-            reason = "Index required for 2D grid access in assertion message"
-        )]
         for x in 0..width {
+            // Top edge
             assert_eq!(temp_out[x], params.ambient_temp, "Top boundary at x={x}");
-        }
 
-        // Bottom edge
-        for x in 0..width {
+            // Bottom edge
             let idx = (height - 1) * width + x;
             assert_eq!(
                 temp_out[idx], params.ambient_temp,
@@ -391,10 +385,7 @@ mod tests {
         // Left edge
         for y in 1..height - 1 {
             let idx = y * width;
-            assert_eq!(
-                temp_out[idx], params.ambient_temp,
-                "Left boundary at y={y}"
-            );
+            assert_eq!(temp_out[idx], params.ambient_temp, "Left boundary at y={y}");
         }
 
         // Right edge
