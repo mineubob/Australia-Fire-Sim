@@ -140,7 +140,7 @@ mod gpu_impl {
 
         /// Check if GPU has enough memory for given grid size
         ///
-        /// Estimates memory usage for field textures and checks against a conservative limit.
+        /// Estimates memory usage for field textures and checks against the actual GPU device limits.
         ///
         /// # Arguments
         ///
@@ -155,9 +155,19 @@ mod gpu_impl {
             // Estimate: ~6 float textures × 4 bytes × width × height × 2 (ping-pong)
             let estimated_bytes = 6 * 4 * u64::from(width) * u64::from(height) * 2;
 
-            // Conservative: require at least 2x estimated for headroom
-            // Use 256MB as a safe limit for compatibility
-            estimated_bytes < 256 * 1024 * 1024 // 256MB limit for safety
+            // Get actual device limits
+            let limits = self.device.limits();
+            let max_buffer_size = limits.max_buffer_size;
+            let max_texture_dimension_2d = limits.max_texture_dimension_2d;
+
+            // Check if grid dimensions exceed texture limits
+            if width > max_texture_dimension_2d || height > max_texture_dimension_2d {
+                return false;
+            }
+
+            // Check if estimated memory fits within device buffer limit
+            // Use 50% of max buffer size to leave headroom for other GPU operations
+            estimated_bytes < max_buffer_size / 2
         }
 
         /// Get reference to wgpu device
