@@ -27,6 +27,7 @@
 mod context;
 mod cpu;
 mod fields;
+mod heat_transfer;
 mod quality;
 #[allow(clippy::module_name_repetitions)]
 mod r#trait;

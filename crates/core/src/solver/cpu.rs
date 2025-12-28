@@ -5,10 +5,10 @@
 //! and serves as a fallback when GPU acceleration is not available.
 
 use super::fields::FieldData;
+use super::heat_transfer::{step_heat_transfer_cpu, HeatTransferParams};
 use super::quality::QualityPreset;
 use super::FieldSolver;
 use crate::TerrainData;
-use rayon::prelude::*;
 use std::borrow::Cow;
 
 /// CPU-based field solver using Rayon for parallelism
@@ -95,26 +95,25 @@ impl CpuFieldSolver {
 }
 
 impl FieldSolver for CpuFieldSolver {
-    fn step_heat_transfer(&mut self, dt: f32, _wind_x: f32, _wind_y: f32, ambient_temp: f32) {
-        // Placeholder implementation - full physics will be in Phase 2
-        // For now, just copy temperature field (no change)
-        let width = self.width;
+    fn step_heat_transfer(&mut self, dt: f32, wind_x: f32, wind_y: f32, ambient_temp: f32) {
+        // Use Phase 2 heat transfer physics
+        let params = HeatTransferParams {
+            dt,
+            wind_x,
+            wind_y,
+            ambient_temp,
+            cell_size: self.cell_size,
+        };
 
-        self.temperature_back
-            .as_mut_slice()
-            .par_chunks_mut(width)
-            .enumerate()
-            .for_each(|(y, row)| {
-                for (x, cell) in row.iter_mut().enumerate().take(width) {
-                    let idx = y * width + x;
-                    let t = self.temperature.as_slice()[idx];
-
-                    // Simple exponential cooling toward ambient (placeholder)
-                    let cooling_rate = 0.01_f32;
-                    let dt_temp = (ambient_temp - t) * cooling_rate * dt;
-                    *cell = t + dt_temp;
-                }
-            });
+        step_heat_transfer_cpu(
+            self.temperature.as_slice(),
+            self.temperature_back.as_mut_slice(),
+            self.level_set.as_slice(),
+            self.fuel_load.as_slice(),
+            self.width,
+            self.height,
+            params,
+        );
 
         // Swap buffers
         std::mem::swap(&mut self.temperature, &mut self.temperature_back);
