@@ -378,6 +378,10 @@ mod tests {
         let cy = height / 2;
         let initial_radius = 3.0;
 
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "Test uses small grid (<100 cells), no precision loss for f32 mantissa (23 bits)"
+        )]
         for y in 0..height {
             for x in 0..width {
                 let idx = y * width + x;
@@ -429,6 +433,10 @@ mod tests {
         let spread_rate = vec![0.1; size];
 
         // Create a simple gradient
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "Test uses small grid (<100 cells), no precision loss for f32 mantissa (23 bits)"
+        )]
         for y in 0..height {
             for x in 0..width {
                 let idx = y * width + x;
@@ -466,6 +474,10 @@ mod tests {
         let spread_rate = vec![1.0; size];
 
         // Create a linear gradient: φ = x (increasing to the right)
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "Test uses small grid (<100 cells), no precision loss for f32 mantissa (23 bits)"
+        )]
         for y in 0..height {
             for x in 0..width {
                 let idx = y * width + x;

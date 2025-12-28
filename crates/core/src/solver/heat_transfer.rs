@@ -336,9 +336,7 @@ mod tests {
 
         assert!(
             cool_rate_2 > cool_rate_1 * 10.0,
-            "T⁴ scaling: hotter cell should cool much faster (cool_rate_2={:.4}, cool_rate_1={:.4})",
-            cool_rate_2,
-            cool_rate_1
+            "T⁴ scaling: hotter cell should cool much faster (cool_rate_2={cool_rate_2:.4}, cool_rate_1={cool_rate_1:.4})"
         );
     }
 
@@ -373,8 +371,12 @@ mod tests {
 
         // All boundary cells should be set to ambient temperature
         // Top edge
+        #[expect(
+            clippy::needless_range_loop,
+            reason = "Index required for 2D grid access in assertion message"
+        )]
         for x in 0..width {
-            assert_eq!(temp_out[x], params.ambient_temp, "Top boundary at x={}", x);
+            assert_eq!(temp_out[x], params.ambient_temp, "Top boundary at x={x}");
         }
 
         // Bottom edge
@@ -382,8 +384,7 @@ mod tests {
             let idx = (height - 1) * width + x;
             assert_eq!(
                 temp_out[idx], params.ambient_temp,
-                "Bottom boundary at x={}",
-                x
+                "Bottom boundary at x={x}"
             );
         }
 
@@ -392,8 +393,7 @@ mod tests {
             let idx = y * width;
             assert_eq!(
                 temp_out[idx], params.ambient_temp,
-                "Left boundary at y={}",
-                y
+                "Left boundary at y={y}"
             );
         }
 
@@ -402,8 +402,7 @@ mod tests {
             let idx = y * width + (width - 1);
             assert_eq!(
                 temp_out[idx], params.ambient_temp,
-                "Right boundary at y={}",
-                y
+                "Right boundary at y={y}"
             );
         }
     }
