@@ -113,14 +113,14 @@ impl FieldSolver for GpuFieldSolver {
         debug!("GPU ignition sync pass (placeholder)");
     }
 
-    fn read_temperature(&self) -> Cow<[f32]> {
+    fn read_temperature(&self) -> Cow<'_, [f32]> {
         // TODO Phase 2: Read temperature texture from GPU
         // For now, return empty vec (will be implemented in Phase 2)
         let size = (self.width * self.height) as usize;
         Cow::Owned(vec![293.15; size]) // Placeholder: ambient temperature
     }
 
-    fn read_level_set(&self) -> Cow<[f32]> {
+    fn read_level_set(&self) -> Cow<'_, [f32]> {
         // TODO Phase 3: Read level set texture from GPU
         // For now, return empty vec (will be implemented in Phase 3)
         let size = (self.width * self.height) as usize;
