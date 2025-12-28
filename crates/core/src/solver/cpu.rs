@@ -7,6 +7,7 @@
 use super::combustion::{step_combustion_cpu, CombustionParams};
 use super::fields::FieldData;
 use super::heat_transfer::{step_heat_transfer_cpu, HeatTransferParams};
+use super::level_set::{compute_spread_rate_cpu, step_level_set_cpu, LevelSetParams};
 use super::quality::QualityPreset;
 use super::FieldSolver;
 use crate::TerrainData;
@@ -22,13 +23,15 @@ pub struct CpuFieldSolver {
     temperature: FieldData,
     temperature_back: FieldData,
 
-    // Additional fields (used in Phase 2)
+    // Additional fields (used in Phase 2-3)
     fuel_load: FieldData,
     moisture: FieldData,
     level_set: FieldData,
-    #[allow(dead_code)]
     level_set_back: FieldData,
     oxygen: FieldData,
+
+    // Spread rate field (computed from temperature gradient)
+    spread_rate: FieldData,
 
     // Static fields (don't change during simulation)
     #[allow(dead_code)]
@@ -70,6 +73,7 @@ impl CpuFieldSolver {
         let level_set = FieldData::with_value(width, height, f32::MAX); // All unburned initially
         let level_set_back = FieldData::new(width, height);
         let oxygen = FieldData::with_value(width, height, 0.21); // Atmospheric O₂ fraction
+        let spread_rate = FieldData::new(width, height); // Computed from temperature
 
         // Initialize static fields
         let fuel_type = vec![0_u8; num_cells]; // Default fuel type
@@ -83,6 +87,7 @@ impl CpuFieldSolver {
             level_set,
             level_set_back,
             oxygen,
+            spread_rate,
             fuel_type,
             terrain_height,
             width,
@@ -142,8 +147,40 @@ impl FieldSolver for CpuFieldSolver {
         // Placeholder - will implement in Phase 2
     }
 
-    fn step_level_set(&mut self, _dt: f32) {
-        // Placeholder - will implement in Phase 3
+    fn step_level_set(&mut self, dt: f32) {
+        // Phase 3: Level set evolution with curvature-dependent spread
+
+        // First, compute spread rate from temperature gradient
+        compute_spread_rate_cpu(
+            self.temperature.as_slice(),
+            self.fuel_load.as_slice(),
+            self.moisture.as_slice(),
+            self.spread_rate.as_mut_slice(),
+            self.width,
+            self.height,
+            self.cell_size,
+        );
+
+        // Then evolve level set using spread rate
+        let params = LevelSetParams {
+            dt,
+            cell_size: self.cell_size,
+            curvature_coeff: 0.25, // Margerit 2002
+            noise_amplitude: 0.05, // 5% stochastic variation
+            time: 0.0,             // TODO: Track simulation time
+        };
+
+        step_level_set_cpu(
+            self.level_set.as_slice(),
+            self.level_set_back.as_mut_slice(),
+            self.spread_rate.as_slice(),
+            self.width,
+            self.height,
+            params,
+        );
+
+        // Swap buffers
+        std::mem::swap(&mut self.level_set, &mut self.level_set_back);
     }
 
     fn step_ignition_sync(&mut self) {
