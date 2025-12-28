@@ -35,6 +35,7 @@ use tracing::debug;
 /// This solver stores all field data as GPU textures and uses compute shaders
 /// for parallel computation. It implements the same physics as the CPU solver
 /// but runs on the GPU for much better performance.
+#[allow(dead_code)] // Fields reserved for GPU pipeline integration (Phase 6 future work)
 pub struct GpuFieldSolver {
     context: GpuContext,
 

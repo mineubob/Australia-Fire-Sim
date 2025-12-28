@@ -187,6 +187,11 @@ impl FieldSimulation {
         self.solver.read_level_set()
     }
 
+    /// Returns the number of active embers in the simulation.
+    pub fn ember_count(&self) -> u32 {
+        self.embers.len() as u32
+    }
+
     // ====== Private Methods ======
 
     /// Update ember trajectories and spot fire ignition

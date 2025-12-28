@@ -100,6 +100,17 @@ impl DefaultFireSimError {
     ) -> Self {
         Self::invalid_terrain_parameter_msg(param_name, &format!("{constraint}, got {value}"))
     }
+
+    /// Create error for invalid parameter.
+    ///
+    /// # Arguments
+    /// * `message` - Description of the error
+    pub fn invalid_parameter(message: String) -> Self {
+        Self {
+            code: FireSimErrorCode::InvalidParameter,
+            msg: message,
+        }
+    }
 }
 
 impl FireSimError for DefaultFireSimError {
@@ -129,6 +140,9 @@ pub enum FireSimErrorCode {
     /// Invalid terrain parameters: width, height, resolution, or dimensions must be valid
     /// (finite and positive for f32, or within representable range for usize).
     InvalidTerrainParameters = 3,
+
+    /// Invalid parameter passed to function.
+    InvalidParameter = 4,
 }
 
 impl From<DefaultFireSimError> for FireSimErrorCode {
