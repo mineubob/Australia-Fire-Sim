@@ -7,7 +7,9 @@
 use super::combustion::{step_combustion_cpu, CombustionParams};
 use super::fields::FieldData;
 use super::heat_transfer::{step_heat_transfer_cpu, HeatTransferParams};
-use super::level_set::{compute_spread_rate_cpu, step_level_set_cpu, LevelSetParams};
+use super::level_set::{
+    compute_spread_rate_cpu, step_ignition_sync_cpu, step_level_set_cpu, LevelSetParams,
+};
 use super::quality::QualityPreset;
 use super::FieldSolver;
 use crate::TerrainData;
@@ -184,7 +186,20 @@ impl FieldSolver for CpuFieldSolver {
     }
 
     fn step_ignition_sync(&mut self) {
-        // Placeholder - will implement in Phase 3
+        // Phase 3: Synchronize level set with temperature field
+        let ignition_temp = 573.15; // ~300°C in Kelvin
+        let moisture_extinction = 0.3; // 30% moisture prevents burning
+
+        step_ignition_sync_cpu(
+            self.level_set.as_mut_slice(),
+            self.temperature.as_slice(),
+            self.moisture.as_slice(),
+            self.width,
+            self.height,
+            self.cell_size,
+            ignition_temp,
+            moisture_extinction,
+        );
     }
 
     fn read_temperature(&self) -> Cow<'_, [f32]> {

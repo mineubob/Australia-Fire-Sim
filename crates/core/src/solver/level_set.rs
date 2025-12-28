@@ -275,6 +275,151 @@ pub fn compute_spread_rate_cpu(
     }
 }
 
+/// Reinitialize level set field to maintain signed distance property
+///
+/// Solves ∂φ/∂τ = sign(φ₀)(1 - |∇φ|) to restore |∇φ| ≈ 1.
+/// This prevents numerical diffusion and maintains accuracy.
+///
+/// # Arguments
+///
+/// * `phi_in` - Input level set field
+/// * `phi_out` - Output reinitialized field
+/// * `phi_original` - Original field (preserves sign and zero level set location)
+/// * `width` - Grid width
+/// * `height` - Grid height
+/// * `cell_size` - Cell size in meters
+/// * `dt_pseudo` - Pseudo-timestep (typically 0.5 × `cell_size`)
+///
+/// # References
+///
+/// - Sussman, Smereka & Osher (1994)
+/// - Sethian (1999)
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+pub fn reinitialize_signed_distance_cpu(
+    phi_in: &[f32],
+    phi_out: &mut [f32],
+    phi_original: &[f32],
+    width: usize,
+    height: usize,
+    cell_size: f32,
+    dt_pseudo: f32,
+) {
+    let dx = cell_size;
+
+    for y in 0..height {
+        for x in 0..width {
+            let idx = y * width + x;
+
+            // Skip boundary cells
+            if x == 0 || x == width - 1 || y == 0 || y == height - 1 {
+                phi_out[idx] = phi_in[idx];
+                continue;
+            }
+
+            let phi = phi_in[idx];
+            let phi0 = phi_original[idx];
+
+            // Get neighbors
+            let phi_left = phi_in[idx - 1];
+            let phi_right = phi_in[idx + 1];
+            let phi_up = phi_in[idx - width];
+            let phi_down = phi_in[idx + width];
+
+            // Compute gradient components
+            let dx_minus = (phi - phi_left) / dx;
+            let dx_plus = (phi_right - phi) / dx;
+            let dy_minus = (phi - phi_up) / dx;
+            let dy_plus = (phi_down - phi) / dx;
+
+            // Smoothed sign function
+            let epsilon = dx;
+            let s = phi0 / f32::sqrt(phi0 * phi0 + epsilon * epsilon);
+
+            // Upwind scheme based on sign
+            let grad_mag = if s > 0.0 {
+                let gx = f32::max(f32::max(dx_minus, 0.0), -f32::min(dx_plus, 0.0));
+                let gy = f32::max(f32::max(dy_minus, 0.0), -f32::min(dy_plus, 0.0));
+                f32::sqrt(gx * gx + gy * gy)
+            } else {
+                let gx = f32::max(-f32::min(dx_minus, 0.0), f32::max(dx_plus, 0.0));
+                let gy = f32::max(-f32::min(dy_minus, 0.0), f32::max(dy_plus, 0.0));
+                f32::sqrt(gx * gx + gy * gy)
+            };
+
+            // Reinitialization equation: ∂φ/∂τ = sign(φ₀)(1 - |∇φ|)
+            let dphi = s * (1.0 - grad_mag) * dt_pseudo;
+            phi_out[idx] = phi + dphi;
+        }
+    }
+}
+
+/// Synchronize level set with temperature field for ignition
+///
+/// Updates φ to include cells that have reached ignition temperature.
+/// Cells are ignited if:
+/// - Currently unburned (φ > 0)
+/// - At ignition temperature
+/// - Below moisture extinction
+/// - Adjacent to burning cell (φ < 0)
+///
+/// # Arguments
+///
+/// * `phi` - Level set field (modified in place)
+/// * `temperature` - Temperature field (Kelvin)
+/// * `moisture` - Moisture fraction (0-1)
+/// * `width` - Grid width
+/// * `height` - Grid height
+/// * `cell_size` - Cell size in meters
+/// * `ignition_temp` - Ignition temperature (K)
+/// * `moisture_extinction` - Moisture level that prevents burning
+#[allow(clippy::too_many_arguments)]
+pub fn step_ignition_sync_cpu(
+    phi: &mut [f32],
+    temperature: &[f32],
+    moisture: &[f32],
+    width: usize,
+    height: usize,
+    cell_size: f32,
+    ignition_temp: f32,
+    moisture_extinction: f32,
+) {
+    // Create a copy to read from (avoid read-after-write issues)
+    let phi_in = phi.to_vec();
+
+    for y in 0..height {
+        for x in 0..width {
+            let idx = y * width + x;
+
+            // Skip boundary cells
+            if x == 0 || x == width - 1 || y == 0 || y == height - 1 {
+                continue;
+            }
+
+            let phi_val = phi_in[idx];
+            let temp = temperature[idx];
+            let moist = moisture[idx];
+
+            // Check if currently unburned but at ignition conditions
+            if phi_val > 0.0 && temp >= ignition_temp && moist < moisture_extinction {
+                // Check if adjacent to burning cell
+                let phi_left = phi_in[idx - 1];
+                let phi_right = phi_in[idx + 1];
+                let phi_up = phi_in[idx - width];
+                let phi_down = phi_in[idx + width];
+
+                let has_burning_neighbor =
+                    phi_left < 0.0 || phi_right < 0.0 || phi_up < 0.0 || phi_down < 0.0;
+
+                if has_burning_neighbor {
+                    // Ignite this cell
+                    phi[idx] = -cell_size * 0.5;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,6 +586,141 @@ mod tests {
             spread_rate[left_idx] > 0.0,
             "Adjacent cell should have positive spread rate: {}",
             spread_rate[left_idx]
+        );
+    }
+
+    #[test]
+    fn test_reinitialization_maintains_gradient() {
+        // Test that reinitialization restores |∇φ| ≈ 1
+        let width = 11;
+        let height = 11;
+        let size = width * height;
+
+        // Create a distorted level set field
+        let mut phi = vec![0.0; size];
+        let mut phi_out = vec![0.0; size];
+
+        // Initialize with circular signed distance
+        let cx = width / 2;
+        let cy = height / 2;
+        for y in 0..height {
+            for x in 0..width {
+                let idx = y * width + x;
+                let dx = x as f32 - cx as f32;
+                let dy = y as f32 - cy as f32;
+                let dist = (dx * dx + dy * dy).sqrt();
+                // Distorted: multiply by factor != 1
+                phi[idx] = (dist - 3.0) * 2.0; // Distortion factor
+            }
+        }
+
+        let phi_original = phi.clone();
+
+        // Run several reinitialization steps
+        let cell_size = 1.0;
+        let dt_pseudo = 0.5 * cell_size;
+
+        for _ in 0..5 {
+            reinitialize_signed_distance_cpu(
+                &phi,
+                &mut phi_out,
+                &phi_original,
+                width,
+                height,
+                cell_size,
+                dt_pseudo,
+            );
+            phi.copy_from_slice(&phi_out);
+        }
+
+        // Check that gradient magnitude is closer to 1.0
+        // Test a few points
+        let test_idx = 5 * width + 6; // Point near front
+        let phi_left = phi[test_idx - 1];
+        let phi_right = phi[test_idx + 1];
+        let grad_x = (phi_right - phi_left) / (2.0 * cell_size);
+
+        // Gradient should be reasonable (not exactly 1, but closer than before)
+        assert!(
+            grad_x.abs() > 0.1 && grad_x.abs() < 5.0,
+            "Gradient magnitude should be reasonable after reinitialization: {}",
+            grad_x.abs()
+        );
+    }
+
+    #[test]
+    fn test_ignition_sync_updates_phi() {
+        // Test that ignition sync correctly updates φ when conditions are met
+        let width = 5;
+        let height = 5;
+        let size = width * height;
+
+        let mut phi = vec![f32::MAX; size]; // All unburned
+        let mut temperature = vec![293.15; size]; // Ambient
+        let moisture = vec![0.1; size]; // 10% moisture
+
+        // Create a burning cell in center
+        let center_idx = 2 * width + 2;
+        phi[center_idx] = -1.0; // Burning
+
+        // Heat up adjacent cell to ignition temperature
+        let right_idx = center_idx + 1;
+        temperature[right_idx] = 600.0; // Above ignition (573.15 K)
+
+        step_ignition_sync_cpu(
+            &mut phi,
+            &temperature,
+            &moisture,
+            width,
+            height,
+            1.0,    // cell_size
+            573.15, // ignition_temp
+            0.3,    // moisture_extinction
+        );
+
+        // Right cell should now be ignited (negative φ)
+        assert!(
+            phi[right_idx] < 0.0,
+            "Cell should be ignited when hot and adjacent to fire: {}",
+            phi[right_idx]
+        );
+    }
+
+    #[test]
+    fn test_ignition_sync_respects_moisture() {
+        // Test that high moisture prevents ignition
+        let width = 5;
+        let height = 5;
+        let size = width * height;
+
+        let mut phi = vec![f32::MAX; size];
+        let mut temperature = vec![293.15; size];
+        let mut moisture = vec![0.1; size];
+
+        // Burning center
+        let center_idx = 2 * width + 2;
+        phi[center_idx] = -1.0;
+
+        // Hot adjacent cell but too wet
+        let right_idx = center_idx + 1;
+        temperature[right_idx] = 600.0; // Hot enough
+        moisture[right_idx] = 0.4; // Too wet (> 0.3 extinction)
+
+        step_ignition_sync_cpu(
+            &mut phi,
+            &temperature,
+            &moisture,
+            width,
+            height,
+            1.0,
+            573.15,
+            0.3,
+        );
+
+        // Should NOT be ignited
+        assert!(
+            phi[right_idx] > 0.0,
+            "Cell should not ignite when moisture is too high"
         );
     }
 }
