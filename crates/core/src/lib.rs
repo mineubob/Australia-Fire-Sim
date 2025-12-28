@@ -24,6 +24,7 @@ pub mod core_types;
 pub(crate) mod grid;
 pub mod physics; // Made pub for FFI access to SuppressionAgent
 pub mod simulation;
+pub mod solver; // New GPU/CPU field solver abstraction
 pub mod suppression; // Made pub for FFI access to SuppressionAgentType
 pub(crate) mod weather;
 
