@@ -4,6 +4,7 @@
 //! `Vec<f32>` arrays and Rayon for parallelism. This backend is always available
 //! and serves as a fallback when GPU acceleration is not available.
 
+use super::combustion::{step_combustion_cpu, CombustionParams};
 use super::fields::FieldData;
 use super::heat_transfer::{step_heat_transfer_cpu, HeatTransferParams};
 use super::quality::QualityPreset;
@@ -21,15 +22,12 @@ pub struct CpuFieldSolver {
     temperature: FieldData,
     temperature_back: FieldData,
 
-    // Additional fields (will be used in Phase 2-3)
-    #[allow(dead_code)]
+    // Additional fields (used in Phase 2)
     fuel_load: FieldData,
-    #[allow(dead_code)]
     moisture: FieldData,
     level_set: FieldData,
     #[allow(dead_code)]
     level_set_back: FieldData,
-    #[allow(dead_code)]
     oxygen: FieldData,
 
     // Static fields (don't change during simulation)
@@ -119,8 +117,25 @@ impl FieldSolver for CpuFieldSolver {
         std::mem::swap(&mut self.temperature, &mut self.temperature_back);
     }
 
-    fn step_combustion(&mut self, _dt: f32) {
-        // Placeholder - will implement in Phase 2
+    fn step_combustion(&mut self, dt: f32) {
+        // Use Phase 2 combustion physics
+        let params = CombustionParams {
+            dt,
+            cell_size: self.cell_size,
+        };
+
+        let _heat_release = step_combustion_cpu(
+            self.temperature.as_slice(),
+            self.fuel_load.as_mut_slice(),
+            self.moisture.as_mut_slice(),
+            self.oxygen.as_mut_slice(),
+            self.level_set.as_slice(),
+            self.width,
+            self.height,
+            params,
+        );
+
+        // TODO Phase 2: Add heat_release to temperature field in next heat transfer step
     }
 
     fn step_moisture(&mut self, _dt: f32, _humidity: f32) {

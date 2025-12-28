@@ -24,6 +24,7 @@
 //! let solver = create_field_solver(&terrain, QualityPreset::Medium);
 //! ```
 
+mod combustion;
 mod context;
 mod cpu;
 mod fields;
