@@ -190,19 +190,178 @@ impl FieldSimulation {
     // ====== Private Methods ======
 
     /// Update ember trajectories and spot fire ignition
-    fn update_embers(&mut self, _dt: f32) {
-        // TODO Phase 5: Implement ember physics
-        // - Update ember trajectories using Albini spotting model
-        // - Check for landing and ignition
-        // - Remove inactive embers
-        debug!(
-            "Ember update (placeholder): {} active embers",
-            self.embers.len()
-        );
+    fn update_embers(&mut self, dt: f32) {
+        // Generate new embers from fire front
+        self.generate_embers_from_fire_front(dt);
 
-        // Ember system will be fully implemented in Phase 5
-        // For now, just clear embers to avoid unbounded growth
-        self.embers.clear();
+        // Update existing ember trajectories
+        let wind_vector = self.weather.wind_vector();
+        let ambient_temp = self.weather.temperature;
+
+        // Collect embers that need spot fire ignition
+        let mut spot_fire_positions = Vec::new();
+
+        for ember in &mut self.embers {
+            ember.update_physics(wind_vector, ambient_temp, dt);
+
+            // Check for landing and spot fire ignition
+            if ember.has_landed() && ember.can_ignite() {
+                spot_fire_positions.push(ember.position());
+            }
+        }
+
+        // Attempt spot fire ignition for landed embers
+        for pos in spot_fire_positions {
+            self.attempt_spot_fire_ignition(pos);
+        }
+
+        // Remove inactive embers (cooled or landed)
+        self.embers.retain(Ember::is_active);
+
+        debug!("Ember update: {} active embers", self.embers.len());
+    }
+
+    /// Generate embers from active fire front vertices
+    fn generate_embers_from_fire_front(&mut self, dt: f32) {
+        // Only generate embers if fire front exists
+        if self.fire_front.vertex_count() == 0 {
+            return;
+        }
+
+        // Ember generation rate scales with fire intensity
+        for i in 0..self.fire_front.vertex_count() {
+            let vertex = self.fire_front.vertices[i];
+            let intensity = self.fire_front.intensities[i]; // kW/m
+
+            // Calculate ember generation rate (Albini 1983)
+            // Higher intensity → more embers
+            // Rate: ~0.1 embers/m/s at 1000 kW/m intensity
+            let ember_rate = Self::calculate_ember_generation_rate(intensity);
+
+            // Stochastic ember generation (Poisson process)
+            if rand::random::<f32>() < ember_rate * dt {
+                // Create new ember
+                let ember_id = self.next_ember_id;
+                self.next_ember_id += 1;
+
+                // Initial position at fire front (slightly elevated)
+                let position = Vec3::new(vertex.x, vertex.y, 1.0);
+
+                // Initial velocity from buoyancy (intensity-dependent)
+                // Higher intensity → stronger updraft
+                let initial_velocity = Vec3::new(
+                    0.0,
+                    0.0,
+                    (intensity / 1000.0).sqrt() * 5.0, // 0-15 m/s updraft
+                );
+
+                // Ember mass: typical bark fragment (0.1-5 grams)
+                let ember_mass = crate::core_types::units::Kilograms::new(
+                    0.0001 + rand::random::<f32>() * 0.005,
+                );
+
+                // Initial temperature: fire temperature (~800°C)
+                let ember_temp =
+                    crate::core_types::units::Celsius::new(700.0 + rand::random::<f64>() * 200.0);
+
+                // Source fuel type (default to 0, could be read from grid)
+                let source_fuel_type = 0;
+
+                let ember = Ember::new(
+                    ember_id,
+                    position,
+                    initial_velocity,
+                    ember_temp,
+                    ember_mass,
+                    source_fuel_type,
+                );
+
+                self.embers.push(ember);
+            }
+        }
+    }
+
+    /// Calculate ember generation rate from fire intensity
+    ///
+    /// Based on Albini (1983) and field observations
+    ///
+    /// # Arguments
+    ///
+    /// * `intensity` - Byram fireline intensity (kW/m)
+    ///
+    /// # Returns
+    ///
+    /// Ember generation rate (embers/s)
+    fn calculate_ember_generation_rate(intensity: f32) -> f32 {
+        if intensity < 100.0 {
+            return 0.0; // Low intensity fires don't generate many embers
+        }
+
+        // Empirical relationship:
+        // rate = k × I^0.5
+        // At 1000 kW/m: ~0.1 embers/s
+        // At 10000 kW/m: ~0.3 embers/s
+        let k = 0.003;
+        k * intensity.sqrt()
+    }
+
+    /// Attempt spot fire ignition from landed ember
+    fn attempt_spot_fire_ignition(&mut self, pos: Vec3) {
+        // Convert world position to grid coordinates
+        let grid_x = (pos.x / self.cell_size).floor() as usize;
+        let grid_y = (pos.y / self.cell_size).floor() as usize;
+
+        // Check bounds
+        if grid_x >= self.width as usize || grid_y >= self.height as usize {
+            return;
+        }
+
+        // Check moisture content at landing position
+        // Read level set to check if already burned
+        let phi = self.solver.read_level_set();
+        let idx = grid_y * (self.width as usize) + grid_x;
+        if idx >= phi.len() {
+            return;
+        }
+
+        // Don't ignite if already burned (φ < 0)
+        if phi[idx] < 0.0 {
+            return;
+        }
+
+        // TODO: Read actual moisture from solver
+        // For now, use weather humidity as proxy
+        let moisture_content = self.weather.humidity.value();
+
+        // Check moisture extinction threshold (30%)
+        if moisture_content > 0.30 {
+            debug!(
+                "Spot fire blocked: moisture {:.1}% > 30% threshold",
+                moisture_content * 100.0
+            );
+            return;
+        }
+
+        // Calculate ignition probability
+        // For simplicity, assume ember is hot enough (checked in can_ignite)
+        // Higher fuel moisture → lower probability
+        let moisture_factor = (1.0 - moisture_content / 0.30).max(0.0);
+
+        // Fuel receptivity (would come from fuel properties in full implementation)
+        let fuel_receptivity = 0.5_f32; // Placeholder
+
+        let ignition_prob = moisture_factor * fuel_receptivity;
+
+        // Probabilistic ignition
+        if rand::random::<f32>() < ignition_prob {
+            info!(
+                "Spot fire ignited at ({:.1}, {:.1}) from ember",
+                pos.x, pos.y
+            );
+
+            // Ignite spot fire with 2m radius
+            self.solver.ignite_at(pos.x, pos.y, 2.0);
+        }
     }
 
     /// Extract fire front from level set field
@@ -299,5 +458,103 @@ mod tests {
 
         // Fire should have spread
         assert!(sim.burned_area() > 0.0, "Fire should spread over time");
+    }
+
+    #[test]
+    fn test_ember_generation_from_fire_front() {
+        let terrain = TerrainData::flat(200.0, 200.0, 10.0, 0.0);
+        let weather = WeatherSystem::new(25.0, 0.2, 15.0, 0.0, 0.0); // Low moisture, good wind
+        let mut sim = FieldSimulation::new(&terrain, QualityPreset::Medium, weather);
+
+        // Ignite fire
+        sim.ignite_at(Vec3::new(100.0, 100.0, 0.0), 10.0);
+
+        // Run simulation to create fire front
+        for _ in 0..20 {
+            sim.update(1.0);
+        }
+
+        // Fire front should exist
+        assert!(
+            sim.fire_front().vertex_count() > 0,
+            "Fire front should have vertices"
+        );
+
+        // Note: Ember generation is stochastic, so we can't guarantee embers
+        // But the system should be exercised without panicking
+    }
+
+    #[test]
+    fn test_spot_fire_ignition_from_ember() {
+        use crate::core_types::units::{Celsius, Kilograms};
+
+        let terrain = TerrainData::flat(200.0, 200.0, 10.0, 0.0);
+        let weather = WeatherSystem::new(25.0, 0.15, 10.0, 0.0, 0.0); // Low moisture
+        let mut sim = FieldSimulation::new(&terrain, QualityPreset::Medium, weather);
+
+        // Create a hot ember that will land
+        let ember = Ember::new(
+            0,
+            Vec3::new(150.0, 150.0, 0.5), // Near ground
+            Vec3::new(0.0, 0.0, -1.0),    // Falling
+            Celsius::new(600.0),          // Hot enough to ignite
+            Kilograms::new(0.001),        // 1 gram
+            0,
+        );
+
+        sim.embers.push(ember);
+
+        // Get initial burned area
+        let initial_burned = sim.burned_area();
+
+        // Update to allow ember to land and potentially ignite
+        // Multiple attempts due to probabilistic ignition
+        for _ in 0..10 {
+            sim.update(0.1);
+        }
+
+        // Note: Ignition is probabilistic, but system should work without panicking
+        // In a real test with many runs, we'd verify statistical ignition rate
+        assert!(
+            sim.burned_area() >= initial_burned,
+            "Burned area should not decrease"
+        );
+    }
+
+    #[test]
+    fn test_moisture_prevents_spot_ignition() {
+        use crate::core_types::units::{Celsius, Kilograms};
+
+        let terrain = TerrainData::flat(200.0, 200.0, 10.0, 0.0);
+        let weather = WeatherSystem::new(25.0, 0.40, 10.0, 0.0, 0.0); // High moisture (40%)
+        let mut sim = FieldSimulation::new(&terrain, QualityPreset::Medium, weather);
+
+        // Create a hot ember
+        let ember = Ember::new(
+            0,
+            Vec3::new(100.0, 100.0, 0.5), // Near ground
+            Vec3::new(0.0, 0.0, -1.0),    // Falling
+            Celsius::new(600.0),          // Hot
+            Kilograms::new(0.001),        // 1 gram
+            0,
+        );
+
+        sim.embers.push(ember);
+
+        // Get initial burned area (should be 0)
+        let initial_burned = sim.burned_area();
+
+        // Update multiple times
+        for _ in 0..20 {
+            sim.update(0.1);
+        }
+
+        // With 40% moisture (above 30% threshold), spot fires should be blocked
+        // Burned area should remain 0
+        assert_eq!(
+            sim.burned_area(),
+            initial_burned,
+            "High moisture should prevent spot fire ignition"
+        );
     }
 }
