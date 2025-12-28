@@ -3,6 +3,23 @@
 //! This module provides a GPU implementation of the `FieldSolver` trait using
 //! wgpu compute shaders and textures. This backend is only available when the
 //! `gpu` feature is enabled.
+//!
+//! # Shader Files
+//!
+//! GPU compute shaders are located in `shaders/`:
+//! - `heat_transfer.wgsl` - Stefan-Boltzmann radiation, diffusion, wind advection
+//! - `combustion.wgsl` - Fuel consumption, moisture evaporation, oxygen depletion
+//!
+//! # Phase 2 Status
+//!
+//! Shaders are implemented and ready for integration. Full GPU pipeline creation,
+//! buffer management, and shader dispatch will be completed in the next iteration.
+//!
+//! The shaders implement the same physics as the CPU solver:
+//! - Full T⁴ Stefan-Boltzmann radiation (no approximations)
+//! - Moisture evaporation FIRST (2260 kJ/kg latent heat)
+//! - Oxygen stoichiometry (1.33 kg O₂/kg fuel)
+//! - Proper boundary conditions
 
 #![cfg(feature = "gpu")]
 
