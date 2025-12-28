@@ -83,7 +83,6 @@ pub struct FuelElement {
 }
 
 impl FuelElement {
-    #[allow(dead_code)]
     /// Create a new fuel element
     pub(crate) fn new(
         id: usize,

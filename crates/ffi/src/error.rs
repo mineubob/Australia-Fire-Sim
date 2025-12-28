@@ -69,7 +69,6 @@ impl DefaultFireSimError {
     /// # Arguments
     /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"nx"`)
     /// * `message` - A description of the validation error
-    #[allow(dead_code)]
     pub fn invalid_terrain_parameter_msg(param_name: &str, message: &str) -> Self {
         Self {
             code: FireSimErrorCode::InvalidTerrainParameters,

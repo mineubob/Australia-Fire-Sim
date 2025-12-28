@@ -62,7 +62,7 @@ fn calculate_absorption_efficiency(base_efficiency: f32, surface_area_to_volume:
 /// - Stefan-Boltzmann Law applied to wildfire heat transfer
 /// - Butler, B.W. & Cohen, J.D. (1998) - Int. J. Wildland Fire, 8(2)
 #[inline(always)]
-#[allow(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
+// Kept for tests, superseded by calculate_heat_transfer_raw
 pub(crate) fn calculate_radiation_flux(
     source: &FuelElement,
     target: &FuelElement,
@@ -168,7 +168,7 @@ pub(crate) fn calculate_convection_heat(
 /// - Anderson, H.E. (1983) "Predicting Wind-Driven Wild Land Fire Size and Shape"
 /// - Alexander, M.E. (1985) "Estimating the length-to-breadth ratio"
 #[inline(always)]
-#[allow(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
+// Kept for tests, superseded by calculate_heat_transfer_raw
 pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32 {
     let wind_speed_ms = wind.magnitude();
 
@@ -228,7 +228,7 @@ pub(crate) fn wind_radiation_multiplier(from: Vec3, to: Vec3, wind: Vec3) -> f32
 /// - General fire behavior physics (convection drives upward spread)
 /// - Sullivan (2009) - "Wildland surface fire spread modelling"
 #[inline(always)]
-#[allow(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
+// Kept for tests, superseded by calculate_heat_transfer_raw
 pub(crate) fn vertical_spread_factor(from: &FuelElement, to: &FuelElement) -> f32 {
     let height_diff = to.position.z - from.position.z;
 
@@ -254,7 +254,7 @@ pub(crate) fn vertical_spread_factor(from: &FuelElement, to: &FuelElement) -> f3
 /// - Rothermel (1972) - Slope factor equations
 /// - Butler et al. (2004) - "Fire behavior on slopes"
 #[inline(always)]
-#[allow(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
+// Kept for tests, superseded by calculate_heat_transfer_raw
 pub(crate) fn slope_spread_multiplier(from: &FuelElement, to: &FuelElement) -> f32 {
     let horizontal = ((to.position.x - from.position.x).powi(2)
         + (to.position.y - from.position.y).powi(2))
@@ -282,7 +282,7 @@ pub(crate) fn slope_spread_multiplier(from: &FuelElement, to: &FuelElement) -> f
 /// Calculate total heat transfer from source to target element
 /// Combines radiation, convection, wind, vertical, and slope effects
 #[inline(always)]
-#[allow(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
+#[expect(dead_code)] // Kept for tests, superseded by calculate_heat_transfer_raw
 pub(crate) fn calculate_total_heat_transfer(
     source: &FuelElement,
     target: &FuelElement,

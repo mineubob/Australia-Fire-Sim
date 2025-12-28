@@ -48,7 +48,7 @@ pub mod field_simulation;
 // Re-export public types from action_queue
 pub use action_queue::{PlayerAction, PlayerActionType};
 // Keep ActionQueue internal (for future multiplayer support)
-#[allow(unused_imports)]
+#[expect(unused_imports)]
 pub(crate) use action_queue::ActionQueue;
 
 // Re-export field-based simulation

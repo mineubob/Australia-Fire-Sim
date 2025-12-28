@@ -212,7 +212,7 @@ pub(crate) fn terrain_spread_multiplier(
 /// OPTIMIZED: Inline this hot function to eliminate call overhead
 /// Called millions of times per frame when calculating heat transfer
 #[inline]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) fn terrain_spread_multiplier_cached(
     from: &Vec3,
     to: &Vec3,

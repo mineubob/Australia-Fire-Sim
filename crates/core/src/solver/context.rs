@@ -66,18 +66,18 @@ mod gpu_impl {
             });
 
             // Try to find a GPU adapter
-            let adapter =
-                if let Some(a) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            let adapter = if let Some(a) =
+                pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::HighPerformance,
                     compatible_surface: None,
                     force_fallback_adapter: false,
                 })) {
-                    debug!("Found GPU adapter: {}", a.get_info().name);
-                    a
-                } else {
-                    debug!("No GPU adapter found");
-                    return GpuInitResult::NoGpuFound;
-                };
+                debug!("Found GPU adapter: {}", a.get_info().name);
+                a
+            } else {
+                debug!("No GPU adapter found");
+                return GpuInitResult::NoGpuFound;
+            };
 
             let adapter_info = adapter.get_info();
             let adapter_name = adapter_info.name.clone();

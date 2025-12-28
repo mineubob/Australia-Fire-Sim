@@ -34,7 +34,6 @@ pub(crate) enum CrownFireType {
 /// Crown fire behavior parameters
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CrownFireBehavior {
-    #[allow(dead_code)]
     /// Crown fire type
     fire_type: CrownFireType,
     /// Ratio of active to critical crown spread rate
@@ -50,7 +49,7 @@ impl CrownFireBehavior {
         }
     }
 
-#[allow(dead_code)]
+    #[expect(dead_code)]
     /// Get the fire type
     pub(crate) fn fire_type(&self) -> CrownFireType {
         self.fire_type

@@ -336,7 +336,7 @@ impl PyrocumulusCloud {
     }
 
     /// Check if cloud is still active
-#[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn is_active(&self) -> bool {
         self.updraft_velocity > 2.0
     }

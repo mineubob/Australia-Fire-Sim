@@ -21,7 +21,7 @@ pub(crate) fn track_error(error: &impl FireSimError) -> FireSimErrorCode {
 
 /// Clear the thread-local error message and code.
 /// Internal helper called on successful operations.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) fn clear_last_error() {
     with_last_error_mut(|(cstring, code)| {
         *cstring = None;

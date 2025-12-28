@@ -16,5 +16,5 @@ pub(crate) mod pyrocumulus;
 
 pub(crate) use atmosphere::AtmosphericProfile;
 // Pyrocumulus cloud physics (internal, for future weather integration)
-#[allow(unused_imports)]
+#[expect(unused_imports)]
 pub(crate) use pyrocumulus::PyrocumulusCloud;

@@ -521,7 +521,7 @@ impl SimulationGrid {
     }
 
     /// Update atmospheric diffusion (parallel, active cells only)
-#[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn update_diffusion(&mut self, dt: f32) {
         // Early exit if no active cells (performance optimization)
         if self.active_cell_indices.is_empty() {
@@ -663,7 +663,6 @@ impl SimulationGrid {
 
     /// Process diffusion for a single cell (extracted for chunked parallelism)
     #[inline(always)]
-#[allow(dead_code)]
     fn process_diffusion_cell(
         &self,
         idx: usize,

@@ -425,7 +425,7 @@ impl AtmosphericProfile {
     }
 
     /// Get fire weather severity description
-#[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn fire_weather_severity(&self) -> &'static str {
         match self.haines_index {
             2 | 3 => "Very Low",

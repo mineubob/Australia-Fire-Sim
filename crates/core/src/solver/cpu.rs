@@ -36,9 +36,9 @@ pub struct CpuFieldSolver {
     spread_rate: FieldData,
 
     // Static fields (don't change during simulation)
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fuel_type: Vec<u8>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     terrain_height: Vec<f32>,
 
     // Grid dimensions
