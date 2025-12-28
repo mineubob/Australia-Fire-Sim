@@ -1,3 +1,6 @@
+//! Atmospheric profile (for future integration)
+#![allow(dead_code)]
+
 //! Atmospheric Instability Modeling
 //!
 //! Implements vertical atmospheric profile analysis and stability indices
@@ -422,6 +425,7 @@ impl AtmosphericProfile {
     }
 
     /// Get fire weather severity description
+#[allow(dead_code)]
     pub fn fire_weather_severity(&self) -> &'static str {
         match self.haines_index {
             2 | 3 => "Very Low",

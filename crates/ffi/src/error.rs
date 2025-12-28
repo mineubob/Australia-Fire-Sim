@@ -56,6 +56,7 @@ impl DefaultFireSimError {
     ///
     /// # Arguments
     /// * `lock_name` - The name of the lock that was poisoned (e.g., `"RwLock"`, `"Mutex"`)
+    #[allow(dead_code)]
     pub fn lock_poisoned(lock_name: &str) -> Self {
         Self {
             code: FireSimErrorCode::LockPoisoned,
@@ -68,6 +69,7 @@ impl DefaultFireSimError {
     /// # Arguments
     /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"nx"`)
     /// * `message` - A description of the validation error
+    #[allow(dead_code)]
     pub fn invalid_terrain_parameter_msg(param_name: &str, message: &str) -> Self {
         Self {
             code: FireSimErrorCode::InvalidTerrainParameters,
@@ -80,6 +82,7 @@ impl DefaultFireSimError {
     /// # Arguments
     /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"resolution"`)
     /// * `value` - The invalid value
+    #[allow(dead_code)]
     pub fn invalid_terrain_parameter(param_name: &str, value: f32) -> Self {
         Self::invalid_terrain_parameter_msg(
             param_name,
@@ -93,6 +96,7 @@ impl DefaultFireSimError {
     /// * `param_name` - The name of the invalid parameter (e.g., `"nx"`, `"ny"`, `"grid_dimension"`)
     /// * `value` - The invalid value
     /// * `constraint` - Description of the constraint (e.g., `"must be positive"`, `"exceeds maximum"`)
+    #[allow(dead_code)]
     pub fn invalid_terrain_parameter_usize(
         param_name: &str,
         value: usize,

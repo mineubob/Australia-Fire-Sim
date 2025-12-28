@@ -1,3 +1,6 @@
+//! Fuel element (legacy element-based system)
+#![allow(dead_code)]
+
 use crate::core_types::fuel::Fuel;
 use crate::core_types::units::{
     Celsius, CelsiusDelta, Degrees, Fraction, Kilograms, Meters, Percent,
@@ -80,6 +83,7 @@ pub struct FuelElement {
 }
 
 impl FuelElement {
+    #[allow(dead_code)]
     /// Create a new fuel element
     pub(crate) fn new(
         id: usize,

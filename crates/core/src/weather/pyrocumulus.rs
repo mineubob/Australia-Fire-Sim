@@ -1,3 +1,6 @@
+//! Pyrocumulus cloud physics (for future integration)
+#![allow(dead_code)]
+
 //! Pyrocumulus Cloud Formation and Dynamics
 //!
 //! Implements fire-generated cloud physics for extreme fire behavior modeling.
@@ -333,6 +336,7 @@ impl PyrocumulusCloud {
     }
 
     /// Check if cloud is still active
+#[allow(dead_code)]
     pub fn is_active(&self) -> bool {
         self.updraft_velocity > 2.0
     }

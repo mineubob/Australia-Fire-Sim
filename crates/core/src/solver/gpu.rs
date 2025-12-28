@@ -21,8 +21,6 @@
 //! - Oxygen stoichiometry (1.33 kg O₂/kg fuel)
 //! - Proper boundary conditions
 
-#![cfg(feature = "gpu")]
-
 use super::context::GpuContext;
 use super::quality::QualityPreset;
 use super::FieldSolver;

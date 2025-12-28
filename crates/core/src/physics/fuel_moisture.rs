@@ -1,3 +1,6 @@
+//! Fuel moisture dynamics (for future integration)
+#![allow(dead_code)]
+
 //! Nelson Fuel Moisture Timelag System (2000)
 //!
 //! Implements dynamic fuel moisture equilibrium with timelag classes:
@@ -180,6 +183,7 @@ impl FuelMoistureState {
     /// Set all moisture classes to the same value
     ///
     /// Used when applying spatial variation to fuel moisture at creation time.
+#[allow(dead_code)]
     pub(crate) fn set_all(&mut self, moisture: f32) {
         self.moisture_1h = moisture;
         self.moisture_10h = moisture;
@@ -188,6 +192,7 @@ impl FuelMoistureState {
         self.average_moisture = moisture;
     }
 
+#[allow(dead_code)]
     /// Get average moisture content
     pub(crate) fn average_moisture(&self) -> f32 {
         self.average_moisture

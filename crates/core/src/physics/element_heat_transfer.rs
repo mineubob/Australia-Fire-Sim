@@ -1,3 +1,6 @@
+//! Element heat transfer (legacy element-based system)
+#![allow(dead_code)]
+
 //! Direct element-to-element heat transfer with Stefan-Boltzmann radiation
 //!
 //! Implements realistic radiation and convection between fuel elements:

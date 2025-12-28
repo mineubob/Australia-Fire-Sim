@@ -10,6 +10,7 @@ use crate::physics::combustion_physics::oxygen_limited_burn_rate;
 // no parallel helper required (previously used by update_wind_field)
 
 /// Calculate oxygen-limited burn rate for element based on cell oxygen
+#[allow(dead_code)]
 pub(crate) fn get_oxygen_limited_burn_rate(
     element: &FuelElement,
     base_burn_rate: f32,
@@ -29,6 +30,7 @@ pub(crate) fn get_oxygen_limited_burn_rate(
 // has been removed.
 
 /// Simulate smoke/heat plume rising from fire
+#[allow(dead_code)]
 pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &[Vec3], dt: f32) {
     // For each burning element position, create upward transport of heat and smoke
     for pos in source_positions {

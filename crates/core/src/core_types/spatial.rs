@@ -1,3 +1,9 @@
+//! Spatial indexing for efficient neighbor queries (legacy element-based system)
+//!
+//! Provides a 3D spatial hash grid for fast neighbor lookups.
+//! Used by the legacy element-based `FireSimulation`.
+#![allow(dead_code)]
+
 use crate::core_types::element::Vec3;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 

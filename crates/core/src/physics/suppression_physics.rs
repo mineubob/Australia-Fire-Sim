@@ -1,3 +1,6 @@
+//! Suppression physics (for future integration)
+#![allow(dead_code)]
+
 //! Fire suppression direct application
 //!
 //! Implements direct suppression agent application including:

@@ -12,18 +12,39 @@ pub mod suppression_physics; // Made pub for FFI access to SuppressionAgent
 pub(crate) mod terrain_physics;
 
 // Re-export internal functions and types for crate-internal use only
+#[allow(unused_imports)]
 pub(crate) use albini_spotting::{calculate_ember_trajectory, calculate_lofting_height};
+
+// Future use: Canopy layer physics
+#[allow(unused_imports)]
 pub(crate) use canopy_layers::{
     calculate_layer_transition_probability, CanopyLayer, CanopyStructure,
 };
+
+// Future use: Crown fire physics
+#[allow(unused_imports)]
 pub(crate) use crown_fire::{calculate_crown_fire_behavior, CrownFireType};
+
+// Future use: Fuel moisture dynamics
+#[allow(unused_imports)]
 pub(crate) use fuel_moisture::{calculate_equilibrium_moisture, FuelMoistureState};
+
+// Future use: Smoldering combustion
+#[allow(unused_imports)]
 pub(crate) use smoldering::update_smoldering_state;
+
 // Re-export smoldering types publicly for integration tests
 pub use smoldering::{CombustionPhase, SmolderingState};
+
+// Future use: Suppression physics
+#[allow(unused_imports)]
 pub(crate) use suppression_physics::apply_suppression_direct;
+
 // Re-export SuppressionAgent publicly for FFI
 pub use suppression_physics::SuppressionAgent;
+
+// Future use: Terrain physics
+#[allow(unused_imports)]
 pub(crate) use terrain_physics::{terrain_spread_multiplier, terrain_spread_multiplier_cached};
 
 // ============================================================================

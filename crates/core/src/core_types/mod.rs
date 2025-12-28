@@ -9,7 +9,8 @@ pub(crate) mod spatial;
 pub mod units;
 pub mod weather;
 
-// Re-export
+// Re-export (atmospheric types for future use)
+#[allow(unused_imports)]
 pub(crate) use atmospheric::*;
 pub use element::*;
 pub use ember::*;

@@ -1,3 +1,10 @@
+//! Field queries FFI (C-compatible API)
+#![allow(clippy::pedantic)]
+#![allow(clippy::cast_slice_from_raw_parts)]
+#![allow(clippy::borrow_as_ptr)]
+#![allow(clippy::ptr_as_ptr)]
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 /// FFI query functions for field-based fire simulation.
 ///
 /// Provides C-compatible queries for fire front vertices, temperature grids,

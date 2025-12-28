@@ -1,3 +1,9 @@
+//! Simulation grid (legacy element-based system support)
+//!
+//! These functions support the legacy element-based system and are preserved
+//! for backward compatibility and potential future use.
+#![allow(dead_code)]
+
 //! 3D simulation grid with atmospheric properties and adaptive refinement
 //!
 //! Implements a hybrid grid system where atmospheric properties (temperature, wind,
@@ -515,6 +521,7 @@ impl SimulationGrid {
     }
 
     /// Update atmospheric diffusion (parallel, active cells only)
+#[allow(dead_code)]
     pub(crate) fn update_diffusion(&mut self, dt: f32) {
         // Early exit if no active cells (performance optimization)
         if self.active_cell_indices.is_empty() {
@@ -656,6 +663,7 @@ impl SimulationGrid {
 
     /// Process diffusion for a single cell (extracted for chunked parallelism)
     #[inline(always)]
+#[allow(dead_code)]
     fn process_diffusion_cell(
         &self,
         idx: usize,

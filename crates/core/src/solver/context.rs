@@ -56,6 +56,7 @@ mod gpu_impl {
         ///
         /// The distinction matters: "no GPU" is expected on some systems,
         /// but "GPU found but failed" might indicate a driver issue worth logging.
+        #[allow(clippy::new_ret_no_self)]
         pub fn new() -> GpuInitResult {
             info!("Attempting to initialize GPU context");
 
@@ -66,19 +67,16 @@ mod gpu_impl {
 
             // Try to find a GPU adapter
             let adapter =
-                match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                if let Some(a) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::HighPerformance,
                     compatible_surface: None,
                     force_fallback_adapter: false,
                 })) {
-                    Some(a) => {
-                        debug!("Found GPU adapter: {}", a.get_info().name);
-                        a
-                    }
-                    None => {
-                        debug!("No GPU adapter found");
-                        return GpuInitResult::NoGpuFound;
-                    }
+                    debug!("Found GPU adapter: {}", a.get_info().name);
+                    a
+                } else {
+                    debug!("No GPU adapter found");
+                    return GpuInitResult::NoGpuFound;
                 };
 
             let adapter_info = adapter.get_info();
@@ -116,7 +114,7 @@ mod gpu_impl {
         ///
         /// # Returns
         ///
-        /// GPU adapter name (e.g., "NVIDIA GeForce GTX 1660")
+        /// GPU adapter name (e.g., "NVIDIA `GeForce` GTX 1660")
         #[must_use]
         pub fn adapter_name(&self) -> &str {
             &self.adapter_info.name

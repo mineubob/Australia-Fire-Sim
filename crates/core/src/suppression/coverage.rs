@@ -1,3 +1,6 @@
+//! Suppression coverage (for future integration)
+#![allow(dead_code)]
+
 //! Suppression coverage tracking per fuel element
 //!
 //! Tracks the suppression agent coverage on individual fuel elements,
@@ -88,6 +91,7 @@ impl SuppressionCoverage {
     }
 
     /// Get agent type
+#[allow(dead_code)]
     pub(crate) fn agent_type(&self) -> SuppressionAgentType {
         self.agent_type
     }
@@ -97,6 +101,7 @@ impl SuppressionCoverage {
         self.coverage_fraction
     }
 
+#[allow(dead_code)]
     /// Get mass remaining per area
     pub(crate) fn mass_per_area(&self) -> f32 {
         self.mass_per_area

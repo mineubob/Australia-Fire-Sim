@@ -1,3 +1,7 @@
+//! Field simulation FFI (C-compatible API)
+#![allow(clippy::pedantic)]
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 /// FFI bindings for field-based fire simulation (FieldSimulation).
 ///
 /// This module provides C-compatible API for the new GPU/CPU field solver system.

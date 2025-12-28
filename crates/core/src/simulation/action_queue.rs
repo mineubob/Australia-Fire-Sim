@@ -1,4 +1,4 @@
-//! Player Action Queue System (Phase 5)
+//! Player Action Queue System (Phase 5 - Legacy Element-Based System)
 //!
 //! Provides action-based replication support for multiplayer scenarios.
 //! The game engine handles networking, simulation provides deterministic physics.
@@ -10,6 +10,7 @@
 //! - **Each client runs local simulation**: No network lag for fire physics
 //! - **Server validates actions**: Anti-cheat handled by game engine
 //! - **Late joiners replay history**: Deterministic replay catches them up
+#![allow(dead_code)]
 
 use crate::core_types::element::Vec3;
 
