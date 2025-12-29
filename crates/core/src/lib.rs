@@ -18,6 +18,9 @@
 // Core types and utilities
 pub mod core_types;
 
+// Atmospheric dynamics (pyroconvection, downdrafts, fire whirls)
+pub mod atmosphere;
+
 // Ultra-realistic simulation modules (organized in subfolders)
 pub(crate) mod grid;
 pub mod physics; // Made pub for FFI access to SuppressionAgent
