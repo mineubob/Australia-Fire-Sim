@@ -33,6 +33,7 @@ mod level_set;
 pub mod marching_squares;
 pub mod profiler;
 mod quality;
+pub mod terrain_slope;
 #[allow(clippy::module_name_repetitions)]
 mod r#trait;
 
@@ -47,6 +48,7 @@ pub use marching_squares::{extract_fire_front, FireFront};
 pub use profiler::{FrameTimer, ProfilerScope};
 pub use quality::QualityPreset;
 pub use r#trait::FieldSolver;
+pub use terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
 
 #[cfg(feature = "gpu")]
 pub use context::GpuContext;
