@@ -507,4 +507,52 @@ mod tests {
             .any(|(&before, &after)| (before - after).abs() > 0.01);
         assert!(changed, "Temperature field did not change");
     }
+
+    #[test]
+    fn test_terrain_slope_integration() {
+        // Create terrain with a hill - slope should be non-zero
+        let terrain = TerrainData::single_hill(200.0, 200.0, 10.0, 0.0, 50.0, 50.0);
+        let solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
+
+        // Verify terrain fields were initialized with non-zero slopes
+        let (width, height) = solver.terrain_fields.dimensions();
+        assert!(
+            width > 0 && height > 0,
+            "Terrain fields should be initialized"
+        );
+
+        // Check that some cells have non-zero slope (hill terrain)
+        let mut has_slope = false;
+        for y in 0..height {
+            for x in 0..width {
+                if solver.terrain_fields.slope.get(x, y) > 0.1 {
+                    has_slope = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            has_slope,
+            "Hill terrain should have cells with non-zero slope"
+        );
+    }
+
+    #[test]
+    fn test_fuel_heterogeneity_integration() {
+        let terrain = TerrainData::flat(200.0, 200.0, 10.0, 0.0);
+        let solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
+
+        // With heterogeneity applied, fuel load should vary across cells
+        let fuel_slice = solver.fuel_load.as_slice();
+
+        // Count unique fuel values (with some tolerance)
+        let min_fuel = fuel_slice.iter().copied().fold(f32::INFINITY, f32::min);
+        let max_fuel = fuel_slice.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+
+        // Heterogeneity should create variation
+        assert!(
+            max_fuel - min_fuel > 0.01,
+            "Fuel load should vary across cells (min={min_fuel}, max={max_fuel})"
+        );
+    }
 }
