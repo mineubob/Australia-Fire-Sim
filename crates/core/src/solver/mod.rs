@@ -29,9 +29,11 @@ mod context;
 mod cpu;
 mod fields;
 pub mod fuel_layers;
+pub mod fuel_variation;
 mod heat_transfer;
 mod level_set;
 pub mod marching_squares;
+pub mod noise;
 pub mod profiler;
 mod quality;
 pub mod terrain_slope;
@@ -47,7 +49,12 @@ pub use context::GpuInitResult;
 pub use cpu::CpuFieldSolver;
 pub use fields::FieldData;
 pub use fuel_layers::{FuelLayer, LayerState, LayeredFuelCell};
+pub use fuel_variation::{
+    apply_fuel_heterogeneity, apply_heterogeneity_single, calculate_aspect_moisture_factor,
+    HeterogeneityConfig,
+};
 pub use marching_squares::{extract_fire_front, FireFront};
+pub use noise::{NoiseGenerator, NoiseOctave};
 pub use profiler::{FrameTimer, ProfilerScope};
 pub use quality::QualityPreset;
 pub use r#trait::FieldSolver;
