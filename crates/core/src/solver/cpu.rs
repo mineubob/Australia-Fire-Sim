@@ -6,14 +6,23 @@
 
 use super::combustion::{step_combustion_cpu, CombustionParams};
 use super::fields::FieldData;
+use super::fuel_variation::HeterogeneityConfig;
 use super::heat_transfer::{step_heat_transfer_cpu, HeatTransferParams};
 use super::level_set::{
     compute_spread_rate_cpu, step_ignition_sync_cpu, step_level_set_cpu, LevelSetParams,
 };
 use super::quality::QualityPreset;
+use super::terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
 use super::FieldSolver;
 use crate::TerrainData;
 use std::borrow::Cow;
+
+// Helper to convert usize to f32, centralizing the intentional precision loss
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
+}
 
 /// CPU-based field solver using Rayon for parallelism
 ///
@@ -41,6 +50,13 @@ pub struct CpuFieldSolver {
     #[expect(dead_code)]
     terrain_height: Vec<f32>,
 
+    // Phase 0: Terrain slope and aspect for fire spread modulation
+    terrain_fields: TerrainFields,
+
+    // Phase 2: Fuel heterogeneity configuration (stored for potential runtime queries)
+    #[expect(dead_code)]
+    heterogeneity_config: HeterogeneityConfig,
+
     // Grid dimensions
     width: usize,
     height: usize,
@@ -51,6 +67,7 @@ impl CpuFieldSolver {
     /// Create a new CPU field solver
     ///
     /// Initializes all fields based on terrain data and quality preset.
+    /// Applies Phase 0 terrain slope calculation and Phase 2 fuel heterogeneity.
     ///
     /// # Arguments
     ///
@@ -70,8 +87,8 @@ impl CpuFieldSolver {
         // Initialize fields
         let temperature = FieldData::with_value(width, height, 293.15); // ~20°C ambient
         let temperature_back = FieldData::new(width, height);
-        let fuel_load = FieldData::with_value(width, height, 1.0); // 1 kg/m² default
-        let moisture = FieldData::with_value(width, height, 0.1); // 10% moisture default
+        let mut fuel_load = FieldData::with_value(width, height, 1.0); // 1 kg/m² default
+        let mut moisture = FieldData::with_value(width, height, 0.1); // 10% moisture default
         let level_set = FieldData::with_value(width, height, f32::MAX); // All unburned initially
         let level_set_back = FieldData::new(width, height);
         let oxygen = FieldData::with_value(width, height, 0.21); // Atmospheric O₂ fraction
@@ -79,7 +96,52 @@ impl CpuFieldSolver {
 
         // Initialize static fields
         let fuel_type = vec![0_u8; num_cells]; // Default fuel type
-        let terrain_height = vec![0.0_f32; num_cells]; // Flat terrain default
+
+        // Phase 0: Initialize terrain slope/aspect from elevation data
+        let terrain_fields = TerrainFields::from_terrain_data(terrain, width, height, cell_size);
+
+        // Copy terrain height at grid resolution
+        let mut terrain_height = vec![0.0_f32; num_cells];
+        for y in 0..height {
+            for x in 0..width {
+                let wx = usize_to_f32(x) * cell_size;
+                let wy = usize_to_f32(y) * cell_size;
+                terrain_height[y * width + x] = *terrain.elevation_at(wx, wy);
+            }
+        }
+
+        // Phase 2: Apply fuel heterogeneity for realistic spatial variation
+        let heterogeneity_config = HeterogeneityConfig::default();
+        let seed = 42_u64; // Deterministic seed for reproducibility
+        let noise = super::noise::NoiseGenerator::new(seed);
+
+        // Apply heterogeneity to fuel load and moisture fields
+        let fuel_slice = fuel_load.as_mut_slice();
+        let moisture_slice = moisture.as_mut_slice();
+        for y in 0..height {
+            for x in 0..width {
+                let idx = y * width + x;
+                let wx = usize_to_f32(x) * cell_size;
+                let wy = usize_to_f32(y) * cell_size;
+
+                // Get aspect for this cell (from terrain fields)
+                let aspect = terrain_fields.aspect.get(x, y);
+
+                // Apply heterogeneity to both fuel and moisture at once
+                let (new_fuel, new_moisture) = super::fuel_variation::apply_heterogeneity_single(
+                    fuel_slice[idx],
+                    moisture_slice[idx],
+                    aspect,
+                    &noise,
+                    &heterogeneity_config,
+                    wx,
+                    wy,
+                );
+
+                fuel_slice[idx] = new_fuel;
+                moisture_slice[idx] = new_moisture;
+            }
+        }
 
         Self {
             temperature,
@@ -92,6 +154,8 @@ impl CpuFieldSolver {
             spread_rate,
             fuel_type,
             terrain_height,
+            terrain_fields,
+            heterogeneity_config,
             width,
             height,
             cell_size,
@@ -221,6 +285,60 @@ impl FieldSolver for CpuFieldSolver {
             self.height,
             self.cell_size,
         );
+
+        // Phase 0: Apply terrain slope factor to spread rate
+        // Fire spreads faster uphill (McArthur 1967) and slower downhill
+        let spread_slice = self.spread_rate.as_mut_slice();
+        let level_set_slice = self.level_set.as_slice();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                if spread_slice[idx] > 0.0 {
+                    // Calculate fire spread direction from level set gradient
+                    let spread_direction_degrees =
+                        if x > 0 && x < self.width - 1 && y > 0 && y < self.height - 1 {
+                            let phi_left = level_set_slice[idx - 1];
+                            let phi_right = level_set_slice[idx + 1];
+                            let phi_up = level_set_slice[idx - self.width];
+                            let phi_down = level_set_slice[idx + self.width];
+
+                            // Gradient points from burned to unburned (fire spreads in -∇φ direction)
+                            let grad_x = (phi_right - phi_left) / (2.0 * self.cell_size);
+                            let grad_y = (phi_down - phi_up) / (2.0 * self.cell_size);
+                            let mag = (grad_x * grad_x + grad_y * grad_y).sqrt();
+                            if mag > 1e-6 {
+                                // Convert vector to degrees (0=North, 90=East)
+                                // atan2(x, y) gives angle from North
+                                let spread_x = -grad_x / mag;
+                                let spread_y = -grad_y / mag;
+                                let angle_rad = spread_x.atan2(spread_y);
+                                let angle_deg = angle_rad.to_degrees();
+                                if angle_deg < 0.0 {
+                                    angle_deg + 360.0
+                                } else {
+                                    angle_deg
+                                }
+                            } else {
+                                0.0
+                            }
+                        } else {
+                            0.0
+                        };
+
+                    // Get slope and aspect at this cell using .get(x, y)
+                    let slope = self.terrain_fields.slope.get(x, y);
+                    let aspect = self.terrain_fields.aspect.get(x, y);
+
+                    // Calculate effective slope projected onto spread direction
+                    let effective_slope =
+                        calculate_effective_slope(slope, aspect, spread_direction_degrees);
+
+                    // Apply slope factor (McArthur 1967)
+                    let slope_factor = calculate_slope_factor(effective_slope);
+                    spread_slice[idx] *= slope_factor;
+                }
+            }
+        }
 
         // Then evolve level set using spread rate
         let params = LevelSetParams {
