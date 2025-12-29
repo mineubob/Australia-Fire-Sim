@@ -28,6 +28,7 @@ mod combustion;
 mod context;
 mod cpu;
 mod fields;
+pub mod fuel_layers;
 mod heat_transfer;
 mod level_set;
 pub mod marching_squares;
@@ -36,6 +37,7 @@ mod quality;
 pub mod terrain_slope;
 #[allow(clippy::module_name_repetitions)]
 mod r#trait;
+pub mod vertical_heat_transfer;
 
 #[cfg(feature = "gpu")]
 mod gpu;
@@ -44,11 +46,15 @@ mod gpu;
 pub use context::GpuInitResult;
 pub use cpu::CpuFieldSolver;
 pub use fields::FieldData;
+pub use fuel_layers::{FuelLayer, LayerState, LayeredFuelCell};
 pub use marching_squares::{extract_fire_front, FireFront};
 pub use profiler::{FrameTimer, ProfilerScope};
 pub use quality::QualityPreset;
 pub use r#trait::FieldSolver;
 pub use terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
+pub use vertical_heat_transfer::{
+    FluxParams, VerticalHeatTransfer, LATENT_HEAT_WATER, STEFAN_BOLTZMANN,
+};
 
 #[cfg(feature = "gpu")]
 pub use context::GpuContext;
