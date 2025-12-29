@@ -22,7 +22,7 @@
 //! use fire_sim_core::simulation::FieldSimulation;
 //! use fire_sim_core::solver::QualityPreset;
 //! use fire_sim_core::{TerrainData, WeatherSystem};
-//! use fire_sim_core::core_types::element::Vec3;
+//! use fire_sim_core::Vec3;
 //!
 //! // Create field-based simulation (auto-selects GPU or CPU)
 //! let terrain = TerrainData::flat(1000.0, 1000.0, 10.0, 0.0);

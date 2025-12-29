@@ -60,38 +60,36 @@ mod gpu_impl {
         pub fn new() -> GpuInitResult {
             info!("Attempting to initialize GPU context");
 
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
                 backends: wgpu::Backends::all(),
                 ..Default::default()
             });
 
             // Try to find a GPU adapter
-            let adapter = if let Some(a) =
+            let Ok(adapter) =
                 pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::HighPerformance,
                     compatible_surface: None,
                     force_fallback_adapter: false,
-                })) {
-                debug!("Found GPU adapter: {}", a.get_info().name);
-                a
-            } else {
+                }))
+            else {
                 debug!("No GPU adapter found");
                 return GpuInitResult::NoGpuFound;
             };
+            debug!("Found GPU adapter: {}", adapter.get_info().name);
 
             let adapter_info = adapter.get_info();
             let adapter_name = adapter_info.name.clone();
 
             // Try to create device - this can fail even with a valid adapter
-            match pollster::block_on(adapter.request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("FireSim GPU"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::Performance,
-                },
-                None,
-            )) {
+            match pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+                label: Some("FireSim GPU"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                experimental_features: wgpu::ExperimentalFeatures::default(),
+                trace: wgpu::Trace::Off,
+            })) {
                 Ok((device, queue)) => {
                     info!("GPU context initialized successfully: {}", adapter_name);
                     GpuInitResult::Success(Self {
@@ -178,6 +176,18 @@ mod gpu_impl {
         #[must_use]
         pub fn queue(&self) -> &wgpu::Queue {
             &self.queue
+        }
+
+        /// Consume the context and return owned device and queue
+        ///
+        /// Used when creating GPU-accelerated solvers that need ownership of device/queue.
+        ///
+        /// # Returns
+        ///
+        /// Tuple of (device, queue, `adapter_info`)
+        #[must_use]
+        pub fn into_device_queue(self) -> (wgpu::Device, wgpu::Queue, wgpu::AdapterInfo) {
+            (self.device, self.queue, self.adapter_info)
         }
     }
 

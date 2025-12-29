@@ -351,13 +351,7 @@ impl TurbulentWind {
     ///
     /// # Returns
     /// Modified wind vector with turbulent fluctuations
-    pub fn apply(
-        &self,
-        wind: super::element::Vec3,
-        x: f32,
-        y: f32,
-        time: f32,
-    ) -> super::element::Vec3 {
+    pub fn apply(&self, wind: super::vec3::Vec3, x: f32, y: f32, time: f32) -> super::vec3::Vec3 {
         let speed = wind.magnitude();
         if speed < 0.1 {
             return wind;
@@ -377,7 +371,7 @@ impl TurbulentWind {
         let new_x = wind.x * cos_a - wind.y * sin_a;
         let new_y = wind.x * sin_a + wind.y * cos_a;
 
-        super::element::Vec3::new(new_x * speed_mult, new_y * speed_mult, wind.z * speed_mult)
+        super::vec3::Vec3::new(new_x * speed_mult, new_y * speed_mult, wind.z * speed_mult)
     }
 }
 

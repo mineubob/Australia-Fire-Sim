@@ -382,14 +382,12 @@ mod tests {
             );
         }
 
-        // Left edge
         for y in 1..height - 1 {
+            // Left edge
             let idx = y * width;
             assert_eq!(temp_out[idx], params.ambient_temp, "Left boundary at y={y}");
-        }
 
-        // Right edge
-        for y in 1..height - 1 {
+            // Right edge
             let idx = y * width + (width - 1);
             assert_eq!(
                 temp_out[idx], params.ambient_temp,

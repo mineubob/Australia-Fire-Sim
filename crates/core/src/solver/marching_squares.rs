@@ -3,7 +3,7 @@
 //! This module implements the marching squares algorithm to extract the fire perimeter
 //! (φ = 0 contour) from the level set field.
 
-use crate::core_types::element::Vec3;
+use crate::core_types::vec3::Vec3;
 
 /// Fire perimeter data for visualization and analysis
 #[derive(Debug, Clone)]

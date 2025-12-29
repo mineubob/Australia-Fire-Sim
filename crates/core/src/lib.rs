@@ -28,7 +28,7 @@ pub(crate) mod weather;
 
 // Re-export core types (public API)
 pub use core_types::Ember;
-pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
+pub use core_types::{BarkProperties, Fuel, Vec3};
 pub use core_types::{ClimatePattern, WeatherPreset, WeatherSystem};
 
 /// Re-export FFDI ranges for validation and testing

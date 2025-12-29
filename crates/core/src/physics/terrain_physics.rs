@@ -13,7 +13,7 @@
 //! - `McArthur`, A.G. (1967). "Fire Behaviour in Eucalypt Forests."
 //!   Forestry and Timber Bureau Leaflet 107.
 
-use crate::core_types::element::Vec3;
+use crate::core_types::vec3::Vec3;
 use crate::grid::TerrainData;
 
 /// Calculate slope effect on fire spread using terrain model

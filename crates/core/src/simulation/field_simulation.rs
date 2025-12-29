@@ -3,8 +3,8 @@
 //! This module provides the new `FieldSimulation` struct that uses the `FieldSolver` trait
 //! for GPU/CPU-accelerated field-based fire physics. This replaces the old element-based system.
 
-use crate::core_types::element::Vec3;
 use crate::core_types::ember::Ember;
+use crate::core_types::vec3::Vec3;
 use crate::core_types::weather::WeatherSystem;
 use crate::solver::{
     create_field_solver, extract_fire_front, FieldSolver, FireFront, QualityPreset,

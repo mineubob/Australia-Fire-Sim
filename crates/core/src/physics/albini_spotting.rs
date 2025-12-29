@@ -22,7 +22,7 @@
 //! 4. Trajectory integration accounting for wind drift
 //! 5. Terrain effects on landing distance
 
-use crate::core_types::element::Vec3;
+use crate::core_types::vec3::Vec3;
 
 /// Celsius to Kelvin conversion offset (0°C = 273.15 K)
 const CELSIUS_TO_KELVIN: f64 = 273.15;

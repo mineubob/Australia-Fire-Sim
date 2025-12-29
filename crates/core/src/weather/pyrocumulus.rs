@@ -14,7 +14,7 @@
 //! - Briggs, G.A. (1975). "Plume rise predictions." NOAA/ATDL.
 
 use super::AtmosphericProfile;
-use crate::core_types::element::Vec3;
+use crate::core_types::vec3::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Fire-generated pyrocumulus cloud

@@ -131,7 +131,7 @@ impl FieldSolver for CpuFieldSolver {
             cell_size: self.cell_size,
         };
 
-        let _heat_release = step_combustion_cpu(
+        let heat_release = step_combustion_cpu(
             self.temperature.as_slice(),
             self.fuel_load.as_mut_slice(),
             self.moisture.as_mut_slice(),
@@ -142,11 +142,70 @@ impl FieldSolver for CpuFieldSolver {
             params,
         );
 
-        // TODO Phase 2: Add heat_release to temperature field in next heat transfer step
+        // Add heat release to temperature field
+        // Heat is converted to temperature rise via: ΔT = Q / (m × c)
+        // Using simplified thermal mass: mass = fuel_load × cell_area, c = 1.0 kJ/(kg·K)
+        let cell_area = self.cell_size * self.cell_size;
+        let fuel_slice = self.fuel_load.as_slice();
+        let temp_mut_slice = self.temperature.as_mut_slice();
+        for (idx, &heat) in heat_release
+            .iter()
+            .enumerate()
+            .take(self.width * self.height)
+        {
+            if heat > 0.0 {
+                let fuel_mass = fuel_slice[idx] * cell_area;
+                let thermal_mass = fuel_mass.max(0.1); // Minimum thermal mass to prevent inf
+                let specific_heat = 1.5; // kJ/(kg·K) for wood
+                let delta_t = heat / (thermal_mass * specific_heat * 1000.0);
+                temp_mut_slice[idx] += delta_t;
+            }
+        }
     }
 
-    fn step_moisture(&mut self, _dt: f32, _humidity: f32) {
-        // Placeholder - will implement in Phase 2
+    fn step_moisture(&mut self, dt: f32, humidity: f32) {
+        // Moisture equilibrium model (simplified Nelson 2000)
+        // Moisture content tends toward equilibrium moisture content (EMC)
+        // based on relative humidity over time
+
+        // Calculate EMC from humidity (simplified)
+        // EMC ≈ 0.85 × humidity for fine fuels
+        let emc = 0.85 * humidity;
+
+        // Time constant for moisture response (hours converted to seconds)
+        // Fine fuels: ~1 hour, medium: ~10 hours
+        let time_constant = 3600.0; // 1 hour in seconds
+
+        // Exponential approach to EMC: dM/dt = (EMC - M) / τ
+        let moisture_slice = self.moisture.as_mut_slice();
+        let temp_slice = self.temperature.as_slice();
+        let level_set_slice = self.level_set.as_slice();
+
+        for idx in 0..(self.width * self.height) {
+            let current_moisture = moisture_slice[idx];
+            let temp = temp_slice[idx];
+            let is_burning = level_set_slice[idx] < 0.0;
+
+            // Burning cells: moisture continues to be driven off by combustion
+            // (already handled in combustion step)
+            if is_burning {
+                continue;
+            }
+
+            // Hot cells dry out faster (temperature-dependent drying)
+            // Drying rate increases exponentially with temperature above 100°C
+            let drying_rate = if temp > 373.15 {
+                // Above boiling: rapid drying
+                let excess_temp = temp - 373.15;
+                (1.0 + excess_temp / 100.0).min(10.0)
+            } else {
+                1.0
+            };
+
+            // Approach to EMC
+            let rate = (emc - current_moisture) / time_constant * dt * drying_rate;
+            moisture_slice[idx] = (current_moisture + rate).clamp(0.0, 1.0);
+        }
     }
 
     fn step_level_set(&mut self, dt: f32) {

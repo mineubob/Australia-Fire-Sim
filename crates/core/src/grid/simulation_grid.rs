@@ -10,8 +10,8 @@
 //! humidity, oxygen, combustion products) are tracked per cell, while discrete fuel
 //! elements interact with cells for extreme realism.
 
-use crate::core_types::element::Vec3;
 use crate::core_types::units::{Celsius, CelsiusDelta, Fraction, Meters};
+use crate::core_types::vec3::Vec3;
 use crate::grid::{TerrainCache, TerrainData};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};

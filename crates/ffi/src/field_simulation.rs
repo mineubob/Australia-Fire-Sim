@@ -5,11 +5,9 @@
 /// FFI bindings for field-based fire simulation (FieldSimulation).
 ///
 /// This module provides C-compatible API for the new GPU/CPU field solver system.
-/// It coexists with the legacy element-based API for backward compatibility.
-use fire_sim_core::core_types::element::Vec3;
 use fire_sim_core::simulation::FieldSimulation;
 use fire_sim_core::solver::QualityPreset;
-use fire_sim_core::{TerrainData, WeatherSystem};
+use fire_sim_core::{TerrainData, Vec3, WeatherSystem};
 use std::ptr;
 
 use crate::error::{DefaultFireSimError, FireSimErrorCode};

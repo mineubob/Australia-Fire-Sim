@@ -12,7 +12,7 @@
 //! - **Late joiners replay history**: Deterministic replay catches them up
 #![allow(dead_code)]
 
-use crate::core_types::element::Vec3;
+use crate::core_types::vec3::Vec3;
 
 /// Player action types for replication
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

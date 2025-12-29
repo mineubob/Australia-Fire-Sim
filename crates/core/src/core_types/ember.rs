@@ -37,8 +37,8 @@
 //! mechanism of fire spread, causing fires to "leap" firebreaks and ignite new fires
 //! kilometers ahead of the main fire front.
 
-use crate::core_types::element::Vec3;
 use crate::core_types::units::{Celsius, Kilograms};
+use crate::core_types::vec3::Vec3;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
