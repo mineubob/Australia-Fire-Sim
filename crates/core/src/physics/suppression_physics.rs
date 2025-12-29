@@ -1,3 +1,6 @@
+//! Suppression physics (for future integration)
+#![allow(dead_code)]
+
 //! Fire suppression direct application
 //!
 //! Implements direct suppression agent application including:
@@ -5,8 +8,8 @@
 //! - Realistic cooling and humidity effects
 //! - Support for multiple agent types
 
-use crate::core_types::element::Vec3;
 use crate::core_types::units::Celsius;
+use crate::core_types::vec3::Vec3;
 use crate::grid::SimulationGrid;
 use serde::{Deserialize, Serialize};
 

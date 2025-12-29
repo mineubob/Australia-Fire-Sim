@@ -53,7 +53,7 @@
 //! ```
 //! where I is fire intensity (kW/m), ρ is air density, cp is specific heat.
 
-use crate::core_types::element::Vec3;
+use crate::core_types::vec3::Vec3;
 use crate::grid::TerrainData;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};

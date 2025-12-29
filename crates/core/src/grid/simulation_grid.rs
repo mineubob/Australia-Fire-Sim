@@ -1,11 +1,17 @@
+//! Simulation grid (legacy element-based system support)
+//!
+//! These functions support the legacy element-based system and are preserved
+//! for backward compatibility and potential future use.
+#![allow(dead_code)]
+
 //! 3D simulation grid with atmospheric properties and adaptive refinement
 //!
 //! Implements a hybrid grid system where atmospheric properties (temperature, wind,
 //! humidity, oxygen, combustion products) are tracked per cell, while discrete fuel
 //! elements interact with cells for extreme realism.
 
-use crate::core_types::element::Vec3;
 use crate::core_types::units::{Celsius, CelsiusDelta, Fraction, Meters};
+use crate::core_types::vec3::Vec3;
 use crate::grid::{TerrainCache, TerrainData};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -515,6 +521,7 @@ impl SimulationGrid {
     }
 
     /// Update atmospheric diffusion (parallel, active cells only)
+    #[expect(dead_code)]
     pub(crate) fn update_diffusion(&mut self, dt: f32) {
         // Early exit if no active cells (performance optimization)
         if self.active_cell_indices.is_empty() {

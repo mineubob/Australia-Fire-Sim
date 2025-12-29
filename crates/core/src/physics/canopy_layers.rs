@@ -1,3 +1,6 @@
+//! Canopy layer physics (for future integration)
+#![allow(dead_code)]
+
 //! Multi-layer Canopy Fire Transition Model
 //!
 //! Models vertical fire spread through forest canopy layers based on fuel

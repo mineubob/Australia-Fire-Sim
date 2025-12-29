@@ -1,27 +1,11 @@
-//! Coupling between discrete fuel elements and atmospheric grid
+//! Coupling between field-based simulation and atmospheric grid
 //!
-//! Handles heat/mass/gas exchange between burning fuel elements and grid cells,
+//! Handles heat/mass/gas exchange between fire fields and grid cells,
 //! enabling realistic fire-atmosphere interaction.
 
-use crate::core_types::element::{FuelElement, Vec3};
 use crate::core_types::units::{Celsius, CelsiusDelta};
+use crate::core_types::vec3::Vec3;
 use crate::grid::SimulationGrid;
-use crate::physics::combustion_physics::oxygen_limited_burn_rate;
-// no parallel helper required (previously used by update_wind_field)
-
-/// Calculate oxygen-limited burn rate for element based on cell oxygen
-pub(crate) fn get_oxygen_limited_burn_rate(
-    element: &FuelElement,
-    base_burn_rate: f32,
-    grid: &SimulationGrid,
-) -> f32 {
-    if let Some(cell) = grid.cell_at_position(element.position) {
-        let cell_volume = grid.cell_size.powi(3);
-        oxygen_limited_burn_rate(base_burn_rate, cell, cell_volume)
-    } else {
-        1.0 // No limitation if outside grid
-    }
-}
 
 // NOTE: previously we provided a simple terrain-modulated update helper (`update_wind_field`) used
 // as a fallback when an advanced mass-consistent wind field was disabled. The simulation now
@@ -29,6 +13,7 @@ pub(crate) fn get_oxygen_limited_burn_rate(
 // has been removed.
 
 /// Simulate smoke/heat plume rising from fire
+#[expect(dead_code)]
 pub(crate) fn simulate_plume_rise(grid: &mut SimulationGrid, source_positions: &[Vec3], dt: f32) {
     // For each burning element position, create upward transport of heat and smoke
     for pos in source_positions {

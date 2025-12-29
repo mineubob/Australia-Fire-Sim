@@ -52,53 +52,15 @@ impl DefaultFireSimError {
         }
     }
 
-    /// Create error for poisoned lock.
+    /// Create error for invalid parameter.
     ///
     /// # Arguments
-    /// * `lock_name` - The name of the lock that was poisoned (e.g., `"RwLock"`, `"Mutex"`)
-    pub fn lock_poisoned(lock_name: &str) -> Self {
+    /// * `message` - Description of the error
+    pub fn invalid_parameter(message: String) -> Self {
         Self {
-            code: FireSimErrorCode::LockPoisoned,
-            msg: format!("Lock '{lock_name}' was poisoned by a panic in another thread"),
+            code: FireSimErrorCode::InvalidParameter,
+            msg: message,
         }
-    }
-
-    /// Create error for invalid terrain parameters with a custom message.
-    ///
-    /// # Arguments
-    /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"nx"`)
-    /// * `message` - A description of the validation error
-    pub fn invalid_terrain_parameter_msg(param_name: &str, message: &str) -> Self {
-        Self {
-            code: FireSimErrorCode::InvalidTerrainParameters,
-            msg: format!("Terrain parameter {param_name}: {message}"),
-        }
-    }
-
-    /// Create error for invalid terrain parameters (f32 values).
-    ///
-    /// # Arguments
-    /// * `param_name` - The name of the invalid parameter (e.g., `"width"`, `"height"`, `"resolution"`)
-    /// * `value` - The invalid value
-    pub fn invalid_terrain_parameter(param_name: &str, value: f32) -> Self {
-        Self::invalid_terrain_parameter_msg(
-            param_name,
-            &format!("must be finite and positive, got {value}"),
-        )
-    }
-
-    /// Create error for invalid terrain parameters (usize values).
-    ///
-    /// # Arguments
-    /// * `param_name` - The name of the invalid parameter (e.g., `"nx"`, `"ny"`, `"grid_dimension"`)
-    /// * `value` - The invalid value
-    /// * `constraint` - Description of the constraint (e.g., `"must be positive"`, `"exceeds maximum"`)
-    pub fn invalid_terrain_parameter_usize(
-        param_name: &str,
-        value: usize,
-        constraint: &str,
-    ) -> Self {
-        Self::invalid_terrain_parameter_msg(param_name, &format!("{constraint}, got {value}"))
     }
 }
 
@@ -129,6 +91,9 @@ pub enum FireSimErrorCode {
     /// Invalid terrain parameters: width, height, resolution, or dimensions must be valid
     /// (finite and positive for f32, or within representable range for usize).
     InvalidTerrainParameters = 3,
+
+    /// Invalid parameter passed to function.
+    InvalidParameter = 4,
 }
 
 impl From<DefaultFireSimError> for FireSimErrorCode {

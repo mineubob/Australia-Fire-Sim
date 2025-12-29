@@ -1,3 +1,6 @@
+//! Crown fire physics (for future integration)
+#![allow(dead_code)]
+
 //! Van Wagner Crown Fire Initiation and Spread Model (1977, 1993)
 //!
 //! Implements scientifically accurate crown fire transition dynamics:
@@ -14,8 +17,6 @@
 //!   Canadian Journal of Forest Research, 23(3), 442-449
 //! - Cruz, M.G., Alexander, M.E. (2010). "Assessing crown fire potential in coniferous forests"
 //!   Forest Ecology and Management, 259(3), 562-570
-
-use crate::core_types::element::FuelElement;
 
 /// Crown fire type classification
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,6 +47,7 @@ impl CrownFireBehavior {
         }
     }
 
+    #[expect(dead_code)]
     /// Get the fire type
     pub(crate) fn fire_type(&self) -> CrownFireType {
         self.fire_type
@@ -171,28 +173,35 @@ pub(crate) fn determine_crown_fire_type(
 /// For Australian fuels, uses the minimum of Van Wagner threshold and fuel-specific
 /// threshold, as Van Wagner was calibrated for Canadian conifers and may overestimate
 /// crown fire resistance in eucalyptus forests with volatile oils and ladder fuels.
+///
+/// # Arguments
+/// * `heat_content` - Fuel heat content (kJ/kg)
+/// * `crown_fire_threshold` - Fuel-specific crown fire threshold (kW/m)
+/// * `surface_intensity` - Current surface fire intensity from Byram formula (kW/m)
+/// * `crown_bulk_density` - Crown bulk density (kg/m³), typical range 0.05-0.3
+/// * `crown_base_height` - Height to base of crown (m), typical 2-15
+/// * `foliar_moisture_content` - Foliar moisture content (%), typical 80-120
+/// * `active_spread_rate` - Actual crown fire spread rate (m/min)
 pub(crate) fn calculate_crown_fire_behavior(
-    element: &FuelElement,
+    heat_content: f32,
+    crown_fire_threshold: f32,
+    surface_intensity: f32,
     crown_bulk_density: f32,
     crown_base_height: f32,
     foliar_moisture_content: f32,
     active_spread_rate: f32,
-    wind_speed_ms: f32,
 ) -> CrownFireBehavior {
     // Calculate critical surface intensity (Van Wagner 1977)
     let van_wagner_threshold = calculate_critical_surface_intensity(
         crown_bulk_density,
-        *element.fuel.heat_content,
+        heat_content,
         foliar_moisture_content,
         crown_base_height,
     );
 
     // Use minimum of Van Wagner and fuel-specific threshold
     // This accounts for Australian eucalyptus behavior which differs from Canadian conifers
-    let critical_surface_intensity = van_wagner_threshold.min(element.fuel.crown_fire_threshold);
-
-    // Get current surface fire intensity (Byram)
-    let surface_intensity = element.byram_fireline_intensity(wind_speed_ms);
+    let critical_surface_intensity = van_wagner_threshold.min(crown_fire_threshold);
 
     // Calculate critical crown spread rate (Van Wagner 1977)
     let critical_crown_spread_rate = calculate_critical_crown_spread_rate(crown_bulk_density);
@@ -218,7 +227,6 @@ pub(crate) fn calculate_crown_fire_behavior(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_types::element::{FuelElement, FuelPart, Vec3};
     use crate::core_types::fuel::Fuel;
 
     #[test]
@@ -318,24 +326,24 @@ mod tests {
 
     #[test]
     fn test_crown_fire_behavior_integration() {
-        use crate::core_types::units::{Celsius, Kilograms};
+        // Use eucalyptus stringybark fuel properties directly
+        let fuel = Fuel::eucalyptus_stringybark();
 
-        let mut element = FuelElement::new(
-            0,
-            Vec3::new(0.0, 0.0, 0.0),
-            Fuel::eucalyptus_stringybark(),
-            Kilograms::new(5.0),
-            FuelPart::TrunkUpper,
-        );
-        element.temperature = Celsius::new(800.0);
-        element.ignited = true;
+        // Calculate a reasonable surface intensity for testing
+        // Use Byram formula parameters: heat_content * fuel_loading * spread_rate / 60
+        let fuel_loading = *fuel.bulk_density * *fuel.fuel_bed_depth;
+        let heat_per_area = *fuel.heat_content * fuel_loading * *fuel.combustion_efficiency;
+        let spread_rate = 30.0; // m/min (typical for moderate fire)
+        let surface_intensity = (heat_per_area * spread_rate) / 60.0;
 
         let behavior = calculate_crown_fire_behavior(
-            &element, 0.15,  // crown_bulk_density
-            5.0,   // crown_base_height
-            100.0, // foliar_moisture_content
-            25.0,  // active_spread_rate (m/min)
-            5.0,   // wind_speed_ms
+            *fuel.heat_content,        // heat_content
+            fuel.crown_fire_threshold, // crown_fire_threshold
+            surface_intensity,         // surface_intensity from Byram
+            0.15,                      // crown_bulk_density
+            5.0,                       // crown_base_height
+            100.0,                     // foliar_moisture_content
+            25.0,                      // active_spread_rate (m/min)
         );
 
         // Should classify as some type of crown fire behavior

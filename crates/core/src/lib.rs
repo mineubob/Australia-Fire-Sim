@@ -1,21 +1,19 @@
 //! Fire Simulation Core Library
 //!
-//! An ultra-realistic wildfire simulation system with scientifically accurate physics.
+//! A scientifically accurate wildfire simulation system with GPU/CPU-accelerated field-based physics.
 //!
-//! ## Ultra-Realistic Fire Simulation
+//! ## Field-Based Fire Simulation
 //!
 //! This simulation system includes:
-//! - 3D atmospheric grid with terrain elevation support
-//! - Chemistry-based combustion with Arrhenius kinetics
-//! - Element-grid coupling for realistic fire-atmosphere interaction
-//! - Advanced suppression physics (water, retardant, foam)
-//! - Buoyancy-driven convection and plume dynamics
-//! - Multi-band radiation transfer
-//! - Fuel element suppression coverage tracking
-//! - Ember spot fire ignition with suppression blocking
-//! - Advanced weather phenomena (pyrocumulus, atmospheric instability)
-//! - Terrain-based fire spread physics (Phase 3)
-//! - Multiplayer action queue system (Phase 5)
+//! - GPU/CPU-accelerated field solver with automatic backend selection
+//! - Stefan-Boltzmann radiation with full T⁴ formula (no simplifications)
+//! - Thermal diffusion and wind advection
+//! - Level set fire front tracking with curvature-dependent spread
+//! - Moisture evaporation physics (2260 kJ/kg latent heat FIRST)
+//! - Fuel consumption and combustion chemistry
+//! - Ember generation and spot fire ignition (Albini model)
+//! - Fire front extraction via marching squares
+//! - Realistic physics never simplified (per project requirements)
 
 // Core types and utilities
 pub mod core_types;
@@ -24,12 +22,13 @@ pub mod core_types;
 pub(crate) mod grid;
 pub mod physics; // Made pub for FFI access to SuppressionAgent
 pub mod simulation;
+pub mod solver; // New GPU/CPU field solver abstraction
 pub mod suppression; // Made pub for FFI access to SuppressionAgentType
 pub(crate) mod weather;
 
 // Re-export core types (public API)
 pub use core_types::Ember;
-pub use core_types::{BarkProperties, Fuel, FuelElement, FuelPart, Vec3};
+pub use core_types::{BarkProperties, Fuel, Vec3};
 pub use core_types::{ClimatePattern, WeatherPreset, WeatherSystem};
 
 /// Re-export FFDI ranges for validation and testing
@@ -38,7 +37,7 @@ pub use core_types::weather::ffdi_ranges;
 // Re-export simulation types (public API)
 pub use grid::{GridCell, SimulationGrid, TerrainData};
 pub use grid::{PlameSource, StabilityClass, WindField, WindFieldConfig};
-pub use simulation::{FireSimulation, SimulationStats};
+pub use simulation::FieldSimulation;
 
 // Re-export suppression types (for FFI)
 pub use physics::SuppressionAgent;

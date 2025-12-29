@@ -8,6 +8,11 @@ license.workspace = true
 [lints]
 workspace = true
 
+[features]
+# GPU is ON by default, disable with --no-default-features for CI/coding agent
+default = ["gpu"]
+gpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster"]
+
 [dependencies]
 rayon.workspace = true
 nalgebra.workspace = true
@@ -16,7 +21,12 @@ serde.workspace = true
 rustc-hash.workspace = true
 tracing = "0.1.44"
 
+# GPU dependencies (optional, disabled with --no-default-features)
+wgpu = { version = "28.0", optional = true }
+bytemuck = { version = "1.14", features = ["derive"], optional = true }
+pollster = { version = "0.4", optional = true }
+
 [dev-dependencies]
 approx = "0.5"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-ctor = "0.1"
+ctor = "0.6"

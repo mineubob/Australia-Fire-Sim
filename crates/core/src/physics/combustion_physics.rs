@@ -1,3 +1,6 @@
+//! Combustion physics (for future integration)
+#![allow(dead_code)]
+
 //! Chemistry-based combustion physics with Arrhenius kinetics
 //!
 //! Implements realistic combustion modeling including:
@@ -52,7 +55,7 @@ pub(crate) fn oxygen_limited_burn_rate(
 }
 
 /// Calculate combustion products for a burning fuel element
-#[allow(dead_code)] // co_produced and heat_released fields
+// co_produced and heat_released fields
 pub(crate) struct CombustionProducts {
     co2_produced: f32,   // kg
     co_produced: f32,    // kg
@@ -64,21 +67,25 @@ pub(crate) struct CombustionProducts {
 
 impl CombustionProducts {
     /// Get O2 consumed
+    #[expect(dead_code)]
     pub(crate) fn o2_consumed(&self) -> f32 {
         self.o2_consumed
     }
 
     /// Get CO2 produced
+    #[expect(dead_code)]
     pub(crate) fn co2_produced(&self) -> f32 {
         self.co2_produced
     }
 
     /// Get H2O produced
+    #[expect(dead_code)]
     pub(crate) fn h2o_produced(&self) -> f32 {
         self.h2o_produced
     }
 
     /// Get smoke produced
+    #[expect(dead_code)]
     pub(crate) fn smoke_produced(&self) -> f32 {
         self.smoke_produced
     }

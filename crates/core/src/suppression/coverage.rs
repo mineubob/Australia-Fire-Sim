@@ -1,3 +1,6 @@
+//! Suppression coverage (for future integration)
+#![allow(dead_code)]
+
 //! Suppression coverage tracking per fuel element
 //!
 //! Tracks the suppression agent coverage on individual fuel elements,

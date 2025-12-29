@@ -1,3 +1,6 @@
+//! Smoldering combustion physics (for future integration)
+#![allow(dead_code)]
+
 //! Smoldering Combustion Phase Model
 //!
 //! Implements transition from flaming to smoldering combustion for fuel elements.
@@ -65,6 +68,7 @@ impl SmolderingState {
     /// Create new flaming state (for explicit ignition)
     /// Use this when an element is directly ignited (e.g., by user action or ember)
     /// to bypass the Unignited phase
+    #[expect(dead_code)]
     pub(crate) fn new_flaming() -> Self {
         SmolderingState {
             phase: CombustionPhase::Flaming,
@@ -80,12 +84,14 @@ impl SmolderingState {
         self.phase
     }
 
+    #[expect(dead_code)]
     /// Get the heat release multiplier
     pub(crate) fn heat_release_multiplier(&self) -> f32 {
         self.heat_release_multiplier
     }
 
     /// Get the burn rate multiplier
+    #[expect(dead_code)]
     pub(crate) fn burn_rate_multiplier(&self) -> f32 {
         self.burn_rate_multiplier
     }

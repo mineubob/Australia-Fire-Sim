@@ -1,3 +1,6 @@
+//! Terrain physics (for future integration)
+#![allow(dead_code)]
+
 //! Terrain-Based Fire Spread Physics (Phase 3)
 //!
 //! Implements enhanced slope and aspect effects on fire spread using
@@ -10,7 +13,7 @@
 //! - `McArthur`, A.G. (1967). "Fire Behaviour in Eucalypt Forests."
 //!   Forestry and Timber Bureau Leaflet 107.
 
-use crate::core_types::element::Vec3;
+use crate::core_types::vec3::Vec3;
 use crate::grid::TerrainData;
 
 /// Calculate slope effect on fire spread using terrain model
@@ -209,6 +212,7 @@ pub(crate) fn terrain_spread_multiplier(
 /// OPTIMIZED: Inline this hot function to eliminate call overhead
 /// Called millions of times per frame when calculating heat transfer
 #[inline]
+#[expect(dead_code)]
 pub(crate) fn terrain_spread_multiplier_cached(
     from: &Vec3,
     to: &Vec3,
