@@ -19,12 +19,21 @@
 //! updates. Staging buffers handle CPU readback when needed for visualization.
 
 use super::context::GpuContext;
+use super::fuel_variation::HeterogeneityConfig;
 use super::quality::QualityPreset;
+use super::terrain_slope::TerrainFields;
 use super::FieldSolver;
 use crate::TerrainData;
 use bytemuck::{Pod, Zeroable};
 use std::borrow::Cow;
 use wgpu::util::DeviceExt;
+
+// Helper to convert usize to f32, centralizing the intentional precision loss
+#[inline]
+#[expect(clippy::cast_precision_loss)]
+fn usize_to_f32(v: usize) -> f32 {
+    v as f32
+}
 
 /// Heat transfer shader parameters (must match WGSL struct layout)
 #[repr(C)]
@@ -108,6 +117,10 @@ pub struct GpuFieldSolver {
     spread_rate: wgpu::Buffer,
     heat_release: wgpu::Buffer,
 
+    // Phase 0: Terrain slope and aspect buffers for fire spread modulation
+    slope: wgpu::Buffer,
+    aspect: wgpu::Buffer,
+
     // Staging buffers for CPU readback
     temperature_staging: wgpu::Buffer,
     level_set_staging: wgpu::Buffer,
@@ -158,16 +171,51 @@ impl GpuFieldSolver {
         let (device, queue, _adapter_info) = context.into_device_queue();
 
         let buffer_size = u64::from(width * height) * std::mem::size_of::<f32>() as u64;
+        let num_cells = (width * height) as usize;
+
+        // Phase 0: Initialize terrain fields from elevation data
+        let terrain_fields =
+            TerrainFields::from_terrain_data(terrain, width as usize, height as usize, cell_size);
 
         // Initialize field data
         let ambient_temp: f32 = 293.15; // 20°C in Kelvin
-        let initial_temp: Vec<f32> = vec![ambient_temp; (width * height) as usize];
-        let initial_fuel: Vec<f32> = vec![2.0; (width * height) as usize]; // 2 kg/m²
-        let initial_moisture: Vec<f32> = vec![0.15; (width * height) as usize]; // 15%
-        let initial_oxygen: Vec<f32> = vec![0.21; (width * height) as usize]; // 21%
-        let initial_phi: Vec<f32> = vec![1000.0; (width * height) as usize]; // Far from fire
-        let initial_spread: Vec<f32> = vec![0.5; (width * height) as usize]; // 0.5 m/s base spread
-        let zeros: Vec<f32> = vec![0.0; (width * height) as usize];
+        let initial_temp: Vec<f32> = vec![ambient_temp; num_cells];
+        let mut initial_fuel: Vec<f32> = vec![2.0; num_cells]; // 2 kg/m²
+        let mut initial_moisture: Vec<f32> = vec![0.15; num_cells]; // 15%
+        let initial_oxygen: Vec<f32> = vec![0.21; num_cells]; // 21%
+        let initial_phi: Vec<f32> = vec![1000.0; num_cells]; // Far from fire
+        let initial_spread: Vec<f32> = vec![0.5; num_cells]; // 0.5 m/s base spread
+        let zeros: Vec<f32> = vec![0.0; num_cells];
+
+        // Phase 2: Apply fuel heterogeneity for realistic spatial variation
+        let heterogeneity_config = HeterogeneityConfig::default();
+        let seed = 42_u64; // Deterministic seed for reproducibility
+        let noise = super::noise::NoiseGenerator::new(seed);
+
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                let idx = y * width as usize + x;
+                let wx = usize_to_f32(x) * cell_size;
+                let wy = usize_to_f32(y) * cell_size;
+
+                // Get aspect for this cell (from terrain fields)
+                let aspect = terrain_fields.aspect.get(x, y);
+
+                // Apply heterogeneity to both fuel and moisture
+                let (new_fuel, new_moisture) = super::fuel_variation::apply_heterogeneity_single(
+                    initial_fuel[idx],
+                    initial_moisture[idx],
+                    aspect,
+                    &noise,
+                    &heterogeneity_config,
+                    wx,
+                    wy,
+                );
+
+                initial_fuel[idx] = new_fuel;
+                initial_moisture[idx] = new_moisture;
+            }
+        }
 
         // Create storage buffers
         let temperature_a = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -229,6 +277,19 @@ impl GpuFieldSolver {
         let heat_release = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Heat Release"),
             contents: bytemuck::cast_slice(&zeros),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        // Phase 0: Create slope and aspect buffers from terrain fields
+        let slope = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Slope"),
+            contents: bytemuck::cast_slice(terrain_fields.slope.as_slice()),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let aspect = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Aspect"),
+            contents: bytemuck::cast_slice(terrain_fields.aspect.as_slice()),
             usage: wgpu::BufferUsages::STORAGE,
         });
 
@@ -523,6 +584,28 @@ impl GpuFieldSolver {
                         },
                         count: None,
                     },
+                    // Phase 0: slope (binding 4)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // Phase 0: aspect (binding 5)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -671,6 +754,8 @@ impl GpuFieldSolver {
             level_set_b,
             spread_rate,
             heat_release,
+            slope,
+            aspect,
             temperature_staging,
             level_set_staging,
             heat_params_buffer,
@@ -819,6 +904,16 @@ impl GpuFieldSolver {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: phi_out.as_entire_binding(),
+                },
+                // Phase 0: Terrain slope buffer
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.slope.as_entire_binding(),
+                },
+                // Phase 0: Terrain aspect buffer
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.aspect.as_entire_binding(),
                 },
             ],
         })
