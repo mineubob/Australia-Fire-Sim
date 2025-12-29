@@ -3,8 +3,8 @@
 //! Implements Digital Elevation Model (DEM) support with slope/aspect calculations,
 //! solar radiation based on terrain, and efficient height queries.
 
-use crate::core_types::units::{Degrees, Meters};
 use crate::core_types::vec3::Vec3;
+use crate::core_types::units::{Degrees, Meters};
 use serde::{Deserialize, Serialize};
 
 // Small helper to centralize intentional usize -> f32 conversions in terrain code
