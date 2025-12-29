@@ -27,6 +27,7 @@
 mod combustion;
 mod context;
 mod cpu;
+pub mod crown_fire;
 mod fields;
 pub mod fuel_layers;
 pub mod fuel_variation;
@@ -47,6 +48,7 @@ mod gpu;
 // Re-exports
 pub use context::GpuInitResult;
 pub use cpu::CpuFieldSolver;
+pub use crown_fire::{CanopyProperties, CrownFirePhysics, CrownFireState};
 pub use fields::FieldData;
 pub use fuel_layers::{FuelLayer, LayerState, LayeredFuelCell};
 pub use fuel_variation::{
