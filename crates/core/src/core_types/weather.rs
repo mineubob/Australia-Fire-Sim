@@ -3,10 +3,10 @@
 //! This module implements dynamic weather conditions that directly affect fire spread and behavior.
 //! Weather parameters are based on real meteorological data and fire science principles.
 
-use crate::core_types::vec3::Vec3;
 use crate::core_types::units::{
     Celsius, CelsiusDelta, Degrees, Hours, KilometersPerHour, MetersPerSecond, Percent,
 };
+use crate::core_types::vec3::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// FFDI (Forest Fire Danger Index) threshold constants based on Australian Bureau of Meteorology standards.

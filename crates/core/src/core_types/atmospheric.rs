@@ -3,8 +3,8 @@
 //! Handles heat/mass/gas exchange between fire fields and grid cells,
 //! enabling realistic fire-atmosphere interaction.
 
-use crate::core_types::vec3::Vec3;
 use crate::core_types::units::{Celsius, CelsiusDelta};
+use crate::core_types::vec3::Vec3;
 use crate::grid::SimulationGrid;
 
 // NOTE: previously we provided a simple terrain-modulated update helper (`update_wind_field`) used
