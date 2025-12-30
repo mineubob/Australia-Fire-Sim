@@ -11,6 +11,9 @@
 //! - `combustion.wgsl` - Fuel consumption, moisture evaporation, oxygen depletion
 //! - `level_set.wgsl` - Level set evolution with curvature-dependent spread
 //! - `ignition_sync.wgsl` - Temperature-based ignition synchronization
+//! - `crown_fire.wgsl` - Phase 3: Crown fire transitions and spread enhancement
+//! - `fuel_layers.wgsl` - Phase 1: Vertical fuel layer heat transfer
+//! - `atmosphere_reduce.wgsl` - Phase 4: Parallel reduction for pyroCb metrics
 //!
 //! # Implementation
 //!
@@ -19,10 +22,12 @@
 //! updates. Staging buffers handle CPU readback when needed for visualization.
 
 use super::context::GpuContext;
+use super::crown_fire::CanopyProperties;
 use super::fuel_variation::HeterogeneityConfig;
 use super::quality::QualityPreset;
 use super::terrain_slope::TerrainFields;
 use super::FieldSolver;
+use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
 use crate::TerrainData;
 use bytemuck::{Pod, Zeroable};
 use std::borrow::Cow;
@@ -91,6 +96,69 @@ struct IgnitionParams {
     _padding: [f32; 4], // vec3 + struct end padding (16 bytes to match vec3 size in WGSL)
 }
 
+/// Crown fire shader parameters (must match WGSL struct layout)
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct CrownFireParams {
+    width: u32,
+    height: u32,
+    cell_size: f32,
+    dt: f32,
+    // Canopy properties
+    canopy_base_height: f32,
+    canopy_bulk_density: f32,
+    foliar_moisture: f32,
+    canopy_cover_fraction: f32,
+    canopy_fuel_load: f32,
+    canopy_heat_content: f32,
+    // Weather parameters
+    wind_speed_10m_kmh: f32,
+    surface_heat_content: f32,
+    _padding: f32,
+}
+
+/// Fuel layer shader parameters (must match WGSL struct layout)
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct FuelLayerParams {
+    width: u32,
+    height: u32,
+    cell_size: f32,
+    dt: f32,
+    emissivity: f32,
+    convective_coeff_base: f32,
+    flame_height: f32,
+    canopy_cover_fraction: f32,
+    fuel_specific_heat: f32,
+    _padding1: f32,
+    _padding2: f32,
+    _padding3: f32,
+}
+
+/// Atmosphere reduction shader parameters (must match WGSL struct layout)
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct AtmosphereParams {
+    width: u32,
+    height: u32,
+    cell_size: f32,
+    dt: f32,
+}
+
+/// Fire metrics from atmosphere reduction (must match WGSL struct layout)
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct FireMetrics {
+    total_intensity: u32, // Fixed-point (×1000)
+    weighted_x: u32,      // Fixed-point (×1000)
+    weighted_y: u32,      // Fixed-point (×1000)
+    cell_count: u32,
+    max_intensity: u32, // Fixed-point (×1000)
+    _padding1: u32,
+    _padding2: u32,
+    _padding3: u32,
+}
+
 /// GPU-based field solver using wgpu compute shaders
 ///
 /// Uses compute pipelines to dispatch physics computations on the GPU.
@@ -114,12 +182,27 @@ pub struct GpuFieldSolver {
     oxygen: wgpu::Buffer,
     level_set_a: wgpu::Buffer,
     level_set_b: wgpu::Buffer,
-    spread_rate: wgpu::Buffer,
+    spread_rate_a: wgpu::Buffer,
+    spread_rate_b: wgpu::Buffer,
     heat_release: wgpu::Buffer,
 
     // Phase 0: Terrain slope and aspect buffers for fire spread modulation
     slope: wgpu::Buffer,
     aspect: wgpu::Buffer,
+
+    // Phase 1: Vertical fuel layer buffers (3 layers per cell)
+    layer_fuel: wgpu::Buffer,     // kg/m² per layer
+    layer_moisture: wgpu::Buffer, // fraction 0-1 per layer
+    layer_temp: wgpu::Buffer,     // Kelvin per layer
+    layer_burning: wgpu::Buffer,  // 0 or 1 per layer
+
+    // Phase 3: Crown fire state buffers
+    crown_state: wgpu::Buffer,    // CrownFireState enum as u32
+    fire_intensity: wgpu::Buffer, // kW/m per cell
+
+    // Phase 4: Atmosphere reduction metrics buffer
+    fire_metrics: wgpu::Buffer,
+    metrics_staging: wgpu::Buffer,
 
     // Staging buffers for CPU readback
     temperature_staging: wgpu::Buffer,
@@ -130,25 +213,48 @@ pub struct GpuFieldSolver {
     combustion_params_buffer: wgpu::Buffer,
     level_set_params_buffer: wgpu::Buffer,
     ignition_params_buffer: wgpu::Buffer,
+    crown_fire_params_buffer: wgpu::Buffer,
+    fuel_layer_params_buffer: wgpu::Buffer,
+    atmosphere_params_buffer: wgpu::Buffer,
 
     // Compute pipelines
     heat_transfer_pipeline: wgpu::ComputePipeline,
     combustion_pipeline: wgpu::ComputePipeline,
     level_set_pipeline: wgpu::ComputePipeline,
     ignition_sync_pipeline: wgpu::ComputePipeline,
+    crown_fire_pipeline: wgpu::ComputePipeline,
+    fuel_layer_pipeline: wgpu::ComputePipeline,
+    atmosphere_reduce_pipeline: wgpu::ComputePipeline,
+    atmosphere_clear_pipeline: wgpu::ComputePipeline,
 
     // Bind group layouts (needed for bind group creation)
     heat_bind_group_layout: wgpu::BindGroupLayout,
     combustion_bind_group_layout: wgpu::BindGroupLayout,
     level_set_bind_group_layout: wgpu::BindGroupLayout,
     ignition_bind_group_layout: wgpu::BindGroupLayout,
+    crown_fire_bind_group_layout: wgpu::BindGroupLayout,
+    fuel_layer_bind_group_layout: wgpu::BindGroupLayout,
+    atmosphere_bind_group_layout: wgpu::BindGroupLayout,
 
     // Ping-pong state (which buffer is current)
     temp_ping: bool,
     phi_ping: bool,
+    spread_ping: bool,
 
     // Simulation time (for noise in level set)
     time: f32,
+
+    // Phase 3: Crown fire canopy properties
+    canopy_properties: CanopyProperties,
+
+    // Phase 4: Atmospheric dynamics (CPU-side, requires global calculations)
+    convection_columns: Vec<ConvectionColumn>,
+    downdrafts: Vec<Downdraft>,
+    atmospheric_stability: AtmosphericStability,
+    pyrocb_system: PyroCbSystem,
+
+    // Weather parameters for crown fire calculations
+    wind_speed_10m_kmh: f32,
 }
 
 impl GpuFieldSolver {
@@ -237,13 +343,13 @@ impl GpuFieldSolver {
         let fuel_load = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Fuel Load"),
             contents: bytemuck::cast_slice(&initial_fuel),
-            usage: wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         });
 
         let moisture = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Moisture"),
             contents: bytemuck::cast_slice(&initial_moisture),
-            usage: wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         });
 
         let oxygen = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -268,10 +374,16 @@ impl GpuFieldSolver {
                 | wgpu::BufferUsages::COPY_DST,
         });
 
-        let spread_rate = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Spread Rate"),
+        let spread_rate_a = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Spread Rate A"),
             contents: bytemuck::cast_slice(&initial_spread),
-            usage: wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        });
+
+        let spread_rate_b = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Spread Rate B"),
+            contents: bytemuck::cast_slice(&initial_spread),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         });
 
         let heat_release = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -292,6 +404,93 @@ impl GpuFieldSolver {
             contents: bytemuck::cast_slice(terrain_fields.aspect.as_slice()),
             usage: wgpu::BufferUsages::STORAGE,
         });
+
+        // Phase 1: Vertical fuel layer buffers (3 layers per cell: surface, shrub, canopy)
+        let num_layer_values = num_cells * 3;
+        let layer_buffer_size = u64::from(width * height) * 3 * std::mem::size_of::<f32>() as u64;
+
+        // Initialize layer fuel (surface gets the heterogeneous fuel, others default)
+        let mut initial_layer_fuel: Vec<f32> = vec![0.0; num_layer_values];
+        let mut initial_layer_moisture: Vec<f32> = vec![0.15; num_layer_values];
+        let initial_layer_temp: Vec<f32> = vec![ambient_temp; num_layer_values];
+        let initial_layer_burning: Vec<u32> = vec![0; num_layer_values];
+
+        for idx in 0..num_cells {
+            // Surface layer (index 0): gets the heterogeneous fuel
+            initial_layer_fuel[idx * 3] = initial_fuel[idx];
+            initial_layer_moisture[idx * 3] = initial_moisture[idx];
+            // Shrub layer (index 1): 0.5 kg/m² default
+            initial_layer_fuel[idx * 3 + 1] = 0.5;
+            initial_layer_moisture[idx * 3 + 1] = 0.12;
+            // Canopy layer (index 2): 1.2 kg/m² default (eucalyptus)
+            initial_layer_fuel[idx * 3 + 2] = 1.2;
+            initial_layer_moisture[idx * 3 + 2] = 1.0; // 100% foliar moisture
+        }
+
+        let layer_fuel = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Layer Fuel"),
+            contents: bytemuck::cast_slice(&initial_layer_fuel),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let layer_moisture = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Layer Moisture"),
+            contents: bytemuck::cast_slice(&initial_layer_moisture),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let layer_temp = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Layer Temperature"),
+            contents: bytemuck::cast_slice(&initial_layer_temp),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let layer_burning = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Layer Burning"),
+            contents: bytemuck::cast_slice(&initial_layer_burning),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        // Phase 3: Crown fire state buffers
+        let initial_crown_state: Vec<u32> = vec![0; num_cells]; // All surface fire initially
+        let crown_state = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Crown State"),
+            contents: bytemuck::cast_slice(&initial_crown_state),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        });
+
+        let fire_intensity = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Fire Intensity"),
+            contents: bytemuck::cast_slice(&zeros),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        });
+
+        // Phase 4: Atmosphere reduction metrics buffer
+        let initial_metrics = FireMetrics {
+            total_intensity: 0,
+            weighted_x: 0,
+            weighted_y: 0,
+            cell_count: 0,
+            max_intensity: 0,
+            _padding1: 0,
+            _padding2: 0,
+            _padding3: 0,
+        };
+        let fire_metrics = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Fire Metrics"),
+            contents: bytemuck::bytes_of(&initial_metrics),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        });
+
+        let metrics_staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Metrics Staging"),
+            size: std::mem::size_of::<FireMetrics>() as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Ignore layer_buffer_size for now (used in future staging buffers if needed)
+        let _ = layer_buffer_size;
 
         // Create staging buffers for CPU readback
         let temperature_staging = device.create_buffer(&wgpu::BufferDescriptor {
@@ -376,6 +575,69 @@ impl GpuFieldSolver {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
+        // Phase 3: Crown fire parameters
+        let canopy_properties = CanopyProperties::eucalyptus_forest();
+        let crown_fire_params = CrownFireParams {
+            width,
+            height,
+            cell_size,
+            dt: 0.1,
+            canopy_base_height: canopy_properties.base_height,
+            canopy_bulk_density: canopy_properties.bulk_density,
+            foliar_moisture: canopy_properties.foliar_moisture,
+            canopy_cover_fraction: canopy_properties.cover_fraction,
+            canopy_fuel_load: canopy_properties.fuel_load,
+            canopy_heat_content: canopy_properties.heat_content,
+            wind_speed_10m_kmh: 20.0,
+            surface_heat_content: 18000.0,
+            _padding: 0.0,
+        };
+
+        let crown_fire_params_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Crown Fire Params"),
+                contents: bytemuck::bytes_of(&crown_fire_params),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+        // Phase 1: Fuel layer parameters
+        let fuel_layer_params = FuelLayerParams {
+            width,
+            height,
+            cell_size,
+            dt: 0.1,
+            emissivity: 0.9,
+            convective_coeff_base: 25.0,
+            flame_height: 2.0,
+            canopy_cover_fraction: canopy_properties.cover_fraction,
+            fuel_specific_heat: 1500.0,
+            _padding1: 0.0,
+            _padding2: 0.0,
+            _padding3: 0.0,
+        };
+
+        let fuel_layer_params_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Fuel Layer Params"),
+                contents: bytemuck::bytes_of(&fuel_layer_params),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+        // Phase 4: Atmosphere parameters
+        let atmosphere_params = AtmosphereParams {
+            width,
+            height,
+            cell_size,
+            dt: 0.1,
+        };
+
+        let atmosphere_params_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Atmosphere Params"),
+                contents: bytemuck::bytes_of(&atmosphere_params),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
         // Load shaders using wgpu::include_wgsl! macro
         let heat_shader =
             device.create_shader_module(wgpu::include_wgsl!("shaders/heat_transfer.wgsl"));
@@ -388,6 +650,18 @@ impl GpuFieldSolver {
 
         let ignition_shader =
             device.create_shader_module(wgpu::include_wgsl!("shaders/ignition_sync.wgsl"));
+
+        // Phase 3: Crown fire shader
+        let crown_fire_shader =
+            device.create_shader_module(wgpu::include_wgsl!("shaders/crown_fire.wgsl"));
+
+        // Phase 1: Fuel layer shader
+        let fuel_layer_shader =
+            device.create_shader_module(wgpu::include_wgsl!("shaders/fuel_layers.wgsl"));
+
+        // Phase 4: Atmosphere reduction shader
+        let atmosphere_shader =
+            device.create_shader_module(wgpu::include_wgsl!("shaders/atmosphere_reduce.wgsl"));
 
         // Create bind group layouts
         let heat_bind_group_layout =
@@ -671,6 +945,228 @@ impl GpuFieldSolver {
                 ],
             });
 
+        // Phase 3: Crown fire bind group layout
+        let crown_fire_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Crown Fire Bind Group Layout"),
+                entries: &[
+                    // params (binding 0)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // level_set (binding 1)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // spread_rate_in (binding 2)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // fuel_load (binding 3)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // moisture (binding 4)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // spread_rate_out (binding 5)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // crown_state (binding 6)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 6,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // fire_intensity (binding 7)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 7,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        // Phase 1: Fuel layer bind group layout
+        let fuel_layer_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Fuel Layer Bind Group Layout"),
+                entries: &[
+                    // params (binding 0)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // layer_fuel (binding 1)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // layer_moisture (binding 2)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // layer_temp (binding 3)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // layer_burning (binding 4)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // fire_intensity (binding 5)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        // Phase 4: Atmosphere bind group layout
+        let atmosphere_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Atmosphere Bind Group Layout"),
+                entries: &[
+                    // params (binding 0)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // level_set (binding 1)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // fire_intensity (binding 2)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // metrics (binding 3)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
         // Create pipeline layouts
         let heat_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Heat Pipeline Layout"),
@@ -696,6 +1192,30 @@ impl GpuFieldSolver {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Ignition Pipeline Layout"),
                 bind_group_layouts: &[&ignition_bind_group_layout],
+                immediate_size: 0,
+            });
+
+        // Phase 3: Crown fire pipeline layout
+        let crown_fire_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Crown Fire Pipeline Layout"),
+                bind_group_layouts: &[&crown_fire_bind_group_layout],
+                immediate_size: 0,
+            });
+
+        // Phase 1: Fuel layer pipeline layout
+        let fuel_layer_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Fuel Layer Pipeline Layout"),
+                bind_group_layouts: &[&fuel_layer_bind_group_layout],
+                immediate_size: 0,
+            });
+
+        // Phase 4: Atmosphere pipeline layout
+        let atmosphere_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Atmosphere Pipeline Layout"),
+                bind_group_layouts: &[&atmosphere_bind_group_layout],
                 immediate_size: 0,
             });
 
@@ -739,6 +1259,50 @@ impl GpuFieldSolver {
                 cache: None,
             });
 
+        // Phase 3: Crown fire pipeline
+        let crown_fire_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Crown Fire Pipeline"),
+                layout: Some(&crown_fire_pipeline_layout),
+                module: &crown_fire_shader,
+                entry_point: Some("main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+
+        // Phase 1: Fuel layer pipeline
+        let fuel_layer_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Fuel Layer Pipeline"),
+                layout: Some(&fuel_layer_pipeline_layout),
+                module: &fuel_layer_shader,
+                entry_point: Some("main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+
+        // Phase 4: Atmosphere reduction pipeline
+        let atmosphere_reduce_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Atmosphere Reduce Pipeline"),
+                layout: Some(&atmosphere_pipeline_layout),
+                module: &atmosphere_shader,
+                entry_point: Some("main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+
+        // Phase 4: Atmosphere clear pipeline (clears metrics before reduction)
+        let atmosphere_clear_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Atmosphere Clear Pipeline"),
+                layout: Some(&atmosphere_pipeline_layout),
+                module: &atmosphere_shader,
+                entry_point: Some("clear_metrics"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+
         Self {
             device,
             queue,
@@ -752,27 +1316,55 @@ impl GpuFieldSolver {
             oxygen,
             level_set_a,
             level_set_b,
-            spread_rate,
+            spread_rate_a,
+            spread_rate_b,
             heat_release,
             slope,
             aspect,
+            layer_fuel,
+            layer_moisture,
+            layer_temp,
+            layer_burning,
+            crown_state,
+            fire_intensity,
+            fire_metrics,
+            metrics_staging,
             temperature_staging,
             level_set_staging,
             heat_params_buffer,
             combustion_params_buffer,
             level_set_params_buffer,
             ignition_params_buffer,
+            crown_fire_params_buffer,
+            fuel_layer_params_buffer,
+            atmosphere_params_buffer,
             heat_transfer_pipeline,
             combustion_pipeline,
             level_set_pipeline,
             ignition_sync_pipeline,
+            crown_fire_pipeline,
+            fuel_layer_pipeline,
+            atmosphere_reduce_pipeline,
+            atmosphere_clear_pipeline,
             heat_bind_group_layout,
             combustion_bind_group_layout,
             level_set_bind_group_layout,
             ignition_bind_group_layout,
+            crown_fire_bind_group_layout,
+            fuel_layer_bind_group_layout,
+            atmosphere_bind_group_layout,
             temp_ping: true,
             phi_ping: true,
+            spread_ping: true,
             time: 0.0,
+            // Phase 3: Crown fire canopy properties
+            canopy_properties,
+            // Phase 4: Atmospheric dynamics
+            convection_columns: Vec::new(),
+            downdrafts: Vec::new(),
+            atmospheric_stability: AtmosphericStability::default(),
+            pyrocb_system: PyroCbSystem::new(),
+            wind_speed_10m_kmh: 20.0,
         }
     }
 
@@ -783,6 +1375,236 @@ impl GpuFieldSolver {
         let x = self.width.div_ceil(workgroup_size);
         let y = self.height.div_ceil(workgroup_size);
         (x, y)
+    }
+
+    /// Dispatch Phase 3: Crown fire shader
+    fn dispatch_crown_fire(&mut self, dt: f32) {
+        // Update crown fire params
+        let params = CrownFireParams {
+            width: self.width,
+            height: self.height,
+            cell_size: self.cell_size,
+            dt,
+            canopy_base_height: self.canopy_properties.base_height,
+            canopy_bulk_density: self.canopy_properties.bulk_density,
+            foliar_moisture: self.canopy_properties.foliar_moisture,
+            canopy_cover_fraction: self.canopy_properties.cover_fraction,
+            canopy_fuel_load: self.canopy_properties.fuel_load,
+            canopy_heat_content: self.canopy_properties.heat_content,
+            wind_speed_10m_kmh: self.wind_speed_10m_kmh,
+            surface_heat_content: 18000.0,
+            _padding: 0.0,
+        };
+        self.queue.write_buffer(
+            &self.crown_fire_params_buffer,
+            0,
+            bytemuck::bytes_of(&params),
+        );
+
+        let bind_group = self.create_crown_fire_bind_group();
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Crown Fire Encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Crown Fire Pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&self.crown_fire_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            let (wg_x, wg_y) = self.workgroup_count();
+            compute_pass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Flip spread rate ping-pong
+        self.spread_ping = !self.spread_ping;
+    }
+
+    /// Dispatch Phase 1: Fuel layer shader (vertical heat transfer)
+    fn dispatch_fuel_layers(&mut self, dt: f32) {
+        // Update fuel layer params
+        let params = FuelLayerParams {
+            width: self.width,
+            height: self.height,
+            cell_size: self.cell_size,
+            dt,
+            emissivity: 0.9,
+            convective_coeff_base: 25.0,
+            flame_height: 2.0, // Could be calculated from fire intensity
+            canopy_cover_fraction: self.canopy_properties.cover_fraction,
+            fuel_specific_heat: 1500.0,
+            _padding1: 0.0,
+            _padding2: 0.0,
+            _padding3: 0.0,
+        };
+        self.queue.write_buffer(
+            &self.fuel_layer_params_buffer,
+            0,
+            bytemuck::bytes_of(&params),
+        );
+
+        let bind_group = self.create_fuel_layer_bind_group();
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Fuel Layer Encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Fuel Layer Pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&self.fuel_layer_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            let (wg_x, wg_y) = self.workgroup_count();
+            compute_pass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Dispatch Phase 4: Atmosphere reduction and update CPU state
+    fn dispatch_atmosphere(&mut self, dt: f32) {
+        // Update atmosphere params
+        let params = AtmosphereParams {
+            width: self.width,
+            height: self.height,
+            cell_size: self.cell_size,
+            dt,
+        };
+        self.queue.write_buffer(
+            &self.atmosphere_params_buffer,
+            0,
+            bytemuck::bytes_of(&params),
+        );
+
+        let bind_group = self.create_atmosphere_bind_group();
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Atmosphere Encoder"),
+            });
+
+        // First pass: Clear metrics
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Atmosphere Clear Pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&self.atmosphere_clear_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups(1, 1, 1);
+        }
+
+        // Second pass: Reduction
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Atmosphere Reduce Pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&self.atmosphere_reduce_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            let (wg_x, wg_y) = self.workgroup_count();
+            compute_pass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+
+        // Copy metrics to staging
+        encoder.copy_buffer_to_buffer(
+            &self.fire_metrics,
+            0,
+            &self.metrics_staging,
+            0,
+            std::mem::size_of::<FireMetrics>() as u64,
+        );
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Read back metrics
+        let buffer_slice = self.metrics_staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().unwrap().unwrap();
+
+        let data = buffer_slice.get_mapped_range();
+        let metrics: FireMetrics = *bytemuck::from_bytes(&data);
+        drop(data);
+        self.metrics_staging.unmap();
+
+        // Convert fixed-point metrics back to floats
+        // These casts are intentional - metrics values are within f32 precision range
+        #[expect(clippy::cast_precision_loss)]
+        let total_intensity = metrics.total_intensity as f32 / 1000.0;
+        let cell_count = metrics.cell_count as usize;
+
+        if cell_count > 0 {
+            #[expect(clippy::cast_precision_loss)]
+            let fire_center_x = (metrics.weighted_x as f32 / 1000.0) / total_intensity;
+            #[expect(clippy::cast_precision_loss)]
+            let fire_center_y = (metrics.weighted_y as f32 / 1000.0) / total_intensity;
+            let fire_position = (fire_center_x, fire_center_y);
+
+            let fire_length = usize_to_f32(cell_count).sqrt() * self.cell_size * 4.0;
+            let total_fire_power_gw = total_intensity * fire_length / 1_000_000.0;
+
+            const AMBIENT_TEMP_K: f32 = 300.0;
+            let wind_speed_m_s = self.wind_speed_10m_kmh / 3.6;
+
+            let avg_intensity = total_intensity / usize_to_f32(cell_count);
+
+            // Create/update convection column
+            let column = ConvectionColumn::new(
+                avg_intensity,
+                fire_length,
+                AMBIENT_TEMP_K,
+                wind_speed_m_s,
+                fire_position,
+            );
+
+            if self.convection_columns.is_empty() {
+                self.convection_columns.push(column);
+            } else {
+                self.convection_columns[0] = column;
+            }
+
+            // Check for pyroCb formation
+            let haines_index = self.atmospheric_stability.haines_index;
+            self.pyrocb_system.check_formation(
+                total_fire_power_gw,
+                self.convection_columns[0].height,
+                haines_index,
+                self.time,
+                fire_position,
+            );
+        }
+
+        // Update pyroCb system
+        self.pyrocb_system.update(dt, self.time, 300.0);
+
+        // Collect downdrafts from pyroCb events
+        self.downdrafts.clear();
+        for event in &self.pyrocb_system.active_events {
+            self.downdrafts.extend(event.downdrafts.clone());
+        }
     }
 
     /// Create heat transfer bind group for current ping-pong state
@@ -885,6 +1707,13 @@ impl GpuFieldSolver {
             (&self.level_set_b, &self.level_set_a)
         };
 
+        // Use current spread rate buffer (modified by crown fire shader)
+        let spread_rate = if self.spread_ping {
+            &self.spread_rate_a
+        } else {
+            &self.spread_rate_b
+        };
+
         self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Level Set Bind Group"),
             layout: &self.level_set_bind_group_layout,
@@ -899,7 +1728,7 @@ impl GpuFieldSolver {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.spread_rate.as_entire_binding(),
+                    resource: spread_rate.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -960,10 +1789,134 @@ impl GpuFieldSolver {
             ],
         })
     }
+
+    /// Create crown fire bind group for Phase 3
+    fn create_crown_fire_bind_group(&self) -> wgpu::BindGroup {
+        let phi = if self.phi_ping {
+            &self.level_set_a
+        } else {
+            &self.level_set_b
+        };
+
+        let (spread_in, spread_out) = if self.spread_ping {
+            (&self.spread_rate_a, &self.spread_rate_b)
+        } else {
+            (&self.spread_rate_b, &self.spread_rate_a)
+        };
+
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Crown Fire Bind Group"),
+            layout: &self.crown_fire_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.crown_fire_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: phi.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: spread_in.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.fuel_load.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.moisture.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: spread_out.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: self.crown_state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: self.fire_intensity.as_entire_binding(),
+                },
+            ],
+        })
+    }
+
+    /// Create fuel layer bind group for Phase 1
+    fn create_fuel_layer_bind_group(&self) -> wgpu::BindGroup {
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Fuel Layer Bind Group"),
+            layout: &self.fuel_layer_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.fuel_layer_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.layer_fuel.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.layer_moisture.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.layer_temp.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.layer_burning.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.fire_intensity.as_entire_binding(),
+                },
+            ],
+        })
+    }
+
+    /// Create atmosphere bind group for Phase 4
+    fn create_atmosphere_bind_group(&self) -> wgpu::BindGroup {
+        let phi = if self.phi_ping {
+            &self.level_set_a
+        } else {
+            &self.level_set_b
+        };
+
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Atmosphere Bind Group"),
+            layout: &self.atmosphere_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.atmosphere_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: phi.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.fire_intensity.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.fire_metrics.as_entire_binding(),
+                },
+            ],
+        })
+    }
 }
 
 impl FieldSolver for GpuFieldSolver {
     fn step_heat_transfer(&mut self, dt: f32, wind_x: f32, wind_y: f32, ambient_temp: f32) {
+        // Extract wind speed for crown fire calculations (convert m/s to km/h)
+        let wind_magnitude_m_s = (wind_x * wind_x + wind_y * wind_y).sqrt();
+        self.wind_speed_10m_kmh = wind_magnitude_m_s * 3.6;
+
         // Update uniform buffer with new parameters
         let params = HeatParams {
             width: self.width,
@@ -1095,6 +2048,15 @@ impl FieldSolver for GpuFieldSolver {
 
         // Flip ping-pong
         self.phi_ping = !self.phi_ping;
+
+        // Phase 3: Dispatch crown fire shader (updates spread_rate and fire_intensity on GPU)
+        self.dispatch_crown_fire(dt);
+
+        // Phase 1: Dispatch fuel layer shader (vertical heat transfer)
+        self.dispatch_fuel_layers(dt);
+
+        // Phase 4: Dispatch atmosphere reduction and update CPU-side state
+        self.dispatch_atmosphere(dt);
     }
 
     fn step_ignition_sync(&mut self) {
