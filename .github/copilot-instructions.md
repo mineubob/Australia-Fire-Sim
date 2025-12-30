@@ -167,6 +167,26 @@ cargo fmt --all -v --check
 ```
 **CRITICAL:** Fix ALL warnings by changing code — NEVER use `#[allow(...)]` macros. Workspace `Cargo.toml` denies both rustc and clippy warnings (equivalent to `-D warnings`), so any warning will fail the build.
 
+**Exception:** When clippy's `doc_markdown` lint incorrectly flags scientific author names (McArthur, McRae, Rothermel) or technical acronyms (PyroCb) as code identifiers, use `#[expect(clippy::doc_markdown, reason = "...")]` with a descriptive reason. See [PR #44](https://github.com/mineubob/Australia-Fire-Sim/pull/44) for examples.
+
+### Documentation Standards for Scientific References
+When documenting scientific citations and technical terms:
+- **Scientific author names** (McArthur, Rothermel, McRae, etc.) should NOT be wrapped in backticks — they are proper nouns, not code identifiers
+- **Technical acronyms** (PyroCb, FFDI, etc.) should NOT be wrapped in backticks unless they refer to actual code symbols
+- Use `#[expect(clippy::doc_markdown, reason = "...")]` for individual items or `#![expect(...)]` for modules where clippy incorrectly flags these as requiring backticks
+- Provide descriptive reasons explaining why the term is a proper name or acronym, not a code identifier
+
+**Example:**
+```rust
+#[expect(
+    clippy::doc_markdown,
+    reason = "McArthur is a scientific author name, not a code identifier"
+)]
+/// Calculate slope factor based on A.G. McArthur (1967).
+```
+
+This maintains professional documentation standards while satisfying clippy's expectations. See [PR #44](https://github.com/mineubob/Australia-Fire-Sim/pull/44) for full implementation.
+
 ---
 
 ## COMMON PITFALLS
