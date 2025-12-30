@@ -162,9 +162,13 @@ impl ConvectionColumn {
         velocity.clamp(0.0, 50.0)
     }
 
+    #[expect(
+        clippy::doc_markdown,
+        reason = "PyroCb is a scientific acronym, not a code identifier"
+    )]
     /// Check if this column could generate a pyroCb.
     ///
-    /// `PyroCb` formation requires:
+    /// PyroCb formation requires:
     /// - Very tall plume (> 8000m)
     /// - High intensity (> 50,000 kW/m)
     #[must_use]
