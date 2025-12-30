@@ -5,7 +5,7 @@
 //!
 //! # Scientific Background
 //!
-//! `PyroCb` clouds are fire-generated thunderstorms that can:
+//! PyroCb clouds are fire-generated thunderstorms that can:
 //! - Inject smoke into the stratosphere
 //! - Generate lightning that starts new fires
 //! - Produce dangerous downdrafts and gust fronts
@@ -20,7 +20,7 @@
 //!
 //! - Fromm, M. et al. (2006). "Pyrocumulonimbus injection of smoke to the stratosphere."
 //!   Journal of Geophysical Research.
-//! - `McRae`, R.H.D. et al. (2013). Fire weather and fire danger in the 2003 Canberra fires.
+//! - McRae, R.H.D. et al. (2013). Fire weather and fire danger in the 2003 Canberra fires.
 //!   Australian Forestry.
 
 use super::Downdraft;
@@ -75,7 +75,7 @@ impl PyroCbEvent {
 
     /// Check if this event should begin collapse.
     ///
-    /// `PyroCb` typically collapses 20-60 minutes after formation
+    /// PyroCb typically collapses 20-60 minutes after formation
     /// when the updraft can no longer support the precipitation load.
     ///
     /// # Arguments
@@ -127,7 +127,7 @@ impl PyroCbEvent {
     }
 }
 
-/// `PyroCb` detection and management system.
+/// PyroCb detection and management system.
 ///
 /// Monitors fire conditions and manages the lifecycle of
 /// pyroCb events including formation, collapse, and downdrafts.
@@ -165,7 +165,7 @@ impl PyroCbSystem {
 
     /// Check for new pyroCb formation.
     ///
-    /// `PyroCb` forms when:
+    /// PyroCb forms when:
     /// 1. Total fire power exceeds threshold (typically > 5 GW)
     /// 2. Plume height exceeds 8000m
     /// 3. Haines Index is 5 or 6 (unstable atmosphere)

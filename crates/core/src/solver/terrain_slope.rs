@@ -1,6 +1,6 @@
 //! Terrain slope effects on fire spread rate.
 //!
-//! Implements slope factors following A.G. `McArthur` (1967) and
+//! Implements slope factors following A.G. McArthur (1967) and
 //! R.C. Rothermel (1972) for fire spread rate modification based on
 //! terrain slope and aspect.
 //!
@@ -21,7 +21,7 @@
 //!
 //! # References
 //!
-//! - A.G. `McArthur` (1967). Fire behaviour in eucalypt forests. Forestry and
+//! - A.G. McArthur (1967). Fire behaviour in eucalypt forests. Forestry and
 //!   Timber Bureau Leaflet No. 107, Canberra.
 //! - R.C. Rothermel (1972). A mathematical model for predicting fire spread
 //!   in wildland fuels. USDA Forest Service Research Paper INT-115.
@@ -165,7 +165,7 @@ impl TerrainFields {
     }
 }
 
-/// Calculate slope factor based on empirical observations from A.G. `McArthur` (1967).
+/// Calculate slope factor based on empirical observations from A.G. McArthur (1967).
 ///
 /// Fire spread rate approximately doubles for every 10° of uphill slope.
 /// This empirical relationship has been validated extensively in Australian
@@ -322,7 +322,7 @@ mod tests {
 
     /// Test that 10° uphill slope gives approximately 2× boost (factor ~3.0)
     ///
-    /// A.G. `McArthur` (1967) observed that fire spread rate approximately doubles
+    /// A.G. McArthur (1967) observed that fire spread rate approximately doubles
     /// for every 10° of uphill slope. Our formula gives factor = 3.0 at 10°,
     /// which represents a 2× increase over the base rate of 1.0.
     #[test]

@@ -22,7 +22,7 @@
 //! - Byers, H.R. & Braham, R.R. (1949). "The Thunderstorm." U.S. Weather Bureau.
 //! - Clark, T.L. et al. (1996). "Coupled atmosphere-fire model." IJWF.
 //! - Fromm, M. et al. (2006). "Pyrocumulonimbus injection of smoke to the stratosphere."
-//! - `McRae`, R.H.D. et al. (2013). Fire weather and fire danger in the 2003 Canberra fires.
+//! - McRae, R.H.D. et al. (2013). Fire weather and fire danger in the 2003 Canberra fires.
 
 mod convection;
 mod downdraft;
