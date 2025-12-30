@@ -25,6 +25,10 @@
 //!   Timber Bureau Leaflet No. 107, Canberra.
 //! - R.C. Rothermel (1972). A mathematical model for predicting fire spread
 //!   in wildland fuels. USDA Forest Service Research Paper INT-115.
+#![expect(
+    clippy::doc_markdown,
+    reason = "Scientific author names McArthur/Rothermel are proper nouns, not code identifiers"
+)]
 
 use super::fields::FieldData;
 
@@ -165,6 +169,10 @@ impl TerrainFields {
     }
 }
 
+#[expect(
+    clippy::doc_markdown,
+    reason = "McArthur is a scientific author name, not a code identifier"
+)]
 /// Calculate slope factor based on empirical observations from A.G. McArthur (1967).
 ///
 /// Fire spread rate approximately doubles for every 10° of uphill slope.
@@ -320,6 +328,10 @@ pub fn calculate_effective_slope(
 mod tests {
     use super::*;
 
+    #[expect(
+        clippy::doc_markdown,
+        reason = "McArthur is a scientific author name, not a code identifier"
+    )]
     /// Test that 10° uphill slope gives approximately 2× boost (factor ~3.0)
     ///
     /// A.G. McArthur (1967) observed that fire spread rate approximately doubles

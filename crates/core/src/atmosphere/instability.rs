@@ -146,6 +146,10 @@ impl AtmosphericStability {
         }
     }
 
+    #[expect(
+        clippy::doc_markdown,
+        reason = "PyroCb is a scientific acronym, not a code identifier"
+    )]
     /// Estimate likelihood of pyroCb development (0-1).
     ///
     /// PyroCb formation requires both high atmospheric instability

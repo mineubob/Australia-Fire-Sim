@@ -24,7 +24,6 @@ trivially_copy_pass_by_ref = "allow" # API stability preference
 must_use_candidate = "allow"         # Too noisy for simulation code
 return_self_not_must_use = "allow"   # Builder pattern preference
 float_cmp = "allow"                  # Tests verify exact assigned values
-doc_markdown = "allow"               # Scientific names/terms don't need backticks
 
 [workspace.package]
 version = "0.1.0"

@@ -23,6 +23,10 @@
 //! - Clark, T.L. et al. (1996). "Coupled atmosphere-fire model." IJWF.
 //! - Fromm, M. et al. (2006). "Pyrocumulonimbus injection of smoke to the stratosphere."
 //! - McRae, R.H.D. et al. (2013). Fire weather and fire danger in the 2003 Canberra fires.
+#![expect(
+    clippy::doc_markdown,
+    reason = "PyroCb is a scientific acronym and McRae is an author name, not code identifiers"
+)]
 
 mod convection;
 mod downdraft;
