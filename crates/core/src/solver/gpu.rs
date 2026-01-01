@@ -25,8 +25,11 @@ use super::context::GpuContext;
 use super::crown_fire::CanopyProperties;
 use super::fuel_grid::{CellFuelTypes, FuelGrid};
 use super::fuel_variation::HeterogeneityConfig;
+use super::junction_zone::JunctionZoneDetector;
 use super::quality::QualityPreset;
+use super::regime::FireRegime;
 use super::terrain_slope::TerrainFields;
+use super::vls::VLSDetector;
 use super::FieldSolver;
 use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
 use crate::core_types::units::{Gigawatts, Kelvin, Meters, MetersPerSecond, Seconds};
@@ -271,6 +274,16 @@ pub struct GpuFieldSolver {
     downdrafts: Vec<Downdraft>,
     atmospheric_stability: AtmosphericStability,
     pyrocb_system: PyroCbSystem,
+
+    // Phase 5-8: Advanced fire physics (CPU-side calculations)
+    #[expect(dead_code)]
+    junction_zone_detector: JunctionZoneDetector,
+    #[expect(dead_code)]
+    vls_detector: VLSDetector,
+    #[expect(dead_code)]
+    fire_regime: Vec<FireRegime>,
+    #[expect(dead_code)]
+    terrain_data: TerrainData,
 
     // Weather parameters for crown fire calculations
     wind_speed_10m_kmh: f32,
@@ -1408,6 +1421,11 @@ impl GpuFieldSolver {
             downdrafts: Vec::new(),
             atmospheric_stability: AtmosphericStability::default(),
             pyrocb_system: PyroCbSystem::new(),
+            // Phase 5-8: Advanced fire physics
+            junction_zone_detector: JunctionZoneDetector::default(),
+            vls_detector: VLSDetector::default(),
+            fire_regime: vec![FireRegime::WindDriven; num_cells],
+            terrain_data: terrain.clone(),
             wind_speed_10m_kmh: 20.0,
         }
     }

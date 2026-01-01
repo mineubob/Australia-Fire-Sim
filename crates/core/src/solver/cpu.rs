@@ -11,16 +11,21 @@ use super::fuel_grid::FuelGrid;
 use super::fuel_layers::LayeredFuelCell;
 use super::fuel_variation::HeterogeneityConfig;
 use super::heat_transfer::{step_heat_transfer_cpu, HeatTransferFuelProps, HeatTransferParams};
+use super::junction_zone::JunctionZoneDetector;
 use super::level_set::{
     compute_spread_rate_cpu, step_ignition_sync_cpu, step_level_set_cpu, LevelSetParams,
     SpreadRateFuelProps,
 };
 use super::quality::QualityPreset;
+use super::regime::{detect_regime, FireRegime};
 use super::terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
+use super::valley_channeling::{chimney_updraft, detect_valley_geometry, valley_wind_factor};
 use super::vertical_heat_transfer::VerticalHeatTransfer;
+use super::vls::VLSDetector;
 use super::FieldSolver;
 use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
 use crate::core_types::units::{Gigawatts, Kelvin, Meters, MetersPerSecond, Seconds};
+use crate::core_types::vec3::Vec3;
 use crate::TerrainData;
 use std::borrow::Cow;
 
@@ -81,6 +86,11 @@ pub struct CpuFieldSolver {
     atmospheric_stability: AtmosphericStability,
     pyrocb_system: PyroCbSystem,
 
+    // Phase 5-8: Advanced fire physics
+    junction_zone_detector: JunctionZoneDetector,
+    vls_detector: VLSDetector,
+    fire_regime: Vec<FireRegime>, // Per-cell regime classification
+
     // Weather parameters (for crown fire and atmosphere calculations)
     wind_speed_10m_kmh: f32,
 
@@ -94,6 +104,9 @@ pub struct CpuFieldSolver {
     width: usize,
     height: usize,
     cell_size: f32,
+
+    // Terrain reference for valley/VLS detection
+    terrain_data: TerrainData,
 }
 
 impl CpuFieldSolver {
@@ -201,6 +214,11 @@ impl CpuFieldSolver {
         // Initialize fuel grid from terrain elevation for spatial variation
         fuel_grid.initialize_from_elevation(&terrain_height);
 
+        // Phase 5-8: Initialize advanced fire physics detectors
+        let junction_zone_detector = JunctionZoneDetector::default();
+        let vls_detector = VLSDetector::default();
+        let fire_regime = vec![FireRegime::WindDriven; num_cells];
+
         Self {
             temperature,
             temperature_back,
@@ -223,12 +241,16 @@ impl CpuFieldSolver {
             downdrafts,
             atmospheric_stability,
             pyrocb_system,
+            junction_zone_detector,
+            vls_detector,
+            fire_regime,
             wind_speed_10m_kmh: 20.0, // Default 20 km/h wind
             fuel_grid,
             sim_time: 0.0,
             width,
             height,
             cell_size,
+            terrain_data: terrain.clone(),
         }
     }
 }
@@ -569,6 +591,123 @@ impl FieldSolver for CpuFieldSolver {
             }
         }
 
+        // Phase 5: Junction Zone Detection and Acceleration
+        // Detect converging fire fronts and apply acceleration
+        let junctions = self.junction_zone_detector.detect(
+            self.level_set.as_slice(),
+            self.width,
+            self.height,
+            self.cell_size,
+            *dt,
+        );
+
+        // Apply junction acceleration to spread rates
+        let spread_slice = self.spread_rate.as_mut_slice();
+        for junction in &junctions {
+            // Apply acceleration in a radius around junction point
+            let radius = junction.distance * 0.5;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_x = (junction.position.x / self.cell_size) as usize;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_y = (junction.position.y / self.cell_size) as usize;
+
+            #[expect(clippy::cast_possible_truncation)]
+            let radius_cells = (radius / self.cell_size).ceil() as i32;
+
+            for dy in -radius_cells..=radius_cells {
+                for dx in -radius_cells..=radius_cells {
+                    let x = (center_x as i32 + dx) as usize;
+                    let y = (center_y as i32 + dy) as usize;
+
+                    if x >= self.width || y >= self.height {
+                        continue;
+                    }
+
+                    #[expect(clippy::cast_precision_loss)]
+                    let dist = ((dx * dx + dy * dy) as f32).sqrt() * self.cell_size;
+                    if dist > radius {
+                        continue;
+                    }
+
+                    // Acceleration falls off with distance from junction center
+                    let falloff = 1.0 - dist / radius;
+                    let local_acceleration = 1.0 + (junction.acceleration_factor - 1.0) * falloff;
+
+                    let idx = y * self.width + x;
+                    if spread_slice[idx] > 0.0 {
+                        spread_slice[idx] *= local_acceleration;
+                    }
+                }
+            }
+        }
+
+        // Phase 6: VLS (Vorticity-Driven Lateral Spread)
+        // Detect VLS conditions and modify spread rates on lee slopes
+        let wind_vec = Vec3::new(
+            self.wind_speed_10m_kmh / 3.6, // Convert km/h to m/s
+            0.0,
+            0.0,
+        );
+        let vls_conditions = self.vls_detector.detect(
+            &self.terrain_data,
+            wind_vec,
+            self.width,
+            self.height,
+            self.cell_size,
+        );
+
+        // Apply VLS effects to spread rates
+        let spread_slice = self.spread_rate.as_mut_slice();
+        for (y, row) in vls_conditions.iter().enumerate() {
+            for (x, vls) in row.iter().enumerate() {
+                if vls.is_active {
+                    let idx = y * self.width + x;
+                    if spread_slice[idx] > 0.0 {
+                        spread_slice[idx] *= vls.rate_multiplier;
+                        // Note: Direction modification would require changing the level set velocity field
+                        // For now, we just apply the rate multiplier
+                    }
+                }
+            }
+        }
+
+        // Phase 7: Valley Channeling Effects
+        // Apply wind acceleration and chimney effects in valleys
+        let spread_slice = self.spread_rate.as_mut_slice();
+        let temp_slice = self.temperature.as_slice();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                #[expect(clippy::cast_precision_loss)]
+                let world_x = x as f32 * self.cell_size;
+                #[expect(clippy::cast_precision_loss)]
+                let world_y = y as f32 * self.cell_size;
+
+                // Detect valley geometry at this position
+                let valley_geometry =
+                    detect_valley_geometry(&self.terrain_data, world_x, world_y, 100.0);
+
+                if valley_geometry.in_valley {
+                    let idx = y * self.width + x;
+                    if spread_slice[idx] > 0.0 {
+                        // Apply valley wind acceleration
+                        let wind_factor = valley_wind_factor(&valley_geometry, 200.0);
+                        spread_slice[idx] *= wind_factor;
+
+                        // Chimney updraft effect increases spread near valley head
+                        let fire_temp_c = temp_slice[idx] - 273.15;
+                        let ambient_temp_c = 20.0; // Typical ambient
+                        let updraft =
+                            chimney_updraft(&valley_geometry, fire_temp_c, ambient_temp_c);
+                        if updraft > 0.0 {
+                            // Updraft enhances spread by 0-20% based on updraft velocity
+                            let updraft_factor = 1.0 + (updraft / 50.0).min(0.2);
+                            spread_slice[idx] *= updraft_factor;
+                        }
+                    }
+                }
+            }
+        }
+
         // Phase 3: Calculate fire intensity and apply crown fire dynamics
         // Byram's formula: I = H × W × R (kJ/kg × kg/m² × m/s = kW/m)
         // Heat content from fuel type (not hardcoded)
@@ -591,9 +730,17 @@ impl FieldSolver for CpuFieldSolver {
                 let crown_state =
                     CrownFirePhysics::evaluate_transition(intensity, ros, &self.canopy_properties);
                 self.crown_fire_state[idx] = crown_state;
+
+                // Phase 8: Regime Detection (Byram number)
+                // Classify fire regime based on intensity, wind, and ambient conditions
+                let wind_speed_m_s = self.wind_speed_10m_kmh / 3.6;
+                let ambient_temp_c = 20.0; // Typical ambient temperature
+                let regime = detect_regime(intensity, wind_speed_m_s, ambient_temp_c);
+                self.fire_regime[idx] = regime;
             } else {
                 intensity_slice[idx] = 0.0;
                 self.crown_fire_state[idx] = CrownFireState::Surface;
+                self.fire_regime[idx] = FireRegime::WindDriven;
             }
         }
 
