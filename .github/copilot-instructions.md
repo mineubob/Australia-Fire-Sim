@@ -44,6 +44,9 @@ Values that vary by context MUST come from the appropriate struct:
 - Example: Temperature going below absolute zero? Don't just clamp to -273.15°C — fix the cooling calculation to use stable exponential decay instead of unstable explicit Euler integration.
 - Artificial limits are acceptable ONLY for physical constraints (max temperature 800°C for finite precision, oxygen can't exceed atmospheric levels) — not to hide numerical instability or incorrect formulas.
 
+### 6. BREAKING CHANGES ARE ALLOWED
+**This project is pre-release.** Breaking changes to APIs, data structures, and public interfaces are acceptable and expected during active development. Prioritize correctness, code quality, and physics accuracy over backward compatibility.
+
 ---
 
 ## IMPLEMENTED PHYSICS MODELS
