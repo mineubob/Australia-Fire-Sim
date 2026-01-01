@@ -39,6 +39,7 @@ pub mod fuel_grid;
 pub mod fuel_layers;
 pub mod fuel_variation;
 mod heat_transfer;
+pub mod junction_zone;
 mod level_set;
 pub mod marching_squares;
 pub mod noise;
@@ -63,6 +64,7 @@ pub use fuel_variation::{
     apply_fuel_heterogeneity, apply_heterogeneity_single, calculate_aspect_moisture_factor,
     HeterogeneityConfig,
 };
+pub use junction_zone::{JunctionZone, JunctionZoneDetector};
 pub use marching_squares::{extract_fire_front, FireFront};
 pub use noise::{NoiseGenerator, NoiseOctave};
 pub use profiler::{FrameTimer, ProfilerScope};
