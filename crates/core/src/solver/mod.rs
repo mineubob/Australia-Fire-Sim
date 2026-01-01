@@ -48,6 +48,7 @@ mod quality;
 pub mod terrain_slope;
 #[allow(clippy::module_name_repetitions)]
 mod r#trait;
+pub mod valley_channeling;
 pub mod vertical_heat_transfer;
 pub mod vls;
 
@@ -72,6 +73,10 @@ pub use profiler::{FrameTimer, ProfilerScope};
 pub use quality::QualityPreset;
 pub use r#trait::FieldSolver;
 pub use terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
+pub use valley_channeling::{
+    chimney_updraft, cross_valley_view_factor, detect_valley_geometry, valley_wind_factor,
+    ValleyGeometry,
+};
 pub use vertical_heat_transfer::{
     FluxParams, VerticalHeatTransfer, LATENT_HEAT_WATER, STEFAN_BOLTZMANN,
 };
