@@ -6,7 +6,7 @@ Use these prompts with the GitHub Copilot coding agent (cloud) to implement mult
 
 **Environment:** Cloud agent (CPU-only, no GPU available)
 
-**Usage:** Replace `[TASK_FILE]`, `[X-Y]`, `[phase_keyword]` with actual values from your task file.
+**Usage:** Replace `[TASK_FILE]` and `[X-Y]` with actual values from your task file.
 
 ---
 
@@ -28,7 +28,7 @@ IMPLEMENTATION REQUIREMENTS:
 VALIDATION (must pass after each phase):
 - cargo build -p fire-sim-core --no-default-features
 - cargo clippy --all-targets --no-default-features (ZERO warnings allowed)
-- cargo test -p fire-sim-core --no-default-features [phase_keyword]
+- cargo test -p fire-sim-core --no-default-features (runs all tests; filter by module/test name if needed)
 - cargo fmt --all --check
 
 IMPLEMENTATION SEQUENCE:
@@ -92,7 +92,7 @@ IMPLEMENTATION STEPS:
    - Run: cargo build -p fire-sim-core --no-default-features
    - Run: cargo clippy --all-targets --no-default-features
    - Fix ALL warnings (NEVER use #[allow(...)])
-   - Run: cargo test -p fire-sim-core --no-default-features [phase_keyword]
+   - Run: cargo test -p fire-sim-core --no-default-features (all tests; filter by module/test name)
    - Run: cargo fmt --all --check
    - Ensure ALL commands succeed
 
@@ -148,11 +148,10 @@ VALIDATION SEQUENCE (after EACH phase):
 # Must pass before proceeding to next phase
 cargo build -p fire-sim-core --no-default-features
 cargo clippy --all-targets --no-default-features  # ZERO warnings
-cargo test -p fire-sim-core --no-default-features [phase_keyword]
+cargo test -p fire-sim-core --no-default-features  # All tests (filter by module/test name)
 cargo fmt --all --check
 ```
 
-NOTE: Test keywords for each phase should be found in the task file specifications.
 
 FINAL DELIVERABLES:
 - All phases fully implemented
@@ -174,7 +173,7 @@ CRITICAL: DO NOT simplify specifications. DO NOT skip validation. DO NOT stop un
 
 1. **Identify your task file** - Locate the markdown file containing phase specifications
 2. **Choose appropriate prompt** - Single phase, multi-phase, or complete implementation
-3. **Replace placeholders** - Update `[TASK_FILE]`, `[X-Y]`, and `[phase_keyword]` with actual values
+3. **Replace placeholders** - Update `[TASK_FILE]` and `[X-Y]` with actual values
 4. **Submit to cloud agent** - Use the hashtag to invoke the coding agent with your customized prompt
 
 ---
@@ -188,7 +187,7 @@ Implement Phase [X] ([Phase Name]) from [TASK_FILE].
 Read the phase specification, implement all deliverables exactly as documented (NEVER simplify), add documentation comments to all public items, create unit tests, and validate with:
 - cargo build -p fire-sim-core --no-default-features
 - cargo clippy --all-targets --no-default-features (must have ZERO warnings)
-- cargo test -p fire-sim-core --no-default-features [phase_keyword]
+- cargo test -p fire-sim-core --no-default-features (runs all tests; filter by module/test name if needed)
 - cargo fmt --all --check
 
 Do not stop until all validation passes. Report files created and tests added.
@@ -237,8 +236,9 @@ cargo clippy --all-targets --no-default-features
 
 # Test check (must have all tests passing)
 cargo test -p fire-sim-core --no-default-features              # All tests
-cargo test -p fire-sim-core --no-default-features [keyword]    # Specific phase
-# Use test keywords from your phase specifications
+cargo test -p fire-sim-core --no-default-features atmosphere   # Filter by module (crate path)
+cargo test -p fire-sim-core --no-default-features crown        # Filter by keyword in path
+cargo test -- --list                                           # List all tests with full paths
 
 # Format check (must succeed)
 cargo fmt --all --check
@@ -255,6 +255,7 @@ cargo fmt --all --check
 5. **Sequential execution** - Complete one phase fully before starting next
 6. **Validation gates** - Must pass all checks before proceeding
 7. **No shortcuts** - Implement all deliverables, no omissions
+8. **Test filtering** - Tests use Rust crate paths (same as `crate::module::submodule::tests::test_name`) - filter by any part
 
 ---
 
