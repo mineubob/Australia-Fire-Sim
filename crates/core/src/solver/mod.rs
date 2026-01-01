@@ -45,6 +45,7 @@ pub mod marching_squares;
 pub mod noise;
 pub mod profiler;
 mod quality;
+pub mod regime;
 pub mod terrain_slope;
 #[allow(clippy::module_name_repetitions)]
 mod r#trait;
@@ -72,6 +73,9 @@ pub use noise::{NoiseGenerator, NoiseOctave};
 pub use profiler::{FrameTimer, ProfilerScope};
 pub use quality::QualityPreset;
 pub use r#trait::FieldSolver;
+pub use regime::{
+    byram_number, detect_regime, direction_uncertainty, predictability_factor, FireRegime,
+};
 pub use terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
 pub use valley_channeling::{
     chimney_updraft, cross_valley_view_factor, detect_valley_geometry, valley_wind_factor,
