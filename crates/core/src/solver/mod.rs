@@ -49,6 +49,7 @@ pub mod terrain_slope;
 #[allow(clippy::module_name_repetitions)]
 mod r#trait;
 pub mod vertical_heat_transfer;
+pub mod vls;
 
 #[cfg(feature = "gpu")]
 mod gpu;
@@ -74,6 +75,7 @@ pub use terrain_slope::{calculate_effective_slope, calculate_slope_factor, Terra
 pub use vertical_heat_transfer::{
     FluxParams, VerticalHeatTransfer, LATENT_HEAT_WATER, STEFAN_BOLTZMANN,
 };
+pub use vls::{VLSCondition, VLSDetector};
 
 #[cfg(feature = "gpu")]
 pub use context::GpuContext;
