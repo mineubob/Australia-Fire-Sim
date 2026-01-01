@@ -22,6 +22,37 @@ pub const LATENT_HEAT_WATER: f32 = 2260.0;
 /// Stoichiometric oxygen requirement for wood combustion (kg O₂/kg fuel)
 pub const OXYGEN_STOICHIOMETRIC_RATIO: f32 = 1.33;
 
+/// Fuel-specific combustion properties
+///
+/// These properties MUST come from the Fuel type - never hardcode them.
+/// Reference: Project guidelines "NEVER HARDCODE DYNAMIC VALUES"
+#[derive(Debug, Clone, Copy)]
+pub struct FuelCombustionProps {
+    /// Ignition temperature (Kelvin) - from `Fuel.ignition_temperature` converted to K
+    pub ignition_temp_k: f32,
+    /// Moisture of extinction (0-1) - from `Fuel.moisture_of_extinction`
+    pub moisture_extinction: f32,
+    /// Heat content (kJ/kg) - from `Fuel.heat_content`
+    pub heat_content_kj: f32,
+    /// Fraction of heat retained in fuel bed (0-1) - from `Fuel.self_heating_fraction`
+    pub self_heating_fraction: f32,
+    /// Base burn rate coefficient - from `Fuel.burn_rate_coefficient`
+    pub burn_rate_coefficient: f32,
+}
+
+impl Default for FuelCombustionProps {
+    /// Default properties based on eucalyptus stringybark
+    fn default() -> Self {
+        Self {
+            ignition_temp_k: 501.15,     // 228°C + 273.15K (stringybark)
+            moisture_extinction: 0.35,   // 35% for eucalyptus
+            heat_content_kj: 21000.0,    // kJ/kg for eucalyptus
+            self_heating_fraction: 0.4,  // 40% retained
+            burn_rate_coefficient: 0.08, // stringybark coefficient
+        }
+    }
+}
+
 /// Physics parameters for combustion computation
 #[derive(Debug, Clone, Copy)]
 pub struct CombustionParams {
@@ -29,6 +60,8 @@ pub struct CombustionParams {
     pub dt: f32,
     /// Cell size in meters
     pub cell_size: f32,
+    /// Fuel-specific combustion properties
+    pub fuel_props: FuelCombustionProps,
 }
 
 /// CPU implementation of combustion physics
@@ -82,13 +115,12 @@ pub fn step_combustion_cpu(
             continue;
         }
 
-        // Fuel properties (Phase 2: Should come from fuel lookup table)
-        // Using typical wood values as placeholders
-        let ignition_temp = 573.15; // ~300°C (Kelvin)
-        let moisture_extinction = 0.3; // 30% moisture stops burning
-        let heat_content_kj = 20000.0; // kJ/kg for wood
-        let self_heating_fraction = 0.4; // 40% retained in fuel bed
-        let base_burn_rate = 0.01; // kg/(m²·s) base rate
+        // Fuel properties from FuelCombustionProps (dynamic, not hardcoded)
+        let ignition_temp = params.fuel_props.ignition_temp_k;
+        let moisture_extinction = params.fuel_props.moisture_extinction;
+        let heat_content_kj = params.fuel_props.heat_content_kj;
+        let self_heating_fraction = params.fuel_props.self_heating_fraction;
+        let base_burn_rate = params.fuel_props.burn_rate_coefficient;
 
         // 1. CRITICAL: Moisture evaporation FIRST
         // Moisture must evaporate before temperature rises
@@ -179,6 +211,7 @@ mod tests {
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
+            fuel_props: FuelCombustionProps::default(),
         };
 
         let initial_moisture = moisture[0];
@@ -218,6 +251,7 @@ mod tests {
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
+            fuel_props: FuelCombustionProps::default(),
         };
 
         let initial_fuel = fuel_load[0];
@@ -257,6 +291,7 @@ mod tests {
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
+            fuel_props: FuelCombustionProps::default(),
         };
 
         let initial_oxygen = oxygen[0];
@@ -296,6 +331,7 @@ mod tests {
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
+            fuel_props: FuelCombustionProps::default(),
         };
 
         let initial_fuel = fuel_load[0];
@@ -335,6 +371,7 @@ mod tests {
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
+            fuel_props: FuelCombustionProps::default(),
         };
 
         let heat_release = step_combustion_cpu(

@@ -57,6 +57,31 @@ impl Default for LevelSetParams {
     }
 }
 
+/// Fuel-specific properties for spread rate calculation
+///
+/// These properties MUST come from the Fuel type - never hardcode them.
+/// Reference: Project guidelines "NEVER HARDCODE DYNAMIC VALUES"
+#[derive(Debug, Clone, Copy)]
+pub struct SpreadRateFuelProps {
+    /// Ignition temperature (Kelvin) - from `Fuel.ignition_temperature` + 273.15
+    pub ignition_temp_k: f32,
+    /// Specific heat (J/(kg·K)) - from `Fuel.specific_heat` × 1000
+    pub specific_heat_j: f32,
+    /// Thermal conductivity (W/(m·K)) - from `Fuel.thermal_conductivity`
+    pub thermal_conductivity: f32,
+}
+
+impl Default for SpreadRateFuelProps {
+    /// Default properties based on eucalyptus stringybark
+    fn default() -> Self {
+        Self {
+            ignition_temp_k: 501.15,    // 228°C + 273.15K (stringybark)
+            specific_heat_j: 1500.0,    // 1.5 kJ/(kg·K) × 1000
+            thermal_conductivity: 0.12, // W/(m·K) for fibrous bark
+        }
+    }
+}
+
 /// CPU implementation of level set evolution
 ///
 /// Evolves the level set field φ using:
@@ -206,6 +231,7 @@ fn simple_noise(x: f32, y: f32) -> f32 {
 /// * `width` - Grid width in cells
 /// * `height` - Grid height in cells
 /// * `cell_size` - Cell size in meters
+/// * `fuel_props` - Fuel-specific thermal properties
 #[allow(clippy::too_many_arguments)]
 pub fn compute_spread_rate_cpu(
     temperature: &[f32],
@@ -215,11 +241,14 @@ pub fn compute_spread_rate_cpu(
     width: usize,
     height: usize,
     cell_size: f32,
+    fuel_props: SpreadRateFuelProps,
 ) {
-    // Fuel properties (should come from fuel lookup table)
-    let ignition_temp = 573.15; // ~300°C (K)
-    let specific_heat = 2000.0; // J/(kg·K)
-    let latent_heat_water = 2260000.0; // J/kg
+    // Use fuel-specific properties (not hardcoded)
+    let ignition_temp = fuel_props.ignition_temp_k;
+    let specific_heat = fuel_props.specific_heat_j;
+    let thermal_conductivity = fuel_props.thermal_conductivity;
+    // Latent heat is a universal constant (water), not fuel-dependent
+    let latent_heat_water = 2_260_000.0; // J/kg
 
     for idx in 0..width * height {
         let temperature_val = temperature[idx];
@@ -253,8 +282,7 @@ pub fn compute_spread_rate_cpu(
             max_temp_diff = max_temp_diff.max(temperature[idx + width] - temperature_val);
         }
 
-        // Estimate heat flux (W/m²) using thermal conductivity
-        let thermal_conductivity = 0.1; // W/(m·K) for fuel bed
+        // Estimate heat flux (W/m²) using fuel-specific thermal conductivity
         let heat_flux = thermal_conductivity * max_temp_diff / cell_size;
 
         // Heat required to ignite this cell
@@ -528,6 +556,7 @@ mod tests {
             width,
             height,
             10.0,
+            SpreadRateFuelProps::default(),
         );
 
         // Cells adjacent to hot spot should have non-zero spread rate

@@ -936,11 +936,17 @@ impl SimulationGrid {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core_types::Meters;
     use crate::grid::TerrainData;
 
     #[test]
     fn test_grid_creation() {
-        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(5.0),
+            Meters::new(0.0),
+        );
         let grid = SimulationGrid::new(100.0, 100.0, 50.0, 5.0, terrain);
 
         assert_eq!(grid.nx, 20);
@@ -951,7 +957,12 @@ mod tests {
 
     #[test]
     fn test_cell_access() {
-        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(5.0),
+            Meters::new(0.0),
+        );
         let mut grid = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain);
 
         // Grid is 10x10x5 cells (100/10, 100/10, 50/10)
@@ -966,7 +977,12 @@ mod tests {
 
     #[test]
     fn test_position_query() {
-        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(5.0),
+            Meters::new(0.0),
+        );
         let mut grid = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain);
 
         let pos = Vec3::new(55.0, 55.0, 25.0);
@@ -1012,7 +1028,12 @@ mod tests {
 
     #[test]
     fn test_active_cells() {
-        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(5.0),
+            Meters::new(0.0),
+        );
         let mut grid = SimulationGrid::new(100.0, 100.0, 50.0, 5.0, terrain);
 
         let active_pos = vec![Vec3::new(50.0, 50.0, 10.0)];

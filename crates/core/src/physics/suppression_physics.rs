@@ -156,12 +156,18 @@ pub(crate) fn apply_suppression_direct(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core_types::units::Meters;
     use crate::grid::TerrainData;
     use approx::assert_relative_eq;
 
     #[test]
     fn test_direct_suppression_application() {
-        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(5.0),
+            Meters::new(0.0),
+        );
         let mut grid = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain);
 
         let position = Vec3::new(50.0, 50.0, 10.0);
@@ -187,7 +193,12 @@ mod tests {
 
     #[test]
     fn test_direct_suppression_different_agents() {
-        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(5.0),
+            Meters::new(0.0),
+        );
 
         // Test water
         let mut grid_water = SimulationGrid::new(100.0, 100.0, 50.0, 10.0, terrain.clone());

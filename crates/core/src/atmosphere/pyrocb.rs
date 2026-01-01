@@ -28,6 +28,7 @@
 )]
 
 use super::Downdraft;
+use crate::core_types::units::{Gigawatts, Kelvin, KgPerCubicMeter, Meters, Seconds};
 
 /// A single pyroCb event.
 ///
@@ -38,11 +39,11 @@ pub struct PyroCbEvent {
     /// Position (x, y) in meters.
     pub position: (f32, f32),
 
-    /// Cloud top height (m).
-    pub cloud_top: f32,
+    /// Cloud top height.
+    pub cloud_top: Meters,
 
-    /// Formation time (simulation seconds).
-    pub start_time: f32,
+    /// Formation time (simulation time).
+    pub start_time: Seconds,
 
     /// Whether collapse has begun.
     pub collapse_pending: bool,
@@ -57,10 +58,10 @@ impl PyroCbEvent {
     /// # Arguments
     ///
     /// * `position` - Event center position (x, y) in meters
-    /// * `plume_height` - Height of the convection column (m)
-    /// * `start_time` - Simulation time of formation (seconds)
+    /// * `plume_height` - Height of the convection column
+    /// * `start_time` - Simulation time of formation
     #[must_use]
-    pub fn new(position: (f32, f32), plume_height: f32, start_time: f32) -> Self {
+    pub fn new(position: (f32, f32), plume_height: Meters, start_time: Seconds) -> Self {
         Self {
             position,
             // Cloud top typically overshoots plume height by 20%
@@ -71,9 +72,9 @@ impl PyroCbEvent {
         }
     }
 
-    /// Get the age of this event in seconds.
+    /// Get the age of this event.
     #[must_use]
-    pub fn age(&self, current_time: f32) -> f32 {
+    pub fn age(&self, current_time: Seconds) -> Seconds {
         current_time - self.start_time
     }
 
@@ -88,28 +89,28 @@ impl PyroCbEvent {
     ///
     /// # Arguments
     ///
-    /// * `current_time` - Current simulation time (seconds)
+    /// * `current_time` - Current simulation time
     #[must_use]
-    pub fn should_collapse(&self, current_time: f32) -> bool {
+    pub fn should_collapse(&self, current_time: Seconds) -> bool {
         // Collapse after 30 minutes (1800 seconds)
-        let collapse_time = 1800.0;
-        !self.collapse_pending && self.age(current_time) > collapse_time
+        let collapse_time = Seconds::new(1800.0);
+        !self.collapse_pending && *self.age(current_time) > *collapse_time
     }
 
     /// Initiate collapse and generate downdraft.
     ///
     /// # Arguments
     ///
-    /// * `ambient_temp_k` - Ambient temperature (K)
-    pub fn initiate_collapse(&mut self, ambient_temp_k: f32) {
+    /// * `ambient_temp` - Ambient temperature
+    pub fn initiate_collapse(&mut self, ambient_temp: Kelvin) {
         self.collapse_pending = true;
 
         // Generate downdraft from collapse
         let downdraft = Downdraft::from_pyrocb(
             self.position,
             self.cloud_top * 0.5, // Downdraft from mid-level
-            ambient_temp_k,
-            0.5, // Moderate precipitation loading
+            ambient_temp,
+            KgPerCubicMeter::new(0.5), // Moderate precipitation loading
         );
         self.downdrafts.push(downdraft);
     }
@@ -118,10 +119,10 @@ impl PyroCbEvent {
     ///
     /// # Arguments
     ///
-    /// * `dt_seconds` - Time step (seconds)
-    pub fn update(&mut self, dt_seconds: f32) {
+    /// * `dt` - Time step
+    pub fn update(&mut self, dt: Seconds) {
         for downdraft in &mut self.downdrafts {
-            downdraft.update(dt_seconds);
+            downdraft.update(dt);
         }
 
         // Remove dissipated downdrafts
@@ -148,8 +149,8 @@ pub struct PyroCbSystem {
     /// Active pyroCb events.
     pub active_events: Vec<PyroCbEvent>,
 
-    /// Detection threshold (fire power in GW).
-    pub detection_threshold_gw: f32,
+    /// Detection threshold (fire power).
+    pub detection_threshold: Gigawatts,
 }
 
 impl PyroCbSystem {
@@ -158,7 +159,7 @@ impl PyroCbSystem {
     pub fn new() -> Self {
         Self {
             active_events: Vec::new(),
-            detection_threshold_gw: 5.0, // 5 GW typical threshold
+            detection_threshold: Gigawatts::new(5.0), // 5 GW typical threshold
         }
     }
 
@@ -166,12 +167,12 @@ impl PyroCbSystem {
     ///
     /// # Arguments
     ///
-    /// * `threshold_gw` - Fire power threshold in gigawatts
+    /// * `threshold` - Fire power threshold
     #[must_use]
-    pub fn with_threshold(threshold_gw: f32) -> Self {
+    pub fn with_threshold(threshold: Gigawatts) -> Self {
         Self {
             active_events: Vec::new(),
-            detection_threshold_gw: threshold_gw,
+            detection_threshold: threshold,
         }
     }
 
@@ -188,24 +189,24 @@ impl PyroCbSystem {
     ///
     /// # Arguments
     ///
-    /// * `total_fire_power_gw` - Total fire power (GW)
-    /// * `plume_height_m` - Convection column height (m)
+    /// * `total_fire_power` - Total fire power
+    /// * `plume_height` - Convection column height
     /// * `haines_index` - Atmospheric Haines Index (2-6)
-    /// * `sim_time_seconds` - Current simulation time
+    /// * `sim_time` - Current simulation time
     /// * `position` - Position of the fire (x, y) in meters
     pub fn check_formation(
         &mut self,
-        total_fire_power_gw: f32,
-        plume_height_m: f32,
+        total_fire_power: Gigawatts,
+        plume_height: Meters,
         haines_index: u8,
-        sim_time_seconds: f32,
+        sim_time: Seconds,
         position: (f32, f32),
     ) {
         // Check formation conditions
-        if total_fire_power_gw < self.detection_threshold_gw {
+        if total_fire_power < self.detection_threshold {
             return;
         }
-        if plume_height_m < 8000.0 {
+        if *plume_height < 8000.0 {
             return;
         }
         if haines_index < 5 {
@@ -224,7 +225,7 @@ impl PyroCbSystem {
         }
 
         // Create new pyroCb event
-        let event = PyroCbEvent::new(position, plume_height_m, sim_time_seconds);
+        let event = PyroCbEvent::new(position, plume_height, sim_time);
         self.active_events.push(event);
     }
 
@@ -232,18 +233,18 @@ impl PyroCbSystem {
     ///
     /// # Arguments
     ///
-    /// * `dt_seconds` - Time step (seconds)
-    /// * `sim_time_seconds` - Current simulation time
-    /// * `ambient_temp_k` - Ambient temperature (K)
-    pub fn update(&mut self, dt_seconds: f32, sim_time_seconds: f32, ambient_temp_k: f32) {
+    /// * `dt` - Time step
+    /// * `sim_time` - Current simulation time
+    /// * `ambient_temp` - Ambient temperature
+    pub fn update(&mut self, dt: Seconds, sim_time: Seconds, ambient_temp: Kelvin) {
         for event in &mut self.active_events {
             // Check for collapse
-            if event.should_collapse(sim_time_seconds) {
-                event.initiate_collapse(ambient_temp_k);
+            if event.should_collapse(sim_time) {
+                event.initiate_collapse(ambient_temp);
             }
 
             // Update event state
-            event.update(dt_seconds);
+            event.update(dt);
         }
 
         // Remove fully dissipated events
@@ -298,19 +299,43 @@ mod tests {
         let mut system = PyroCbSystem::new();
 
         // Below threshold - no formation
-        system.check_formation(3.0, 10000.0, 6, 0.0, (0.0, 0.0));
+        system.check_formation(
+            Gigawatts::new(3.0),
+            Meters::new(10000.0),
+            6,
+            Seconds::new(0.0),
+            (0.0, 0.0),
+        );
         assert!(system.active_events.is_empty());
 
         // Low plume - no formation
-        system.check_formation(10.0, 5000.0, 6, 0.0, (0.0, 0.0));
+        system.check_formation(
+            Gigawatts::new(10.0),
+            Meters::new(5000.0),
+            6,
+            Seconds::new(0.0),
+            (0.0, 0.0),
+        );
         assert!(system.active_events.is_empty());
 
         // Low Haines - no formation
-        system.check_formation(10.0, 10000.0, 4, 0.0, (0.0, 0.0));
+        system.check_formation(
+            Gigawatts::new(10.0),
+            Meters::new(10000.0),
+            4,
+            Seconds::new(0.0),
+            (0.0, 0.0),
+        );
         assert!(system.active_events.is_empty());
 
         // All conditions met - formation
-        system.check_formation(10.0, 10000.0, 6, 0.0, (0.0, 0.0));
+        system.check_formation(
+            Gigawatts::new(10.0),
+            Meters::new(10000.0),
+            6,
+            Seconds::new(0.0),
+            (0.0, 0.0),
+        );
         assert_eq!(system.active_events.len(), 1);
     }
 
@@ -320,16 +345,22 @@ mod tests {
         let mut system = PyroCbSystem::new();
 
         // Create event at time 0
-        system.check_formation(10.0, 10000.0, 6, 0.0, (500.0, 500.0));
+        system.check_formation(
+            Gigawatts::new(10.0),
+            Meters::new(10000.0),
+            6,
+            Seconds::new(0.0),
+            (500.0, 500.0),
+        );
         assert!(!system.active_events.is_empty());
         assert!(!system.active_events[0].collapse_pending);
 
         // Before collapse time (30 min = 1800s) - use realistic time step
-        system.update(1.0, 1000.0, 288.0);
+        system.update(Seconds::new(1.0), Seconds::new(1000.0), Kelvin::new(288.0));
         assert!(!system.active_events[0].collapse_pending);
 
         // After collapse time - small dt to avoid immediate dissipation
-        system.update(1.0, 2000.0, 288.0);
+        system.update(Seconds::new(1.0), Seconds::new(2000.0), Kelvin::new(288.0));
         assert!(system.active_events[0].collapse_pending);
         assert!(!system.active_events[0].downdrafts.is_empty());
 
@@ -346,8 +377,20 @@ mod tests {
     fn no_duplicate_events() {
         let mut system = PyroCbSystem::new();
 
-        system.check_formation(10.0, 10000.0, 6, 0.0, (0.0, 0.0));
-        system.check_formation(10.0, 10000.0, 6, 100.0, (1000.0, 1000.0)); // Within 5km
+        system.check_formation(
+            Gigawatts::new(10.0),
+            Meters::new(10000.0),
+            6,
+            Seconds::new(0.0),
+            (0.0, 0.0),
+        );
+        system.check_formation(
+            Gigawatts::new(10.0),
+            Meters::new(10000.0),
+            6,
+            Seconds::new(100.0),
+            (1000.0, 1000.0),
+        ); // Within 5km
 
         assert_eq!(
             system.event_count(),
@@ -355,7 +398,13 @@ mod tests {
             "Should not create duplicate event nearby"
         );
 
-        system.check_formation(10.0, 10000.0, 6, 200.0, (10000.0, 10000.0)); // Far away
+        system.check_formation(
+            Gigawatts::new(10.0),
+            Meters::new(10000.0),
+            6,
+            Seconds::new(200.0),
+            (10000.0, 10000.0),
+        ); // Far away
         assert_eq!(
             system.event_count(),
             2,
@@ -366,12 +415,12 @@ mod tests {
     /// Test event dissipation.
     #[test]
     fn event_dissipation() {
-        let mut event = PyroCbEvent::new((0.0, 0.0), 10000.0, 0.0);
-        event.initiate_collapse(288.0);
+        let mut event = PyroCbEvent::new((0.0, 0.0), Meters::new(10000.0), Seconds::new(0.0));
+        event.initiate_collapse(Kelvin::new(288.0));
 
         // Update for a long time to dissipate downdrafts
         for _ in 0..2000 {
-            event.update(1.0);
+            event.update(Seconds::new(1.0));
         }
 
         assert!(event.is_dissipated());

@@ -35,6 +35,36 @@ pub struct HeatTransferParams {
     pub ambient_temp: f32,
     /// Cell size in meters
     pub cell_size: f32,
+    /// Fuel-specific thermal properties
+    pub fuel_props: HeatTransferFuelProps,
+}
+
+/// Fuel-specific properties for heat transfer calculations
+///
+/// These properties MUST come from the Fuel type - never hardcode them.
+/// Reference: Project guidelines "NEVER HARDCODE DYNAMIC VALUES"
+#[derive(Debug, Clone, Copy)]
+pub struct HeatTransferFuelProps {
+    /// Thermal diffusivity (m²/s) - from `Fuel.thermal_diffusivity`
+    pub thermal_diffusivity: f32,
+    /// Emissivity for burning fuel (0-1) - typically 0.9 for flames
+    pub emissivity_burning: f32,
+    /// Emissivity for unburned fuel (0-1) - typically 0.7 for fuel bed
+    pub emissivity_unburned: f32,
+    /// Specific heat (kJ/(kg·K)) - from `Fuel.specific_heat`
+    pub specific_heat_kj: f32,
+}
+
+impl Default for HeatTransferFuelProps {
+    /// Default properties based on eucalyptus stringybark
+    fn default() -> Self {
+        Self {
+            thermal_diffusivity: 1.5e-7, // m²/s for coarse wood fuel
+            emissivity_burning: 0.9,     // Flames have high emissivity
+            emissivity_unburned: 0.7,    // Fuel bed has lower emissivity
+            specific_heat_kj: 1.5,       // kJ/(kg·K) for eucalyptus
+        }
+    }
 }
 
 /// CPU implementation of heat transfer physics
@@ -102,15 +132,17 @@ pub fn step_heat_transfer_cpu(
                 let t_down = temp_in[idx + width];
                 let laplacian = (t_left + t_right + t_up + t_down - 4.0 * t) / cell_size_sq;
 
-                // Thermal diffusivity for wood: ~1e-7 m²/s
-                // Phase 2: This should come from fuel properties
-                let thermal_diffusivity = 1e-7;
+                // Use fuel-specific thermal diffusivity (not hardcoded)
+                let thermal_diffusivity = params.fuel_props.thermal_diffusivity;
                 let diffusion = thermal_diffusivity * laplacian;
 
                 // 2. Stefan-Boltzmann radiation exchange with neighbors
-                // Emissivity: flames ~0.95, fuel bed ~0.7-0.9
-                // Phase 2: This should come from fuel properties
-                let emissivity = if level_set[idx] < 0.0 { 0.9 } else { 0.7 };
+                // Use fuel-specific emissivity values (not hardcoded)
+                let emissivity = if level_set[idx] < 0.0 {
+                    params.fuel_props.emissivity_burning
+                } else {
+                    params.fuel_props.emissivity_unburned
+                };
 
                 let mut q_rad = 0.0_f32;
                 for dy in -1..=1_i32 {
@@ -170,9 +202,8 @@ pub fn step_heat_transfer_cpu(
 
                 // 5. Update temperature
                 // Heat capacity: mass × specific_heat
-                // Specific heat for wood: ~2.0 kJ/(kg·K)
-                // Phase 2: This should come from fuel properties
-                let specific_heat_kj = 2.0; // kJ/(kg·K)
+                // Use fuel-specific specific heat (not hardcoded)
+                let specific_heat_kj = params.fuel_props.specific_heat_kj;
                 let heat_capacity = mass * specific_heat_kj * 1000.0; // Convert to J/K
 
                 // Total heat flux (W/m²)
@@ -217,6 +248,7 @@ mod tests {
             wind_y: 0.0,
             ambient_temp: 293.15,
             cell_size: 10.0,
+            fuel_props: HeatTransferFuelProps::default(),
         };
 
         // Run one step
@@ -269,6 +301,7 @@ mod tests {
             wind_y: 0.0,
             ambient_temp: 293.15,
             cell_size: 10.0,
+            fuel_props: HeatTransferFuelProps::default(),
         };
 
         step_heat_transfer_cpu(
@@ -317,6 +350,7 @@ mod tests {
             wind_y: 0.0,
             ambient_temp: 293.15,
             cell_size: 10.0,
+            fuel_props: HeatTransferFuelProps::default(),
         };
 
         step_heat_transfer_cpu(
@@ -357,6 +391,7 @@ mod tests {
             wind_y: 0.0,
             ambient_temp: 293.15,
             cell_size: 10.0,
+            fuel_props: HeatTransferFuelProps::default(),
         };
 
         step_heat_transfer_cpu(

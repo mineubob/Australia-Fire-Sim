@@ -299,6 +299,7 @@ pub(crate) fn terrain_spread_multiplier_cached(
 #[expect(clippy::cast_precision_loss)]
 mod tests {
     use super::*;
+    use crate::core_types::units::Meters;
 
     fn create_north_sloped_terrain() -> TerrainData {
         // Create terrain that slopes up toward north (higher Y values)
@@ -314,7 +315,15 @@ mod tests {
             }
         }
 
-        TerrainData::from_heightmap(100.0, 100.0, &elevations, nx, ny, 1.0, 0.0)
+        TerrainData::from_heightmap(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            &elevations,
+            nx,
+            ny,
+            1.0,
+            Meters::new(0.0),
+        )
     }
 
     #[test]
@@ -354,7 +363,12 @@ mod tests {
 
     #[test]
     fn test_flat_terrain_neutral() {
-        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(5.0),
+            Meters::new(0.0),
+        );
 
         let from = Vec3::new(30.0, 50.0, 0.0);
         let to = Vec3::new(50.0, 50.0, 0.0);
@@ -370,7 +384,14 @@ mod tests {
     #[test]
     fn test_aspect_wind_alignment() {
         // Use single_hill which creates a radial slope
-        let terrain = TerrainData::single_hill(200.0, 200.0, 5.0, 0.0, 50.0, 50.0);
+        let terrain = TerrainData::single_hill(
+            Meters::new(200.0),
+            Meters::new(200.0),
+            Meters::new(5.0),
+            Meters::new(0.0),
+            Meters::new(50.0),
+            Meters::new(50.0),
+        );
 
         // Position on north side of hill (aspect facing north, downslope toward north)
         let position = Vec3::new(100.0, 130.0, 0.0);
@@ -420,7 +441,15 @@ mod tests {
                 elevations.push(ix as f32 * 5.0);
             }
         }
-        let terrain = TerrainData::from_heightmap(100.0, 100.0, &elevations, nx, ny, 1.0, 0.0);
+        let terrain = TerrainData::from_heightmap(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            &elevations,
+            nx,
+            ny,
+            1.0,
+            Meters::new(0.0),
+        );
 
         // Fire spreading north (cross-slope direction)
         let from = Vec3::new(50.0, 30.0, 0.0);

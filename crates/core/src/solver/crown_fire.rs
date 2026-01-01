@@ -12,6 +12,10 @@
 //!   models for predicting crown fire rate of spread in conifer forest stands"
 //!   Canadian Journal of Forest Research, 35(7), 1626-1639
 
+use crate::core_types::units::{
+    Fraction, KgPerCubicMeter, KilogramsPerSquareMeter, KjPerKg, Meters, Percent,
+};
+
 /// Crown fire state for each cell
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
@@ -40,17 +44,17 @@ pub enum CrownFireState {
 #[derive(Clone, Debug)]
 pub struct CanopyProperties {
     /// Canopy base height - height to live crown base (m)
-    pub base_height: f32,
+    pub base_height: Meters,
     /// Canopy bulk density - mass of available fuel per volume (kg/m³)
-    pub bulk_density: f32,
+    pub bulk_density: KgPerCubicMeter,
     /// Foliar moisture content - live fuel moisture (%)
-    pub foliar_moisture: f32,
+    pub foliar_moisture: Percent,
     /// Canopy cover fraction (0-1)
-    pub cover_fraction: f32,
+    pub cover_fraction: Fraction,
     /// Canopy fuel load (kg/m²)
-    pub fuel_load: f32,
+    pub fuel_load: KilogramsPerSquareMeter,
     /// Heat content of canopy fuels (kJ/kg)
-    pub heat_content: f32,
+    pub heat_content: KjPerKg,
 }
 
 impl Default for CanopyProperties {
@@ -65,12 +69,12 @@ impl Default for CanopyProperties {
     /// - 20000 kJ/kg heat content
     fn default() -> Self {
         Self {
-            base_height: 8.0,
-            bulk_density: 0.15,
-            foliar_moisture: 100.0,
-            cover_fraction: 0.7,
-            fuel_load: 1.2,
-            heat_content: 20000.0,
+            base_height: Meters::new(8.0),
+            bulk_density: KgPerCubicMeter::new(0.15),
+            foliar_moisture: Percent::new(100.0),
+            cover_fraction: Fraction::new(0.7),
+            fuel_load: KilogramsPerSquareMeter::new(1.2),
+            heat_content: KjPerKg::new(20000.0),
         }
     }
 }
@@ -98,12 +102,12 @@ impl CanopyProperties {
     #[must_use]
     pub fn open_woodland() -> Self {
         Self {
-            base_height: 5.0,
-            bulk_density: 0.08,
-            foliar_moisture: 80.0,
-            cover_fraction: 0.3,
-            fuel_load: 0.6,
-            heat_content: 18500.0,
+            base_height: Meters::new(5.0),
+            bulk_density: KgPerCubicMeter::new(0.08),
+            foliar_moisture: Percent::new(80.0),
+            cover_fraction: Fraction::new(0.3),
+            fuel_load: KilogramsPerSquareMeter::new(0.6),
+            heat_content: KjPerKg::new(18500.0),
         }
     }
 
@@ -132,7 +136,7 @@ impl CanopyProperties {
     pub fn critical_intensity(&self) -> f32 {
         // Van Wagner (1977) formula - exact implementation
         // I_critical = (0.010 × CBH × (460 + 25.9 × FMC))^1.5
-        let base_term = 0.010 * self.base_height * (460.0 + 25.9 * self.foliar_moisture);
+        let base_term = 0.010 * *self.base_height * (460.0 + 25.9 * *self.foliar_moisture);
         base_term.powf(1.5)
     }
 
@@ -158,12 +162,12 @@ impl CanopyProperties {
     /// Van Wagner (1977), Equation 9
     #[must_use]
     pub fn critical_ros(&self) -> f32 {
-        if self.bulk_density <= 0.0 {
+        if *self.bulk_density <= 0.0 {
             return f32::INFINITY;
         }
         // Van Wagner (1977) formula - exact implementation
         // R_critical = 3.0 / CBD
-        3.0 / self.bulk_density
+        3.0 / *self.bulk_density
     }
 }
 
@@ -287,7 +291,7 @@ impl CrownFirePhysics {
     ) -> f32 {
         // Crown intensity from Byram's formula: I = H × W × R
         // H in kJ/kg, W in kg/m², R in m/s gives kW/m
-        let crown_intensity = canopy.heat_content * canopy.fuel_load * crown_ros_m_s;
+        let crown_intensity = *canopy.heat_content * *canopy.fuel_load * crown_ros_m_s;
 
         surface_intensity_kw_m + crown_intensity
     }
@@ -347,12 +351,12 @@ mod tests {
     #[test]
     fn van_wagner_critical_intensity() {
         let canopy = CanopyProperties {
-            base_height: 8.0,
-            bulk_density: 0.15,
-            foliar_moisture: 100.0,
-            cover_fraction: 0.7,
-            fuel_load: 1.2,
-            heat_content: 20000.0,
+            base_height: Meters::new(8.0),
+            bulk_density: KgPerCubicMeter::new(0.15),
+            foliar_moisture: Percent::new(100.0),
+            cover_fraction: Fraction::new(0.7),
+            fuel_load: KilogramsPerSquareMeter::new(1.2),
+            heat_content: KjPerKg::new(20000.0),
         };
 
         let i_critical = canopy.critical_intensity();
@@ -461,12 +465,12 @@ mod tests {
     #[test]
     fn critical_ros_van_wagner() {
         let canopy = CanopyProperties {
-            base_height: 8.0,
-            bulk_density: 0.15,
-            foliar_moisture: 100.0,
-            cover_fraction: 0.7,
-            fuel_load: 1.2,
-            heat_content: 20000.0,
+            base_height: Meters::new(8.0),
+            bulk_density: KgPerCubicMeter::new(0.15),
+            foliar_moisture: Percent::new(100.0),
+            cover_fraction: Fraction::new(0.7),
+            fuel_load: KilogramsPerSquareMeter::new(1.2),
+            heat_content: KjPerKg::new(20000.0),
         };
 
         let r_critical = canopy.critical_ros();
@@ -484,12 +488,12 @@ mod tests {
     #[test]
     fn total_intensity_includes_canopy() {
         let canopy = CanopyProperties {
-            base_height: 8.0,
-            bulk_density: 0.15,
-            foliar_moisture: 100.0,
-            cover_fraction: 0.7,
-            fuel_load: 1.2,        // kg/m²
-            heat_content: 20000.0, // kJ/kg
+            base_height: Meters::new(8.0),
+            bulk_density: KgPerCubicMeter::new(0.15),
+            foliar_moisture: Percent::new(100.0),
+            cover_fraction: Fraction::new(0.7),
+            fuel_load: KilogramsPerSquareMeter::new(1.2), // kg/m²
+            heat_content: KjPerKg::new(20000.0),          // kJ/kg
         };
 
         let surface_intensity = 5000.0; // kW/m
@@ -583,15 +587,15 @@ mod tests {
         let canopy = CanopyProperties::eucalyptus_forest();
 
         assert!(
-            canopy.base_height > 5.0 && canopy.base_height < 15.0,
+            *canopy.base_height > 5.0 && *canopy.base_height < 15.0,
             "Base height should be typical forest range"
         );
         assert!(
-            canopy.bulk_density > 0.05 && canopy.bulk_density < 0.3,
+            *canopy.bulk_density > 0.05 && *canopy.bulk_density < 0.3,
             "Bulk density should be typical range"
         );
         assert!(
-            canopy.foliar_moisture > 50.0 && canopy.foliar_moisture < 150.0,
+            *canopy.foliar_moisture > 50.0 && *canopy.foliar_moisture < 150.0,
             "Foliar moisture should be typical range"
         );
     }
@@ -603,15 +607,15 @@ mod tests {
         let woodland = CanopyProperties::open_woodland();
 
         assert!(
-            woodland.base_height < eucalyptus.base_height,
+            *woodland.base_height < *eucalyptus.base_height,
             "Woodland should have lower crown base"
         );
         assert!(
-            woodland.bulk_density < eucalyptus.bulk_density,
+            *woodland.bulk_density < *eucalyptus.bulk_density,
             "Woodland should have lower bulk density"
         );
         assert!(
-            woodland.cover_fraction < eucalyptus.cover_fraction,
+            *woodland.cover_fraction < *eucalyptus.cover_fraction,
             "Woodland should have sparser cover"
         );
     }
@@ -632,12 +636,12 @@ mod tests {
     #[test]
     fn critical_ros_zero_density() {
         let canopy = CanopyProperties {
-            base_height: 8.0,
-            bulk_density: 0.0, // Invalid - should return infinity
-            foliar_moisture: 100.0,
-            cover_fraction: 0.7,
-            fuel_load: 1.2,
-            heat_content: 20000.0,
+            base_height: Meters::new(8.0),
+            bulk_density: KgPerCubicMeter::new(0.0), // Invalid - should return infinity
+            foliar_moisture: Percent::new(100.0),
+            cover_fraction: Fraction::new(0.7),
+            fuel_load: KilogramsPerSquareMeter::new(1.2),
+            heat_content: KjPerKg::new(20000.0),
         };
 
         let r_critical = canopy.critical_ros();

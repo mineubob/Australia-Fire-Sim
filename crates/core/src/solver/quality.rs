@@ -58,8 +58,8 @@ impl QualityPreset {
         let target_cell_size = self.target_cell_size();
 
         // Calculate grid dimensions based on terrain size and target cell size
-        let width = (terrain.width / target_cell_size).ceil() as u32;
-        let height = (terrain.height / target_cell_size).ceil() as u32;
+        let width = (*terrain.width() / target_cell_size).ceil() as u32;
+        let height = (*terrain.height() / target_cell_size).ceil() as u32;
 
         // Clamp to reasonable limits
         let width = width.clamp(64, 4096);
@@ -67,7 +67,7 @@ impl QualityPreset {
 
         // Calculate actual cell size (may differ slightly from target)
         #[expect(clippy::cast_precision_loss)]
-        let cell_size = terrain.width / width as f32;
+        let cell_size = *terrain.width() / width as f32;
 
         (width, height, cell_size)
     }
@@ -91,6 +91,7 @@ impl QualityPreset {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core_types::Meters;
 
     #[test]
     fn test_target_cell_sizes() {
@@ -102,7 +103,12 @@ mod tests {
 
     #[test]
     fn test_grid_dimensions() {
-        let terrain = TerrainData::flat(1000.0, 1000.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(1000.0),
+            Meters::new(1000.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
 
         let (width, height, cell_size) = QualityPreset::Medium.grid_dimensions(&terrain);
         assert_eq!(width, 100);
@@ -117,13 +123,23 @@ mod tests {
     #[test]
     fn test_grid_dimensions_clamping() {
         // Very small terrain should clamp to minimum
-        let small_terrain = TerrainData::flat(10.0, 10.0, 10.0, 0.0);
+        let small_terrain = TerrainData::flat(
+            Meters::new(10.0),
+            Meters::new(10.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let (width, height, _) = QualityPreset::Ultra.grid_dimensions(&small_terrain);
         assert_eq!(width, 64);
         assert_eq!(height, 64);
 
         // Very large terrain should clamp to maximum
-        let large_terrain = TerrainData::flat(100000.0, 100000.0, 10.0, 0.0);
+        let large_terrain = TerrainData::flat(
+            Meters::new(100000.0),
+            Meters::new(100000.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let (width, height, _) = QualityPreset::Ultra.grid_dimensions(&large_terrain);
         assert_eq!(width, 4096);
         assert_eq!(height, 4096);

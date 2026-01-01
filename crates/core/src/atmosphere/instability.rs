@@ -14,6 +14,8 @@
 //! - Haines, D.A. (1988). "A lower atmosphere severity index for wildlife fires."
 //!   National Weather Digest, 13(2), 23-27.
 
+use crate::core_types::units::{Celsius, Meters};
+
 /// Atmospheric stability indices for fire weather assessment.
 ///
 /// Provides multiple stability metrics used to assess extreme fire behavior
@@ -30,8 +32,8 @@ pub struct AtmosphericStability {
     /// Continuous Haines Index for finer resolution (2.0-6.0).
     pub c_haines: f32,
 
-    /// Mixing height (m) - depth of unstable boundary layer.
-    pub mixing_height: f32,
+    /// Mixing height - depth of unstable boundary layer.
+    pub mixing_height: Meters,
 }
 
 impl AtmosphericStability {
@@ -65,9 +67,9 @@ impl AtmosphericStability {
     ///
     /// Haines Index (2-6)
     #[must_use]
-    pub fn haines_index(t_950_c: f32, t_850_c: f32, td_850_c: f32) -> u8 {
+    pub fn haines_index(t_950_c: Celsius, t_850_c: Celsius, td_850_c: Celsius) -> u8 {
         // Stability term based on lapse rate
-        let lapse = t_950_c - t_850_c;
+        let lapse = *t_950_c - *t_850_c;
         let stability_term = if lapse < 4.0 {
             1
         } else if lapse < 8.0 {
@@ -77,7 +79,7 @@ impl AtmosphericStability {
         };
 
         // Moisture term based on dew point depression
-        let depression = t_850_c - td_850_c;
+        let depression = *t_850_c - *td_850_c;
         let moisture_term = if depression < 6.0 {
             1
         } else if depression < 10.0 {
@@ -104,9 +106,9 @@ impl AtmosphericStability {
     ///
     /// Continuous Haines Index (2.0-6.0)
     #[must_use]
-    pub fn continuous_haines(t_950_c: f32, t_850_c: f32, td_850_c: f32) -> f32 {
-        let lapse = t_950_c - t_850_c;
-        let depression = t_850_c - td_850_c;
+    pub fn continuous_haines(t_950_c: Celsius, t_850_c: Celsius, td_850_c: Celsius) -> f32 {
+        let lapse = *t_950_c - *t_850_c;
+        let depression = *t_850_c - *td_850_c;
 
         // Continuous stability term (1.0-3.0)
         let stability = if lapse < 4.0 {
@@ -114,7 +116,7 @@ impl AtmosphericStability {
         } else if lapse < 8.0 {
             2.0 + (lapse - 4.0) / 4.0
         } else {
-            3.0_f32.min(2.5 + (lapse - 8.0) / 8.0)
+            3.0_f64.min(2.5 + (lapse - 8.0) / 8.0)
         };
 
         // Continuous moisture term (1.0-3.0)
@@ -123,10 +125,10 @@ impl AtmosphericStability {
         } else if depression < 10.0 {
             2.0 + (depression - 6.0) / 4.0
         } else {
-            3.0_f32.min(2.5 + (depression - 10.0) / 8.0)
+            3.0_f64.min(2.5 + (depression - 10.0) / 8.0)
         };
 
-        (stability + moisture).clamp(2.0, 6.0)
+        (stability + moisture).clamp(2.0, 6.0) as f32
     }
 
     /// Create a new stability assessment from sounding data.
@@ -136,9 +138,14 @@ impl AtmosphericStability {
     /// * `t_950_c` - Temperature at 950 hPa in °C
     /// * `t_850_c` - Temperature at 850 hPa in °C
     /// * `td_850_c` - Dew point temperature at 850 hPa in °C
-    /// * `mixing_height` - Boundary layer mixing height in meters
+    /// * `mixing_height` - Boundary layer mixing height
     #[must_use]
-    pub fn new(t_950_c: f32, t_850_c: f32, td_850_c: f32, mixing_height: f32) -> Self {
+    pub fn new(
+        t_950_c: Celsius,
+        t_850_c: Celsius,
+        td_850_c: Celsius,
+        mixing_height: Meters,
+    ) -> Self {
         Self {
             haines_index: Self::haines_index(t_950_c, t_850_c, td_850_c),
             c_haines: Self::continuous_haines(t_950_c, t_850_c, td_850_c),
@@ -191,15 +198,27 @@ mod tests {
     #[test]
     fn haines_index_calculation() {
         // Low instability case: small lapse, moist
-        let low = AtmosphericStability::haines_index(15.0, 12.0, 10.0);
+        let low = AtmosphericStability::haines_index(
+            Celsius::new(15.0),
+            Celsius::new(12.0),
+            Celsius::new(10.0),
+        );
         assert_eq!(low, 2, "Low instability case should give HI=2");
 
         // Moderate case: moderate lapse, moderate dryness
-        let moderate = AtmosphericStability::haines_index(20.0, 14.0, 8.0);
+        let moderate = AtmosphericStability::haines_index(
+            Celsius::new(20.0),
+            Celsius::new(14.0),
+            Celsius::new(8.0),
+        );
         assert_eq!(moderate, 4, "Moderate case should give HI=4");
 
         // High instability case: large lapse, very dry
-        let high = AtmosphericStability::haines_index(25.0, 15.0, 3.0);
+        let high = AtmosphericStability::haines_index(
+            Celsius::new(25.0),
+            Celsius::new(15.0),
+            Celsius::new(3.0),
+        );
         assert_eq!(high, 6, "High instability case should give HI=6");
     }
 
@@ -215,7 +234,11 @@ mod tests {
         ];
 
         for (t950, t850, td850) in cases {
-            let hi = AtmosphericStability::haines_index(t950, t850, td850);
+            let hi = AtmosphericStability::haines_index(
+                Celsius::new(t950),
+                Celsius::new(t850),
+                Celsius::new(td850),
+            );
             assert!(
                 (2..=6).contains(&hi),
                 "Haines Index {hi} should be in range 2-6 for ({t950}, {t850}, {td850})"
@@ -226,7 +249,11 @@ mod tests {
     /// Test continuous Haines is in valid range.
     #[test]
     fn continuous_haines_range() {
-        let ch = AtmosphericStability::continuous_haines(20.0, 14.0, 5.0);
+        let ch = AtmosphericStability::continuous_haines(
+            Celsius::new(20.0),
+            Celsius::new(14.0),
+            Celsius::new(5.0),
+        );
         assert!(
             (2.0..=6.0).contains(&ch),
             "Continuous Haines {ch} should be in range 2-6"
@@ -237,21 +264,41 @@ mod tests {
     #[test]
     fn pyrocb_potential() {
         // Low Haines, low intensity - no potential
-        let stable = AtmosphericStability::new(15.0, 12.0, 10.0, 1000.0);
+        let stable = AtmosphericStability::new(
+            Celsius::new(15.0),
+            Celsius::new(12.0),
+            Celsius::new(10.0),
+            Meters::new(1000.0),
+        );
         assert!(stable.pyrocb_potential(10_000.0) < 0.1);
 
         // High Haines, high intensity - high potential
-        let unstable = AtmosphericStability::new(25.0, 15.0, 3.0, 3000.0);
+        let unstable = AtmosphericStability::new(
+            Celsius::new(25.0),
+            Celsius::new(15.0),
+            Celsius::new(3.0),
+            Meters::new(3000.0),
+        );
         assert!(unstable.pyrocb_potential(100_000.0) > 0.8);
     }
 
     /// Test extreme conditions detection.
     #[test]
     fn extreme_conditions() {
-        let moderate = AtmosphericStability::new(18.0, 12.0, 4.0, 1500.0);
+        let moderate = AtmosphericStability::new(
+            Celsius::new(18.0),
+            Celsius::new(12.0),
+            Celsius::new(4.0),
+            Meters::new(1500.0),
+        );
         assert!(!moderate.is_extreme());
 
-        let extreme = AtmosphericStability::new(25.0, 15.0, 0.0, 3000.0);
+        let extreme = AtmosphericStability::new(
+            Celsius::new(25.0),
+            Celsius::new(15.0),
+            Celsius::new(0.0),
+            Meters::new(3000.0),
+        );
         assert!(extreme.is_extreme());
     }
 }

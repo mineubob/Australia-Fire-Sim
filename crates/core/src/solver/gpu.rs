@@ -23,11 +23,13 @@
 
 use super::context::GpuContext;
 use super::crown_fire::CanopyProperties;
+use super::fuel_grid::{CellFuelTypes, FuelGrid};
 use super::fuel_variation::HeterogeneityConfig;
 use super::quality::QualityPreset;
 use super::terrain_slope::TerrainFields;
 use super::FieldSolver;
 use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
+use crate::core_types::units::{Gigawatts, Kelvin, Meters, MetersPerSecond, Seconds};
 use crate::TerrainData;
 use bytemuck::{Pod, Zeroable};
 use std::borrow::Cow;
@@ -52,6 +54,11 @@ struct HeatParams {
     wind_x: f32,
     wind_y: f32,
     stefan_boltzmann: f32,
+    // Fuel-specific properties
+    thermal_diffusivity: f32, // m²/s (from Fuel type)
+    emissivity_burning: f32,  // Flames emissivity (0.9 typical)
+    emissivity_unburned: f32, // Fuel bed emissivity (0.7 typical)
+    specific_heat_j: f32,     // J/(kg·K) (from Fuel type)
 }
 
 /// Combustion shader parameters (must match WGSL struct layout)
@@ -62,6 +69,15 @@ struct CombustionParams {
     height: u32,
     cell_size: f32,
     dt: f32,
+    // Fuel-specific properties
+    ignition_temp_k: f32,       // Ignition temperature in Kelvin
+    moisture_extinction: f32,   // Moisture of extinction (fraction)
+    heat_content_kj: f32,       // Heat content in kJ/kg
+    self_heating_fraction: f32, // Fraction of heat retained (0-1)
+    burn_rate_coefficient: f32, // Base burn rate coefficient
+    _padding1: f32,
+    _padding2: f32,
+    _padding3: f32,
 }
 
 /// Level set shader parameters (must match WGSL struct layout)
@@ -246,6 +262,9 @@ pub struct GpuFieldSolver {
 
     // Phase 3: Crown fire canopy properties
     canopy_properties: CanopyProperties,
+
+    // Fuel grid for per-cell, per-layer fuel type lookups
+    fuel_grid: FuelGrid,
 
     // Phase 4: Atmospheric dynamics (CPU-side, requires global calculations)
     convection_columns: Vec<ConvectionColumn>,
@@ -507,6 +526,17 @@ impl GpuFieldSolver {
             mapped_at_creation: false,
         });
 
+        // Default fuel type for GPU solver
+        // Create a FuelGrid and initialize from terrain elevation
+        let mut fuel_grid =
+            FuelGrid::new(width as usize, height as usize, CellFuelTypes::default());
+        fuel_grid.initialize_from_elevation(terrain.elevations.as_slice());
+
+        // Get surface fuel from center cell for initial uniform parameters
+        let center_x = (width / 2) as usize;
+        let center_y = (height / 2) as usize;
+        let surface_fuel = fuel_grid.get_surface_fuel(center_x, center_y);
+
         // Create uniform buffers
         let heat_params = HeatParams {
             width,
@@ -517,6 +547,10 @@ impl GpuFieldSolver {
             wind_x: 0.0,
             wind_y: 0.0,
             stefan_boltzmann: 5.67e-8,
+            thermal_diffusivity: *surface_fuel.thermal_diffusivity,
+            emissivity_burning: 0.9,  // Flames have high emissivity
+            emissivity_unburned: 0.7, // Fuel bed has lower emissivity
+            specific_heat_j: *surface_fuel.specific_heat * 1000.0, // kJ to J
         };
 
         let heat_params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -530,6 +564,14 @@ impl GpuFieldSolver {
             height,
             cell_size,
             dt: 0.1,
+            ignition_temp_k: (*surface_fuel.ignition_temperature + 273.15) as f32,
+            moisture_extinction: *surface_fuel.moisture_of_extinction,
+            heat_content_kj: *surface_fuel.heat_content,
+            self_heating_fraction: *surface_fuel.self_heating_fraction,
+            burn_rate_coefficient: surface_fuel.burn_rate_coefficient,
+            _padding1: 0.0,
+            _padding2: 0.0,
+            _padding3: 0.0,
         };
 
         let combustion_params_buffer =
@@ -561,8 +603,8 @@ impl GpuFieldSolver {
             width,
             height,
             cell_size,
-            ignition_temperature: 573.15,
-            moisture_extinction: 0.3,
+            ignition_temperature: (*surface_fuel.ignition_temperature + 273.15) as f32,
+            moisture_extinction: *surface_fuel.moisture_of_extinction,
             _pad1: 0.0,
             _pad2: 0.0,
             _pad3: 0.0,
@@ -582,14 +624,14 @@ impl GpuFieldSolver {
             height,
             cell_size,
             dt: 0.1,
-            canopy_base_height: canopy_properties.base_height,
-            canopy_bulk_density: canopy_properties.bulk_density,
-            foliar_moisture: canopy_properties.foliar_moisture,
-            canopy_cover_fraction: canopy_properties.cover_fraction,
-            canopy_fuel_load: canopy_properties.fuel_load,
-            canopy_heat_content: canopy_properties.heat_content,
+            canopy_base_height: *canopy_properties.base_height,
+            canopy_bulk_density: *canopy_properties.bulk_density,
+            foliar_moisture: *canopy_properties.foliar_moisture,
+            canopy_cover_fraction: *canopy_properties.cover_fraction,
+            canopy_fuel_load: *canopy_properties.fuel_load,
+            canopy_heat_content: *canopy_properties.heat_content,
             wind_speed_10m_kmh: 20.0,
-            surface_heat_content: 18000.0,
+            surface_heat_content: *surface_fuel.heat_content,
             _padding: 0.0,
         };
 
@@ -609,8 +651,8 @@ impl GpuFieldSolver {
             emissivity: 0.9,
             convective_coeff_base: 25.0,
             flame_height: 2.0,
-            canopy_cover_fraction: canopy_properties.cover_fraction,
-            fuel_specific_heat: 1500.0,
+            canopy_cover_fraction: *canopy_properties.cover_fraction,
+            fuel_specific_heat: *surface_fuel.specific_heat * 1000.0, // kJ to J
             _padding1: 0.0,
             _padding2: 0.0,
             _padding3: 0.0,
@@ -1359,6 +1401,8 @@ impl GpuFieldSolver {
             time: 0.0,
             // Phase 3: Crown fire canopy properties
             canopy_properties,
+            // Fuel grid for per-cell, per-layer fuel type lookups
+            fuel_grid,
             // Phase 4: Atmospheric dynamics
             convection_columns: Vec::new(),
             downdrafts: Vec::new(),
@@ -1385,14 +1429,22 @@ impl GpuFieldSolver {
             height: self.height,
             cell_size: self.cell_size,
             dt,
-            canopy_base_height: self.canopy_properties.base_height,
-            canopy_bulk_density: self.canopy_properties.bulk_density,
-            foliar_moisture: self.canopy_properties.foliar_moisture,
-            canopy_cover_fraction: self.canopy_properties.cover_fraction,
-            canopy_fuel_load: self.canopy_properties.fuel_load,
-            canopy_heat_content: self.canopy_properties.heat_content,
+            canopy_base_height: *self.canopy_properties.base_height,
+            canopy_bulk_density: *self.canopy_properties.bulk_density,
+            foliar_moisture: *self.canopy_properties.foliar_moisture,
+            canopy_cover_fraction: *self.canopy_properties.cover_fraction,
+            canopy_fuel_load: *self.canopy_properties.fuel_load,
+            canopy_heat_content: *self.canopy_properties.heat_content,
             wind_speed_10m_kmh: self.wind_speed_10m_kmh,
-            surface_heat_content: 18000.0,
+            // Get surface fuel from center cell for uniform params
+            surface_heat_content: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .heat_content
+            },
             _padding: 0.0,
         };
         self.queue.write_buffer(
@@ -1439,8 +1491,17 @@ impl GpuFieldSolver {
             emissivity: 0.9,
             convective_coeff_base: 25.0,
             flame_height: 2.0, // Could be calculated from fire intensity
-            canopy_cover_fraction: self.canopy_properties.cover_fraction,
-            fuel_specific_heat: 1500.0,
+            canopy_cover_fraction: *self.canopy_properties.cover_fraction,
+            // Get surface fuel from center cell for uniform params
+            fuel_specific_heat: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .specific_heat
+                    * 1000.0
+            }, // kJ to J
             _padding1: 0.0,
             _padding2: 0.0,
             _padding3: 0.0,
@@ -1574,9 +1635,9 @@ impl GpuFieldSolver {
             // Create/update convection column
             let column = ConvectionColumn::new(
                 avg_intensity,
-                fire_length,
-                AMBIENT_TEMP_K,
-                wind_speed_m_s,
+                Meters::new(fire_length),
+                Kelvin::new(f64::from(AMBIENT_TEMP_K)),
+                MetersPerSecond::new(wind_speed_m_s),
                 fire_position,
             );
 
@@ -1589,16 +1650,20 @@ impl GpuFieldSolver {
             // Check for pyroCb formation
             let haines_index = self.atmospheric_stability.haines_index;
             self.pyrocb_system.check_formation(
-                total_fire_power_gw,
+                Gigawatts::new(total_fire_power_gw),
                 self.convection_columns[0].height,
                 haines_index,
-                self.time,
+                Seconds::new(self.time),
                 fire_position,
             );
         }
 
         // Update pyroCb system
-        self.pyrocb_system.update(dt, self.time, 300.0);
+        self.pyrocb_system.update(
+            Seconds::new(dt),
+            Seconds::new(self.time),
+            Kelvin::new(300.0),
+        );
 
         // Collect downdrafts from pyroCb events
         self.downdrafts.clear();
@@ -1912,7 +1977,16 @@ impl GpuFieldSolver {
 }
 
 impl FieldSolver for GpuFieldSolver {
-    fn step_heat_transfer(&mut self, dt: f32, wind_x: f32, wind_y: f32, ambient_temp: f32) {
+    fn step_heat_transfer(
+        &mut self,
+        dt: Seconds,
+        wind: crate::core_types::Vec3,
+        ambient_temp: Kelvin,
+    ) {
+        // Extract wind components (wind.x and wind.y are already in m/s)
+        let wind_x = wind.x;
+        let wind_y = wind.y;
+
         // Extract wind speed for crown fire calculations (convert m/s to km/h)
         let wind_magnitude_m_s = (wind_x * wind_x + wind_y * wind_y).sqrt();
         self.wind_speed_10m_kmh = wind_magnitude_m_s * 3.6;
@@ -1922,11 +1996,31 @@ impl FieldSolver for GpuFieldSolver {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
-            dt,
-            ambient_temp,
+            dt: *dt,
+            ambient_temp: ambient_temp.as_f32(),
             wind_x,
             wind_y,
             stefan_boltzmann: 5.67e-8,
+            // Get surface fuel from center cell for uniform params
+            thermal_diffusivity: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .thermal_diffusivity
+            },
+            emissivity_burning: 0.9,
+            emissivity_unburned: 0.7,
+            specific_heat_j: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .specific_heat
+                    * 1000.0
+            },
         };
         self.queue
             .write_buffer(&self.heat_params_buffer, 0, bytemuck::bytes_of(&params));
@@ -1960,13 +2054,54 @@ impl FieldSolver for GpuFieldSolver {
         self.temp_ping = !self.temp_ping;
     }
 
-    fn step_combustion(&mut self, dt: f32) {
+    fn step_combustion(&mut self, dt: Seconds) {
         // Update uniform buffer
         let params = CombustionParams {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
-            dt,
+            dt: *dt,
+            // Get surface fuel from center cell for uniform params
+            ignition_temp_k: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                let fuel = self.fuel_grid.get_surface_fuel(center_x, center_y);
+                (*fuel.ignition_temperature + 273.15) as f32
+            },
+            moisture_extinction: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .moisture_of_extinction
+            },
+            heat_content_kj: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .heat_content
+            },
+            self_heating_fraction: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .self_heating_fraction
+            },
+            burn_rate_coefficient: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                self.fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .burn_rate_coefficient
+            },
+            _padding1: 0.0,
+            _padding2: 0.0,
+            _padding3: 0.0,
         };
         self.queue.write_buffer(
             &self.combustion_params_buffer,
@@ -1998,20 +2133,20 @@ impl FieldSolver for GpuFieldSolver {
         self.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    fn step_moisture(&mut self, _dt: f32, _humidity: f32) {
+    fn step_moisture(&mut self, _dt: Seconds, _humidity: f32) {
         // Moisture update is handled in combustion shader
         // This is a placeholder for more advanced moisture dynamics
     }
 
-    fn step_level_set(&mut self, dt: f32) {
-        self.time += dt;
+    fn step_level_set(&mut self, dt: Seconds) {
+        self.time += *dt;
 
         // Update uniform buffer
         let params = LevelSetParams {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
-            dt,
+            dt: *dt,
             curvature_coeff: 0.25,
             noise_amplitude: 0.1,
             time: self.time,
@@ -2050,13 +2185,13 @@ impl FieldSolver for GpuFieldSolver {
         self.phi_ping = !self.phi_ping;
 
         // Phase 3: Dispatch crown fire shader (updates spread_rate and fire_intensity on GPU)
-        self.dispatch_crown_fire(dt);
+        self.dispatch_crown_fire(*dt);
 
         // Phase 1: Dispatch fuel layer shader (vertical heat transfer)
-        self.dispatch_fuel_layers(dt);
+        self.dispatch_fuel_layers(*dt);
 
         // Phase 4: Dispatch atmosphere reduction and update CPU-side state
-        self.dispatch_atmosphere(dt);
+        self.dispatch_atmosphere(*dt);
     }
 
     fn step_ignition_sync(&mut self) {
@@ -2161,63 +2296,59 @@ impl FieldSolver for GpuFieldSolver {
         Cow::Owned(result)
     }
 
-    #[allow(clippy::cast_precision_loss)] // Grid cell indices are small enough for f32
-    fn ignite_at(&mut self, x: f32, y: f32, radius: f32) {
-        // Calculate grid coordinates
-        let cx = (x / self.cell_size) as i32;
-        let cy = (y / self.cell_size) as i32;
-        let r_cells = (radius / self.cell_size) as i32;
+    #[allow(clippy::cast_precision_loss)] // Grid indices are small enough for f32
+    fn apply_heat(&mut self, x: Meters, y: Meters, temperature_k: Kelvin, radius_m: Meters) {
+        // Read current temperature and level set from GPU
+        let mut temp_data = self.read_temperature().into_owned();
+        let mut phi_data = self.read_level_set().into_owned();
 
-        // Read current level set
-        let mut phi = self.read_level_set().into_owned();
+        // Apply heat with Gaussian falloff (CPU-side for now)
+        let grid_x = (*x / self.cell_size) as i32;
+        let grid_y = (*y / self.cell_size) as i32;
+        let radius_cells = (*radius_m / self.cell_size).max(0.5);
+        let search_radius = (radius_cells.ceil() as i32).max(1);
+        let sigma = radius_cells / 2.0;
+        let sigma_sq = sigma * sigma;
 
-        // Set phi to negative (burning) for cells within radius
-        for dy in -r_cells..=r_cells {
-            for dx in -r_cells..=r_cells {
-                let gx = cx + dx;
-                let gy = cy + dy;
+        for dy in -search_radius..=search_radius {
+            for dx in -search_radius..=search_radius {
+                let gx = grid_x + dx;
+                let gy = grid_y + dy;
 
                 if gx >= 0 && gx < self.width as i32 && gy >= 0 && gy < self.height as i32 {
-                    let dist = ((dx * dx + dy * dy) as f32).sqrt() * self.cell_size;
-                    if dist <= radius {
-                        let idx = (gy as u32 * self.width + gx as u32) as usize;
-                        phi[idx] = -1.0; // Inside fire
+                    let idx = (gy as u32 * self.width + gx as u32) as usize;
+                    let dist_sq = (dx * dx + dy * dy) as f32;
+                    let heat_factor = (-dist_sq / (2.0 * sigma_sq)).exp();
+                    let applied_temp = temperature_k.as_f32() * heat_factor;
+
+                    // Apply heat (max with current temp)
+                    let new_temp = temp_data[idx].max(applied_temp);
+                    temp_data[idx] = new_temp;
+
+                    // Mark as burning if temperature reaches ignition threshold
+                    let fuel = self.fuel_grid.get_surface_fuel(gx as usize, gy as usize);
+                    let ignition_temp = fuel.ignition_temperature.as_f32() + 273.15;
+
+                    if new_temp >= ignition_temp {
+                        phi_data[idx] = -self.cell_size * 0.5;
                     }
                 }
             }
         }
 
-        // Write back to both GPU buffers
+        // Write back to GPU buffers
         self.queue
-            .write_buffer(&self.level_set_a, 0, bytemuck::cast_slice(&phi));
+            .write_buffer(&self.temperature_a, 0, bytemuck::cast_slice(&temp_data));
         self.queue
-            .write_buffer(&self.level_set_b, 0, bytemuck::cast_slice(&phi));
-
-        // Set high temperature at ignition point
-        let mut temp = self.read_temperature().into_owned();
-        for dy in -r_cells..=r_cells {
-            for dx in -r_cells..=r_cells {
-                let gx = cx + dx;
-                let gy = cy + dy;
-
-                if gx >= 0 && gx < self.width as i32 && gy >= 0 && gy < self.height as i32 {
-                    let dist = ((dx * dx + dy * dy) as f32).sqrt() * self.cell_size;
-                    if dist <= radius {
-                        let idx = (gy as u32 * self.width + gx as u32) as usize;
-                        temp[idx] = 800.0; // High temperature to start combustion
-                    }
-                }
-            }
-        }
-
+            .write_buffer(&self.temperature_b, 0, bytemuck::cast_slice(&temp_data));
         self.queue
-            .write_buffer(&self.temperature_a, 0, bytemuck::cast_slice(&temp));
+            .write_buffer(&self.level_set_a, 0, bytemuck::cast_slice(&phi_data));
         self.queue
-            .write_buffer(&self.temperature_b, 0, bytemuck::cast_slice(&temp));
+            .write_buffer(&self.level_set_b, 0, bytemuck::cast_slice(&phi_data));
     }
 
-    fn dimensions(&self) -> (u32, u32, f32) {
-        (self.width, self.height, self.cell_size)
+    fn dimensions(&self) -> (u32, u32, Meters) {
+        (self.width, self.height, Meters::new(self.cell_size))
     }
 
     fn is_gpu_accelerated(&self) -> bool {
@@ -2230,17 +2361,27 @@ mod tests {
     use super::*;
     use crate::solver::context::GpuInitResult;
 
+    /// Helper to create flat terrain with f32 dimensions (for test convenience)
+    fn flat_terrain(width: f32, height: f32, resolution: f32, elevation: f32) -> TerrainData {
+        TerrainData::flat(
+            crate::core_types::units::Meters::new(width),
+            crate::core_types::units::Meters::new(height),
+            crate::core_types::units::Meters::new(resolution),
+            crate::core_types::units::Meters::new(elevation),
+        )
+    }
+
     #[test]
     fn test_gpu_solver_creation() {
         // Only run if GPU is available
         if let GpuInitResult::Success(context) = GpuContext::new() {
-            let terrain = TerrainData::flat(1000.0, 1000.0, 10.0, 0.0);
+            let terrain = flat_terrain(1000.0, 1000.0, 10.0, 0.0);
             let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Medium);
 
             let (width, height, cell_size) = solver.dimensions();
             assert_eq!(width, 100);
             assert_eq!(height, 100);
-            assert_eq!(cell_size, 10.0);
+            assert_eq!(*cell_size, 10.0);
             assert!(solver.is_gpu_accelerated());
         }
     }
@@ -2249,7 +2390,12 @@ mod tests {
     fn test_gpu_solver_read_temperature() {
         // Only run if GPU is available
         if let GpuInitResult::Success(context) = GpuContext::new() {
-            let terrain = TerrainData::flat(100.0, 100.0, 10.0, 0.0);
+            let terrain = TerrainData::flat(
+                Meters::new(100.0),
+                Meters::new(100.0),
+                Meters::new(10.0),
+                Meters::new(0.0),
+            );
             let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Low);
 
             let temp = solver.read_temperature();
@@ -2263,7 +2409,12 @@ mod tests {
     fn test_gpu_solver_dimensions() {
         // Only run if GPU is available
         if let GpuInitResult::Success(context) = GpuContext::new() {
-            let terrain = TerrainData::flat(500.0, 300.0, 10.0, 0.0);
+            let terrain = TerrainData::flat(
+                Meters::new(500.0),
+                Meters::new(300.0),
+                Meters::new(10.0),
+                Meters::new(0.0),
+            );
             let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::High);
 
             let (width, height, _cell_size) = solver.dimensions();

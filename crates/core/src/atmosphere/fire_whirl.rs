@@ -18,6 +18,8 @@
 //! - Clark, T.L. et al. (1996). "Coupled atmosphere-fire model simulations."
 //!   International Journal of Wildland Fire.
 
+use crate::core_types::units::{Meters, MetersPerSecond, RatePerSecond};
+
 /// Fire whirl detection parameters.
 ///
 /// Detects conditions favorable for fire whirl formation based on
@@ -27,20 +29,20 @@ pub struct FireWhirlDetector {
     /// Vorticity threshold for whirl formation (1/s).
     ///
     /// Typical threshold is 0.1-0.5 s⁻¹ for fire whirls.
-    pub vorticity_threshold: f32,
+    pub vorticity_threshold: RatePerSecond,
 
     /// Minimum intensity for whirl formation (kW/m).
     ///
     /// Fire whirls require significant buoyant forcing,
     /// typically above 10,000 kW/m.
-    pub intensity_threshold: f32,
+    pub intensity_threshold_kw_m: f32,
 }
 
 impl Default for FireWhirlDetector {
     fn default() -> Self {
         Self {
-            vorticity_threshold: 0.2,      // s⁻¹
-            intensity_threshold: 10_000.0, // kW/m
+            vorticity_threshold: RatePerSecond::new(0.2), // s⁻¹
+            intensity_threshold_kw_m: 10_000.0,           // kW/m
         }
     }
 }
@@ -51,12 +53,12 @@ impl FireWhirlDetector {
     /// # Arguments
     ///
     /// * `vorticity_threshold` - Vorticity threshold (1/s)
-    /// * `intensity_threshold` - Intensity threshold (kW/m)
+    /// * `intensity_threshold_kw_m` - Intensity threshold (kW/m)
     #[must_use]
-    pub fn new(vorticity_threshold: f32, intensity_threshold: f32) -> Self {
+    pub fn new(vorticity_threshold: RatePerSecond, intensity_threshold_kw_m: f32) -> Self {
         Self {
             vorticity_threshold,
-            intensity_threshold,
+            intensity_threshold_kw_m,
         }
     }
 
@@ -85,16 +87,16 @@ impl FireWhirlDetector {
     /// Vertical vorticity in s⁻¹ (positive = counterclockwise)
     #[must_use]
     pub fn calculate_vorticity(
-        u_up: f32,
-        u_down: f32,
-        v_left: f32,
-        v_right: f32,
-        cell_size: f32,
-    ) -> f32 {
-        let dv_dx = (v_right - v_left) / (2.0 * cell_size);
-        let du_dy = (u_up - u_down) / (2.0 * cell_size);
+        u_up: MetersPerSecond,
+        u_down: MetersPerSecond,
+        v_left: MetersPerSecond,
+        v_right: MetersPerSecond,
+        cell_size: Meters,
+    ) -> RatePerSecond {
+        let dv_dx = (v_right - v_left) / (2.0 * *cell_size);
+        let du_dy = (u_up - u_down) / (2.0 * *cell_size);
 
-        dv_dx - du_dy
+        RatePerSecond::new(*dv_dx - *du_dy)
     }
 
     /// Check if conditions support fire whirl formation.
@@ -110,8 +112,9 @@ impl FireWhirlDetector {
     ///
     /// True if fire whirl conditions are met
     #[must_use]
-    pub fn check_conditions(&self, vorticity: f32, intensity_kw_m: f32) -> bool {
-        vorticity.abs() > self.vorticity_threshold && intensity_kw_m > self.intensity_threshold
+    pub fn check_conditions(&self, vorticity: RatePerSecond, intensity_kw_m: f32) -> bool {
+        vorticity.abs() > *self.vorticity_threshold
+            && intensity_kw_m > self.intensity_threshold_kw_m
     }
 
     /// Calculate fire whirl intensity index (0-1).
@@ -128,9 +131,9 @@ impl FireWhirlDetector {
     ///
     /// Fire whirl index (0.0 = no risk, 1.0 = maximum risk)
     #[must_use]
-    pub fn intensity_index(&self, vorticity: f32, intensity_kw_m: f32) -> f32 {
-        let vort_factor = (vorticity.abs() / self.vorticity_threshold).min(2.0) / 2.0;
-        let int_factor = (intensity_kw_m / self.intensity_threshold).min(5.0) / 5.0;
+    pub fn intensity_index(&self, vorticity: RatePerSecond, intensity_kw_m: f32) -> f32 {
+        let vort_factor = (vorticity.abs() / *self.vorticity_threshold).min(2.0) / 2.0;
+        let int_factor = (intensity_kw_m / self.intensity_threshold_kw_m).min(5.0) / 5.0;
 
         (vort_factor * int_factor).min(1.0)
     }
@@ -146,14 +149,16 @@ mod tests {
         // Pure shear: v increasing with x
         // v_left = 0, v_right = 10, u uniform
         let vorticity = FireWhirlDetector::calculate_vorticity(
-            5.0, 5.0, // u_up, u_down (uniform)
-            0.0, 10.0, // v_left, v_right (shear)
-            10.0, // cell_size
+            MetersPerSecond::new(5.0),  // u_up
+            MetersPerSecond::new(5.0),  // u_down (uniform)
+            MetersPerSecond::new(0.0),  // v_left
+            MetersPerSecond::new(10.0), // v_right (shear)
+            Meters::new(10.0),          // cell_size
         );
 
         // Expected: dv/dx = 10/20 = 0.5, du/dy = 0
         assert!(
-            (vorticity - 0.5).abs() < 0.01,
+            (*vorticity - 0.5).abs() < 0.01,
             "Vorticity should be 0.5, got {vorticity}"
         );
     }
@@ -163,15 +168,17 @@ mod tests {
     fn vorticity_opposite_shear() {
         // u increasing with y (du/dy positive), v uniform
         let vorticity = FireWhirlDetector::calculate_vorticity(
-            10.0, 0.0, // u_up, u_down (shear)
-            5.0, 5.0,  // v_left, v_right (uniform)
-            10.0, // cell_size
+            MetersPerSecond::new(10.0), // u_up (shear)
+            MetersPerSecond::new(0.0),  // u_down
+            MetersPerSecond::new(5.0),  // v_left (uniform)
+            MetersPerSecond::new(5.0),  // v_right
+            Meters::new(10.0),          // cell_size
         );
 
         // Expected: dv/dx = 0, du/dy = 10/20 = 0.5
         // ω = -du/dy = -0.5
         assert!(
-            (vorticity + 0.5).abs() < 0.01,
+            (*vorticity + 0.5).abs() < 0.01,
             "Vorticity should be -0.5, got {vorticity}"
         );
     }
@@ -182,16 +189,16 @@ mod tests {
         let detector = FireWhirlDetector::default();
 
         // Below threshold
-        assert!(!detector.check_conditions(0.1, 5_000.0));
+        assert!(!detector.check_conditions(RatePerSecond::new(0.1), 5_000.0));
 
         // Above threshold (both conditions met)
-        assert!(detector.check_conditions(0.5, 20_000.0));
+        assert!(detector.check_conditions(RatePerSecond::new(0.5), 20_000.0));
 
         // High vorticity but low intensity
-        assert!(!detector.check_conditions(0.5, 5_000.0));
+        assert!(!detector.check_conditions(RatePerSecond::new(0.5), 5_000.0));
 
         // High intensity but low vorticity
-        assert!(!detector.check_conditions(0.1, 50_000.0));
+        assert!(!detector.check_conditions(RatePerSecond::new(0.1), 50_000.0));
     }
 
     /// Test intensity index calculation.
@@ -200,11 +207,11 @@ mod tests {
         let detector = FireWhirlDetector::default();
 
         // No risk
-        let low = detector.intensity_index(0.0, 0.0);
+        let low = detector.intensity_index(RatePerSecond::new(0.0), 0.0);
         assert!(low < 0.01, "Low index should be near 0: {low}");
 
         // High risk
-        let high = detector.intensity_index(0.5, 50_000.0);
+        let high = detector.intensity_index(RatePerSecond::new(0.5), 50_000.0);
         assert!(high > 0.5, "High index should be > 0.5: {high}");
         assert!(high <= 1.0, "Index should be <= 1.0: {high}");
     }

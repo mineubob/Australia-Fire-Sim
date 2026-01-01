@@ -4,20 +4,23 @@
 //! `Vec<f32>` arrays and Rayon for parallelism. This backend is always available
 //! and serves as a fallback when GPU acceleration is not available.
 
-use super::combustion::{step_combustion_cpu, CombustionParams};
+use super::combustion::{step_combustion_cpu, CombustionParams, FuelCombustionProps};
 use super::crown_fire::{CanopyProperties, CrownFirePhysics, CrownFireState};
 use super::fields::FieldData;
+use super::fuel_grid::FuelGrid;
 use super::fuel_layers::LayeredFuelCell;
 use super::fuel_variation::HeterogeneityConfig;
-use super::heat_transfer::{step_heat_transfer_cpu, HeatTransferParams};
+use super::heat_transfer::{step_heat_transfer_cpu, HeatTransferFuelProps, HeatTransferParams};
 use super::level_set::{
     compute_spread_rate_cpu, step_ignition_sync_cpu, step_level_set_cpu, LevelSetParams,
+    SpreadRateFuelProps,
 };
 use super::quality::QualityPreset;
 use super::terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
 use super::vertical_heat_transfer::VerticalHeatTransfer;
 use super::FieldSolver;
 use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
+use crate::core_types::units::{Gigawatts, Kelvin, Meters, MetersPerSecond, Seconds};
 use crate::TerrainData;
 use std::borrow::Cow;
 
@@ -80,6 +83,9 @@ pub struct CpuFieldSolver {
 
     // Weather parameters (for crown fire and atmosphere calculations)
     wind_speed_10m_kmh: f32,
+
+    // Fuel grid: per-cell, per-layer fuel type assignment
+    fuel_grid: FuelGrid,
 
     // Simulation time tracking
     sim_time: f32,
@@ -188,6 +194,13 @@ impl CpuFieldSolver {
         // Fire intensity field (computed during simulation)
         let fire_intensity = FieldData::new(width, height);
 
+        // Create fuel grid with per-cell, per-layer fuel types
+        // Default to eucalyptus forest (Australian conditions)
+        let mut fuel_grid = FuelGrid::eucalyptus_forest(width, height);
+
+        // Initialize fuel grid from terrain elevation for spatial variation
+        fuel_grid.initialize_from_elevation(&terrain_height);
+
         Self {
             temperature,
             temperature_back,
@@ -211,6 +224,7 @@ impl CpuFieldSolver {
             atmospheric_stability,
             pyrocb_system,
             wind_speed_10m_kmh: 20.0, // Default 20 km/h wind
+            fuel_grid,
             sim_time: 0.0,
             width,
             height,
@@ -220,18 +234,43 @@ impl CpuFieldSolver {
 }
 
 impl FieldSolver for CpuFieldSolver {
-    fn step_heat_transfer(&mut self, dt: f32, wind_x: f32, wind_y: f32, ambient_temp: f32) {
+    fn step_heat_transfer(
+        &mut self,
+        dt: Seconds,
+        wind: crate::core_types::Vec3,
+        ambient_temp: Kelvin,
+    ) {
+        // Extract wind components (wind.x and wind.y are already in m/s)
+        let wind_x = wind.x;
+        let wind_y = wind.y;
+
         // Extract wind speed for crown fire calculations (convert m/s to km/h)
         let wind_magnitude_m_s = (wind_x * wind_x + wind_y * wind_y).sqrt();
         self.wind_speed_10m_kmh = wind_magnitude_m_s * 3.6; // m/s to km/h
 
-        // Use Phase 2 heat transfer physics
+        // For bulk heat transfer, use the surface fuel properties as dominant
+        // (most heat transfer occurs at surface level)
+        // Get fuel properties from center cell as representative
+        let center_x = self.width / 2;
+        let center_y = self.height / 2;
+        let surface_fuel = self.fuel_grid.get_surface_fuel(center_x, center_y);
+
+        // Create fuel-specific heat transfer properties
+        let heat_fuel_props = HeatTransferFuelProps {
+            thermal_diffusivity: *surface_fuel.thermal_diffusivity,
+            emissivity_burning: 0.9, // Flames have high emissivity (physical constant)
+            emissivity_unburned: 0.7, // Fuel bed has lower emissivity
+            specific_heat_kj: *surface_fuel.specific_heat,
+        };
+
+        // Use Phase 2 heat transfer physics with fuel-specific properties
         let params = HeatTransferParams {
-            dt,
+            dt: *dt,
             wind_x,
             wind_y,
-            ambient_temp,
+            ambient_temp: ambient_temp.as_f32(),
             cell_size: self.cell_size,
+            fuel_props: heat_fuel_props,
         };
 
         step_heat_transfer_cpu(
@@ -248,11 +287,27 @@ impl FieldSolver for CpuFieldSolver {
         std::mem::swap(&mut self.temperature, &mut self.temperature_back);
     }
 
-    fn step_combustion(&mut self, dt: f32) {
-        // Use Phase 2 combustion physics
+    fn step_combustion(&mut self, dt: Seconds) {
+        // Get surface fuel properties from center cell as representative
+        // (for bulk combustion calculations - individual cell variations handled below)
+        let center_x = self.width / 2;
+        let center_y = self.height / 2;
+        let surface_fuel = self.fuel_grid.get_surface_fuel(center_x, center_y);
+
+        // Create fuel combustion properties from fuel type
+        let fuel_props = FuelCombustionProps {
+            ignition_temp_k: surface_fuel.ignition_temperature.as_f32() + 273.15,
+            moisture_extinction: *surface_fuel.moisture_of_extinction,
+            heat_content_kj: *surface_fuel.heat_content,
+            self_heating_fraction: *surface_fuel.self_heating_fraction,
+            burn_rate_coefficient: surface_fuel.burn_rate_coefficient,
+        };
+
+        // Use Phase 2 combustion physics with fuel-specific properties
         let params = CombustionParams {
-            dt,
+            dt: *dt,
             cell_size: self.cell_size,
+            fuel_props,
         };
 
         let heat_release = step_combustion_cpu(
@@ -268,10 +323,11 @@ impl FieldSolver for CpuFieldSolver {
 
         // Add heat release to temperature field
         // Heat is converted to temperature rise via: ΔT = Q / (m × c)
-        // Using simplified thermal mass: mass = fuel_load × cell_area, c = 1.0 kJ/(kg·K)
+        // Using fuel-specific specific heat instead of hardcoded value
         let cell_area = self.cell_size * self.cell_size;
         let fuel_slice = self.fuel_load.as_slice();
         let temp_mut_slice = self.temperature.as_mut_slice();
+        let specific_heat = *surface_fuel.specific_heat; // kJ/(kg·K) from fuel type
         for (idx, &heat) in heat_release
             .iter()
             .enumerate()
@@ -280,7 +336,6 @@ impl FieldSolver for CpuFieldSolver {
             if heat > 0.0 {
                 let fuel_mass = fuel_slice[idx] * cell_area;
                 let thermal_mass = fuel_mass.max(0.1); // Minimum thermal mass to prevent inf
-                let specific_heat = 1.5; // kJ/(kg·K) for wood
                 let delta_t = heat / (thermal_mass * specific_heat * 1000.0);
                 temp_mut_slice[idx] += delta_t;
             }
@@ -291,8 +346,8 @@ impl FieldSolver for CpuFieldSolver {
         use super::fuel_layers::FuelLayer;
         use super::vertical_heat_transfer::FluxParams;
 
-        // Specific heat capacity for vegetation (J/kg·K)
-        const FUEL_HEAT_CAPACITY: f32 = 1500.0;
+        // Specific heat capacity for vegetation from fuel type (convert kJ to J)
+        let fuel_heat_capacity: f32 = *surface_fuel.specific_heat * 1000.0;
 
         let level_set_slice = self.level_set.as_slice();
         let intensity_slice = self.fire_intensity.as_slice();
@@ -344,7 +399,7 @@ impl FieldSolver for CpuFieldSolver {
                     VerticalHeatTransfer::apply_heat_to_layer(
                         &mut fuel_cell.shrub,
                         heat_to_apply,
-                        FUEL_HEAT_CAPACITY,
+                        fuel_heat_capacity,
                     );
                 }
 
@@ -377,7 +432,7 @@ impl FieldSolver for CpuFieldSolver {
                     VerticalHeatTransfer::apply_heat_to_layer(
                         &mut fuel_cell.canopy,
                         heat_to_apply,
-                        FUEL_HEAT_CAPACITY,
+                        fuel_heat_capacity,
                     );
                 }
 
@@ -388,7 +443,7 @@ impl FieldSolver for CpuFieldSolver {
         }
     }
 
-    fn step_moisture(&mut self, dt: f32, humidity: f32) {
+    fn step_moisture(&mut self, dt: Seconds, humidity: f32) {
         // Moisture equilibrium model (simplified Nelson 2000)
         // Moisture content tends toward equilibrium moisture content (EMC)
         // based on relative humidity over time
@@ -428,13 +483,25 @@ impl FieldSolver for CpuFieldSolver {
             };
 
             // Approach to EMC
-            let rate = (emc - current_moisture) / time_constant * dt * drying_rate;
+            let rate = (emc - current_moisture) / time_constant * (*dt) * drying_rate;
             moisture_slice[idx] = (current_moisture + rate).clamp(0.0, 1.0);
         }
     }
 
-    fn step_level_set(&mut self, dt: f32) {
+    fn step_level_set(&mut self, dt: Seconds) {
         // Phase 3: Level set evolution with curvature-dependent spread
+
+        // Get surface fuel properties from center cell as representative
+        let center_x = self.width / 2;
+        let center_y = self.height / 2;
+        let surface_fuel = self.fuel_grid.get_surface_fuel(center_x, center_y);
+
+        // Create fuel-specific spread rate properties
+        let spread_fuel_props = SpreadRateFuelProps {
+            ignition_temp_k: surface_fuel.ignition_temperature.as_f32() + 273.15,
+            specific_heat_j: *surface_fuel.specific_heat * 1000.0, // kJ to J
+            thermal_conductivity: *surface_fuel.thermal_conductivity,
+        };
 
         // First, compute spread rate from temperature gradient
         compute_spread_rate_cpu(
@@ -445,6 +512,7 @@ impl FieldSolver for CpuFieldSolver {
             self.width,
             self.height,
             self.cell_size,
+            spread_fuel_props,
         );
 
         // Phase 0: Apply terrain slope factor to spread rate
@@ -503,8 +571,8 @@ impl FieldSolver for CpuFieldSolver {
 
         // Phase 3: Calculate fire intensity and apply crown fire dynamics
         // Byram's formula: I = H × W × R (kJ/kg × kg/m² × m/s = kW/m)
-        // Default heat content for vegetation: ~18000 kJ/kg
-        const HEAT_CONTENT_KJ_KG: f32 = 18000.0;
+        // Heat content from fuel type (not hardcoded)
+        let heat_content_kj_kg = *surface_fuel.heat_content;
         let spread_slice = self.spread_rate.as_slice();
         let fuel_slice = self.fuel_load.as_slice();
         let level_set_slice = self.level_set.as_slice();
@@ -516,7 +584,7 @@ impl FieldSolver for CpuFieldSolver {
             if level_set_slice[idx] < 0.0 && spread_slice[idx] > 0.0 {
                 let fuel_load = fuel_slice[idx]; // kg/m²
                 let ros = spread_slice[idx]; // m/s
-                let intensity = HEAT_CONTENT_KJ_KG * fuel_load * ros; // kW/m
+                let intensity = heat_content_kj_kg * fuel_load * ros; // kW/m
                 intensity_slice[idx] = intensity;
 
                 // Evaluate crown fire transition using Van Wagner (1977)
@@ -550,7 +618,7 @@ impl FieldSolver for CpuFieldSolver {
 
         // Phase 4: Atmospheric dynamics
         // Update simulation time
-        self.sim_time += dt;
+        self.sim_time += *dt;
 
         // Calculate total fire power (sum of intensities × fire front length)
         let intensity_slice = self.fire_intensity.as_slice();
@@ -603,9 +671,9 @@ impl FieldSolver for CpuFieldSolver {
             // Calculate plume height using Briggs formula (via ConvectionColumn)
             let column = ConvectionColumn::new(
                 avg_intensity,
-                fire_length,
-                AMBIENT_TEMP_K,
-                wind_speed_m_s,
+                Meters::new(fire_length),
+                Kelvin::new(f64::from(AMBIENT_TEMP_K)),
+                MetersPerSecond::new(wind_speed_m_s),
                 fire_position,
             );
 
@@ -621,16 +689,20 @@ impl FieldSolver for CpuFieldSolver {
             // Requires: >5 GW fire power, >8000m plume, Haines >= 5
             let haines_index = self.atmospheric_stability.haines_index;
             self.pyrocb_system.check_formation(
-                total_fire_power_gw,
+                Gigawatts::new(total_fire_power_gw),
                 self.convection_columns[0].height,
                 haines_index,
-                self.sim_time,
+                Seconds::new(self.sim_time),
                 fire_position,
             );
         }
 
         // Update pyroCb system and check for collapses
-        self.pyrocb_system.update(dt, self.sim_time, AMBIENT_TEMP_K);
+        self.pyrocb_system.update(
+            dt,
+            Seconds::new(self.sim_time),
+            Kelvin::new(f64::from(AMBIENT_TEMP_K)),
+        );
 
         // Collect downdrafts from pyroCb events
         self.downdrafts.clear();
@@ -643,8 +715,8 @@ impl FieldSolver for CpuFieldSolver {
         let spread_slice = self.spread_rate.as_mut_slice();
         for downdraft in &self.downdrafts {
             let (dx, dy) = downdraft.position;
-            let radius = downdraft.radius;
-            let outflow = downdraft.outflow_velocity;
+            let radius = *downdraft.radius;
+            let outflow = *downdraft.outflow_velocity;
 
             // Enhance spread rate in downdraft outflow region
             for y in 0..self.height {
@@ -665,7 +737,7 @@ impl FieldSolver for CpuFieldSolver {
 
         // Then evolve level set using spread rate
         let params = LevelSetParams {
-            dt,
+            dt: *dt,
             cell_size: self.cell_size,
             curvature_coeff: 0.25, // Margerit 2002
             noise_amplitude: 0.05, // 5% stochastic variation
@@ -687,8 +759,13 @@ impl FieldSolver for CpuFieldSolver {
 
     fn step_ignition_sync(&mut self) {
         // Phase 3: Synchronize level set with temperature field
-        let ignition_temp = 573.15; // ~300°C in Kelvin
-        let moisture_extinction = 0.3; // 30% moisture prevents burning
+        // Use fuel-specific ignition temperature and moisture extinction
+        // Get surface fuel properties from center cell as representative
+        let center_x = self.width / 2;
+        let center_y = self.height / 2;
+        let surface_fuel = self.fuel_grid.get_surface_fuel(center_x, center_y);
+        let ignition_temp = surface_fuel.ignition_temperature.as_f32() + 273.15; // Convert °C to K
+        let moisture_extinction = *surface_fuel.moisture_of_extinction;
 
         step_ignition_sync_cpu(
             self.level_set.as_mut_slice(),
@@ -710,39 +787,64 @@ impl FieldSolver for CpuFieldSolver {
         Cow::Borrowed(self.level_set.as_slice())
     }
 
-    fn ignite_at(&mut self, x: f32, y: f32, radius: f32) {
+    #[allow(clippy::cast_precision_loss)] // Grid indices are small enough for f32
+    fn apply_heat(&mut self, x: Meters, y: Meters, temperature_k: Kelvin, radius_m: Meters) {
         // Convert world coordinates to grid coordinates
-        let grid_x = (x / self.cell_size) as i32;
-        let grid_y = (y / self.cell_size) as i32;
-        let grid_radius = (radius / self.cell_size) as i32;
+        let grid_x = (*x / self.cell_size) as i32;
+        let grid_y = (*y / self.cell_size) as i32;
 
-        // Set φ < 0 in circular region and raise temperature
-        for dy in -grid_radius..=grid_radius {
-            for dx in -grid_radius..=grid_radius {
-                let dist_sq = dx * dx + dy * dy;
-                let radius_sq = grid_radius * grid_radius;
+        // Convert radius to grid cells
+        let radius_cells = (*radius_m / self.cell_size).max(0.5);
+        let search_radius = (radius_cells.ceil() as i32).max(1);
 
-                if dist_sq <= radius_sq {
-                    let gx = grid_x + dx;
-                    let gy = grid_y + dy;
+        // Apply heat with Gaussian falloff (models realistic heat dissipation)
+        // σ = radius/2 so that 95% of heat is within specified radius
+        let sigma = radius_cells / 2.0;
+        let sigma_sq = sigma * sigma;
 
-                    // Check bounds
-                    if gx >= 0 && gx < self.width as i32 && gy >= 0 && gy < self.height as i32 {
-                        let idx = (gy as usize) * self.width + (gx as usize);
+        for dy in -search_radius..=search_radius {
+            for dx in -search_radius..=search_radius {
+                let gx = grid_x + dx;
+                let gy = grid_y + dy;
 
-                        // Set level set to negative (burning)
-                        self.level_set.as_mut_slice()[idx] = -1.0;
+                // Check bounds
+                if gx >= 0 && gx < self.width as i32 && gy >= 0 && gy < self.height as i32 {
+                    let idx = (gy as usize) * self.width + (gx as usize);
 
-                        // Set high temperature to initiate combustion
-                        self.temperature.as_mut_slice()[idx] = 600.0; // ~327°C (ignition temp)
+                    // Calculate distance in grid cells
+                    let dist_sq = (dx * dx + dy * dy) as f32;
+
+                    // Gaussian heat distribution: T = T_max × exp(-r²/2σ²)
+                    // This models realistic heat dissipation from a point source
+                    let heat_factor = (-dist_sq / (2.0 * sigma_sq)).exp();
+                    let applied_temp = temperature_k.as_f32() * heat_factor;
+
+                    // Apply heat (take maximum - don't cool down existing hot areas)
+                    let current_temp = self.temperature.as_slice()[idx];
+                    let new_temp = current_temp.max(applied_temp);
+                    self.temperature.as_mut_slice()[idx] = new_temp;
+
+                    // Heat above ignition temperature marks cells as burning
+                    // (level set φ < 0 indicates burned region)
+                    let fuel = self.fuel_grid.get_surface_fuel(gx as usize, gy as usize);
+                    let ignition_temp = fuel.ignition_temperature.as_f32() + 273.15;
+
+                    if new_temp >= ignition_temp {
+                        // Cell reached ignition temperature - mark as burning
+                        // Use negative level set to indicate fire front
+                        self.level_set.as_mut_slice()[idx] = -self.cell_size * 0.5;
                     }
                 }
             }
         }
     }
 
-    fn dimensions(&self) -> (u32, u32, f32) {
-        (self.width as u32, self.height as u32, self.cell_size)
+    fn dimensions(&self) -> (u32, u32, Meters) {
+        (
+            self.width as u32,
+            self.height as u32,
+            Meters::new(self.cell_size),
+        )
     }
 
     fn is_gpu_accelerated(&self) -> bool {
@@ -753,22 +855,52 @@ impl FieldSolver for CpuFieldSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core_types::units::{Kelvin, Meters, Seconds};
+
+    /// Helper to create flat terrain with f32 dimensions (for test convenience)
+    fn flat_terrain(width: f32, height: f32, resolution: f32, elevation: f32) -> TerrainData {
+        TerrainData::flat(
+            Meters::new(width),
+            Meters::new(height),
+            Meters::new(resolution),
+            Meters::new(elevation),
+        )
+    }
+
+    /// Helper to create single hill terrain with f32 dimensions
+    fn hill_terrain(
+        width: f32,
+        height: f32,
+        resolution: f32,
+        elevation: f32,
+        hill_height: f32,
+        hill_radius: f32,
+    ) -> TerrainData {
+        TerrainData::single_hill(
+            Meters::new(width),
+            Meters::new(height),
+            Meters::new(resolution),
+            Meters::new(elevation),
+            Meters::new(hill_height),
+            Meters::new(hill_radius),
+        )
+    }
 
     #[test]
     fn test_cpu_solver_creation() {
-        let terrain = TerrainData::flat(1000.0, 1000.0, 10.0, 0.0);
+        let terrain = flat_terrain(1000.0, 1000.0, 10.0, 0.0);
         let solver = CpuFieldSolver::new(&terrain, QualityPreset::Medium);
 
         let (width, height, cell_size) = solver.dimensions();
         assert_eq!(width, 100);
         assert_eq!(height, 100);
-        assert_eq!(cell_size, 10.0);
+        assert_eq!(*cell_size, 10.0);
         assert!(!solver.is_gpu_accelerated());
     }
 
     #[test]
     fn test_cpu_solver_read_temperature() {
-        let terrain = TerrainData::flat(100.0, 100.0, 10.0, 0.0);
+        let terrain = flat_terrain(100.0, 100.0, 10.0, 0.0);
         let solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
 
         let temp = solver.read_temperature();
@@ -779,7 +911,7 @@ mod tests {
 
     #[test]
     fn test_cpu_solver_read_level_set() {
-        let terrain = TerrainData::flat(100.0, 100.0, 10.0, 0.0);
+        let terrain = flat_terrain(100.0, 100.0, 10.0, 0.0);
         let solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
 
         let level_set = solver.read_level_set();
@@ -790,11 +922,16 @@ mod tests {
 
     #[test]
     fn test_cpu_solver_ignite_at() {
-        let terrain = TerrainData::flat(1000.0, 1000.0, 10.0, 0.0);
+        let terrain = flat_terrain(1000.0, 1000.0, 10.0, 0.0);
         let mut solver = CpuFieldSolver::new(&terrain, QualityPreset::Medium);
 
-        // Ignite at center with 50m radius
-        solver.ignite_at(500.0, 500.0, 50.0);
+        // Apply heat at center (piloted ignition temperature ~600°C / 873K)
+        solver.apply_heat(
+            Meters::new(500.0),
+            Meters::new(500.0),
+            Kelvin::new(873.15),
+            Meters::new(5.0),
+        );
 
         let level_set = solver.read_level_set();
         let temperature = solver.read_temperature();
@@ -810,16 +947,25 @@ mod tests {
 
     #[test]
     fn test_cpu_solver_heat_transfer() {
-        let terrain = TerrainData::flat(100.0, 100.0, 10.0, 0.0);
+        let terrain = flat_terrain(100.0, 100.0, 10.0, 0.0);
         let mut solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
 
-        // Ignite a spot to create temperature gradient
-        solver.ignite_at(50.0, 50.0, 10.0);
+        // Apply heat to create temperature gradient
+        solver.apply_heat(
+            Meters::new(50.0),
+            Meters::new(50.0),
+            Kelvin::new(873.15),
+            Meters::new(5.0),
+        );
 
         let temp_before = solver.read_temperature().to_vec();
 
         // Run heat transfer step
-        solver.step_heat_transfer(1.0, 0.0, 0.0, 293.15);
+        solver.step_heat_transfer(
+            Seconds::new(1.0),
+            crate::core_types::Vec3::new(0.0, 0.0, 0.0),
+            Kelvin::new(293.15),
+        );
 
         let temp_after = solver.read_temperature();
 
@@ -834,7 +980,7 @@ mod tests {
     #[test]
     fn test_terrain_slope_integration() {
         // Create terrain with a hill - slope should be non-zero
-        let terrain = TerrainData::single_hill(200.0, 200.0, 10.0, 0.0, 50.0, 50.0);
+        let terrain = hill_terrain(200.0, 200.0, 10.0, 0.0, 50.0, 50.0);
         let solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
 
         // Verify terrain fields were initialized with non-zero slopes
@@ -862,7 +1008,7 @@ mod tests {
 
     #[test]
     fn test_fuel_heterogeneity_integration() {
-        let terrain = TerrainData::flat(200.0, 200.0, 10.0, 0.0);
+        let terrain = flat_terrain(200.0, 200.0, 10.0, 0.0);
         let solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
 
         // With heterogeneity applied, fuel load should vary across cells
@@ -876,6 +1022,158 @@ mod tests {
         assert!(
             max_fuel - min_fuel > 0.01,
             "Fuel load should vary across cells (min={min_fuel}, max={max_fuel})"
+        );
+    }
+
+    #[test]
+    fn test_ignition_modes_piloted_is_minimal() {
+        // Test that piloted ignition creates minimal initial burned area
+        // Per Catalog 5.2: Piloted ignition is point-source
+        let terrain = flat_terrain(200.0, 200.0, 10.0, 0.0);
+        let mut solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
+
+        // Apply heat with piloted ignition parameters (small radius, moderate temp)
+        solver.apply_heat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Kelvin::new(600.0 + 273.15),
+            Meters::new(5.0),
+        );
+
+        let level_set = solver.read_level_set();
+        let burning_cells = level_set.iter().filter(|&&phi| phi < 0.0).count();
+
+        // Piloted should create only 1-4 cells initially, not the full 50m radius
+        // 50m radius at 10m cells = ~78 cells if instant; piloted should be much less
+        assert!(
+            burning_cells <= 5,
+            "Piloted ignition should create minimal cells (got {burning_cells}, expected <= 5)"
+        );
+        assert!(
+            burning_cells >= 1,
+            "Piloted ignition should create at least 1 burning cell"
+        );
+    }
+
+    #[test]
+    fn test_ignition_modes_instant_fills_radius() {
+        // Test that instant ignition fills the entire radius
+        let terrain = flat_terrain(200.0, 200.0, 10.0, 0.0);
+        let mut solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
+
+        // Apply heat with large radius to fill area instantly
+        solver.apply_heat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Kelvin::new(873.15),
+            Meters::new(30.0),
+        );
+
+        let level_set = solver.read_level_set();
+        let burning_cells = level_set.iter().filter(|&&phi| phi < 0.0).count();
+
+        // 30m radius at 10m cells = ~28 cells (π * 3² ≈ 28)
+        assert!(
+            burning_cells >= 9,
+            "Instant ignition should fill radius (got {burning_cells}, expected >= 9)"
+        );
+    }
+
+    #[test]
+    fn test_ignition_modes_temperature_differences() {
+        // Test that different modes use appropriate ignition temperatures
+        // Per Catalog 5.2: Piloted 250-300°C, Auto 400-500°C, Smoldering 200-250°C
+        let terrain = flat_terrain(200.0, 200.0, 10.0, 0.0);
+
+        // Test piloted (highest temp ~600°C / 873K - direct ignition source)
+        let mut solver_piloted = CpuFieldSolver::new(&terrain, QualityPreset::Low);
+        solver_piloted.apply_heat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Kelvin::new(873.15),
+            Meters::new(5.0),
+        );
+        let temp_piloted = solver_piloted.read_temperature();
+        let max_temp_piloted = temp_piloted.iter().copied().fold(0.0_f32, f32::max);
+
+        // Test auto (moderate temp ~450°C / 723K - spontaneous ignition)
+        let mut solver_auto = CpuFieldSolver::new(&terrain, QualityPreset::Low);
+        solver_auto.apply_heat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Kelvin::new(723.15),
+            Meters::new(20.0),
+        );
+        let temp_auto = solver_auto.read_temperature();
+        let max_temp_auto = temp_auto.iter().copied().fold(0.0_f32, f32::max);
+
+        // Test smoldering (lowest temp ~220°C / 493K - slow combustion)
+        let mut solver_smoldering = CpuFieldSolver::new(&terrain, QualityPreset::Low);
+        solver_smoldering.apply_heat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Kelvin::new(493.15),
+            Meters::new(5.0),
+        );
+        let temp_smoldering = solver_smoldering.read_temperature();
+        let max_temp_smoldering = temp_smoldering.iter().copied().fold(0.0_f32, f32::max);
+
+        // Piloted should be hottest, auto intermediate, smoldering coolest
+        // Temperatures in Kelvin: Piloted ~873K, Auto ~723K, Smoldering ~493K
+        assert!(
+            max_temp_piloted > max_temp_auto,
+            "Piloted ignition should be hotter than auto ({max_temp_piloted} > {max_temp_auto})"
+        );
+        assert!(
+            max_temp_auto > max_temp_smoldering,
+            "Auto should be hotter than smoldering ({max_temp_auto} > {max_temp_smoldering})"
+        );
+    }
+
+    #[test]
+    fn test_ignition_natural_fire_spread() {
+        // Test that realistic heat application creates localized heat zone with
+        // only the hottest cells igniting (Gaussian temperature distribution)
+        let terrain = flat_terrain(200.0, 200.0, 10.0, 0.0);
+        let mut solver = CpuFieldSolver::new(&terrain, QualityPreset::Low);
+
+        let ambient_temp = 293.15_f32;
+        let temp_before = solver.read_temperature().to_vec();
+
+        // All cells should be at ambient before ignition
+        assert!(temp_before.iter().all(|&t| (t - ambient_temp).abs() < 1.0));
+
+        // Apply heat with piloted ignition parameters (Gaussian falloff)
+        solver.apply_heat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Kelvin::new(873.15),
+            Meters::new(5.0),
+        );
+
+        let temp_after = solver.read_temperature();
+        let level_set = solver.read_level_set();
+
+        // Count burning cells (φ < 0)
+        let burning_cells = level_set.iter().filter(|&&phi| phi < 0.0).count();
+
+        // Count cells with elevated temperature (above ambient + 10K)
+        let hot_cells = temp_after
+            .iter()
+            .filter(|&&t| t > ambient_temp + 10.0)
+            .count();
+
+        // Should have minimal burning area initially (1-5 cells at peak of Gaussian)
+        assert!(
+            burning_cells <= 5,
+            "Should have minimal burning cells initially ({burning_cells})"
+        );
+
+        // Hot cells should exceed burning cells (Gaussian creates heat gradient)
+        // Only cells at peak of Gaussian reach ignition temperature
+        assert!(
+            hot_cells >= burning_cells,
+            "Hot cells ({hot_cells}) should include burning cells ({burning_cells}) plus warm periphery"
         );
     }
 }

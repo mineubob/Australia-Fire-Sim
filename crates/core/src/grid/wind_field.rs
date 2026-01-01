@@ -1016,10 +1016,16 @@ impl WindField {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core_types::units::Meters;
 
     #[test]
     fn test_wind_field_creation() {
-        let terrain = TerrainData::flat(1000.0, 1000.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(1000.0),
+            Meters::new(1000.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let config = WindFieldConfig {
             nx: 10,
             ny: 10,
@@ -1035,7 +1041,12 @@ mod tests {
 
     #[test]
     fn test_logarithmic_profile() {
-        let terrain = TerrainData::flat(1000.0, 1000.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(1000.0),
+            Meters::new(1000.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let config = WindFieldConfig {
             nx: 10,
             ny: 10,
@@ -1065,7 +1076,14 @@ mod tests {
 
     #[test]
     fn test_terrain_speedup() {
-        let terrain = TerrainData::single_hill(1000.0, 1000.0, 20.0, 0.0, 100.0, 200.0);
+        let terrain = TerrainData::single_hill(
+            Meters::new(1000.0),
+            Meters::new(1000.0),
+            Meters::new(20.0),
+            Meters::new(0.0),
+            Meters::new(100.0),
+            Meters::new(200.0),
+        );
         let config = WindFieldConfig {
             nx: 20,
             ny: 20,
@@ -1096,7 +1114,12 @@ mod tests {
 
     #[test]
     fn test_plume_updraft() {
-        let terrain = TerrainData::flat(500.0, 500.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(500.0),
+            Meters::new(500.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let config = WindFieldConfig {
             nx: 10,
             ny: 10,
@@ -1139,7 +1162,12 @@ mod tests {
 
     #[test]
     fn test_mass_conservation() {
-        let terrain = TerrainData::flat(500.0, 500.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(500.0),
+            Meters::new(500.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let config = WindFieldConfig {
             nx: 10,
             ny: 10,
