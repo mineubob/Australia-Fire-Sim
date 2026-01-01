@@ -21,16 +21,22 @@
 //! ```rust
 //! use fire_sim_core::simulation::FieldSimulation;
 //! use fire_sim_core::solver::QualityPreset;
+//! use fire_sim_core::core_types::Meters;
 //! use fire_sim_core::{TerrainData, WeatherSystem};
 //! use fire_sim_core::Vec3;
 //!
 //! // Create field-based simulation (auto-selects GPU or CPU)
-//! let terrain = TerrainData::flat(1000.0, 1000.0, 10.0, 0.0);
+//! let terrain = TerrainData::flat(
+//!     Meters::new(1000.0),
+//!     Meters::new(1000.0),
+//!     Meters::new(10.0),
+//!     Meters::new(0.0),
+//! );
 //! let weather = WeatherSystem::new(25.0, 0.5, 10.0, 0.0, 0.0);
 //! let mut sim = FieldSimulation::new(&terrain, QualityPreset::High, weather);
 //!
-//! // Ignite fire
-//! sim.ignite_at(Vec3::new(500.0, 500.0, 0.0), 10.0);
+//! // Apply heat to ignite fire (piloted ignition: ~600°C / 873K, 5m radius)
+//! sim.apply_heat(Vec3::new(500.0, 500.0, 0.0), 873.15, 5.0);
 //!
 //! // Run simulation (includes ember generation and spot fires)
 //! for _ in 0..100 {

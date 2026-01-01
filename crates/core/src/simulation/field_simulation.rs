@@ -4,6 +4,7 @@
 //! for GPU/CPU-accelerated field-based fire physics. This replaces the old element-based system.
 
 use crate::core_types::ember::Ember;
+use crate::core_types::units::{Kelvin, Meters, Seconds};
 use crate::core_types::vec3::Vec3;
 use crate::core_types::weather::WeatherSystem;
 use crate::solver::{
@@ -60,7 +61,8 @@ impl FieldSimulation {
         let solver = create_field_solver(terrain, quality);
 
         // Get grid dimensions
-        let (width, height, cell_size) = solver.dimensions();
+        let (width, height, cell_size_meters) = solver.dimensions();
+        let cell_size = *cell_size_meters;
 
         info!(
             "Field simulation initialized: {}x{} grid, cell_size={:.2}m, GPU={}",
@@ -95,21 +97,21 @@ impl FieldSimulation {
 
         // 1. Update weather
         self.weather.update(dt);
-        let wind_vector = self.weather.wind_vector();
-        let ambient_temp = self.weather.temperature.to_kelvin().as_f32();
+        let wind = self.weather.wind_vector();
+        let ambient_temp = self.weather.temperature.to_kelvin();
         let humidity = self.weather.humidity.value();
 
         debug!(
             "Simulation update: t={:.2}s, dt={:.4}s, wind=({:.2}, {:.2}), T={:.1}K",
-            self.simulation_time, dt, wind_vector.x, wind_vector.y, ambient_temp
+            self.simulation_time, dt, wind.x, wind.y, *ambient_temp
         );
 
         // 2. GPU/CPU compute passes
         self.solver
-            .step_heat_transfer(dt, wind_vector.x, wind_vector.y, ambient_temp);
-        self.solver.step_combustion(dt);
-        self.solver.step_moisture(dt, humidity);
-        self.solver.step_level_set(dt);
+            .step_heat_transfer(Seconds::new(dt), wind, ambient_temp);
+        self.solver.step_combustion(Seconds::new(dt));
+        self.solver.step_moisture(Seconds::new(dt), humidity);
+        self.solver.step_level_set(Seconds::new(dt));
         self.solver.step_ignition_sync();
 
         // 3. CPU-side sparse updates
@@ -122,18 +124,45 @@ impl FieldSimulation {
         self.update_statistics();
     }
 
-    /// Ignite fire at a specific position
+    /// Apply heat to a location for realistic fire ignition.
+    ///
+    /// **PRIMARY METHOD** for starting fires realistically. Heat accumulates
+    /// in fuel, and ignition occurs naturally when temperature thresholds are reached.
     ///
     /// # Arguments
     ///
-    /// * `position` - World position (x, y, z) in meters
-    /// * `radius` - Ignition radius in meters
-    pub fn ignite_at(&mut self, position: Vec3, radius: f32) {
-        info!(
-            "Igniting fire at ({:.2}, {:.2}) with radius {:.2}m",
-            position.x, position.y, radius
+    /// * `position` - 3D position (x, y, z) in meters. Z is ignored (2D simulation).
+    /// * `temperature_celsius` - Target temperature in Celsius to apply
+    /// * `radius_meters` - Radius in meters over which to apply heat (Gaussian falloff)
+    ///
+    /// # Use Cases
+    ///
+    /// - **Drip torch / backburning**: Apply 600-800°C repeatedly along a fire line
+    /// - **Match ignition**: Single 600°C application at a point (~0.1m radius)
+    /// - **Radiant heating**: Apply 400-500°C over larger area to test autoignition
+    /// - **Failed ignition testing**: Apply heat to wet fuel and watch it fail to ignite
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use fire_sim_core::simulation::FieldSimulation;
+    /// # use nalgebra::Vector3;
+    /// # fn example(sim: &mut FieldSimulation) {
+    /// // Drip torch backburn operation
+    /// for i in 0..20 {
+    ///     let x = 50.0 + i as f32 * 1.5;
+    ///     sim.apply_heat(Vector3::new(x, 100.0, 0.0), 650.0, 0.3);
+    /// }
+    /// # }
+    /// ```
+    pub fn apply_heat(&mut self, position: Vec3, temperature_celsius: f32, radius_meters: f32) {
+        let temp_kelvin = Kelvin::new(f64::from(temperature_celsius + 273.15));
+        self.solver.apply_heat(
+            Meters::new(position.x),
+            Meters::new(position.y),
+            temp_kelvin,
+            Meters::new(radius_meters),
         );
-        self.solver.ignite_at(position.x, position.y, radius);
     }
 
     /// Get the current fire front for visualization
@@ -191,6 +220,173 @@ impl FieldSimulation {
         self.embers.len() as u32
     }
 
+    // ====== Point Query Methods (for game engine polling) ======
+
+    /// Convert world position to grid cell index
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X position in meters
+    /// * `y` - Y position in meters
+    ///
+    /// # Returns
+    ///
+    /// Grid index if position is within bounds, `None` otherwise
+    #[inline]
+    fn world_to_index(&self, x: f32, y: f32) -> Option<usize> {
+        if x < 0.0 || y < 0.0 {
+            return None;
+        }
+        let grid_x = (x / self.cell_size).floor() as usize;
+        let grid_y = (y / self.cell_size).floor() as usize;
+
+        if grid_x >= self.width as usize || grid_y >= self.height as usize {
+            return None;
+        }
+
+        Some(grid_y * (self.width as usize) + grid_x)
+    }
+
+    /// Query temperature at a specific world position (for game engine tree sync)
+    ///
+    /// Returns the temperature in Celsius at the specified position.
+    /// Game objects can poll this to determine when to ignite/update their visual state.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X position in meters
+    /// * `y` - Y position in meters
+    ///
+    /// # Returns
+    ///
+    /// Temperature in Celsius, or ambient temperature if position is out of bounds
+    pub fn temperature_at(&self, x: f32, y: f32) -> f32 {
+        let temp_field = self.solver.read_temperature();
+
+        if let Some(idx) = self.world_to_index(x, y) {
+            if idx < temp_field.len() {
+                // Convert from Kelvin to Celsius
+                return temp_field[idx] - 273.15;
+            }
+        }
+
+        // Return ambient temperature if out of bounds
+        self.weather.temperature.to_kelvin().as_f32() - 273.15
+    }
+
+    /// Query level set value at a specific world position
+    ///
+    /// Returns the signed distance from the fire front:
+    /// - φ < 0: Inside burned area
+    /// - φ = 0: At fire front
+    /// - φ > 0: Unburned fuel
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X position in meters
+    /// * `y` - Y position in meters
+    ///
+    /// # Returns
+    ///
+    /// Level set value (φ), or positive value if out of bounds (considered unburned)
+    pub fn level_set_at(&self, x: f32, y: f32) -> f32 {
+        let phi_field = self.solver.read_level_set();
+
+        if let Some(idx) = self.world_to_index(x, y) {
+            if idx < phi_field.len() {
+                return phi_field[idx];
+            }
+        }
+
+        // Return positive (unburned) if out of bounds
+        1.0
+    }
+
+    /// Check if a position is within the burned area
+    ///
+    /// This is the primary method for game objects to check if they're in the fire zone.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X position in meters
+    /// * `y` - Y position in meters
+    ///
+    /// # Returns
+    ///
+    /// `true` if the position is in a burned/burning area (φ < 0)
+    pub fn is_burned(&self, x: f32, y: f32) -> bool {
+        self.level_set_at(x, y) < 0.0
+    }
+
+    /// Check if a position is on or near the active fire front
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X position in meters
+    /// * `y` - Y position in meters
+    /// * `threshold` - Distance threshold for "near" the front (in cell units)
+    ///
+    /// # Returns
+    ///
+    /// `true` if the position is near the fire front (|φ| < threshold × `cell_size`)
+    pub fn is_near_fire_front(&self, x: f32, y: f32, threshold: f32) -> bool {
+        let phi = self.level_set_at(x, y);
+        phi.abs() < threshold * self.cell_size
+    }
+
+    /// Batch query temperatures at multiple positions (for efficient game sync)
+    ///
+    /// This is more efficient than calling `temperature_at()` for each tree individually.
+    ///
+    /// # Arguments
+    ///
+    /// * `positions` - Slice of (x, y) position tuples
+    ///
+    /// # Returns
+    ///
+    /// Vector of temperatures in Celsius, one per input position
+    pub fn temperatures_at(&self, positions: &[(f32, f32)]) -> Vec<f32> {
+        let temp_field = self.solver.read_temperature();
+        let ambient = self.weather.temperature.to_kelvin().as_f32() - 273.15;
+
+        positions
+            .iter()
+            .map(|&(x, y)| {
+                if let Some(idx) = self.world_to_index(x, y) {
+                    if idx < temp_field.len() {
+                        return temp_field[idx] - 273.15;
+                    }
+                }
+                ambient
+            })
+            .collect()
+    }
+
+    /// Batch query burn states at multiple positions (for efficient game sync)
+    ///
+    /// # Arguments
+    ///
+    /// * `positions` - Slice of (x, y) position tuples
+    ///
+    /// # Returns
+    ///
+    /// Vector of booleans indicating burned state (true = burned/burning)
+    pub fn burn_states_at(&self, positions: &[(f32, f32)]) -> Vec<bool> {
+        let phi_field = self.solver.read_level_set();
+
+        positions
+            .iter()
+            .map(|&(x, y)| {
+                if let Some(idx) = self.world_to_index(x, y) {
+                    if idx < phi_field.len() {
+                        return phi_field[idx] < 0.0;
+                    }
+                }
+                false
+            })
+            .collect()
+    }
+
     // ====== Private Methods ======
 
     /// Update ember trajectories and spot fire ignition
@@ -206,7 +402,7 @@ impl FieldSimulation {
         let mut spot_fire_positions = Vec::new();
 
         for ember in &mut self.embers {
-            ember.update_physics(wind_vector, ambient_temp, dt);
+            ember.update_physics(wind_vector, ambient_temp, Seconds::new(dt));
 
             // Check for landing and spot fire ignition
             if ember.has_landed() && ember.can_ignite() {
@@ -363,8 +559,13 @@ impl FieldSimulation {
                 pos.x, pos.y
             );
 
-            // Ignite spot fire with 2m radius
-            self.solver.ignite_at(pos.x, pos.y, 2.0);
+            // Ignite spot fire with piloted ignition temperature (~600°C) from ember contact
+            self.solver.apply_heat(
+                Meters::new(pos.x),
+                Meters::new(pos.y),
+                Kelvin::new(873.15),
+                Meters::new(5.0),
+            );
         }
     }
 
@@ -403,9 +604,19 @@ impl FieldSimulation {
 mod tests {
     use super::*;
 
+    /// Helper to create flat terrain with f32 dimensions (for test convenience)
+    fn flat_terrain(width: f32, height: f32, resolution: f32, elevation: f32) -> TerrainData {
+        TerrainData::flat(
+            crate::core_types::units::Meters::new(width),
+            crate::core_types::units::Meters::new(height),
+            crate::core_types::units::Meters::new(resolution),
+            crate::core_types::units::Meters::new(elevation),
+        )
+    }
+
     #[test]
     fn test_field_simulation_creation() {
-        let terrain = TerrainData::flat(100.0, 100.0, 10.0, 0.0);
+        let terrain = flat_terrain(100.0, 100.0, 10.0, 0.0);
         let weather = WeatherSystem::new(25.0, 0.5, 10.0, 0.0, 0.0);
         let sim = FieldSimulation::new(&terrain, QualityPreset::Low, weather);
 
@@ -416,12 +627,17 @@ mod tests {
 
     #[test]
     fn test_field_simulation_ignition() {
-        let terrain = TerrainData::flat(100.0, 100.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let weather = WeatherSystem::new(25.0, 0.5, 10.0, 0.0, 0.0);
         let mut sim = FieldSimulation::new(&terrain, QualityPreset::Low, weather);
 
-        // Ignite at center
-        sim.ignite_at(Vec3::new(50.0, 50.0, 0.0), 5.0);
+        // Apply heat at center with piloted ignition parameters
+        sim.apply_heat(Vec3::new(50.0, 50.0, 0.0), 873.15, 5.0);
 
         // Level set should have some burned cells
         let phi = sim.read_level_set();
@@ -431,12 +647,17 @@ mod tests {
 
     #[test]
     fn test_field_simulation_update() {
-        let terrain = TerrainData::flat(100.0, 100.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let weather = WeatherSystem::new(25.0, 0.5, 10.0, 0.0, 0.0);
         let mut sim = FieldSimulation::new(&terrain, QualityPreset::Low, weather);
 
-        // Ignite and step forward
-        sim.ignite_at(Vec3::new(50.0, 50.0, 0.0), 5.0);
+        // Apply heat and step forward
+        sim.apply_heat(Vec3::new(50.0, 50.0, 0.0), 873.15, 5.0);
         sim.update(0.1);
 
         assert!(sim.simulation_time() > 0.0);
@@ -446,14 +667,19 @@ mod tests {
 
     #[test]
     fn test_field_simulation_wind_affects_spread() {
-        let terrain = TerrainData::flat(200.0, 200.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(200.0),
+            Meters::new(200.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         // Wind in +x direction (eastward)
         let weather = WeatherSystem::new(25.0, 0.5, 10.0, 0.0, 0.0);
 
         let mut sim = FieldSimulation::new(&terrain, QualityPreset::Medium, weather);
 
-        // Ignite at center
-        sim.ignite_at(Vec3::new(100.0, 100.0, 0.0), 10.0);
+        // Apply heat at center
+        sim.apply_heat(Vec3::new(100.0, 100.0, 0.0), 873.15, 5.0);
 
         // Step simulation multiple times
         for _ in 0..10 {
@@ -466,12 +692,19 @@ mod tests {
 
     #[test]
     fn test_ember_generation_from_fire_front() {
-        let terrain = TerrainData::flat(200.0, 200.0, 10.0, 0.0);
+        use crate::core_types::units::Meters;
+
+        let terrain = TerrainData::flat(
+            Meters::new(200.0),
+            Meters::new(200.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let weather = WeatherSystem::new(25.0, 0.2, 15.0, 0.0, 0.0); // Low moisture, good wind
         let mut sim = FieldSimulation::new(&terrain, QualityPreset::Medium, weather);
 
-        // Ignite fire
-        sim.ignite_at(Vec3::new(100.0, 100.0, 0.0), 10.0);
+        // Apply heat to ignite fire
+        sim.apply_heat(Vec3::new(100.0, 100.0, 0.0), 873.15, 5.0);
 
         // Run simulation to create fire front
         for _ in 0..20 {
@@ -490,9 +723,14 @@ mod tests {
 
     #[test]
     fn test_spot_fire_ignition_from_ember() {
-        use crate::core_types::units::{Celsius, Kilograms};
+        use crate::core_types::units::{Celsius, Kilograms, Meters};
 
-        let terrain = TerrainData::flat(200.0, 200.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(200.0),
+            Meters::new(200.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let weather = WeatherSystem::new(25.0, 0.15, 10.0, 0.0, 0.0); // Low moisture
         let mut sim = FieldSimulation::new(&terrain, QualityPreset::Medium, weather);
 
@@ -529,7 +767,12 @@ mod tests {
     fn test_moisture_prevents_spot_ignition() {
         use crate::core_types::units::{Celsius, Kilograms};
 
-        let terrain = TerrainData::flat(200.0, 200.0, 10.0, 0.0);
+        let terrain = TerrainData::flat(
+            Meters::new(200.0),
+            Meters::new(200.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
         let weather = WeatherSystem::new(25.0, 0.40, 10.0, 0.0, 0.0); // High moisture (40%)
         let mut sim = FieldSimulation::new(&terrain, QualityPreset::Medium, weather);
 
@@ -559,6 +802,85 @@ mod tests {
             sim.burned_area(),
             initial_burned,
             "High moisture should prevent spot fire ignition"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::cast_precision_loss)] // Test uses small loop indices that fit in f32
+    fn test_apply_heat_drip_torch_backburn() {
+        // Demonstrate realistic backburn operation using apply_heat
+        let terrain = TerrainData::flat(
+            Meters::new(200.0),
+            Meters::new(200.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
+        let weather = WeatherSystem::new(30.0, 0.10, 8.0, 0.0, 0.0); // Hot, dry, light wind
+        let mut sim = FieldSimulation::new(&terrain, QualityPreset::Medium, weather);
+
+        // Drip torch operation: apply heat along a line to create backburn
+        // Typical drip torch temperature: 650-700°C, radius ~0.3-0.5m
+        let drip_torch_temp = 670.0; // Celsius
+        let drip_torch_radius = 0.5; // meters
+
+        // Create a firebreak line by applying heat every 1.0 meters for better overlap
+        for i in 0..20 {
+            let x = 50.0 + i as f32 * 1.0;
+            let y = 100.0;
+            sim.apply_heat(Vec3::new(x, y, 0.0), drip_torch_temp, drip_torch_radius);
+        }
+
+        // Update once to let system process the ignitions
+        sim.update(0.1);
+
+        // Check that heat application created burned cells
+        let initial_burned = sim.burned_area();
+        assert!(
+            initial_burned > 0.0,
+            "Drip torch should create burned area after update"
+        );
+
+        // Verify that multiple cells were ignited along the line
+        // (demonstrates practical backburn operation)
+        assert!(
+            initial_burned > 10.0,
+            "Drip torch line should ignite multiple cells"
+        );
+    }
+
+    #[test]
+    fn test_apply_heat_failed_ignition_wet_fuel() {
+        use crate::core_types::units::Meters;
+
+        // Demonstrate that heat application can fail with wet fuel
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
+        let weather = WeatherSystem::new(20.0, 0.6, 5.0, 0.0, 0.0); // Very high moisture
+        let mut sim = FieldSimulation::new(&terrain, QualityPreset::Low, weather);
+
+        // Try to ignite with moderate heat (might not overcome moisture)
+        // Real match temperature ~600°C, but wet fuel needs more energy
+        sim.apply_heat(Vec3::new(50.0, 50.0, 0.0), 400.0, 0.2);
+
+        // Initial ignition might fail or be very limited
+        let burned = sim.burned_area();
+
+        // Step simulation - fire should not spread well in wet conditions
+        for _ in 0..5 {
+            sim.update(1.0);
+        }
+
+        let final_burned = sim.burned_area();
+
+        // With high moisture, fire spread should be minimal or fail
+        // (exact behavior depends on moisture physics)
+        assert!(
+            final_burned - burned < 50.0,
+            "Wet fuel should resist fire spread"
         );
     }
 }

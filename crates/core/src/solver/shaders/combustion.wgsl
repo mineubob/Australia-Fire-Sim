@@ -11,6 +11,15 @@ struct CombustionParams {
     height: u32,
     cell_size: f32,
     dt: f32,
+    // Fuel-specific properties (from Rust Fuel type)
+    ignition_temp_k: f32,       // Ignition temperature in Kelvin
+    moisture_extinction: f32,   // Moisture of extinction (fraction)
+    heat_content_kj: f32,       // Heat content in kJ/kg
+    self_heating_fraction: f32, // Fraction of heat retained (0-1)
+    burn_rate_coefficient: f32, // Base burn rate coefficient
+    _padding1: f32,
+    _padding2: f32,
+    _padding3: f32,
 }
 
 @group(0) @binding(0) var<storage, read> temperature: array<f32>;
@@ -47,12 +56,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
     
-    // Fuel properties (should come from fuel lookup table in full implementation)
-    let ignition_temp = 573.15;  // ~300°C (K)
-    let moisture_extinction = 0.3;  // 30%
-    let heat_content_kj = 20000.0;  // kJ/kg for wood
-    let self_heating_fraction = 0.4;  // 40% retained
-    let base_burn_rate = 0.01;  // kg/(m²·s)
+    // Fuel properties from uniform buffer (passed from Rust Fuel type)
+    let ignition_temp = params.ignition_temp_k;
+    let moisture_extinction = params.moisture_extinction;
+    let heat_content_kj = params.heat_content_kj;
+    let self_heating_fraction = params.self_heating_fraction;
+    let base_burn_rate = params.burn_rate_coefficient;
     
     let cell_area = params.cell_size * params.cell_size;
     let mass = f * cell_area;

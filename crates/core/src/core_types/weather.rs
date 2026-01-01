@@ -4,7 +4,8 @@
 //! Weather parameters are based on real meteorological data and fire science principles.
 
 use crate::core_types::units::{
-    Celsius, CelsiusDelta, Degrees, Hours, KilometersPerHour, MetersPerSecond, Percent,
+    Celsius, CelsiusDelta, Degrees, Hours, KilometersPerHour, MetersPerSecond, Percent, RatePerDay,
+    WattsPerSquareMeter,
 };
 use crate::core_types::vec3::Vec3;
 use serde::{Deserialize, Serialize};
@@ -195,16 +196,16 @@ pub struct WeatherPreset {
     /// Peak intensity affects fuel heating and drying
     /// Typical Australian values: 950-1200 W/m² at solar noon
     /// Influences ignition probability and fire intensity
-    pub summer_solar_max: f32,
+    pub summer_solar_max: WattsPerSquareMeter,
 
     /// Maximum solar radiation in autumn (W/m²)
-    pub autumn_solar_max: f32,
+    pub autumn_solar_max: WattsPerSquareMeter,
 
     /// Maximum solar radiation in winter (W/m²)
-    pub winter_solar_max: f32,
+    pub winter_solar_max: WattsPerSquareMeter,
 
     /// Maximum solar radiation in spring (W/m²)
-    pub spring_solar_max: f32,
+    pub spring_solar_max: WattsPerSquareMeter,
 
     /// Drought factor progression rate in summer (per day)
     ///
@@ -212,30 +213,30 @@ pub struct WeatherPreset {
     /// Negative values: moisture recovery (rainfall period)
     /// Used in Keetch-Byram Drought Index calculation
     /// Typical range: 0.1-0.25 per day in dry periods
-    pub summer_drought_rate: f32,
+    pub summer_drought_rate: RatePerDay,
 
     /// Drought factor progression rate in autumn (per day)
-    pub autumn_drought_rate: f32,
+    pub autumn_drought_rate: RatePerDay,
 
     /// Drought factor progression rate in winter (per day)
     ///
     /// Often negative (moisture recovery during rainy season)
-    pub winter_drought_rate: f32,
+    pub winter_drought_rate: RatePerDay,
 
     /// Drought factor progression rate in spring (per day)
-    pub spring_drought_rate: f32,
+    pub spring_drought_rate: RatePerDay,
 
     /// Drought progression modifier during El Niño (per day)
     ///
     /// Positive: accelerates drought during El Niño
     /// Typical: +0.08 to +0.20 per day
-    pub el_nino_drought_mod: f32,
+    pub el_nino_drought_mod: RatePerDay,
 
     /// Drought progression modifier during La Niña (per day)
     ///
     /// Negative: slows or reverses drought during La Niña
     /// Typical: -0.05 to -0.15 per day
-    pub la_nina_drought_mod: f32,
+    pub la_nina_drought_mod: RatePerDay,
 
     /// Fuel curing percentage in summer (0-100%)
     ///
@@ -305,16 +306,16 @@ impl WeatherPreset {
             heatwave_pressure_drop: 0.0,
             summer_pressure_mod: 0.0,
             winter_pressure_mod: 0.0,
-            summer_solar_max: 1200.0,
-            autumn_solar_max: 1200.0,
-            winter_solar_max: 1200.0,
-            spring_solar_max: 1200.0,
-            summer_drought_rate: 0.3, // Rapid drought buildup
-            autumn_drought_rate: 0.2,
-            winter_drought_rate: 0.0,
-            spring_drought_rate: 0.2,
-            el_nino_drought_mod: 0.0,
-            la_nina_drought_mod: 0.0,
+            summer_solar_max: WattsPerSquareMeter::new(1200.0),
+            autumn_solar_max: WattsPerSquareMeter::new(1200.0),
+            winter_solar_max: WattsPerSquareMeter::new(1200.0),
+            spring_solar_max: WattsPerSquareMeter::new(1200.0),
+            summer_drought_rate: RatePerDay::new(0.3), // Rapid drought buildup
+            autumn_drought_rate: RatePerDay::new(0.2),
+            winter_drought_rate: RatePerDay::new(0.0),
+            spring_drought_rate: RatePerDay::new(0.2),
+            el_nino_drought_mod: RatePerDay::new(0.0),
+            la_nina_drought_mod: RatePerDay::new(0.0),
             summer_curing: Percent::new(100.0),
             autumn_curing: Percent::new(100.0),
             winter_curing: Percent::new(100.0),
@@ -358,16 +359,16 @@ impl WeatherPreset {
             heatwave_pressure_drop: 8.0,
             summer_pressure_mod: -2.0,
             winter_pressure_mod: 3.0,
-            summer_solar_max: 1000.0,
-            autumn_solar_max: 800.0,
-            winter_solar_max: 550.0,
-            spring_solar_max: 850.0,
-            summer_drought_rate: 0.15,
-            autumn_drought_rate: 0.05,
-            winter_drought_rate: -0.2,
-            spring_drought_rate: 0.0,
-            el_nino_drought_mod: 0.1,
-            la_nina_drought_mod: -0.1,
+            summer_solar_max: WattsPerSquareMeter::new(1000.0),
+            autumn_solar_max: WattsPerSquareMeter::new(800.0),
+            winter_solar_max: WattsPerSquareMeter::new(550.0),
+            spring_solar_max: WattsPerSquareMeter::new(850.0),
+            summer_drought_rate: RatePerDay::new(0.15),
+            autumn_drought_rate: RatePerDay::new(0.05),
+            winter_drought_rate: RatePerDay::new(-0.2),
+            spring_drought_rate: RatePerDay::new(0.0),
+            el_nino_drought_mod: RatePerDay::new(0.1),
+            la_nina_drought_mod: RatePerDay::new(-0.1),
             summer_curing: Percent::new(95.0),
             autumn_curing: Percent::new(80.0),
             winter_curing: Percent::new(50.0),
@@ -411,16 +412,16 @@ impl WeatherPreset {
             heatwave_pressure_drop: 0.0,
             summer_pressure_mod: 0.0,
             winter_pressure_mod: 0.0,
-            summer_solar_max: 900.0,
-            autumn_solar_max: 700.0,
-            winter_solar_max: 500.0,
-            spring_solar_max: 800.0,
-            summer_drought_rate: drought_rate,
-            autumn_drought_rate: drought_rate,
-            winter_drought_rate: drought_rate,
-            spring_drought_rate: drought_rate,
-            el_nino_drought_mod: 0.0,
-            la_nina_drought_mod: 0.0,
+            summer_solar_max: WattsPerSquareMeter::new(900.0),
+            autumn_solar_max: WattsPerSquareMeter::new(700.0),
+            winter_solar_max: WattsPerSquareMeter::new(500.0),
+            spring_solar_max: WattsPerSquareMeter::new(800.0),
+            summer_drought_rate: RatePerDay::new(drought_rate),
+            autumn_drought_rate: RatePerDay::new(drought_rate),
+            winter_drought_rate: RatePerDay::new(drought_rate),
+            spring_drought_rate: RatePerDay::new(drought_rate),
+            el_nino_drought_mod: RatePerDay::new(0.0),
+            la_nina_drought_mod: RatePerDay::new(0.0),
             summer_curing: Percent::new(70.0),
             autumn_curing: Percent::new(60.0),
             winter_curing: Percent::new(50.0),
@@ -464,16 +465,16 @@ impl WeatherPreset {
             heatwave_pressure_drop: 6.0,
             summer_pressure_mod: -1.5,
             winter_pressure_mod: 2.5,
-            summer_solar_max: 950.0,
-            autumn_solar_max: 750.0,
-            winter_solar_max: 500.0,
-            spring_solar_max: 800.0,
-            summer_drought_rate: 0.1,
-            autumn_drought_rate: 0.0,
-            winter_drought_rate: -0.25,
-            spring_drought_rate: -0.05,
-            el_nino_drought_mod: 0.08,
-            la_nina_drought_mod: -0.15,
+            summer_solar_max: WattsPerSquareMeter::new(950.0),
+            autumn_solar_max: WattsPerSquareMeter::new(750.0),
+            winter_solar_max: WattsPerSquareMeter::new(500.0),
+            spring_solar_max: WattsPerSquareMeter::new(800.0),
+            summer_drought_rate: RatePerDay::new(0.1),
+            autumn_drought_rate: RatePerDay::new(0.0),
+            winter_drought_rate: RatePerDay::new(-0.25),
+            spring_drought_rate: RatePerDay::new(-0.05),
+            el_nino_drought_mod: RatePerDay::new(0.08),
+            la_nina_drought_mod: RatePerDay::new(-0.15),
             summer_curing: Percent::new(90.0),
             autumn_curing: Percent::new(70.0),
             winter_curing: Percent::new(40.0),
@@ -517,16 +518,16 @@ impl WeatherPreset {
             heatwave_pressure_drop: 10.0,
             summer_pressure_mod: -3.0,
             winter_pressure_mod: 4.0,
-            summer_solar_max: 1050.0,
-            autumn_solar_max: 850.0,
-            winter_solar_max: 600.0,
-            spring_solar_max: 900.0,
-            summer_drought_rate: 0.2,
-            autumn_drought_rate: 0.08,
-            winter_drought_rate: -0.15,
-            spring_drought_rate: 0.02,
-            el_nino_drought_mod: 0.15,
-            la_nina_drought_mod: -0.08,
+            summer_solar_max: WattsPerSquareMeter::new(1050.0),
+            autumn_solar_max: WattsPerSquareMeter::new(850.0),
+            winter_solar_max: WattsPerSquareMeter::new(600.0),
+            spring_solar_max: WattsPerSquareMeter::new(900.0),
+            summer_drought_rate: RatePerDay::new(0.2),
+            autumn_drought_rate: RatePerDay::new(0.08),
+            winter_drought_rate: RatePerDay::new(-0.15),
+            spring_drought_rate: RatePerDay::new(0.02),
+            el_nino_drought_mod: RatePerDay::new(0.15),
+            la_nina_drought_mod: RatePerDay::new(-0.08),
             summer_curing: Percent::new(98.0),
             autumn_curing: Percent::new(85.0),
             winter_curing: Percent::new(60.0),
@@ -570,16 +571,16 @@ impl WeatherPreset {
             heatwave_pressure_drop: 12.0,
             summer_pressure_mod: -4.0,
             winter_pressure_mod: 5.0,
-            summer_solar_max: 1100.0,
-            autumn_solar_max: 900.0,
-            winter_solar_max: 650.0,
-            spring_solar_max: 950.0,
-            summer_drought_rate: 0.25,
-            autumn_drought_rate: 0.12,
-            winter_drought_rate: -0.05,
-            spring_drought_rate: 0.08,
-            el_nino_drought_mod: 0.2,
-            la_nina_drought_mod: -0.05,
+            summer_solar_max: WattsPerSquareMeter::new(1100.0),
+            autumn_solar_max: WattsPerSquareMeter::new(900.0),
+            winter_solar_max: WattsPerSquareMeter::new(650.0),
+            spring_solar_max: WattsPerSquareMeter::new(950.0),
+            summer_drought_rate: RatePerDay::new(0.25),
+            autumn_drought_rate: RatePerDay::new(0.12),
+            winter_drought_rate: RatePerDay::new(-0.05),
+            spring_drought_rate: RatePerDay::new(0.08),
+            el_nino_drought_mod: RatePerDay::new(0.2),
+            la_nina_drought_mod: RatePerDay::new(-0.05),
             summer_curing: Percent::new(100.0),
             autumn_curing: Percent::new(95.0),
             winter_curing: Percent::new(75.0),
@@ -623,16 +624,16 @@ impl WeatherPreset {
             heatwave_pressure_drop: 5.0,
             summer_pressure_mod: -5.0, // Monsoon lows
             winter_pressure_mod: 4.0,
-            summer_solar_max: 1150.0,
-            autumn_solar_max: 1000.0,
-            winter_solar_max: 900.0,
-            spring_solar_max: 1050.0,
-            summer_drought_rate: -0.3, // Wet season resets drought
-            autumn_drought_rate: 0.05,
-            winter_drought_rate: 0.2, // Rapid drying
-            spring_drought_rate: 0.15,
-            el_nino_drought_mod: 0.15,
-            la_nina_drought_mod: -0.2,
+            summer_solar_max: WattsPerSquareMeter::new(1150.0),
+            autumn_solar_max: WattsPerSquareMeter::new(1000.0),
+            winter_solar_max: WattsPerSquareMeter::new(900.0),
+            spring_solar_max: WattsPerSquareMeter::new(1050.0),
+            summer_drought_rate: RatePerDay::new(-0.3), // Wet season resets drought
+            autumn_drought_rate: RatePerDay::new(0.05),
+            winter_drought_rate: RatePerDay::new(0.2), // Rapid drying
+            spring_drought_rate: RatePerDay::new(0.15),
+            el_nino_drought_mod: RatePerDay::new(0.15),
+            la_nina_drought_mod: RatePerDay::new(-0.2),
             summer_curing: Percent::new(30.0), // Green during wet season
             autumn_curing: Percent::new(60.0),
             winter_curing: Percent::new(95.0), // Very dry
@@ -676,16 +677,16 @@ impl WeatherPreset {
             heatwave_pressure_drop: 8.0,
             summer_pressure_mod: -4.0,
             winter_pressure_mod: 3.0,
-            summer_solar_max: 1200.0,
-            autumn_solar_max: 1000.0,
-            winter_solar_max: 850.0,
-            spring_solar_max: 1050.0,
-            summer_drought_rate: 0.0, // Cyclone rains
-            autumn_drought_rate: 0.15,
-            winter_drought_rate: 0.2,
-            spring_drought_rate: 0.18,
-            el_nino_drought_mod: 0.12,
-            la_nina_drought_mod: -0.1,
+            summer_solar_max: WattsPerSquareMeter::new(1200.0),
+            autumn_solar_max: WattsPerSquareMeter::new(1000.0),
+            winter_solar_max: WattsPerSquareMeter::new(850.0),
+            spring_solar_max: WattsPerSquareMeter::new(1050.0),
+            summer_drought_rate: RatePerDay::new(0.0), // Cyclone rains
+            autumn_drought_rate: RatePerDay::new(0.15),
+            winter_drought_rate: RatePerDay::new(0.2),
+            spring_drought_rate: RatePerDay::new(0.18),
+            el_nino_drought_mod: RatePerDay::new(0.12),
+            la_nina_drought_mod: RatePerDay::new(-0.1),
             summer_curing: Percent::new(70.0),
             autumn_curing: Percent::new(85.0),
             winter_curing: Percent::new(95.0),
@@ -774,7 +775,7 @@ impl WeatherPreset {
 
     /// Get drought rate for specific season with climate modifier
     #[must_use]
-    pub fn get_drought_rate(&self, day_of_year: u16, climate: ClimatePattern) -> f32 {
+    pub fn get_drought_rate(&self, day_of_year: u16, climate: ClimatePattern) -> RatePerDay {
         let season_rate = match (day_of_year - 1) / 91 {
             0 => self.summer_drought_rate,
             1 => self.autumn_drought_rate,
@@ -785,7 +786,7 @@ impl WeatherPreset {
         let climate_mod = match climate {
             ClimatePattern::ElNino => self.el_nino_drought_mod,
             ClimatePattern::LaNina => self.la_nina_drought_mod,
-            ClimatePattern::Neutral => 0.0,
+            ClimatePattern::Neutral => RatePerDay::new(0.0),
         };
 
         season_rate + climate_mod
@@ -804,7 +805,7 @@ impl WeatherPreset {
 
     /// Get solar radiation for specific season and time
     #[must_use]
-    pub fn get_solar_radiation(&self, day_of_year: u16, time_of_day: f32) -> f32 {
+    pub fn get_solar_radiation(&self, day_of_year: u16, time_of_day: f32) -> WattsPerSquareMeter {
         let season_max = match (day_of_year - 1) / 91 {
             0 => self.summer_solar_max,
             1 => self.autumn_solar_max,
@@ -817,7 +818,7 @@ impl WeatherPreset {
             let hour_factor = ((time_of_day - 6.0) * std::f32::consts::PI / 12.0).sin();
             season_max * hour_factor
         } else {
-            0.0
+            WattsPerSquareMeter::new(0.0)
         }
     }
 }
@@ -982,7 +983,7 @@ impl WeatherSystem {
 
         // Initial drought based on season and climate
         let drought_rate = preset.get_drought_rate(day_of_year, climate_pattern);
-        let base_drought = if drought_rate > 0.0 { 6.0 } else { 3.0 };
+        let base_drought = if *drought_rate > 0.0 { 6.0 } else { 3.0 };
 
         WeatherSystem {
             temperature,
@@ -1033,7 +1034,7 @@ impl WeatherSystem {
 
         // Update drought factor based on new preset's seasonal pattern
         let drought_rate = preset.get_drought_rate(current_day, current_climate);
-        let base_drought = if drought_rate > 0.0 { 6.0 } else { 3.0 };
+        let base_drought = if *drought_rate > 0.0 { 6.0 } else { 3.0 };
 
         // Apply new conditions
         self.temperature = temperature;
@@ -1273,7 +1274,7 @@ impl WeatherSystem {
             // Update drought factor based on season and climate
             let drought_rate = preset.get_drought_rate(self.day_of_year, self.climate_pattern);
             self.drought_factor =
-                (self.drought_factor + drought_rate * dt / 86400.0).clamp(0.0, 10.0);
+                (self.drought_factor + *drought_rate * dt / 86400.0).clamp(0.0, 10.0);
         } else {
             // Original update logic for non-preset weather
             // Diurnal (daily) temperature cycle
@@ -1428,16 +1429,16 @@ impl WeatherSystem {
 
     /// Get current solar radiation (W/m²) based on preset and time
     #[must_use]
-    pub fn solar_radiation(&self) -> f32 {
+    pub fn solar_radiation(&self) -> WattsPerSquareMeter {
         if let Some(preset) = &self.preset {
             preset.get_solar_radiation(self.day_of_year, *self.time_of_day)
         } else {
             // Fallback calculation
             if *self.time_of_day < 6.0 || *self.time_of_day > 18.0 {
-                0.0
+                WattsPerSquareMeter::new(0.0)
             } else {
                 let hour_factor = ((*self.time_of_day - 6.0) * std::f32::consts::PI / 12.0).sin();
-                1000.0 * hour_factor
+                WattsPerSquareMeter::new(1000.0) * hour_factor
             }
         }
     }
@@ -1540,7 +1541,7 @@ pub struct WeatherStats {
     /// Spread rate multiplier
     pub spread_rate_multiplier: f32,
     /// Solar radiation (W/m²)
-    pub solar_radiation: f32,
+    pub solar_radiation: WattsPerSquareMeter,
     /// Fuel curing percentage
     pub fuel_curing: f32,
     /// Climate pattern

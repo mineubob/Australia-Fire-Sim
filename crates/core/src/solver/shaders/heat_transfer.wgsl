@@ -15,6 +15,11 @@ struct HeatParams {
     wind_x: f32,
     wind_y: f32,
     stefan_boltzmann: f32,  // 5.67e-8 W/(m²·K⁴)
+    // Fuel-specific properties (from Rust Fuel type)
+    thermal_diffusivity: f32, // m²/s
+    emissivity_burning: f32,  // Flames emissivity (0.9 typical)
+    emissivity_unburned: f32, // Fuel bed emissivity (0.7 typical)
+    specific_heat_j: f32,     // J/(kg·K)
 }
 
 @group(0) @binding(0) var<storage, read> temp_in: array<f32>;
@@ -56,14 +61,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let t_down = temp_in[idx + params.width];
     let laplacian = (t_left + t_right + t_up + t_down - 4.0 * t) / cell_size_sq;
     
-    // Thermal diffusivity for wood: ~1e-7 m²/s
-    let thermal_diffusivity = 1e-7;
+    // Thermal diffusivity from fuel type (passed via uniform buffer)
+    let thermal_diffusivity = params.thermal_diffusivity;
     let diffusion = thermal_diffusivity * laplacian;
     
     // 2. Stefan-Boltzmann radiation exchange with neighbors
-    // Emissivity: flames ~0.9, fuel bed ~0.7
+    // Emissivity values from fuel type (passed via uniform buffer)
     let is_burning = level_set[idx] < 0.0;
-    let emissivity = select(0.7, 0.9, is_burning);
+    let emissivity = select(params.emissivity_unburned, params.emissivity_burning, is_burning);
     
     var q_rad = 0.0;
     for (var dy: i32 = -1; dy <= 1; dy++) {
@@ -121,8 +126,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     
     // 5. Update temperature
     // Heat capacity: mass × specific_heat
-    // Specific heat for wood: ~2.0 kJ/(kg·K) = 2000 J/(kg·K)
-    let specific_heat = 2000.0;
+    // Specific heat from fuel type (passed via uniform buffer in J/(kg·K))
+    let specific_heat = params.specific_heat_j;
     let heat_capacity = mass * specific_heat;
     
     // Total heat flux (W/m²)

@@ -344,3 +344,255 @@ pub extern "C" fn fire_sim_free_stats(stats: *mut FieldSimStats) {
         }
     }
 }
+
+// ============================================================================
+// POINT QUERY API (Option B: Game engine polls fire state)
+// ============================================================================
+
+/// Query temperature at a specific world position.
+///
+/// Returns the temperature in Celsius at the given position.
+/// Game objects can poll this to determine when to ignite.
+///
+/// # Arguments
+/// * `instance` - The simulation instance (must not be null)
+/// * `x` - X position in meters
+/// * `y` - Y position in meters
+/// * `out_temp` - Output pointer for temperature in Celsius
+///
+/// # Returns
+/// FireSimErrorCode::Ok on success, error code otherwise.
+///
+/// # Safety
+/// - `instance` must be a valid pointer from `fire_sim_field_new()`
+/// - `out_temp` must be a valid output pointer
+#[no_mangle]
+pub extern "C" fn fire_sim_field_temperature_at(
+    instance: *const FireSimFieldInstance,
+    x: f32,
+    y: f32,
+    out_temp: *mut f32,
+) -> FireSimErrorCode {
+    if instance.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("instance"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if out_temp.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("out_temp"));
+        return FireSimErrorCode::NullPointer;
+    }
+
+    let instance_ref = unsafe { &*instance };
+    let temp = instance_ref.simulation.temperature_at(x, y);
+
+    unsafe {
+        *out_temp = temp;
+    }
+
+    FireSimErrorCode::Ok
+}
+
+/// Query level set value at a specific world position.
+///
+/// Returns the signed distance from the fire front:
+/// - φ < 0: Inside burned area
+/// - φ = 0: At fire front
+/// - φ > 0: Unburned fuel
+///
+/// # Arguments
+/// * `instance` - The simulation instance
+/// * `x` - X position in meters
+/// * `y` - Y position in meters
+/// * `out_phi` - Output pointer for level set value
+///
+/// # Returns
+/// FireSimErrorCode::Ok on success, error code otherwise.
+///
+/// # Safety
+/// - `instance` must be a valid pointer
+/// - `out_phi` must be a valid output pointer
+#[no_mangle]
+pub extern "C" fn fire_sim_field_level_set_at(
+    instance: *const FireSimFieldInstance,
+    x: f32,
+    y: f32,
+    out_phi: *mut f32,
+) -> FireSimErrorCode {
+    if instance.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("instance"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if out_phi.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("out_phi"));
+        return FireSimErrorCode::NullPointer;
+    }
+
+    let instance_ref = unsafe { &*instance };
+    let phi = instance_ref.simulation.level_set_at(x, y);
+
+    unsafe {
+        *out_phi = phi;
+    }
+
+    FireSimErrorCode::Ok
+}
+
+/// Check if a position is within the burned area.
+///
+/// # Arguments
+/// * `instance` - The simulation instance
+/// * `x` - X position in meters
+/// * `y` - Y position in meters
+/// * `out_burned` - Output: 1 if burned/burning, 0 otherwise
+///
+/// # Returns
+/// FireSimErrorCode::Ok on success, error code otherwise.
+///
+/// # Safety
+/// - `instance` must be a valid pointer
+/// - `out_burned` must be a valid output pointer
+#[no_mangle]
+pub extern "C" fn fire_sim_field_is_burned(
+    instance: *const FireSimFieldInstance,
+    x: f32,
+    y: f32,
+    out_burned: *mut i32,
+) -> FireSimErrorCode {
+    if instance.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("instance"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if out_burned.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("out_burned"));
+        return FireSimErrorCode::NullPointer;
+    }
+
+    let instance_ref = unsafe { &*instance };
+    let burned = instance_ref.simulation.is_burned(x, y);
+
+    unsafe {
+        *out_burned = i32::from(burned);
+    }
+
+    FireSimErrorCode::Ok
+}
+
+/// Batch query temperatures at multiple positions.
+///
+/// This is more efficient than calling `fire_sim_field_temperature_at()` repeatedly.
+///
+/// # Arguments
+/// * `instance` - The simulation instance
+/// * `positions` - Pointer to array of floats [x0, y0, x1, y1, ...]
+/// * `count` - Number of positions (array length / 2)
+/// * `out_temps` - Output array of temperatures (must have `count` elements)
+///
+/// # Returns
+/// FireSimErrorCode::Ok on success, error code otherwise.
+///
+/// # Safety
+/// - `instance` must be a valid pointer
+/// - `positions` must point to `count * 2` floats
+/// - `out_temps` must point to `count` floats
+#[no_mangle]
+pub extern "C" fn fire_sim_field_query_temperatures(
+    instance: *const FireSimFieldInstance,
+    positions: *const f32,
+    count: u32,
+    out_temps: *mut f32,
+) -> FireSimErrorCode {
+    if instance.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("instance"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if positions.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("positions"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if out_temps.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("out_temps"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if count == 0 {
+        return FireSimErrorCode::Ok;
+    }
+
+    let instance_ref = unsafe { &*instance };
+    let positions_slice = unsafe { slice::from_raw_parts(positions, (count * 2) as usize) };
+
+    // Convert to tuples and query
+    let pos_tuples: Vec<(f32, f32)> = positions_slice
+        .chunks(2)
+        .map(|chunk| (chunk[0], chunk[1]))
+        .collect();
+
+    let temps = instance_ref.simulation.temperatures_at(&pos_tuples);
+
+    // Copy to output
+    unsafe {
+        let out_slice = slice::from_raw_parts_mut(out_temps, count as usize);
+        out_slice.copy_from_slice(&temps);
+    }
+
+    FireSimErrorCode::Ok
+}
+
+/// Batch query burn states at multiple positions.
+///
+/// # Arguments
+/// * `instance` - The simulation instance
+/// * `positions` - Pointer to array of floats [x0, y0, x1, y1, ...]
+/// * `count` - Number of positions (array length / 2)
+/// * `out_burned` - Output array of burn states (1 = burned, 0 = not burned)
+///
+/// # Returns
+/// FireSimErrorCode::Ok on success, error code otherwise.
+///
+/// # Safety
+/// - `instance` must be a valid pointer
+/// - `positions` must point to `count * 2` floats
+/// - `out_burned` must point to `count` i32 values
+#[no_mangle]
+pub extern "C" fn fire_sim_field_query_burn_states(
+    instance: *const FireSimFieldInstance,
+    positions: *const f32,
+    count: u32,
+    out_burned: *mut i32,
+) -> FireSimErrorCode {
+    if instance.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("instance"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if positions.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("positions"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if out_burned.is_null() {
+        track_error(&DefaultFireSimError::null_pointer("out_burned"));
+        return FireSimErrorCode::NullPointer;
+    }
+    if count == 0 {
+        return FireSimErrorCode::Ok;
+    }
+
+    let instance_ref = unsafe { &*instance };
+    let positions_slice = unsafe { slice::from_raw_parts(positions, (count * 2) as usize) };
+
+    // Convert to tuples and query
+    let pos_tuples: Vec<(f32, f32)> = positions_slice
+        .chunks(2)
+        .map(|chunk| (chunk[0], chunk[1]))
+        .collect();
+
+    let burn_states = instance_ref.simulation.burn_states_at(&pos_tuples);
+
+    // Copy to output
+    unsafe {
+        let out_slice = slice::from_raw_parts_mut(out_burned, count as usize);
+        for (i, burned) in burn_states.iter().enumerate() {
+            out_slice[i] = i32::from(*burned);
+        }
+    }
+
+    FireSimErrorCode::Ok
+}

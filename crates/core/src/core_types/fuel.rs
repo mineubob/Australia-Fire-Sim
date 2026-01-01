@@ -1,6 +1,6 @@
 use super::units::{
-    Celsius, Fraction, Hours, KgPerCubicMeter, KjPerKg, KjPerKgK, Meters, Percent,
-    SurfaceAreaToVolume,
+    Celsius, Fraction, HeatTransferCoefficient, Hours, KgPerCubicMeter, KjPerKg, KjPerKgK, Meters,
+    Percent, RatePerSecond, SurfaceAreaToVolume, ThermalConductivity, ThermalDiffusivity,
 };
 use serde::{Deserialize, Serialize};
 
@@ -121,6 +121,15 @@ pub struct Fuel {
     pub max_flame_temperature: Celsius,
     /// Specific heat capacity (kJ/(kg·K)) - CRITICAL for thermal calculations
     pub specific_heat: KjPerKgK,
+    /// Thermal conductivity (W/(m·K)) - heat conduction through fuel bed
+    /// Wood: 0.1-0.2, Grass: 0.04-0.06, Litter: 0.05-0.1
+    /// Reference: Incropera et al. (2002) "Fundamentals of Heat and Mass Transfer"
+    pub thermal_conductivity: ThermalConductivity,
+    /// Thermal diffusivity (m²/s) - rate of temperature change
+    /// α = k/(ρ·c) where k=conductivity, ρ=density, c=specific heat
+    /// Wood: ~1e-7, Grass: ~2e-7, dry fuel: higher values
+    /// Reference: "Fire Dynamics" (Drysdale, 2011)
+    pub thermal_diffusivity: ThermalDiffusivity,
 
     // Physical properties
     /// Bulk density (kg/m³)
@@ -166,11 +175,11 @@ pub struct Fuel {
 
     // Thermal behavior coefficients (fuel-specific, not hardcoded)
     /// Newton's cooling coefficient (per second, grass=0.15, forest=0.05)
-    pub cooling_rate: f32,
+    pub cooling_rate: RatePerSecond,
     /// Fraction of combustion heat retained (0-1, grass=0.25, forest=0.40)
     pub self_heating_fraction: Fraction,
     /// Convective heat transfer coefficient h (W/(m²·K), grass=600, forest=400)
-    pub convective_heat_coefficient: f32,
+    pub convective_heat_coefficient: HeatTransferCoefficient,
     /// Atmospheric heat transfer efficiency (0-1, grass=0.85, forest=0.70)
     pub atmospheric_heat_efficiency: Fraction,
     /// Wind sensitivity multiplier (grass=1.0, forest=0.6)
@@ -258,6 +267,8 @@ impl Fuel {
             auto_ignition_temperature: Celsius::new(340.0),
             max_flame_temperature: Celsius::new(1400.0),
             specific_heat: KjPerKgK::new(1.5),
+            thermal_conductivity: ThermalConductivity::new(0.12), // W/(m·K) - fibrous bark
+            thermal_diffusivity: ThermalDiffusivity::new(1.5e-7), // m²/s - coarse wood fuel
             bulk_density: KgPerCubicMeter::new(550.0),
             surface_area_to_volume: SurfaceAreaToVolume::new(150.0), // Research: 50-200 m²/m³ for fibrous bark strips (CSIRO)
             fuel_bed_depth: Meters::new(0.5),
@@ -280,11 +291,11 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new(0.25), // Coarse fuel optimal compaction
 
             // Thermal behavior (coarse fuel - retains heat well)
-            cooling_rate: 0.05,                        // Slow cooling (thick bark)
+            cooling_rate: RatePerSecond::new(0.05), // Slow cooling (thick bark)
             self_heating_fraction: Fraction::new(0.4), // Retains 40% of combustion heat
-            convective_heat_coefficient: 400.0,        // Moderate convection
+            convective_heat_coefficient: HeatTransferCoefficient::new(400.0), // Moderate convection
             atmospheric_heat_efficiency: Fraction::new(0.7), // 70% heat to atmosphere
-            wind_sensitivity: Fraction::new(0.6),      // Moderate wind effect (sheltered by canopy)
+            wind_sensitivity: Fraction::new(0.6),   // Moderate wind effect (sheltered by canopy)
             crown_fire_temp_multiplier: Fraction::new(0.95), // Very hot crown fires
 
             // Combustion and geometry
@@ -338,6 +349,8 @@ impl Fuel {
             auto_ignition_temperature: Celsius::new(388.0),
             max_flame_temperature: Celsius::new(1300.0),
             specific_heat: KjPerKgK::new(1.5),
+            thermal_conductivity: ThermalConductivity::new(0.15), // W/(m·K) - denser bark
+            thermal_diffusivity: ThermalDiffusivity::new(1.2e-7), // m²/s - dense wood fuel
             bulk_density: KgPerCubicMeter::new(600.0),
             surface_area_to_volume: SurfaceAreaToVolume::new(80.0), // Research: 50-100 m²/m³ for smooth bark (CSIRO)
             fuel_bed_depth: Meters::new(0.3),
@@ -360,12 +373,12 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new(0.28), // Medium fuel optimal compaction
 
             // Thermal behavior (medium fuel)
-            cooling_rate: 0.08,                               // Moderate cooling
-            self_heating_fraction: Fraction::new(0.35),       // Retains 35% of combustion heat
-            convective_heat_coefficient: 450.0,               // Good convection
+            cooling_rate: RatePerSecond::new(0.08), // Moderate cooling
+            self_heating_fraction: Fraction::new(0.35), // Retains 35% of combustion heat
+            convective_heat_coefficient: HeatTransferCoefficient::new(450.0), // Good convection
             atmospheric_heat_efficiency: Fraction::new(0.75), // 75% heat to atmosphere
-            wind_sensitivity: Fraction::new(0.7),             // Moderate-high wind effect
-            crown_fire_temp_multiplier: Fraction::new(0.90),  // Hot crown fires
+            wind_sensitivity: Fraction::new(0.7),   // Moderate-high wind effect
+            crown_fire_temp_multiplier: Fraction::new(0.90), // Hot crown fires
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.93), // High efficiency (dense hardwood)
@@ -419,6 +432,8 @@ impl Fuel {
             auto_ignition_temperature: Celsius::new(338.0),
             max_flame_temperature: Celsius::new(900.0),
             specific_heat: KjPerKgK::new(2.1), // Higher specific heat
+            thermal_conductivity: ThermalConductivity::new(0.05), // W/(m·K) - fine fuel with air gaps
+            thermal_diffusivity: ThermalDiffusivity::new(2.0e-7), // m²/s - fine dry fuel heats faster
             bulk_density: KgPerCubicMeter::new(200.0),
             surface_area_to_volume: SurfaceAreaToVolume::new(3500.0), // Fine grass - Rothermel typical value for herbaceous
             fuel_bed_depth: Meters::new(0.1),
@@ -441,12 +456,12 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new(0.35), // Fine fuel optimal compaction
 
             // Thermal behavior (fine fuel - rapid heat exchange)
-            cooling_rate: 0.15, // Fast cooling (high surface area)
+            cooling_rate: RatePerSecond::new(0.15), // Fast cooling (high surface area)
             self_heating_fraction: Fraction::new(0.25), // Radiates 75% away (fine)
-            convective_heat_coefficient: 600.0, // High convection (fine)
+            convective_heat_coefficient: HeatTransferCoefficient::new(600.0), // High convection (fine)
             atmospheric_heat_efficiency: Fraction::new(0.85), // 85% heat to atmosphere
-            wind_sensitivity: Fraction::new(1.0), // Maximum wind effect (fine fuel)
-            crown_fire_temp_multiplier: Fraction::new(0.0), // No crown fire (grass)
+            wind_sensitivity: Fraction::new(1.0),             // Maximum wind effect (fine fuel)
+            crown_fire_temp_multiplier: Fraction::new(0.0),   // No crown fire (grass)
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.85), // Moderate efficiency (fast burn, incomplete)
@@ -499,6 +514,8 @@ impl Fuel {
             auto_ignition_temperature: Celsius::new(420.0),
             max_flame_temperature: Celsius::new(1000.0),
             specific_heat: KjPerKgK::new(1.8),
+            thermal_conductivity: ThermalConductivity::new(0.08), // W/(m·K) - mixed woody shrub
+            thermal_diffusivity: ThermalDiffusivity::new(1.6e-7), // m²/s - medium fuel
             bulk_density: KgPerCubicMeter::new(350.0),
             surface_area_to_volume: SurfaceAreaToVolume::new(10.0),
             fuel_bed_depth: Meters::new(0.4),
@@ -521,12 +538,12 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new(0.30), // Shrub optimal compaction
 
             // Thermal behavior (medium shrub fuel)
-            cooling_rate: 0.10,                               // Moderate cooling
-            self_heating_fraction: Fraction::new(0.32),       // Retains 32% of combustion heat
-            convective_heat_coefficient: 500.0,               // Moderate convection
+            cooling_rate: RatePerSecond::new(0.10), // Moderate cooling
+            self_heating_fraction: Fraction::new(0.32), // Retains 32% of combustion heat
+            convective_heat_coefficient: HeatTransferCoefficient::new(500.0), // Moderate convection
             atmospheric_heat_efficiency: Fraction::new(0.80), // 80% heat to atmosphere
-            wind_sensitivity: Fraction::new(0.85),            // High wind effect (exposed)
-            crown_fire_temp_multiplier: Fraction::new(0.85),  // Moderate crown fires
+            wind_sensitivity: Fraction::new(0.85),  // High wind effect (exposed)
+            crown_fire_temp_multiplier: Fraction::new(0.85), // Moderate crown fires
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.88), // Good efficiency (woody fuel)
@@ -579,6 +596,8 @@ impl Fuel {
             auto_ignition_temperature: Celsius::new(375.0),
             max_flame_temperature: Celsius::new(950.0),
             specific_heat: KjPerKgK::new(1.3), // Heats faster
+            thermal_conductivity: ThermalConductivity::new(0.07), // W/(m·K) - dry porous litter
+            thermal_diffusivity: ThermalDiffusivity::new(2.2e-7), // m²/s - dry fuel heats quickly
             bulk_density: KgPerCubicMeter::new(300.0),
             surface_area_to_volume: SurfaceAreaToVolume::new(9.0),
             fuel_bed_depth: Meters::new(0.2),
@@ -601,12 +620,12 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new(0.22), // Dead fuel optimal compaction
 
             // Thermal behavior (dead coarse fuel)
-            cooling_rate: 0.06, // Slow cooling (insulated by litter)
+            cooling_rate: RatePerSecond::new(0.06), // Slow cooling (insulated by litter)
             self_heating_fraction: Fraction::new(0.38), // Retains 38% of combustion heat
-            convective_heat_coefficient: 350.0, // Low convection (ground)
+            convective_heat_coefficient: HeatTransferCoefficient::new(350.0), // Low convection (ground)
             atmospheric_heat_efficiency: Fraction::new(0.65), // 65% heat to atmosphere
-            wind_sensitivity: Fraction::new(0.50), // Low wind effect (ground level)
-            crown_fire_temp_multiplier: Fraction::new(0.0), // No crown fire (ground litter)
+            wind_sensitivity: Fraction::new(0.50),            // Low wind effect (ground level)
+            crown_fire_temp_multiplier: Fraction::new(0.0),   // No crown fire (ground litter)
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.90), // High efficiency (dry dead wood)
@@ -659,6 +678,8 @@ impl Fuel {
             auto_ignition_temperature: Celsius::new(498.0),
             max_flame_temperature: Celsius::new(800.0),
             specific_heat: KjPerKgK::new(2.2),
+            thermal_conductivity: ThermalConductivity::new(0.25), // W/(m·K) - high moisture increases conductivity
+            thermal_diffusivity: ThermalDiffusivity::new(0.8e-7), // m²/s - water content slows heating
             bulk_density: KgPerCubicMeter::new(400.0),
             surface_area_to_volume: SurfaceAreaToVolume::new(8.0),
             fuel_bed_depth: Meters::new(0.3),
@@ -681,12 +702,12 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new(0.32), // Live fuel optimal compaction
 
             // Thermal behavior (live fuel - moisture dominated)
-            cooling_rate: 0.12, // Fast cooling (moisture evaporation)
+            cooling_rate: RatePerSecond::new(0.12), // Fast cooling (moisture evaporation)
             self_heating_fraction: Fraction::new(0.20), // Low retention (moisture absorbs heat)
-            convective_heat_coefficient: 550.0, // High convection (moisture)
+            convective_heat_coefficient: HeatTransferCoefficient::new(550.0), // High convection (moisture)
             atmospheric_heat_efficiency: Fraction::new(0.90), // 90% heat to atmosphere (cooling)
-            wind_sensitivity: Fraction::new(0.75), // Moderate-high wind effect
-            crown_fire_temp_multiplier: Fraction::new(0.80), // Cooler fires (moisture)
+            wind_sensitivity: Fraction::new(0.75),            // Moderate-high wind effect
+            crown_fire_temp_multiplier: Fraction::new(0.80),  // Cooler fires (moisture)
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.70), // Low efficiency (high moisture, incomplete)
@@ -781,6 +802,8 @@ impl Fuel {
             auto_ignition_temperature: Celsius::new(0.0), // Non-burnable
             max_flame_temperature: Celsius::new(0.0),
             specific_heat: KjPerKgK::new(4.18), // Water has very high specific heat
+            thermal_conductivity: ThermalConductivity::new(0.60), // W/(m·K) - water conductivity
+            thermal_diffusivity: ThermalDiffusivity::new(1.43e-7), // m²/s - water thermal diffusivity
             bulk_density: KgPerCubicMeter::new(1000.0),
             surface_area_to_volume: SurfaceAreaToVolume::new(0.0),
             fuel_bed_depth: Meters::new(0.0),
@@ -803,11 +826,11 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new(1.0), // N/A
 
             // Thermal behavior (water - cooling only)
-            cooling_rate: 0.20, // Fast cooling (evaporation)
+            cooling_rate: RatePerSecond::new(0.20), // Fast cooling (evaporation)
             self_heating_fraction: Fraction::new(0.0),
-            convective_heat_coefficient: 1000.0, // High cooling
-            atmospheric_heat_efficiency: Fraction::new(1.0), // All heat absorbed
-            wind_sensitivity: Fraction::new(0.0), // No wind effect
+            convective_heat_coefficient: HeatTransferCoefficient::new(1000.0), // High cooling
+            atmospheric_heat_efficiency: Fraction::new(1.0),                   // All heat absorbed
+            wind_sensitivity: Fraction::new(0.0),                              // No wind effect
             crown_fire_temp_multiplier: Fraction::new(0.0),
             combustion_efficiency: Fraction::new(0.0), // Non-burnable
             surface_area_geometry_factor: 0.0,         // N/A for water
@@ -854,6 +877,8 @@ impl Fuel {
             auto_ignition_temperature: Celsius::new(0.0), // Non-burnable
             max_flame_temperature: Celsius::new(0.0),
             specific_heat: KjPerKgK::new(0.84), // Rock specific heat
+            thermal_conductivity: ThermalConductivity::new(2.0), // W/(m·K) - rock/granite conductivity
+            thermal_diffusivity: ThermalDiffusivity::new(8.8e-7), // m²/s - rock thermal diffusivity
             bulk_density: KgPerCubicMeter::new(2700.0),
             surface_area_to_volume: SurfaceAreaToVolume::new(0.0),
             fuel_bed_depth: Meters::new(0.0),
@@ -876,11 +901,11 @@ impl Fuel {
             optimum_packing_ratio: Fraction::new(1.0), // N/A
 
             // Thermal behavior (rock - heat sink)
-            cooling_rate: 0.03, // Very slow cooling (thermal mass)
+            cooling_rate: RatePerSecond::new(0.03), // Very slow cooling (thermal mass)
             self_heating_fraction: Fraction::new(0.0),
-            convective_heat_coefficient: 200.0, // Low convection (smooth)
-            atmospheric_heat_efficiency: Fraction::new(0.30), // Absorbs heat
-            wind_sensitivity: Fraction::new(0.0), // No wind effect
+            convective_heat_coefficient: HeatTransferCoefficient::new(200.0), // Low convection (smooth)
+            atmospheric_heat_efficiency: Fraction::new(0.30),                 // Absorbs heat
+            wind_sensitivity: Fraction::new(0.0),                             // No wind effect
             crown_fire_temp_multiplier: Fraction::new(0.0),
             combustion_efficiency: Fraction::new(0.0), // Non-burnable
             surface_area_geometry_factor: 0.0,         // N/A for rock

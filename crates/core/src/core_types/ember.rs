@@ -37,7 +37,7 @@
 //! mechanism of fire spread, causing fires to "leap" firebreaks and ignite new fires
 //! kilometers ahead of the main fire front.
 
-use crate::core_types::units::{Celsius, Kilograms};
+use crate::core_types::units::{Celsius, Kilograms, MetersPerSecond, Seconds};
 use crate::core_types::vec3::Vec3;
 use serde::{Deserialize, Serialize};
 
@@ -152,13 +152,13 @@ impl Ember {
     ///
     /// * `wind` - Wind velocity vector (m/s)
     /// * `ambient_temp` - Ambient air temperature (°C)
-    /// * `dt` - Time step (seconds)
+    /// * `dt` - Time step
     ///
     /// # References
     ///
     /// - Koo et al. (2010) - Firebrand physics and trajectory modeling
     /// - Manzello et al. (2020) - Experimental ember transport studies
-    pub(crate) fn update_physics(&mut self, wind: Vec3, ambient_temp: Celsius, dt: f32) {
+    pub(crate) fn update_physics(&mut self, wind: Vec3, ambient_temp: Celsius, dt: Seconds) {
         const AIR_DENSITY: f32 = 1.225; // kg/m³ at sea level, 20°C
 
         let ember_volume = *self.mass / 400.0; // ~400 kg/m³ for char
@@ -201,14 +201,14 @@ impl Ember {
 
         // 4. Integrate motion (Euler method)
         let accel = Vec3::new(0.0, 0.0, buoyancy / *self.mass) + drag_accel + gravity;
-        self.velocity += accel * dt;
-        self.position += self.velocity * dt;
+        self.velocity += accel * *dt;
+        self.position += self.velocity * *dt;
 
         // 5. Radiative cooling (Newton's law of cooling)
         // Stable exponential decay: T = T_ambient + (T_0 - T_ambient) * exp(-k*t)
         // This naturally asymptotes to ambient and NEVER overshoots
         let cooling_coefficient = 0.05; // 1/s
-        let decay_factor = (-cooling_coefficient * f64::from(dt)).exp();
+        let decay_factor = (-cooling_coefficient * f64::from(*dt)).exp();
         let temp_above_ambient = self.temperature - ambient_temp;
         self.temperature = ambient_temp + temp_above_ambient * decay_factor;
     }
@@ -271,10 +271,10 @@ impl Ember {
     /// where this ember will land based on current conditions.
     ///
     /// # Arguments
-    /// * `wind_speed_10m` - Wind speed at 10m reference height (m/s)
+    /// * `wind_speed_10m` - Wind speed at 10m reference height
     /// * `wind_direction` - Wind direction as unit vector
-    /// * `dt` - Integration time step (seconds)
-    /// * `max_time` - Maximum simulation time (seconds)
+    /// * `dt` - Integration time step
+    /// * `max_time` - Maximum simulation time
     ///
     /// # Returns
     /// Predicted landing position (Vec3)
@@ -284,10 +284,10 @@ impl Ember {
     #[must_use]
     pub fn predict_landing_position(
         &self,
-        wind_speed_10m: f32,
+        wind_speed_10m: MetersPerSecond,
         wind_direction: Vec3,
-        dt: f32,
-        max_time: f32,
+        dt: Seconds,
+        max_time: Seconds,
     ) -> Vec3 {
         // Calculate ember diameter from mass assuming density of 400 kg/m³
         // Volume = mass / density, diameter = (6V/π)^(1/3)
@@ -300,10 +300,10 @@ impl Ember {
             *self.mass,
             ember_diameter,
             self.temperature.as_f32(),
-            wind_speed_10m,
+            *wind_speed_10m,
             wind_direction,
-            dt,
-            max_time,
+            *dt,
+            *max_time,
         )
     }
 }
@@ -328,7 +328,7 @@ mod tests {
 
         // Update for several seconds
         for _ in 0..100 {
-            ember.update_physics(wind, Celsius::new(20.0), 0.1);
+            ember.update_physics(wind, Celsius::new(20.0), Seconds::new(0.1));
         }
 
         // Ember should cool down over time
@@ -352,7 +352,7 @@ mod tests {
         // Hot ember should rise or at least not fall immediately
         // Update multiple times to allow buoyancy to overcome initial gravity
         for _ in 0..5 {
-            ember.update_physics(Vec3::zeros(), Celsius::new(20.0), 0.1);
+            ember.update_physics(Vec3::zeros(), Celsius::new(20.0), Seconds::new(0.1));
         }
 
         // Should have moved upward or stayed roughly the same (buoyancy counteracts gravity)
@@ -377,7 +377,7 @@ mod tests {
 
         // Run for many steps (more than 260) - this previously would panic
         for _ in 0..500 {
-            ember.update_physics(Vec3::zeros(), ambient, 0.1);
+            ember.update_physics(Vec3::zeros(), ambient, Seconds::new(0.1));
         }
 
         // Temperature should stabilize at ambient, never go below

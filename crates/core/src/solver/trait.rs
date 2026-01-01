@@ -4,6 +4,8 @@
 //! interface for field-based fire simulation. Both CPU and GPU implementations
 //! implement this trait.
 
+use crate::core_types::units::{Kelvin, Meters, Seconds};
+use crate::core_types::vec3::Vec3;
 use std::borrow::Cow;
 
 /// Backend-agnostic interface for field-based fire simulation
@@ -18,11 +20,10 @@ pub trait FieldSolver: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Timestep in seconds
-    /// * `wind_x` - Wind velocity in x direction (m/s)
-    /// * `wind_y` - Wind velocity in y direction (m/s)
-    /// * `ambient_temp` - Ambient temperature in Kelvin
-    fn step_heat_transfer(&mut self, dt: f32, wind_x: f32, wind_y: f32, ambient_temp: f32);
+    /// * `dt` - Timestep
+    /// * `wind` - Wind velocity vector in m/s (x, y, z components)
+    /// * `ambient_temp` - Ambient temperature
+    fn step_heat_transfer(&mut self, dt: Seconds, wind: Vec3, ambient_temp: Kelvin);
 
     /// Advance combustion (fuel consumption, heat release)
     ///
@@ -30,8 +31,8 @@ pub trait FieldSolver: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Timestep in seconds
-    fn step_combustion(&mut self, dt: f32);
+    /// * `dt` - Timestep
+    fn step_combustion(&mut self, dt: Seconds);
 
     /// Advance moisture (evaporation, equilibrium)
     ///
@@ -39,9 +40,9 @@ pub trait FieldSolver: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Timestep in seconds
+    /// * `dt` - Timestep
     /// * `humidity` - Relative humidity (0.0 to 1.0)
-    fn step_moisture(&mut self, dt: f32, humidity: f32);
+    fn step_moisture(&mut self, dt: Seconds, humidity: f32);
 
     /// Advance level set (fire front propagation)
     ///
@@ -49,8 +50,8 @@ pub trait FieldSolver: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Timestep in seconds
-    fn step_level_set(&mut self, dt: f32);
+    /// * `dt` - Timestep
+    fn step_level_set(&mut self, dt: Seconds);
 
     /// Sync ignition (T > `T_ign` → update φ)
     ///
@@ -79,16 +80,51 @@ pub trait FieldSolver: Send + Sync {
     /// Level set field in row-major order
     fn read_level_set(&self) -> Cow<'_, [f32]>;
 
-    /// Ignite at position with radius
+    /// Apply heat to a location, allowing natural ignition when temperature threshold is reached.
     ///
-    /// Sets the level set φ < 0 in a circular region and raises temperature to ignition.
+    /// This is the PRIMARY method for starting fires realistically. Heat accumulates
+    /// in the fuel, and ignition occurs naturally when the fuel reaches its ignition
+    /// temperature through the applied thermal energy.
     ///
     /// # Arguments
     ///
     /// * `x` - X position in meters
     /// * `y` - Y position in meters
-    /// * `radius` - Ignition radius in meters
-    fn ignite_at(&mut self, x: f32, y: f32, radius: f32);
+    /// * `temperature_k` - Target temperature in Kelvin to apply
+    /// * `radius_m` - Radius in meters over which to apply heat (Gaussian falloff)
+    ///
+    /// # Use Cases
+    ///
+    /// - **Drip torch / backburning**: Apply ~600-800K repeatedly along a line
+    /// - **Match ignition**: Single application of ~600K at point (radius ~0.1m)
+    /// - **Radiant heating**: Apply 400-500K over larger area
+    /// - **Failed ignition**: Heat dissipates if fuel is too wet or wind is too strong
+    ///
+    /// # Scientific Basis
+    ///
+    /// Real ignition sources transfer thermal energy to fuel. Ignition is NOT
+    /// instantaneous - it requires heat accumulation until the fuel reaches its
+    /// ignition temperature while accounting for:
+    /// - Moisture evaporation (2260 kJ/kg latent heat)
+    /// - Heat losses to convection and radiation
+    /// - Wind cooling effects
+    ///
+    /// This models the preheating phase (Catalog 5.1) realistically.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use fire_sim_core::solver::FieldSolver;
+    /// # use fire_sim_core::core_types::units::{Kelvin, Meters};
+    /// # fn example(solver: &mut dyn FieldSolver) {
+    /// // Drip torch operation (continuous heat application)
+    /// for i in 0..10 {
+    ///     let x = Meters::new(50.0 + i as f32 * 2.0);
+    ///     solver.apply_heat(x, Meters::new(100.0), Kelvin::new(873.15), Meters::new(0.5)); // 600°C, 0.5m radius
+    /// }
+    /// # }
+    /// ```
+    fn apply_heat(&mut self, x: Meters, y: Meters, temperature_k: Kelvin, radius_m: Meters);
 
     /// Get grid dimensions
     ///
@@ -96,7 +132,7 @@ pub trait FieldSolver: Send + Sync {
     ///
     /// Tuple of `(width, height, cell_size)` where width and height are in cells,
     /// and `cell_size` is in meters per cell
-    fn dimensions(&self) -> (u32, u32, f32);
+    fn dimensions(&self) -> (u32, u32, Meters);
 
     /// Check if this is the GPU backend
     ///

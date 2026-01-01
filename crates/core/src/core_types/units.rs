@@ -1079,6 +1079,134 @@ impl fmt::Display for KgPerCubicMeter {
     }
 }
 
+/// Fuel load per unit area in kg/m²
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct KilogramsPerSquareMeter(f32);
+
+impl Eq for KilogramsPerSquareMeter {}
+
+impl PartialOrd for KilogramsPerSquareMeter {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KilogramsPerSquareMeter {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for KilogramsPerSquareMeter {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for KilogramsPerSquareMeter {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl KilogramsPerSquareMeter {
+    /// Typical grass fuel load
+    pub const GRASS: KilogramsPerSquareMeter = KilogramsPerSquareMeter(0.5);
+
+    /// Typical forest fuel load
+    pub const FOREST: KilogramsPerSquareMeter = KilogramsPerSquareMeter(5.0);
+
+    /// Extreme fuel load conditions
+    pub const EXTREME: KilogramsPerSquareMeter = KilogramsPerSquareMeter(15.0);
+
+    /// Create a new fuel load. Asserts value >= 0 (non-negative fuel load).
+    #[inline]
+    #[must_use]
+    #[track_caller]
+    pub const fn new(value: f32) -> Self {
+        assert!(
+            value >= 0.0,
+            "KilogramsPerSquareMeter::new: negative fuel load is invalid"
+        );
+        KilogramsPerSquareMeter(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0 (non-negative fuel load).
+    #[inline]
+    #[must_use]
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
+        KilogramsPerSquareMeter(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for KilogramsPerSquareMeter {
+    fn from(v: f32) -> Self {
+        KilogramsPerSquareMeter(v)
+    }
+}
+
+impl From<KilogramsPerSquareMeter> for f32 {
+    fn from(k: KilogramsPerSquareMeter) -> f32 {
+        k.0
+    }
+}
+
+impl Add for KilogramsPerSquareMeter {
+    type Output = KilogramsPerSquareMeter;
+    fn add(self, rhs: KilogramsPerSquareMeter) -> KilogramsPerSquareMeter {
+        // Clamped at 0 to prevent negative fuel load
+        KilogramsPerSquareMeter((self.0 + rhs.0).max(0.0))
+    }
+}
+
+impl Sub for KilogramsPerSquareMeter {
+    type Output = KilogramsPerSquareMeter;
+    fn sub(self, rhs: KilogramsPerSquareMeter) -> KilogramsPerSquareMeter {
+        // Clamped at 0 to prevent negative fuel load
+        KilogramsPerSquareMeter((self.0 - rhs.0).max(0.0))
+    }
+}
+
+impl Mul<Fraction> for KilogramsPerSquareMeter {
+    type Output = KilogramsPerSquareMeter;
+    fn mul(self, rhs: Fraction) -> KilogramsPerSquareMeter {
+        KilogramsPerSquareMeter(self.0 * rhs.0)
+    }
+}
+
+impl Mul<KilogramsPerSquareMeter> for Fraction {
+    type Output = KilogramsPerSquareMeter;
+    fn mul(self, rhs: KilogramsPerSquareMeter) -> KilogramsPerSquareMeter {
+        KilogramsPerSquareMeter(self.0 * rhs.0)
+    }
+}
+
+impl Div<Fraction> for KilogramsPerSquareMeter {
+    type Output = KilogramsPerSquareMeter;
+    fn div(self, rhs: Fraction) -> KilogramsPerSquareMeter {
+        KilogramsPerSquareMeter(self.0 / rhs.0)
+    }
+}
+
+impl fmt::Display for KilogramsPerSquareMeter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} kg/m²", self.0)
+    }
+}
+
 // ============================================================================
 // TIME TYPES
 // ============================================================================
@@ -1526,6 +1654,148 @@ impl fmt::Display for KilometersPerHour {
     }
 }
 
+/// Fire spread rate in meters per minute
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct MetersPerMinute(f32);
+
+impl Eq for MetersPerMinute {}
+
+impl PartialOrd for MetersPerMinute {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MetersPerMinute {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for MetersPerMinute {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for MetersPerMinute {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl MetersPerMinute {
+    /// Conversion factor: meters per minute to meters per second (divide by 60)
+    const TO_MPS_FACTOR: f32 = 1.0 / 60.0;
+
+    /// Conversion factor: meters per second to meters per minute (multiply by 60)
+    const FROM_MPS_FACTOR: f32 = 60.0;
+
+    /// Create a new fire spread rate. Asserts value >= 0.
+    #[inline]
+    #[must_use]
+    #[track_caller]
+    pub const fn new(value: f32) -> Self {
+        assert!(
+            value >= 0.0,
+            "MetersPerMinute::new: negative spread rate is invalid"
+        );
+        MetersPerMinute(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
+        MetersPerMinute(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to meters per second
+    #[inline]
+    #[must_use]
+    pub fn to_mps(self) -> MetersPerSecond {
+        MetersPerSecond(self.0 * Self::TO_MPS_FACTOR)
+    }
+
+    /// Create from meters per second
+    #[inline]
+    #[must_use]
+    pub fn from_mps(mps: MetersPerSecond) -> Self {
+        MetersPerMinute(mps.0 * Self::FROM_MPS_FACTOR)
+    }
+}
+
+impl From<f32> for MetersPerMinute {
+    fn from(v: f32) -> Self {
+        MetersPerMinute(v)
+    }
+}
+
+impl From<MetersPerMinute> for f32 {
+    fn from(m: MetersPerMinute) -> f32 {
+        m.0
+    }
+}
+
+impl From<MetersPerMinute> for MetersPerSecond {
+    fn from(m: MetersPerMinute) -> MetersPerSecond {
+        m.to_mps()
+    }
+}
+
+impl From<MetersPerSecond> for MetersPerMinute {
+    fn from(mps: MetersPerSecond) -> MetersPerMinute {
+        MetersPerMinute::from_mps(mps)
+    }
+}
+
+impl Add for MetersPerMinute {
+    type Output = MetersPerMinute;
+    fn add(self, rhs: MetersPerMinute) -> MetersPerMinute {
+        MetersPerMinute(self.0 + rhs.0)
+    }
+}
+
+impl Sub for MetersPerMinute {
+    type Output = MetersPerMinute;
+    fn sub(self, rhs: MetersPerMinute) -> MetersPerMinute {
+        MetersPerMinute(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for MetersPerMinute {
+    type Output = MetersPerMinute;
+    fn mul(self, rhs: f32) -> MetersPerMinute {
+        MetersPerMinute(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for MetersPerMinute {
+    type Output = MetersPerMinute;
+    fn div(self, rhs: f32) -> MetersPerMinute {
+        MetersPerMinute(self.0 / rhs)
+    }
+}
+
+impl fmt::Display for MetersPerMinute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} m/min", self.0)
+    }
+}
+
 // ============================================================================
 // ENERGY/POWER TYPES
 // ============================================================================
@@ -1634,6 +1904,126 @@ impl Div<f32> for Kilojoules {
 impl fmt::Display for Kilojoules {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:.2} kJ", self.0)
+    }
+}
+
+/// Power in gigawatts (GW)
+/// Used for measuring total fire power output from large fires
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct Gigawatts(f32);
+
+impl Eq for Gigawatts {}
+
+impl PartialOrd for Gigawatts {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Gigawatts {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for Gigawatts {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for Gigawatts {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl Gigawatts {
+    /// Create a new power value in gigawatts
+    #[inline]
+    #[must_use]
+    #[track_caller]
+    pub const fn new(value: f32) -> Self {
+        assert!(value >= 0.0, "Gigawatts::new: negative power is invalid");
+        Gigawatts(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0 (non-negative power).
+    #[inline]
+    #[must_use]
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
+        Gigawatts(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for Gigawatts {
+    fn from(v: f32) -> Self {
+        Gigawatts(v)
+    }
+}
+
+impl From<Gigawatts> for f32 {
+    fn from(gw: Gigawatts) -> f32 {
+        gw.0
+    }
+}
+
+impl Add for Gigawatts {
+    type Output = Gigawatts;
+    fn add(self, rhs: Gigawatts) -> Gigawatts {
+        Gigawatts(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Gigawatts {
+    type Output = Gigawatts;
+    fn sub(self, rhs: Gigawatts) -> Gigawatts {
+        Gigawatts(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for Gigawatts {
+    type Output = Gigawatts;
+    fn mul(self, rhs: f32) -> Gigawatts {
+        Gigawatts(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for Gigawatts {
+    type Output = Gigawatts;
+    fn div(self, rhs: f32) -> Gigawatts {
+        Gigawatts(self.0 / rhs)
+    }
+}
+
+impl PartialEq<f32> for Gigawatts {
+    fn eq(&self, other: &f32) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialOrd<f32> for Gigawatts {
+    fn partial_cmp(&self, other: &f32) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
+    }
+}
+
+impl fmt::Display for Gigawatts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2} GW", self.0)
     }
 }
 
@@ -1752,100 +2142,6 @@ impl fmt::Display for KjPerKg {
     }
 }
 
-/// Fire intensity in kW/m (Byram's fireline intensity)
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
-#[repr(transparent)]
-pub struct KwPerMeter(f32);
-
-impl Eq for KwPerMeter {}
-
-impl PartialOrd for KwPerMeter {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for KwPerMeter {
-    fn cmp(&self, other: &Self) -> Ordering {
-        f32_total_cmp(self.0, other.0)
-    }
-}
-
-impl Deref for KwPerMeter {
-    type Target = f32;
-    #[inline]
-    fn deref(&self) -> &f32 {
-        &self.0
-    }
-}
-
-impl DerefMut for KwPerMeter {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut f32 {
-        &mut self.0
-    }
-}
-
-impl KwPerMeter {
-    /// Create a new fire intensity value. Asserts value >= 0 (non-negative intensity).
-    #[inline]
-    #[must_use]
-    #[track_caller]
-    pub const fn new(value: f32) -> Self {
-        assert!(
-            value >= 0.0,
-            "KwPerMeter::new: negative intensity is invalid"
-        );
-        KwPerMeter(value)
-    }
-
-    /// Create without validation.
-    /// # Safety
-    /// Caller must ensure value >= 0 (non-negative intensity).
-    #[inline]
-    #[must_use]
-    pub const unsafe fn new_unchecked(value: f32) -> Self {
-        KwPerMeter(value)
-    }
-
-    /// Get the raw f32 value
-    #[inline]
-    #[must_use]
-    pub fn value(self) -> f32 {
-        self.0
-    }
-
-    /// Low intensity fire threshold (< 350 kW/m)
-    pub const LOW_INTENSITY_THRESHOLD: KwPerMeter = KwPerMeter(350.0);
-
-    /// Moderate intensity threshold (350-2000 kW/m)
-    pub const MODERATE_INTENSITY_THRESHOLD: KwPerMeter = KwPerMeter(2000.0);
-
-    /// High intensity threshold (2000-4000 kW/m)
-    pub const HIGH_INTENSITY_THRESHOLD: KwPerMeter = KwPerMeter(4000.0);
-
-    /// Extreme intensity (> 10000 kW/m, crown fire conditions)
-    pub const EXTREME_INTENSITY_THRESHOLD: KwPerMeter = KwPerMeter(10000.0);
-}
-
-impl From<f32> for KwPerMeter {
-    fn from(v: f32) -> Self {
-        KwPerMeter(v)
-    }
-}
-
-impl From<KwPerMeter> for f32 {
-    fn from(i: KwPerMeter) -> f32 {
-        i.0
-    }
-}
-
-impl fmt::Display for KwPerMeter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.1} kW/m", self.0)
-    }
-}
-
 // ============================================================================
 // SPECIFIC HEAT TYPE
 // ============================================================================
@@ -1952,6 +2248,628 @@ impl Mul<KjPerKgK> for f32 {
 impl fmt::Display for KjPerKgK {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:.3} kJ/(kg·K)", self.0)
+    }
+}
+
+// ============================================================================
+// THERMAL PROPERTIES
+// ============================================================================
+
+/// Thermal conductivity in W/(m·K)
+/// Measures a material's ability to conduct heat
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct ThermalConductivity(f32);
+
+impl Eq for ThermalConductivity {}
+
+impl PartialOrd for ThermalConductivity {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ThermalConductivity {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for ThermalConductivity {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for ThermalConductivity {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl ThermalConductivity {
+    /// Thermal conductivity of wood (typical range 0.1-0.2 W/(m·K))
+    pub const WOOD_TYPICAL: ThermalConductivity = ThermalConductivity(0.15);
+
+    /// Thermal conductivity of air at 20°C (0.025 W/(m·K))
+    pub const AIR: ThermalConductivity = ThermalConductivity(0.025);
+
+    /// Thermal conductivity of soil (typical range 0.5-2.0 W/(m·K))
+    pub const SOIL_TYPICAL: ThermalConductivity = ThermalConductivity(1.0);
+
+    /// Create a new thermal conductivity value. Asserts value >= 0.
+    #[inline]
+    #[must_use]
+    #[track_caller]
+    pub const fn new(value: f32) -> Self {
+        assert!(
+            value >= 0.0,
+            "ThermalConductivity::new: negative thermal conductivity is invalid"
+        );
+        ThermalConductivity(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
+        ThermalConductivity(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for ThermalConductivity {
+    fn from(v: f32) -> Self {
+        ThermalConductivity(v)
+    }
+}
+
+impl From<ThermalConductivity> for f32 {
+    fn from(k: ThermalConductivity) -> f32 {
+        k.0
+    }
+}
+
+impl Add for ThermalConductivity {
+    type Output = ThermalConductivity;
+    fn add(self, rhs: ThermalConductivity) -> ThermalConductivity {
+        ThermalConductivity(self.0 + rhs.0)
+    }
+}
+
+impl Sub for ThermalConductivity {
+    type Output = ThermalConductivity;
+    fn sub(self, rhs: ThermalConductivity) -> ThermalConductivity {
+        ThermalConductivity(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for ThermalConductivity {
+    type Output = ThermalConductivity;
+    fn mul(self, rhs: f32) -> ThermalConductivity {
+        ThermalConductivity(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for ThermalConductivity {
+    type Output = ThermalConductivity;
+    fn div(self, rhs: f32) -> ThermalConductivity {
+        ThermalConductivity(self.0 / rhs)
+    }
+}
+
+impl fmt::Display for ThermalConductivity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} W/(m·K)", self.0)
+    }
+}
+
+/// Thermal diffusivity in m²/s
+/// Measures the rate of heat transfer through a material
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct ThermalDiffusivity(f32);
+
+impl Eq for ThermalDiffusivity {}
+
+impl PartialOrd for ThermalDiffusivity {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ThermalDiffusivity {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for ThermalDiffusivity {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for ThermalDiffusivity {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl ThermalDiffusivity {
+    /// Thermal diffusivity of wood (typical ~1e-7 m²/s)
+    pub const WOOD: ThermalDiffusivity = ThermalDiffusivity(1e-7);
+
+    /// Thermal diffusivity of air at 20°C (~2e-5 m²/s)
+    pub const AIR: ThermalDiffusivity = ThermalDiffusivity(2e-5);
+
+    /// Thermal diffusivity of soil (typical ~5e-7 m²/s)
+    pub const SOIL: ThermalDiffusivity = ThermalDiffusivity(5e-7);
+
+    /// Create a new thermal diffusivity value. Asserts value >= 0.
+    #[inline]
+    #[must_use]
+    #[track_caller]
+    pub const fn new(value: f32) -> Self {
+        assert!(
+            value >= 0.0,
+            "ThermalDiffusivity::new: negative thermal diffusivity is invalid"
+        );
+        ThermalDiffusivity(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
+        ThermalDiffusivity(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for ThermalDiffusivity {
+    fn from(v: f32) -> Self {
+        ThermalDiffusivity(v)
+    }
+}
+
+impl From<ThermalDiffusivity> for f32 {
+    fn from(a: ThermalDiffusivity) -> f32 {
+        a.0
+    }
+}
+
+impl Add for ThermalDiffusivity {
+    type Output = ThermalDiffusivity;
+    fn add(self, rhs: ThermalDiffusivity) -> ThermalDiffusivity {
+        ThermalDiffusivity(self.0 + rhs.0)
+    }
+}
+
+impl Sub for ThermalDiffusivity {
+    type Output = ThermalDiffusivity;
+    fn sub(self, rhs: ThermalDiffusivity) -> ThermalDiffusivity {
+        ThermalDiffusivity(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for ThermalDiffusivity {
+    type Output = ThermalDiffusivity;
+    fn mul(self, rhs: f32) -> ThermalDiffusivity {
+        ThermalDiffusivity(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for ThermalDiffusivity {
+    type Output = ThermalDiffusivity;
+    fn div(self, rhs: f32) -> ThermalDiffusivity {
+        ThermalDiffusivity(self.0 / rhs)
+    }
+}
+
+impl fmt::Display for ThermalDiffusivity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} m²/s", self.0)
+    }
+}
+
+/// Heat transfer coefficient in W/(m²·K)
+/// Measures convective heat transfer at a surface
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct HeatTransferCoefficient(f32);
+
+impl Eq for HeatTransferCoefficient {}
+
+impl PartialOrd for HeatTransferCoefficient {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for HeatTransferCoefficient {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for HeatTransferCoefficient {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for HeatTransferCoefficient {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl HeatTransferCoefficient {
+    /// Natural convection (typical range 5-25 W/(m²·K))
+    pub const NATURAL_CONVECTION: HeatTransferCoefficient = HeatTransferCoefficient(15.0);
+
+    /// Forced convection (typical range 25-250 W/(m²·K))
+    pub const FORCED_CONVECTION: HeatTransferCoefficient = HeatTransferCoefficient(100.0);
+
+    /// Create a new heat transfer coefficient. Asserts value >= 0.
+    #[inline]
+    #[must_use]
+    #[track_caller]
+    pub const fn new(value: f32) -> Self {
+        assert!(
+            value >= 0.0,
+            "HeatTransferCoefficient::new: negative heat transfer coefficient is invalid"
+        );
+        HeatTransferCoefficient(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
+        HeatTransferCoefficient(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for HeatTransferCoefficient {
+    fn from(v: f32) -> Self {
+        HeatTransferCoefficient(v)
+    }
+}
+
+impl From<HeatTransferCoefficient> for f32 {
+    fn from(h: HeatTransferCoefficient) -> f32 {
+        h.0
+    }
+}
+
+impl Add for HeatTransferCoefficient {
+    type Output = HeatTransferCoefficient;
+    fn add(self, rhs: HeatTransferCoefficient) -> HeatTransferCoefficient {
+        HeatTransferCoefficient(self.0 + rhs.0)
+    }
+}
+
+impl Sub for HeatTransferCoefficient {
+    type Output = HeatTransferCoefficient;
+    fn sub(self, rhs: HeatTransferCoefficient) -> HeatTransferCoefficient {
+        HeatTransferCoefficient(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for HeatTransferCoefficient {
+    type Output = HeatTransferCoefficient;
+    fn mul(self, rhs: f32) -> HeatTransferCoefficient {
+        HeatTransferCoefficient(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for HeatTransferCoefficient {
+    type Output = HeatTransferCoefficient;
+    fn div(self, rhs: f32) -> HeatTransferCoefficient {
+        HeatTransferCoefficient(self.0 / rhs)
+    }
+}
+
+impl fmt::Display for HeatTransferCoefficient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} W/(m²·K)", self.0)
+    }
+}
+
+/// Heat flux density and solar irradiance in W/m²
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct WattsPerSquareMeter(f32);
+
+impl Eq for WattsPerSquareMeter {}
+
+impl PartialOrd for WattsPerSquareMeter {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for WattsPerSquareMeter {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for WattsPerSquareMeter {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for WattsPerSquareMeter {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl WattsPerSquareMeter {
+    /// Maximum solar irradiance at sea level (noon, clear sky)
+    pub const SOLAR_MAX: WattsPerSquareMeter = WattsPerSquareMeter(1000.0);
+
+    /// Typical minimum solar irradiance for daylight
+    pub const SOLAR_TYPICAL_MIN: WattsPerSquareMeter = WattsPerSquareMeter(200.0);
+
+    /// Typical maximum solar irradiance for normal conditions
+    pub const SOLAR_TYPICAL_MAX: WattsPerSquareMeter = WattsPerSquareMeter(600.0);
+
+    /// Create a new heat flux. Asserts value >= 0 (non-negative heat flux).
+    #[inline]
+    #[must_use]
+    #[track_caller]
+    pub const fn new(value: f32) -> Self {
+        assert!(
+            value >= 0.0,
+            "WattsPerSquareMeter::new: negative heat flux is invalid"
+        );
+        WattsPerSquareMeter(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0 (non-negative heat flux).
+    #[inline]
+    #[must_use]
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
+        WattsPerSquareMeter(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for WattsPerSquareMeter {
+    fn from(v: f32) -> Self {
+        WattsPerSquareMeter(v)
+    }
+}
+
+impl From<WattsPerSquareMeter> for f32 {
+    fn from(w: WattsPerSquareMeter) -> f32 {
+        w.0
+    }
+}
+
+impl Add for WattsPerSquareMeter {
+    type Output = WattsPerSquareMeter;
+    fn add(self, rhs: WattsPerSquareMeter) -> WattsPerSquareMeter {
+        WattsPerSquareMeter(self.0 + rhs.0)
+    }
+}
+
+impl Sub for WattsPerSquareMeter {
+    type Output = WattsPerSquareMeter;
+    fn sub(self, rhs: WattsPerSquareMeter) -> WattsPerSquareMeter {
+        WattsPerSquareMeter(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for WattsPerSquareMeter {
+    type Output = WattsPerSquareMeter;
+    fn mul(self, rhs: f32) -> WattsPerSquareMeter {
+        WattsPerSquareMeter(self.0 * rhs)
+    }
+}
+
+impl Mul<WattsPerSquareMeter> for f32 {
+    type Output = WattsPerSquareMeter;
+    fn mul(self, rhs: WattsPerSquareMeter) -> WattsPerSquareMeter {
+        WattsPerSquareMeter(self * rhs.0)
+    }
+}
+
+impl Div<f32> for WattsPerSquareMeter {
+    type Output = WattsPerSquareMeter;
+    fn div(self, rhs: f32) -> WattsPerSquareMeter {
+        WattsPerSquareMeter(self.0 / rhs)
+    }
+}
+
+// Cross-type operation: W/m² × seconds = J/m²
+impl Mul<Seconds> for WattsPerSquareMeter {
+    type Output = JoulesPerSquareMeter;
+    fn mul(self, rhs: Seconds) -> JoulesPerSquareMeter {
+        JoulesPerSquareMeter(self.0 * rhs.0)
+    }
+}
+
+// Cross-type operation: seconds × W/m² = J/m²
+impl Mul<WattsPerSquareMeter> for Seconds {
+    type Output = JoulesPerSquareMeter;
+    fn mul(self, rhs: WattsPerSquareMeter) -> JoulesPerSquareMeter {
+        JoulesPerSquareMeter(self.0 * rhs.0)
+    }
+}
+
+impl fmt::Display for WattsPerSquareMeter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} W/m²", self.0)
+    }
+}
+
+/// Energy per unit area in J/m²
+/// Created by multiplying [`WattsPerSquareMeter`] × [`Seconds`]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct JoulesPerSquareMeter(f32);
+
+impl Eq for JoulesPerSquareMeter {}
+
+impl PartialOrd for JoulesPerSquareMeter {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for JoulesPerSquareMeter {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for JoulesPerSquareMeter {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for JoulesPerSquareMeter {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl JoulesPerSquareMeter {
+    /// Create a new energy per unit area. Asserts value >= 0.
+    #[inline]
+    #[must_use]
+    #[track_caller]
+    pub const fn new(value: f32) -> Self {
+        assert!(
+            value >= 0.0,
+            "JoulesPerSquareMeter::new: negative energy density is invalid"
+        );
+        JoulesPerSquareMeter(value)
+    }
+
+    /// Create without validation.
+    /// # Safety
+    /// Caller must ensure value >= 0.
+    #[inline]
+    #[must_use]
+    pub const unsafe fn new_unchecked(value: f32) -> Self {
+        JoulesPerSquareMeter(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for JoulesPerSquareMeter {
+    fn from(v: f32) -> Self {
+        JoulesPerSquareMeter(v)
+    }
+}
+
+impl From<JoulesPerSquareMeter> for f32 {
+    fn from(j: JoulesPerSquareMeter) -> f32 {
+        j.0
+    }
+}
+
+impl Add for JoulesPerSquareMeter {
+    type Output = JoulesPerSquareMeter;
+    fn add(self, rhs: JoulesPerSquareMeter) -> JoulesPerSquareMeter {
+        JoulesPerSquareMeter(self.0 + rhs.0)
+    }
+}
+
+impl Sub for JoulesPerSquareMeter {
+    type Output = JoulesPerSquareMeter;
+    fn sub(self, rhs: JoulesPerSquareMeter) -> JoulesPerSquareMeter {
+        JoulesPerSquareMeter(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for JoulesPerSquareMeter {
+    type Output = JoulesPerSquareMeter;
+    fn mul(self, rhs: f32) -> JoulesPerSquareMeter {
+        JoulesPerSquareMeter(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for JoulesPerSquareMeter {
+    type Output = JoulesPerSquareMeter;
+    fn div(self, rhs: f32) -> JoulesPerSquareMeter {
+        JoulesPerSquareMeter(self.0 / rhs)
+    }
+}
+
+// Cross-type operation: J/m² ÷ seconds = W/m²
+impl Div<Seconds> for JoulesPerSquareMeter {
+    type Output = WattsPerSquareMeter;
+    fn div(self, rhs: Seconds) -> WattsPerSquareMeter {
+        WattsPerSquareMeter(self.0 / rhs.0)
+    }
+}
+
+impl fmt::Display for JoulesPerSquareMeter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} J/m²", self.0)
     }
 }
 
@@ -2399,6 +3317,233 @@ impl fmt::Display for Radians {
 }
 
 // ============================================================================
+// RATE TYPES (TEMPORAL)
+// ============================================================================
+
+/// Rate per second (1/s or s⁻¹)
+/// Used for: cooling rates, vorticity, fire whirl thresholds
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct RatePerSecond(f32);
+
+impl Eq for RatePerSecond {}
+
+impl PartialOrd for RatePerSecond {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RatePerSecond {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for RatePerSecond {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for RatePerSecond {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl RatePerSecond {
+    /// Create a new rate per second (can be any value, positive or negative)
+    #[inline]
+    #[must_use]
+    pub const fn new(value: f32) -> Self {
+        RatePerSecond(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to rate per day
+    #[inline]
+    #[must_use]
+    pub fn to_rate_per_day(self) -> RatePerDay {
+        RatePerDay(self.0 * 86400.0)
+    }
+}
+
+impl From<f32> for RatePerSecond {
+    fn from(v: f32) -> Self {
+        RatePerSecond(v)
+    }
+}
+
+impl From<RatePerSecond> for f32 {
+    fn from(r: RatePerSecond) -> f32 {
+        r.0
+    }
+}
+
+impl Add for RatePerSecond {
+    type Output = RatePerSecond;
+    fn add(self, rhs: RatePerSecond) -> RatePerSecond {
+        RatePerSecond(self.0 + rhs.0)
+    }
+}
+
+impl Sub for RatePerSecond {
+    type Output = RatePerSecond;
+    fn sub(self, rhs: RatePerSecond) -> RatePerSecond {
+        RatePerSecond(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for RatePerSecond {
+    type Output = RatePerSecond;
+    fn mul(self, rhs: f32) -> RatePerSecond {
+        RatePerSecond(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for RatePerSecond {
+    type Output = RatePerSecond;
+    fn div(self, rhs: f32) -> RatePerSecond {
+        RatePerSecond(self.0 / rhs)
+    }
+}
+
+impl fmt::Display for RatePerSecond {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.4} s⁻¹", self.0)
+    }
+}
+
+/// Rate per day (1/day or day⁻¹)
+/// Used for: drought rate evolution, weather system changes
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct RatePerDay(f32);
+
+impl Eq for RatePerDay {}
+
+impl PartialOrd for RatePerDay {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RatePerDay {
+    fn cmp(&self, other: &Self) -> Ordering {
+        f32_total_cmp(self.0, other.0)
+    }
+}
+
+impl Deref for RatePerDay {
+    type Target = f32;
+    #[inline]
+    fn deref(&self) -> &f32 {
+        &self.0
+    }
+}
+
+impl DerefMut for RatePerDay {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut f32 {
+        &mut self.0
+    }
+}
+
+impl RatePerDay {
+    /// Seconds per day conversion factor
+    pub const SECONDS_PER_DAY: f32 = 86400.0;
+
+    /// Create a new rate per day (can be any value, positive or negative)
+    #[inline]
+    #[must_use]
+    pub const fn new(value: f32) -> Self {
+        RatePerDay(value)
+    }
+
+    /// Get the raw f32 value
+    #[inline]
+    #[must_use]
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Convert to rate per second
+    #[inline]
+    #[must_use]
+    pub fn to_rate_per_second(self) -> RatePerSecond {
+        RatePerSecond(self.0 / Self::SECONDS_PER_DAY)
+    }
+}
+
+impl From<f32> for RatePerDay {
+    fn from(v: f32) -> Self {
+        RatePerDay(v)
+    }
+}
+
+impl From<RatePerDay> for f32 {
+    fn from(r: RatePerDay) -> f32 {
+        r.0
+    }
+}
+
+impl From<RatePerDay> for RatePerSecond {
+    fn from(r: RatePerDay) -> RatePerSecond {
+        r.to_rate_per_second()
+    }
+}
+
+impl From<RatePerSecond> for RatePerDay {
+    fn from(r: RatePerSecond) -> RatePerDay {
+        r.to_rate_per_day()
+    }
+}
+
+impl Add for RatePerDay {
+    type Output = RatePerDay;
+    fn add(self, rhs: RatePerDay) -> RatePerDay {
+        RatePerDay(self.0 + rhs.0)
+    }
+}
+
+impl Sub for RatePerDay {
+    type Output = RatePerDay;
+    fn sub(self, rhs: RatePerDay) -> RatePerDay {
+        RatePerDay(self.0 - rhs.0)
+    }
+}
+
+impl Mul<f32> for RatePerDay {
+    type Output = RatePerDay;
+    fn mul(self, rhs: f32) -> RatePerDay {
+        RatePerDay(self.0 * rhs)
+    }
+}
+
+impl Div<f32> for RatePerDay {
+    type Output = RatePerDay;
+    fn div(self, rhs: f32) -> RatePerDay {
+        RatePerDay(self.0 / rhs)
+    }
+}
+
+impl fmt::Display for RatePerDay {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.4} day⁻¹", self.0)
+    }
+}
+
+// ============================================================================
 // SURFACE AREA TO VOLUME RATIO
 // ============================================================================
 
@@ -2642,5 +3787,66 @@ mod tests {
 
         let prod = a * b;
         assert!((prod.0 - 0.15).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rate_per_second_arithmetic() {
+        let r1 = RatePerSecond::new(0.5);
+        let r2 = RatePerSecond::new(0.3);
+
+        let sum = r1 + r2;
+        assert!((sum.0 - 0.8).abs() < 0.01);
+
+        let diff = r1 - r2;
+        assert!((diff.0 - 0.2).abs() < 0.01);
+
+        let scaled = r1 * 2.0;
+        assert!((scaled.0 - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rate_per_day_arithmetic() {
+        let r1 = RatePerDay::new(2.0);
+        let r2 = RatePerDay::new(1.5);
+
+        let sum = r1 + r2;
+        assert!((sum.0 - 3.5).abs() < 0.01);
+
+        let diff = r1 - r2;
+        assert!((diff.0 - 0.5).abs() < 0.01);
+
+        let scaled = r1 / 2.0;
+        assert!((scaled.0 - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rate_per_day_to_rate_per_second() {
+        let rpd = RatePerDay::new(86400.0);
+        let rps = rpd.to_rate_per_second();
+        assert!((rps.0 - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rate_per_second_to_rate_per_day() {
+        let rps = RatePerSecond::new(1.0);
+        let rpd = rps.to_rate_per_day();
+        assert!((rpd.0 - 86400.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rate_conversions_bidirectional() {
+        let original = RatePerSecond::new(0.001);
+        let converted: RatePerDay = original.into();
+        let back: RatePerSecond = converted.into();
+        assert!((back.0 - original.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_negative_rates_allowed() {
+        let cooling = RatePerSecond::new(-0.05);
+        assert!(cooling.0 < 0.0);
+
+        let decline = RatePerDay::new(-2.5);
+        assert!(decline.0 < 0.0);
     }
 }

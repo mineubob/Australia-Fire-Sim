@@ -2669,7 +2669,15 @@ fn create_test_simulation(
     height: f32,
     weather_preset: WeatherPreset,
 ) -> FireSimulation {
-    let mut sim = FireSimulation::new(5.0, &TerrainData::flat(width, height, 5.0, 0.0));
+    let mut sim = FireSimulation::new(
+        5.0,
+        &TerrainData::flat(
+            Meters::new(width),
+            Meters::new(height),
+            Meters::new(5.0),
+            Meters::new(0.0),
+        ),
+    );
 
     let step = 1;
     for x in (0..(width as i32)).step_by(step) {

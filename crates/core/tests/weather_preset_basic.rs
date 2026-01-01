@@ -1,5 +1,5 @@
 //! Unit test for `WeatherPreset::basic` and `WeatherSystem::from_preset`
-use fire_sim_core::core_types::{Celsius, KilometersPerHour, Percent};
+use fire_sim_core::core_types::{Celsius, KilometersPerHour, Percent, RatePerDay};
 use fire_sim_core::{ClimatePattern, WeatherPreset, WeatherSystem};
 
 #[test]
@@ -17,7 +17,7 @@ fn test_weather_preset_basic_and_from_preset() {
     // Basic fields should match inputs
     assert_eq!(preset.summer_humidity, Percent::new(25.0));
     assert_eq!(preset.summer_wind, KilometersPerHour::new(20.0));
-    assert_eq!(preset.summer_drought_rate, 0.10);
+    assert_eq!(preset.summer_drought_rate, RatePerDay::new(0.10));
 
     // Create a WeatherSystem from the preset
     let system = WeatherSystem::from_preset(preset.clone(), 15, 14.0, ClimatePattern::Neutral);

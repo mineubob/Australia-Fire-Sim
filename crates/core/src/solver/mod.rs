@@ -18,23 +18,36 @@
 //!
 //! ```rust,ignore
 //! use fire_sim_core::solver::{create_field_solver, QualityPreset};
+//! use fire_sim_core::core_types::Meters;
 //! use fire_sim_core::TerrainData;
 //!
-//! let terrain = TerrainData::flat(1000.0, 1000.0, 10.0, 0.0);
+//! let terrain = TerrainData::flat(
+//!     Meters::new(1000.0),
+//!     Meters::new(1000.0),
+//!     Meters::new(10.0),
+//!     Meters::new(0.0),
+//! );
 //! let solver = create_field_solver(&terrain, QualityPreset::Medium);
 //! ```
 
 mod combustion;
 mod context;
 mod cpu;
+pub mod crown_fire;
 mod fields;
+pub mod fuel_grid;
+pub mod fuel_layers;
+pub mod fuel_variation;
 mod heat_transfer;
 mod level_set;
 pub mod marching_squares;
+pub mod noise;
 pub mod profiler;
 mod quality;
+pub mod terrain_slope;
 #[allow(clippy::module_name_repetitions)]
 mod r#trait;
+pub mod vertical_heat_transfer;
 
 #[cfg(feature = "gpu")]
 mod gpu;
@@ -42,11 +55,23 @@ mod gpu;
 // Re-exports
 pub use context::GpuInitResult;
 pub use cpu::CpuFieldSolver;
+pub use crown_fire::{CanopyProperties, CrownFirePhysics, CrownFireState};
 pub use fields::FieldData;
+pub use fuel_grid::{CellFuelTypes, FuelGrid, FuelPropertyBuffers, FuelTable, FuelTypeId};
+pub use fuel_layers::{FuelLayer, LayerState, LayeredFuelCell};
+pub use fuel_variation::{
+    apply_fuel_heterogeneity, apply_heterogeneity_single, calculate_aspect_moisture_factor,
+    HeterogeneityConfig,
+};
 pub use marching_squares::{extract_fire_front, FireFront};
+pub use noise::{NoiseGenerator, NoiseOctave};
 pub use profiler::{FrameTimer, ProfilerScope};
 pub use quality::QualityPreset;
 pub use r#trait::FieldSolver;
+pub use terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
+pub use vertical_heat_transfer::{
+    FluxParams, VerticalHeatTransfer, LATENT_HEAT_WATER, STEFAN_BOLTZMANN,
+};
 
 #[cfg(feature = "gpu")]
 pub use context::GpuContext;

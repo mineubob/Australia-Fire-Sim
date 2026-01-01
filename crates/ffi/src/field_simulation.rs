@@ -5,6 +5,7 @@
 /// FFI bindings for field-based fire simulation (FieldSimulation).
 ///
 /// This module provides C-compatible API for the new GPU/CPU field solver system.
+use fire_sim_core::core_types::Meters;
 use fire_sim_core::simulation::FieldSimulation;
 use fire_sim_core::solver::QualityPreset;
 use fire_sim_core::{TerrainData, Vec3, WeatherSystem};
@@ -79,7 +80,12 @@ pub extern "C" fn fire_sim_field_new(
             height,
             resolution,
             base_elevation,
-        } => TerrainData::flat(*width, *height, *resolution, *base_elevation),
+        } => TerrainData::flat(
+            Meters::new(*width),
+            Meters::new(*height),
+            Meters::new(*resolution),
+            Meters::new(*base_elevation),
+        ),
         _ => {
             track_error(&DefaultFireSimError::invalid_parameter(
                 "Only Flat terrain is currently supported for field simulation".to_string(),
@@ -148,12 +154,11 @@ pub extern "C" fn fire_sim_field_update(
     FireSimErrorCode::Ok
 }
 
-/// Ignites fire at a specified position with given radius.
+/// Ignites fire at a specified position using realistic piloted ignition.
 ///
 /// # Arguments
 /// * `instance` - The simulation instance (must not be null)
 /// * `x`, `y`, `z` - Position in meters
-/// * `radius` - Ignition radius in meters
 ///
 /// # Returns
 /// FireSimErrorCode::Success on success, error code otherwise.
@@ -166,7 +171,6 @@ pub extern "C" fn fire_sim_field_ignite_at(
     x: f64,
     y: f64,
     z: f64,
-    radius: f64,
 ) -> FireSimErrorCode {
     if instance.is_null() {
         track_error(&DefaultFireSimError::null_pointer("instance"));
@@ -175,7 +179,8 @@ pub extern "C" fn fire_sim_field_ignite_at(
 
     let instance_ref = unsafe { &mut *instance };
     let position = Vec3::new(x as f32, y as f32, z as f32);
-    instance_ref.simulation.ignite_at(position, radius as f32);
+    // Use piloted ignition parameters (600°C / 873K, 5m radius)
+    instance_ref.simulation.apply_heat(position, 873.15, 5.0);
 
     FireSimErrorCode::Ok
 }

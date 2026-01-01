@@ -22,7 +22,9 @@ pub use error::{fire_sim_get_last_error, fire_sim_get_last_error_code, FireSimEr
 // Field-based API (GPU/CPU system)
 pub use field_queries::{
     fire_sim_field_get_fire_front, fire_sim_field_get_stats, fire_sim_field_get_temperature_grid,
-    fire_sim_field_read_level_set, fire_sim_free_fire_front, fire_sim_free_grid,
+    fire_sim_field_is_burned, fire_sim_field_level_set_at, fire_sim_field_query_burn_states,
+    fire_sim_field_query_temperatures, fire_sim_field_read_level_set,
+    fire_sim_field_temperature_at, fire_sim_free_fire_front, fire_sim_free_grid,
     fire_sim_free_stats, FieldSimStats, FireFrontData, FireFrontVertex,
 };
 pub use field_simulation::{

@@ -18,6 +18,8 @@
 //! - Cruz, M.G., Alexander, M.E. (2010). "Assessing crown fire potential in coniferous forests"
 //!   Forest Ecology and Management, 259(3), 562-570
 
+use crate::core_types::units::{KgPerCubicMeter, KjPerKg, Meters, MetersPerMinute, Percent};
+
 /// Crown fire type classification
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum CrownFireType {
@@ -65,27 +67,29 @@ impl CrownFireBehavior {
 /// `I_o` = (0.01 × CBD × H × (460 + 25.9 × `M_c`)) / CBH
 ///
 /// # Arguments
-/// * `crown_bulk_density` - Crown bulk density (kg/m³), typical range 0.05-0.3
-/// * `heat_content` - Heat content of crown fuels (kJ/kg), typical 18000-22000
-/// * `foliar_moisture_content` - Foliar moisture content (%), typical 80-120
-/// * `crown_base_height` - Height to base of crown (m), typical 2-15
+/// * `crown_bulk_density` - Crown bulk density, typical range 0.05-0.3 kg/m³
+/// * `heat_content` - Heat content of crown fuels, typical 18000-22000 kJ/kg
+/// * `foliar_moisture_content` - Foliar moisture content, typical 80-120%
+/// * `crown_base_height` - Height to base of crown, typical 2-15 m
 ///
 /// # Returns
-/// Critical surface fire intensity in kW/m
+/// Critical surface fire intensity (kW/m). Note: Using f32 with clear units in name
+/// since `KilowattsPerMeter` unit type was removed. This maintains exact Van Wagner
+/// physics without introducing new unit types.
 ///
 /// # References
 /// Van Wagner (1977), Equation 4
 #[must_use]
 pub fn calculate_critical_surface_intensity(
-    crown_bulk_density: f32,
-    heat_content: f32,
-    foliar_moisture_content: f32,
-    crown_base_height: f32,
+    crown_bulk_density: KgPerCubicMeter,
+    heat_content: KjPerKg,
+    foliar_moisture_content: Percent,
+    crown_base_height: Meters,
 ) -> f32 {
     // Van Wagner (1977) formula - exact implementation
     let numerator =
-        0.01 * crown_bulk_density * heat_content * (460.0 + 25.9 * foliar_moisture_content);
-    let critical_intensity = numerator / crown_base_height;
+        0.01 * *crown_bulk_density * *heat_content * (460.0 + 25.9 * *foliar_moisture_content);
+    let critical_intensity = numerator / *crown_base_height;
 
     critical_intensity.max(0.0)
 }
@@ -99,18 +103,20 @@ pub fn calculate_critical_surface_intensity(
 /// * `crown_bulk_density` - Crown bulk density (kg/m³)
 ///
 /// # Returns
-/// Critical crown fire spread rate in m/min
+/// Critical crown fire spread rate (m/min)
 ///
 /// # References
 /// Van Wagner (1977), Equation 9
 #[must_use]
-pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
-    if crown_bulk_density <= 0.0 {
-        return 0.0;
+pub fn calculate_critical_crown_spread_rate(
+    crown_bulk_density: KgPerCubicMeter,
+) -> MetersPerMinute {
+    if *crown_bulk_density <= 0.0 {
+        return MetersPerMinute::new(0.0);
     }
 
     // Van Wagner (1977) formula - exact implementation
-    3.0 / crown_bulk_density
+    MetersPerMinute::new(3.0 / *crown_bulk_density)
 }
 
 /// Calculate crown fraction burned (CFB)
@@ -123,19 +129,19 @@ pub fn calculate_critical_crown_spread_rate(crown_bulk_density: f32) -> f32 {
 /// * `critical_spread_rate` - Critical crown fire spread rate (m/min)
 ///
 /// # Returns
-/// Crown fraction burned (0-1)
+/// Crown fraction burned (0-1, dimensionless fraction)
 ///
 /// # References
 /// Cruz & Alexander (2010)
 pub(crate) fn calculate_crown_fraction_burned(
-    active_spread_rate: f32,
-    critical_spread_rate: f32,
+    active_spread_rate: MetersPerMinute,
+    critical_spread_rate: MetersPerMinute,
 ) -> f32 {
-    if active_spread_rate <= critical_spread_rate {
+    if *active_spread_rate <= *critical_spread_rate {
         return 0.0;
     }
 
-    let rate_diff = active_spread_rate - critical_spread_rate;
+    let rate_diff = *active_spread_rate - *critical_spread_rate;
     let cfb = 1.0 - (-0.23 * rate_diff).exp();
 
     cfb.clamp(0.0, 1.0)
@@ -148,17 +154,23 @@ pub(crate) fn calculate_crown_fraction_burned(
 /// - Passive: `I_surface` >= `I_critical` AND `R_active` < `R_critical`
 /// - Active: `I_surface` >= `I_critical` AND `R_active` >= `R_critical`
 ///
+/// # Arguments
+/// * `surface_intensity_kw_per_m` - Surface fire intensity (kW/m)
+/// * `critical_surface_intensity_kw_per_m` - Critical surface fire intensity (kW/m)
+/// * `active_spread_rate` - Active crown fire spread rate (m/min)
+/// * `critical_crown_spread_rate` - Critical crown fire spread rate (m/min)
+///
 /// # References
 /// Van Wagner (1977, 1993)
 pub(crate) fn determine_crown_fire_type(
-    surface_intensity: f32,
-    critical_surface_intensity: f32,
-    active_spread_rate: f32,
-    critical_crown_spread_rate: f32,
+    surface_intensity_kw_per_m: f32,
+    critical_surface_intensity_kw_per_m: f32,
+    active_spread_rate: MetersPerMinute,
+    critical_crown_spread_rate: MetersPerMinute,
 ) -> CrownFireType {
-    if surface_intensity < critical_surface_intensity {
+    if surface_intensity_kw_per_m < critical_surface_intensity_kw_per_m {
         CrownFireType::Surface
-    } else if active_spread_rate < critical_crown_spread_rate {
+    } else if *active_spread_rate < *critical_crown_spread_rate {
         CrownFireType::Passive
     } else {
         CrownFireType::Active
@@ -176,20 +188,20 @@ pub(crate) fn determine_crown_fire_type(
 ///
 /// # Arguments
 /// * `heat_content` - Fuel heat content (kJ/kg)
-/// * `crown_fire_threshold` - Fuel-specific crown fire threshold (kW/m)
-/// * `surface_intensity` - Current surface fire intensity from Byram formula (kW/m)
-/// * `crown_bulk_density` - Crown bulk density (kg/m³), typical range 0.05-0.3
-/// * `crown_base_height` - Height to base of crown (m), typical 2-15
-/// * `foliar_moisture_content` - Foliar moisture content (%), typical 80-120
+/// * `crown_fire_threshold_kw_per_m` - Fuel-specific crown fire threshold (kW/m)
+/// * `surface_intensity_kw_per_m` - Current surface fire intensity from Byram formula (kW/m)
+/// * `crown_bulk_density` - Crown bulk density, typical range 0.05-0.3 kg/m³
+/// * `crown_base_height` - Height to base of crown, typical 2-15 m
+/// * `foliar_moisture_content` - Foliar moisture content, typical 80-120%
 /// * `active_spread_rate` - Actual crown fire spread rate (m/min)
 pub(crate) fn calculate_crown_fire_behavior(
-    heat_content: f32,
-    crown_fire_threshold: f32,
-    surface_intensity: f32,
-    crown_bulk_density: f32,
-    crown_base_height: f32,
-    foliar_moisture_content: f32,
-    active_spread_rate: f32,
+    heat_content: KjPerKg,
+    crown_fire_threshold_kw_per_m: f32,
+    surface_intensity_kw_per_m: f32,
+    crown_bulk_density: KgPerCubicMeter,
+    crown_base_height: Meters,
+    foliar_moisture_content: Percent,
+    active_spread_rate: MetersPerMinute,
 ) -> CrownFireBehavior {
     // Calculate critical surface intensity (Van Wagner 1977)
     let van_wagner_threshold = calculate_critical_surface_intensity(
@@ -201,14 +213,14 @@ pub(crate) fn calculate_crown_fire_behavior(
 
     // Use minimum of Van Wagner and fuel-specific threshold
     // This accounts for Australian eucalyptus behavior which differs from Canadian conifers
-    let critical_surface_intensity = van_wagner_threshold.min(crown_fire_threshold);
+    let critical_surface_intensity = van_wagner_threshold.min(crown_fire_threshold_kw_per_m);
 
     // Calculate critical crown spread rate (Van Wagner 1977)
     let critical_crown_spread_rate = calculate_critical_crown_spread_rate(crown_bulk_density);
 
     // Determine fire type
     let fire_type = determine_crown_fire_type(
-        surface_intensity,
+        surface_intensity_kw_per_m,
         critical_surface_intensity,
         active_spread_rate,
         critical_crown_spread_rate,
@@ -232,10 +244,10 @@ mod tests {
     #[test]
     fn test_critical_surface_intensity_calculation() {
         // Test Van Wagner (1977) formula with typical eucalypt values
-        let cbd = 0.15; // kg/m³
-        let heat = 20000.0; // kJ/kg
-        let fmc = 100.0; // %
-        let cbh = 5.0; // m
+        let cbd = KgPerCubicMeter::new(0.15);
+        let heat = KjPerKg::new(20000.0);
+        let fmc = Percent::new(100.0);
+        let cbh = Meters::new(5.0);
 
         let i_critical = calculate_critical_surface_intensity(cbd, heat, fmc, cbh);
 
@@ -252,21 +264,21 @@ mod tests {
     #[test]
     fn test_critical_crown_spread_rate() {
         // Test Van Wagner (1977) formula
-        let cbd = 0.15; // kg/m³
+        let cbd = KgPerCubicMeter::new(0.15);
 
         let r_critical = calculate_critical_crown_spread_rate(cbd);
 
         // Expected: 3.0 / 0.15 = 20 m/min
         assert!(
-            (r_critical - 20.0).abs() < 0.1,
+            (*r_critical - 20.0).abs() < 0.1,
             "R_critical was {r_critical}"
         );
     }
 
     #[test]
     fn test_crown_fraction_burned() {
-        let active_rate = 30.0; // m/min
-        let critical_rate = 20.0; // m/min
+        let active_rate = MetersPerMinute::new(30.0);
+        let critical_rate = MetersPerMinute::new(20.0);
 
         let cfb = calculate_crown_fraction_burned(active_rate, critical_rate);
 
@@ -279,15 +291,30 @@ mod tests {
     #[test]
     fn test_crown_fire_type_classification() {
         // Test surface fire (low intensity)
-        let fire_type = determine_crown_fire_type(500.0, 1000.0, 10.0, 20.0);
+        let fire_type = determine_crown_fire_type(
+            500.0,
+            1000.0,
+            MetersPerMinute::new(10.0),
+            MetersPerMinute::new(20.0),
+        );
         assert_eq!(fire_type, CrownFireType::Surface);
 
         // Test passive crown fire (high intensity, low spread)
-        let fire_type = determine_crown_fire_type(1500.0, 1000.0, 15.0, 20.0);
+        let fire_type = determine_crown_fire_type(
+            1500.0,
+            1000.0,
+            MetersPerMinute::new(15.0),
+            MetersPerMinute::new(20.0),
+        );
         assert_eq!(fire_type, CrownFireType::Passive);
 
         // Test active crown fire (high intensity, high spread)
-        let fire_type = determine_crown_fire_type(1500.0, 1000.0, 25.0, 20.0);
+        let fire_type = determine_crown_fire_type(
+            1500.0,
+            1000.0,
+            MetersPerMinute::new(25.0),
+            MetersPerMinute::new(20.0),
+        );
         assert_eq!(fire_type, CrownFireType::Active);
     }
 
@@ -299,18 +326,18 @@ mod tests {
 
         // Stringybark
         let stringybark_i = calculate_critical_surface_intensity(
-            0.2,     // High CBD
-            21000.0, // Heat content
-            90.0,    // Moderate FMC
-            3.0,     // Low CBH (ladder fuels)
+            KgPerCubicMeter::new(0.2), // High CBD
+            KjPerKg::new(21000.0),     // Heat content
+            Percent::new(90.0),        // Moderate FMC
+            Meters::new(3.0),          // Low CBH (ladder fuels)
         );
 
         // Smooth bark for comparison
         let smooth_bark_i = calculate_critical_surface_intensity(
-            0.12,    // Lower CBD
-            20000.0, // Heat content
-            100.0,   // Higher FMC
-            8.0,     // Higher CBH (no ladder fuels)
+            KgPerCubicMeter::new(0.12), // Lower CBD
+            KjPerKg::new(20000.0),      // Heat content
+            Percent::new(100.0),        // Higher FMC
+            Meters::new(8.0),           // Higher CBH (no ladder fuels)
         );
 
         // Stringybark should be MORE susceptible (higher critical intensity due to low CBH in denominator)
@@ -337,13 +364,13 @@ mod tests {
         let surface_intensity = (heat_per_area * spread_rate) / 60.0;
 
         let behavior = calculate_crown_fire_behavior(
-            *fuel.heat_content,        // heat_content
-            fuel.crown_fire_threshold, // crown_fire_threshold
-            surface_intensity,         // surface_intensity from Byram
-            0.15,                      // crown_bulk_density
-            5.0,                       // crown_base_height
-            100.0,                     // foliar_moisture_content
-            25.0,                      // active_spread_rate (m/min)
+            fuel.heat_content,          // heat_content
+            fuel.crown_fire_threshold,  // crown_fire_threshold
+            surface_intensity,          // surface_intensity from Byram
+            KgPerCubicMeter::new(0.15), // crown_bulk_density
+            Meters::new(5.0),           // crown_base_height
+            Percent::new(100.0),        // foliar_moisture_content
+            MetersPerMinute::new(25.0), // active_spread_rate (m/min)
         );
 
         // Should classify as some type of crown fire behavior

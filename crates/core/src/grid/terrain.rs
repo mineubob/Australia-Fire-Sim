@@ -66,55 +66,67 @@ pub struct TerrainData {
 impl TerrainData {
     /// Create flat terrain at given elevation
     #[must_use]
-    pub fn flat(width: f32, height: f32, resolution: f32, elevation: f32) -> Self {
-        let nx = (width / resolution).ceil() as usize + 1;
-        let ny = (height / resolution).ceil() as usize + 1;
-        let elevations = vec![elevation; nx * ny];
+    pub fn flat(width: Meters, height: Meters, resolution: Meters, elevation: Meters) -> Self {
+        let width_f32 = *width;
+        let height_f32 = *height;
+        let resolution_f32 = *resolution;
+        let elevation_f32 = *elevation;
+
+        let nx = (width_f32 / resolution_f32).ceil() as usize + 1;
+        let ny = (height_f32 / resolution_f32).ceil() as usize + 1;
+        let elevations = vec![elevation_f32; nx * ny];
 
         TerrainData {
-            width,
-            height,
-            resolution,
+            width: width_f32,
+            height: height_f32,
+            resolution: resolution_f32,
             nx,
             ny,
             elevations,
-            min_elevation: elevation,
-            max_elevation: elevation,
+            min_elevation: elevation_f32,
+            max_elevation: elevation_f32,
         }
     }
 
     /// Create terrain with a single hill
     #[must_use]
     pub fn single_hill(
-        width: f32,
-        height: f32,
-        resolution: f32,
-        base_elevation: f32,
-        hill_height: f32,
-        hill_radius: f32,
+        width: Meters,
+        height: Meters,
+        resolution: Meters,
+        base_elevation: Meters,
+        hill_height: Meters,
+        hill_radius: Meters,
     ) -> Self {
-        let nx = (width / resolution).ceil() as usize + 1;
-        let ny = (height / resolution).ceil() as usize + 1;
+        let width_f32 = *width;
+        let height_f32 = *height;
+        let resolution_f32 = *resolution;
+        let base_elevation_f32 = *base_elevation;
+        let hill_height_f32 = *hill_height;
+        let hill_radius_f32 = *hill_radius;
+
+        let nx = (width_f32 / resolution_f32).ceil() as usize + 1;
+        let ny = (height_f32 / resolution_f32).ceil() as usize + 1;
         let mut elevations = Vec::with_capacity(nx * ny);
 
-        let center_x = width / 2.0;
-        let center_y = height / 2.0;
+        let center_x = width_f32 / 2.0;
+        let center_y = height_f32 / 2.0;
 
         let mut min_elev = f32::MAX;
         let mut max_elev = f32::MIN;
 
         for iy in 0..ny {
             for ix in 0..nx {
-                let x = usize_to_f32(ix) * resolution;
-                let y = usize_to_f32(iy) * resolution;
+                let x = usize_to_f32(ix) * resolution_f32;
+                let y = usize_to_f32(iy) * resolution_f32;
 
                 let dx = x - center_x;
                 let dy = y - center_y;
                 let dist = (dx * dx + dy * dy).sqrt();
 
                 // Gaussian hill profile
-                let height_factor = (-dist * dist / (hill_radius * hill_radius)).exp();
-                let elev = base_elevation + hill_height * height_factor;
+                let height_factor = (-dist * dist / (hill_radius_f32 * hill_radius_f32)).exp();
+                let elev = base_elevation_f32 + hill_height_f32 * height_factor;
 
                 elevations.push(elev);
                 min_elev = min_elev.min(elev);
@@ -123,9 +135,9 @@ impl TerrainData {
         }
 
         TerrainData {
-            width,
-            height,
-            resolution,
+            width: width_f32,
+            height: height_f32,
+            resolution: resolution_f32,
             nx,
             ny,
             elevations,
@@ -137,46 +149,54 @@ impl TerrainData {
     /// Create terrain with valley between two hills
     #[must_use]
     pub fn valley_between_hills(
-        width: f32,
-        height: f32,
-        resolution: f32,
-        base_elevation: f32,
-        hill_height: f32,
+        width: Meters,
+        height: Meters,
+        resolution: Meters,
+        base_elevation: Meters,
+        hill_height: Meters,
     ) -> Self {
-        let nx = (width / resolution).ceil() as usize + 1;
-        let ny = (height / resolution).ceil() as usize + 1;
+        let width_f32 = *width;
+        let height_f32 = *height;
+        let resolution_f32 = *resolution;
+        let base_elevation_f32 = *base_elevation;
+        let hill_height_f32 = *hill_height;
+
+        let nx = (width_f32 / resolution_f32).ceil() as usize + 1;
+        let ny = (height_f32 / resolution_f32).ceil() as usize + 1;
         let mut elevations = Vec::with_capacity(nx * ny);
 
-        let hill1_x = width * 0.25;
-        let hill2_x = width * 0.75;
-        let center_y = height / 2.0;
-        let hill_radius = width * 0.2;
+        let hill1_x = width_f32 * 0.25;
+        let hill2_x = width_f32 * 0.75;
+        let center_y = height_f32 / 2.0;
+        let hill_radius = width_f32 * 0.2;
 
         let mut min_elev = f32::MAX;
         let mut max_elev = f32::MIN;
 
         for iy in 0..ny {
             for ix in 0..nx {
-                let x = usize_to_f32(ix) * resolution;
-                let y = usize_to_f32(iy) * resolution;
+                let x = usize_to_f32(ix) * resolution_f32;
+                let y = usize_to_f32(iy) * resolution_f32;
 
                 // Distance to first hill
                 let dx1 = x - hill1_x;
                 let dy1 = y - center_y;
                 let dist1 = (dx1 * dx1 + dy1 * dy1).sqrt();
-                let height1 = hill_height * (-dist1 * dist1 / (hill_radius * hill_radius)).exp();
+                let height1 =
+                    hill_height_f32 * (-dist1 * dist1 / (hill_radius * hill_radius)).exp();
 
                 // Distance to second hill
                 let dx2 = x - hill2_x;
                 let dy2 = y - center_y;
                 let dist2 = (dx2 * dx2 + dy2 * dy2).sqrt();
-                let height2 = hill_height * (-dist2 * dist2 / (hill_radius * hill_radius)).exp();
+                let height2 =
+                    hill_height_f32 * (-dist2 * dist2 / (hill_radius * hill_radius)).exp();
 
                 // Valley effect (negative between hills)
-                let valley_x = (x - width / 2.0) / (width * 0.25);
+                let valley_x = (x - width_f32 / 2.0) / (width_f32 * 0.25);
                 let valley_depth = -10.0 * (-(valley_x * valley_x)).exp();
 
-                let elev = base_elevation + height1 + height2 + valley_depth;
+                let elev = base_elevation_f32 + height1 + height2 + valley_depth;
 
                 elevations.push(elev);
                 min_elev = min_elev.min(elev);
@@ -185,9 +205,9 @@ impl TerrainData {
         }
 
         TerrainData {
-            width,
-            height,
-            resolution,
+            width: width_f32,
+            height: height_f32,
+            resolution: resolution_f32,
             nx,
             ny,
             elevations,
@@ -208,17 +228,21 @@ impl TerrainData {
     /// * `base_elevation` - Base elevation to add to all heights
     #[must_use]
     pub fn from_heightmap(
-        width: f32,
-        height: f32,
+        width: Meters,
+        height: Meters,
         heightmap: &[f32],
         nx: usize,
         ny: usize,
         elevation_scale: f32,
-        base_elevation: f32,
+        base_elevation: Meters,
     ) -> Self {
         assert_eq!(heightmap.len(), nx * ny, "Heightmap size mismatch");
 
-        let resolution = width / usize_to_f32(nx - 1);
+        let width_f32 = *width;
+        let height_f32 = *height;
+        let base_elevation_f32 = *base_elevation;
+
+        let resolution = width_f32 / usize_to_f32(nx - 1);
 
         let mut min_elev = f32::MAX;
         let mut max_elev = f32::MIN;
@@ -226,7 +250,7 @@ impl TerrainData {
         let elevations: Vec<f32> = heightmap
             .iter()
             .map(|&h| {
-                let elev = base_elevation + h * elevation_scale;
+                let elev = base_elevation_f32 + h * elevation_scale;
                 min_elev = min_elev.min(elev);
                 max_elev = max_elev.max(elev);
                 elev
@@ -234,8 +258,8 @@ impl TerrainData {
             .collect();
 
         TerrainData {
-            width,
-            height,
+            width: width_f32,
+            height: height_f32,
             resolution,
             nx,
             ny,
@@ -488,32 +512,32 @@ impl TerrainData {
 
     /// Get terrain width in meters
     #[must_use]
-    pub fn width(&self) -> f32 {
-        self.width
+    pub fn width(&self) -> Meters {
+        Meters::new(self.width)
     }
 
     /// Get terrain height in meters
     #[must_use]
-    pub fn height(&self) -> f32 {
-        self.height
+    pub fn height(&self) -> Meters {
+        Meters::new(self.height)
     }
 
     /// Get minimum elevation in meters
     #[must_use]
-    pub fn min_elevation(&self) -> f32 {
-        self.min_elevation
+    pub fn min_elevation(&self) -> Meters {
+        Meters::new(self.min_elevation)
     }
 
     /// Get maximum elevation in meters
     #[must_use]
-    pub fn max_elevation(&self) -> f32 {
-        self.max_elevation
+    pub fn max_elevation(&self) -> Meters {
+        Meters::new(self.max_elevation)
     }
 
     /// Get terrain resolution in meters
     #[must_use]
-    pub fn resolution(&self) -> f32 {
-        self.resolution
+    pub fn resolution(&self) -> Meters {
+        Meters::new(self.resolution)
     }
 }
 
@@ -524,7 +548,12 @@ mod tests {
 
     #[test]
     fn test_flat_terrain() {
-        let terrain = TerrainData::flat(100.0, 100.0, 5.0, 50.0);
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(5.0),
+            Meters::new(50.0),
+        );
 
         assert_eq!(terrain.elevation_at(25.0, 25.0), Meters::new(50.0));
         assert_eq!(terrain.elevation_at(75.0, 75.0), Meters::new(50.0));
@@ -533,7 +562,14 @@ mod tests {
 
     #[test]
     fn test_single_hill() {
-        let terrain = TerrainData::single_hill(200.0, 200.0, 5.0, 50.0, 100.0, 50.0);
+        let terrain = TerrainData::single_hill(
+            Meters::new(200.0),
+            Meters::new(200.0),
+            Meters::new(5.0),
+            Meters::new(50.0),
+            Meters::new(100.0),
+            Meters::new(50.0),
+        );
 
         // Peak should be at center
         let peak_elevation = terrain.elevation_at(100.0, 100.0);
@@ -556,7 +592,13 @@ mod tests {
 
     #[test]
     fn test_valley() {
-        let terrain = TerrainData::valley_between_hills(400.0, 200.0, 5.0, 50.0, 80.0);
+        let terrain = TerrainData::valley_between_hills(
+            Meters::new(400.0),
+            Meters::new(200.0),
+            Meters::new(5.0),
+            Meters::new(50.0),
+            Meters::new(80.0),
+        );
 
         // Hills should be higher than base
         let hill1 = terrain.elevation_at(100.0, 100.0);
@@ -572,7 +614,14 @@ mod tests {
 
     #[test]
     fn test_interpolation() {
-        let terrain = TerrainData::single_hill(100.0, 100.0, 10.0, 0.0, 100.0, 30.0);
+        let terrain = TerrainData::single_hill(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+            Meters::new(100.0),
+            Meters::new(30.0),
+        );
 
         // Query between grid points
         let e1 = terrain.elevation_at(45.0, 45.0);
@@ -586,7 +635,14 @@ mod tests {
 
     #[test]
     fn test_solar_radiation() {
-        let terrain = TerrainData::single_hill(100.0, 100.0, 5.0, 0.0, 50.0, 30.0);
+        let terrain = TerrainData::single_hill(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(5.0),
+            Meters::new(0.0),
+            Meters::new(50.0),
+            Meters::new(30.0),
+        );
 
         // Flat horizontal surface with sun directly overhead
         let flat_factor = terrain.solar_radiation_factor(10.0, 10.0, 0.0, 90.0);
@@ -607,16 +663,21 @@ mod tests {
         ];
 
         let terrain = TerrainData::from_heightmap(
-            100.0, 100.0, &heightmap, 3, 3, 50.0, // Scale: 1.0 in heightmap = 50m elevation
-            10.0, // Base elevation
+            Meters::new(100.0),
+            Meters::new(100.0),
+            &heightmap,
+            3,
+            3,
+            50.0,              // Scale: 1.0 in heightmap = 50m elevation
+            Meters::new(10.0), // Base elevation
         );
 
-        assert_eq!(terrain.width, 100.0);
-        assert_eq!(terrain.height, 100.0);
+        assert_eq!(terrain.width(), Meters::new(100.0));
+        assert_eq!(terrain.height(), Meters::new(100.0));
         assert_eq!(terrain.nx, 3);
         assert_eq!(terrain.ny, 3);
-        assert_eq!(terrain.min_elevation, 10.0);
-        assert_eq!(terrain.max_elevation, 60.0); // 10 + 1.0 * 50
+        assert_eq!(terrain.min_elevation(), Meters::new(10.0));
+        assert_eq!(terrain.max_elevation(), Meters::new(60.0)); // 10 + 1.0 * 50
 
         // Check center is highest
         let center_elev = terrain.elevation_at(50.0, 50.0);
