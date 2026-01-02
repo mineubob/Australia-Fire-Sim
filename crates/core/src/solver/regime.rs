@@ -197,7 +197,7 @@ mod tests {
     fn test_detect_regime_plume_dominated() {
         let regime = detect_regime(
             2000000.0, // 2000 kW/m (extreme intensity - major crown fire)
-            1.0,       // 1.0 m/s (very light wind, clamped to 0.5)
+            1.0,       // 1.0 m/s (very light wind)
             30.0,      // 30°C
         );
 
