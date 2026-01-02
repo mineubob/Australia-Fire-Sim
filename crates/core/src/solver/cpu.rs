@@ -742,7 +742,7 @@ impl FieldSolver for CpuFieldSolver {
                             self.valley_head_distance_threshold,
                         );
                         if updraft > 0.0 {
-                            // Updraft enhances spread by 0-20% based on updraft velocity
+                            // Updraft enhancement scales with chimney velocity and saturates at a 20% ROS boost once updrafts are ~10 m/s.
                             // Normalized by VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY (Butler et al. 1998)
                             let updraft_factor =
                                 1.0 + (updraft / VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY).min(0.2);
