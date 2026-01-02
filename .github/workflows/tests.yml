@@ -85,7 +85,7 @@ jobs:
           cache-on-failure: true
       
       - name: Run tests
-        run: cargo test --all-features
+        run: cargo test --no-default-features
 
   build-dev:
     name: "Build Debug"
@@ -121,7 +121,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build (dev/debug)
-        run: cargo build --all-features
+        run: cargo build --no-default-features
 
       - name: Upload dev demo-interactive binary
         uses: actions/upload-artifact@v4
@@ -165,7 +165,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build release
-        run: cargo build --release --all-features
+        run: cargo build --release --no-default-features
 
       - name: Upload release demo-interactive binary
         uses: actions/upload-artifact@v4
