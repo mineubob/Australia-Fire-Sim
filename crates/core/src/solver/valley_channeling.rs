@@ -202,6 +202,7 @@ pub fn valley_wind_factor(geometry: &ValleyGeometry, reference_width: f32) -> f3
 /// * `geometry` - Valley geometry information
 /// * `fire_temperature` - Temperature of fire gases (°C)
 /// * `ambient_temperature` - Ambient air temperature (°C)
+/// * `head_distance_threshold` - Maximum distance from valley head for chimney effect (m)
 ///
 /// # Returns
 ///
@@ -210,10 +211,9 @@ pub fn chimney_updraft(
     geometry: &ValleyGeometry,
     fire_temperature: f32,
     ambient_temperature: f32,
+    head_distance_threshold: f32,
 ) -> f32 {
-    const VALLEY_HEAD_DISTANCE: f32 = 100.0; // Within 100m of valley head
-
-    if !geometry.in_valley || geometry.distance_from_head > VALLEY_HEAD_DISTANCE {
+    if !geometry.in_valley || geometry.distance_from_head > head_distance_threshold {
         return 0.0;
     }
 
@@ -349,9 +349,10 @@ mod tests {
 
         let fire_temp = 800.0;
         let ambient_temp = 25.0;
+        let threshold = 100.0;
 
-        let near_updraft = chimney_updraft(&near_head, fire_temp, ambient_temp);
-        let far_updraft = chimney_updraft(&far_from_head, fire_temp, ambient_temp);
+        let near_updraft = chimney_updraft(&near_head, fire_temp, ambient_temp, threshold);
+        let far_updraft = chimney_updraft(&far_from_head, fire_temp, ambient_temp, threshold);
 
         assert!(near_updraft > 0.0, "Should have updraft near valley head");
         assert_eq!(far_updraft, 0.0, "Should have no updraft far from head");
@@ -366,8 +367,9 @@ mod tests {
             distance_from_head: 50.0,
             in_valley: true,
         };
+        let threshold = 100.0;
 
-        let no_fire = chimney_updraft(&geometry, 25.0, 25.0);
+        let no_fire = chimney_updraft(&geometry, 25.0, 25.0, threshold);
 
         assert_eq!(no_fire, 0.0, "No updraft without temperature difference");
     }

@@ -81,8 +81,16 @@ pub struct CpuFieldSolver {
     vls_detector: VLSDetector,
     fire_regime: Vec<FireRegime>, // Per-cell regime classification
 
-    // Weather parameters (for crown fire and atmosphere calculations)
+    // Weather parameters (passed from simulation)
     wind_speed_10m_kmh: f32,
+    wind_x_m_s: f32,        // Wind x-component in m/s
+    wind_y_m_s: f32,        // Wind y-component in m/s
+    ambient_temp_k: f32,    // Ambient temperature in Kelvin
+
+    // Advanced physics configuration
+    valley_sample_radius: f32,      // Radius for valley detection (m)
+    valley_reference_width: f32,    // Reference width for open terrain (m)
+    valley_head_distance_threshold: f32, // Distance threshold for chimney effect (m)
 
     // Fuel grid: per-cell, per-layer fuel type assignment
     fuel_grid: FuelGrid,
@@ -229,6 +237,12 @@ impl CpuFieldSolver {
             vls_detector,
             fire_regime,
             wind_speed_10m_kmh: 20.0, // Default 20 km/h wind
+            wind_x_m_s: 0.0,
+            wind_y_m_s: 0.0,
+            ambient_temp_k: 293.15, // Default 20°C
+            valley_sample_radius: 100.0,
+            valley_reference_width: 200.0,
+            valley_head_distance_threshold: 100.0,
             fuel_grid,
             sim_time: 0.0,
             width,
@@ -246,6 +260,11 @@ impl FieldSolver for CpuFieldSolver {
         wind: crate::core_types::Vec3,
         ambient_temp: Kelvin,
     ) {
+        // Store weather parameters for use in other methods
+        self.wind_x_m_s = wind.x;
+        self.wind_y_m_s = wind.y;
+        self.ambient_temp_k = ambient_temp.as_f32();
+        
         // Extract wind components (wind.x and wind.y are already in m/s)
         let wind_x = wind.x;
         let wind_y = wind.y;
@@ -511,7 +530,7 @@ impl FieldSolver for CpuFieldSolver {
         }
     }
 
-    fn step_level_set(&mut self, dt: Seconds) {
+    fn step_level_set(&mut self, dt: Seconds, _wind: Vec3, _ambient_temp: Kelvin) {
         // Phase 3: Level set evolution with curvature-dependent spread
 
         // Get surface fuel properties from center cell as representative
@@ -645,8 +664,8 @@ impl FieldSolver for CpuFieldSolver {
         // Phase 6: VLS (Vorticity-Driven Lateral Spread)
         // Detect VLS conditions and modify spread rates on lee slopes
         let wind_vec = Vec3::new(
-            self.wind_speed_10m_kmh / 3.6, // Convert km/h to m/s
-            0.0,
+            self.wind_x_m_s,
+            self.wind_y_m_s,
             0.0,
         );
         let vls_conditions = self.vls_detector.detect(
@@ -684,21 +703,30 @@ impl FieldSolver for CpuFieldSolver {
                 let world_y = y as f32 * self.cell_size;
 
                 // Detect valley geometry at this position
-                let valley_geometry =
-                    detect_valley_geometry(&self.terrain_data, world_x, world_y, 100.0);
+                let valley_geometry = detect_valley_geometry(
+                    &self.terrain_data,
+                    world_x,
+                    world_y,
+                    self.valley_sample_radius,
+                );
 
                 if valley_geometry.in_valley {
                     let idx = y * self.width + x;
                     if spread_slice[idx] > 0.0 {
                         // Apply valley wind acceleration
-                        let wind_factor = valley_wind_factor(&valley_geometry, 200.0);
+                        let wind_factor =
+                            valley_wind_factor(&valley_geometry, self.valley_reference_width);
                         spread_slice[idx] *= wind_factor;
 
                         // Chimney updraft effect increases spread near valley head
                         let fire_temp_c = temp_slice[idx] - 273.15;
-                        let ambient_temp_c = 20.0; // Typical ambient
-                        let updraft =
-                            chimney_updraft(&valley_geometry, fire_temp_c, ambient_temp_c);
+                        let ambient_temp_c = self.ambient_temp_k - 273.15;
+                        let updraft = chimney_updraft(
+                            &valley_geometry,
+                            fire_temp_c,
+                            ambient_temp_c,
+                            self.valley_head_distance_threshold,
+                        );
                         if updraft > 0.0 {
                             // Updraft enhances spread by 0-20% based on updraft velocity
                             let updraft_factor = 1.0 + (updraft / 50.0).min(0.2);
@@ -735,7 +763,7 @@ impl FieldSolver for CpuFieldSolver {
                 // Phase 8: Regime Detection (Byram number)
                 // Classify fire regime based on intensity, wind, and ambient conditions
                 let wind_speed_m_s = self.wind_speed_10m_kmh / 3.6;
-                let ambient_temp_c = 20.0; // Typical ambient temperature
+                let ambient_temp_c = self.ambient_temp_k - 273.15;
                 let regime = detect_regime(intensity, wind_speed_m_s, ambient_temp_c);
                 self.fire_regime[idx] = regime;
             } else {

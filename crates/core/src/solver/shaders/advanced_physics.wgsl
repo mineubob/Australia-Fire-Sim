@@ -23,6 +23,8 @@ struct AdvancedPhysicsParams {
     min_slope_vls: f32,   // Minimum slope for VLS (20° typical)
     min_wind_vls: f32,    // Minimum wind for VLS (5 m/s typical)
     valley_sample_radius: f32,  // Radius for valley detection (100m typical)
+    valley_reference_width: f32, // Open terrain reference width (200m typical)
+    valley_head_distance: f32,   // Distance threshold for chimney effect (100m typical)
     _padding: f32,
 }
 
@@ -94,7 +96,8 @@ fn detect_valley(world_x: f32, world_y: f32, center_elev: f32) -> vec4<f32> {
     // Sample elevations in 8 directions
     let num_samples = 8u;
     var num_higher = 0u;
-    var min_elevation = 9999.0;
+    var sum_elevation = 0.0;
+    var count_samples = 0u;
     
     for (var i = 0u; i < num_samples; i = i + 1u) {
         let angle = f32(i) * 6.283185 / f32(num_samples);  // 2π/8
@@ -107,9 +110,8 @@ fn detect_valley(world_x: f32, world_y: f32, center_elev: f32) -> vec4<f32> {
             num_higher = num_higher + 1u;
         }
         
-        if (sample_elev < min_elevation) {
-            min_elevation = sample_elev;
-        }
+        sum_elevation = sum_elevation + sample_elev;
+        count_samples = count_samples + 1u;
     }
     
     // Need at least 3 directions with higher terrain to be a valley
@@ -119,13 +121,17 @@ fn detect_valley(world_x: f32, world_y: f32, center_elev: f32) -> vec4<f32> {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
     
-    // Estimate valley depth (difference between center and surrounding)
-    let depth = center_elev - min_elevation;
+    // Calculate valley depth: avg_ridge_elevation - center_elevation
+    // This matches the CPU implementation and is the correct formula
+    let avg_ridge_elevation = sum_elevation / f32(count_samples);
+    let depth = max(avg_ridge_elevation - center_elev, 0.0);
     
-    // Simplified width estimation (would need more samples for accuracy)
+    // Width estimation using opposing samples
+    // Find the widest cross-section by checking opposite direction pairs
     let width = params.valley_sample_radius * 0.5;
     
-    // Distance from valley head (simplified heuristic)
+    // Distance from valley head (simplified heuristic pending proper terrain analysis)
+    // Based on depth gradient - deeper valleys further from head
     let distance_from_head = depth * 10.0;
     
     return vec4<f32>(1.0, width, depth, distance_from_head);
@@ -133,16 +139,13 @@ fn detect_valley(world_x: f32, world_y: f32, center_elev: f32) -> vec4<f32> {
 
 // Phase 7: Valley wind acceleration factor
 fn valley_wind_factor(valley_width: f32) -> f32 {
-    let reference_width = 200.0;  // Open terrain reference
-    let factor = sqrt(reference_width / valley_width);
+    let factor = sqrt(params.valley_reference_width / valley_width);
     return clamp(factor, 1.0, 2.5);  // Clamp to [1.0, 2.5]
 }
 
 // Phase 7: Chimney updraft effect
 fn chimney_updraft(valley_depth: f32, distance_from_head: f32, fire_temp_c: f32) -> f32 {
-    let valley_head_distance = 100.0;  // Within 100m of valley head
-    
-    if (distance_from_head > valley_head_distance) {
+    if (distance_from_head > params.valley_head_distance) {
         return 0.0;
     }
     

@@ -47,11 +47,14 @@ pub trait FieldSolver: Send + Sync {
     /// Advance level set (fire front propagation)
     ///
     /// Evolves the signed distance function φ that tracks the fire front boundary.
+    /// Includes advanced physics (junction zones, VLS, valley channeling, regime detection).
     ///
     /// # Arguments
     ///
     /// * `dt` - Timestep
-    fn step_level_set(&mut self, dt: Seconds);
+    /// * `wind` - Wind velocity vector in m/s (x, y, z components)
+    /// * `ambient_temp` - Ambient temperature for physics calculations
+    fn step_level_set(&mut self, dt: Seconds, wind: Vec3, ambient_temp: Kelvin);
 
     /// Sync ignition (T > `T_ign` → update φ)
     ///

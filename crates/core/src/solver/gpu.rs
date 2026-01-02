@@ -185,13 +185,15 @@ struct AdvancedPhysicsParams {
     height: u32,
     cell_size: f32,
     dt: f32,
-    wind_speed: f32,           // Wind speed (m/s)
-    wind_direction: f32,       // Wind direction (degrees, 0=North, clockwise)
-    ambient_temp: f32,         // Ambient temperature (°C)
-    vls_threshold: f32,        // VLS index threshold (0.6 typical)
-    min_slope_vls: f32,        // Minimum slope for VLS (20° typical)
-    min_wind_vls: f32,         // Minimum wind for VLS (5 m/s typical)
-    valley_sample_radius: f32, // Radius for valley detection (100m typical)
+    wind_speed: f32,              // Wind speed (m/s)
+    wind_direction: f32,          // Wind direction (degrees, 0=North, clockwise)
+    ambient_temp: f32,            // Ambient temperature (°C)
+    vls_threshold: f32,           // VLS index threshold (0.6 typical)
+    min_slope_vls: f32,           // Minimum slope for VLS (20° typical)
+    min_wind_vls: f32,            // Minimum wind for VLS (5 m/s typical)
+    valley_sample_radius: f32,    // Radius for valley detection (100m typical)
+    valley_reference_width: f32,  // Open terrain reference width (200m typical)
+    valley_head_distance: f32,    // Distance threshold for chimney effect (100m typical)
     _padding: f32,
 }
 
@@ -300,10 +302,16 @@ pub struct GpuFieldSolver {
     junction_zone_detector: JunctionZoneDetector,
     fire_regime: Vec<FireRegime>,
 
-    // Weather parameters for crown fire calculations
+    // Weather parameters for crown fire and advanced physics
     wind_speed_10m_kmh: f32,
-    wind_x: f32, // Wind x component (m/s)
-    wind_y: f32, // Wind y component (m/s)
+    wind_x: f32,         // Wind x component (m/s)
+    wind_y: f32,         // Wind y component (m/s)
+    ambient_temp_k: f32, // Ambient temperature (K)
+
+    // Advanced physics configuration
+    valley_sample_radius: f32,           // Radius for valley detection (m)
+    valley_reference_width: f32,         // Reference width for open terrain (m)
+    valley_head_distance_threshold: f32, // Distance threshold for chimney effect (m)
 }
 
 impl GpuFieldSolver {
@@ -1584,6 +1592,10 @@ impl GpuFieldSolver {
             wind_speed_10m_kmh: 20.0,
             wind_x: 0.0,
             wind_y: 5.56, // 20 km/h north wind
+            ambient_temp_k: 293.15, // 20°C default
+            valley_sample_radius: 100.0,
+            valley_reference_width: 200.0,
+            valley_head_distance_threshold: 100.0,
         }
     }
 
@@ -1872,11 +1884,13 @@ impl GpuFieldSolver {
             dt,
             wind_speed,
             wind_direction,
-            ambient_temp: 20.0, // TODO: Pass from weather
+            ambient_temp: self.ambient_temp_k - 273.15, // Convert K to °C
             vls_threshold: 0.6,
             min_slope_vls: 20.0,
             min_wind_vls: 5.0,
-            valley_sample_radius: 100.0,
+            valley_sample_radius: self.valley_sample_radius,
+            valley_reference_width: self.valley_reference_width,
+            valley_head_distance: self.valley_head_distance_threshold,
             _padding: 0.0,
         };
         self.queue.write_buffer(
@@ -2366,11 +2380,12 @@ impl FieldSolver for GpuFieldSolver {
         let wind_x = wind.x;
         let wind_y = wind.y;
 
-        // Extract wind speed for crown fire calculations (convert m/s to km/h)
+        // Store weather parameters for use in other methods
         let wind_magnitude_m_s = (wind_x * wind_x + wind_y * wind_y).sqrt();
         self.wind_speed_10m_kmh = wind_magnitude_m_s * 3.6;
         self.wind_x = wind_x;
         self.wind_y = wind_y;
+        self.ambient_temp_k = ambient_temp.as_f32();
 
         // Update uniform buffer with new parameters
         let params = HeatParams {
@@ -2519,7 +2534,7 @@ impl FieldSolver for GpuFieldSolver {
         // This is a placeholder for more advanced moisture dynamics
     }
 
-    fn step_level_set(&mut self, dt: Seconds) {
+    fn step_level_set(&mut self, dt: Seconds, _wind: Vec3, _ambient_temp: Kelvin) {
         self.time += *dt;
 
         // Update uniform buffer
@@ -2629,7 +2644,7 @@ impl FieldSolver for GpuFieldSolver {
         // Phase 8: CPU-side regime detection (uses fire intensity from GPU)
         let intensity_data = self.read_fire_intensity();
         let wind_speed_m_s = self.wind_speed_10m_kmh / 3.6;
-        let ambient_temp_c = 20.0; // TODO: Get from weather system
+        let ambient_temp_c = self.ambient_temp_k - 273.15; // Convert K to °C
 
         for (idx, &intensity) in intensity_data.iter().enumerate() {
             if intensity > 0.0 {

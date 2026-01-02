@@ -111,7 +111,8 @@ impl FieldSimulation {
             .step_heat_transfer(Seconds::new(dt), wind, ambient_temp);
         self.solver.step_combustion(Seconds::new(dt));
         self.solver.step_moisture(Seconds::new(dt), humidity);
-        self.solver.step_level_set(Seconds::new(dt));
+        self.solver
+            .step_level_set(Seconds::new(dt), wind, ambient_temp);
         self.solver.step_ignition_sync();
 
         // 3. CPU-side sparse updates
