@@ -59,22 +59,12 @@ pub struct CpuFieldSolver {
     // Fire intensity field (kW/m) for crown fire evaluation
     fire_intensity: FieldData,
 
-    // Static fields (don't change during simulation)
-    #[expect(dead_code)]
-    fuel_type: Vec<u8>,
-    #[expect(dead_code)]
-    terrain_height: Vec<f32>,
-
     // Phase 0: Terrain slope and aspect for fire spread modulation
     terrain_fields: TerrainFields,
 
     // Phase 1: Vertical fuel layers (surface, shrub, canopy)
     fuel_layers: Vec<LayeredFuelCell>,
     vertical_heat_transfer: VerticalHeatTransfer,
-
-    // Phase 2: Fuel heterogeneity configuration (stored for potential runtime queries)
-    #[expect(dead_code)]
-    heterogeneity_config: HeterogeneityConfig,
 
     // Phase 3: Crown fire state per cell
     crown_fire_state: Vec<CrownFireState>,
@@ -139,9 +129,6 @@ impl CpuFieldSolver {
         let level_set_back = FieldData::new(width, height);
         let oxygen = FieldData::with_value(width, height, 0.21); // Atmospheric O₂ fraction
         let spread_rate = FieldData::new(width, height); // Computed from temperature
-
-        // Initialize static fields
-        let fuel_type = vec![0_u8; num_cells]; // Default fuel type
 
         // Phase 0: Initialize terrain slope/aspect from elevation data
         let terrain_fields = TerrainFields::from_terrain_data(terrain, width, height, cell_size);
@@ -229,12 +216,9 @@ impl CpuFieldSolver {
             oxygen,
             spread_rate,
             fire_intensity,
-            fuel_type,
-            terrain_height,
             terrain_fields,
             fuel_layers,
             vertical_heat_transfer,
-            heterogeneity_config,
             crown_fire_state,
             canopy_properties,
             convection_columns,
@@ -373,6 +357,7 @@ impl FieldSolver for CpuFieldSolver {
 
         let level_set_slice = self.level_set.as_slice();
         let intensity_slice = self.fire_intensity.as_slice();
+        let spread_slice = self.spread_rate.as_slice();
 
         for idx in 0..(self.width * self.height) {
             // Only process burning cells
@@ -431,8 +416,15 @@ impl FieldSolver for CpuFieldSolver {
 
             // Calculate heat flux from shrub → canopy (if shrub is burning)
             if fuel_cell.shrub.burning && fuel_cell.canopy.has_fuel() {
-                // Shrub layer intensity (simplified - proportional to fuel load and burning state)
-                let shrub_intensity = surface_intensity * 0.5; // Shrub contributes additional intensity
+                // Calculate shrub layer intensity using Byram's formula: I = H × W × R
+                // Use shrub layer fuel load and a conservative spread rate estimate
+                let shrub_fuel_load = fuel_cell.shrub.fuel_load; // kg/m²
+                let shrub_heat_content = fuel_heat_capacity * 1000.0; // Convert kJ/kg to J/kg for consistency
+                // Shrub spread rate is typically lower than surface, ~0.5 of surface rate
+                let surface_ros = spread_slice[idx]; // m/s
+                let shrub_ros = surface_ros * 0.5; // Conservative estimate for shrub layer
+                let shrub_intensity = (shrub_heat_content / 1000.0) * shrub_fuel_load * shrub_ros; // kW/m
+                
                 let shrub_flame_height = VerticalHeatTransfer::flame_height_byram(shrub_intensity);
                 let shrub_flux_params = FluxParams::new(
                     flame_height + shrub_flame_height, // Combined flame height
@@ -466,13 +458,22 @@ impl FieldSolver for CpuFieldSolver {
     }
 
     fn step_moisture(&mut self, dt: Seconds, humidity: f32) {
-        // Moisture equilibrium model (simplified Nelson 2000)
+        // Moisture equilibrium model using Nelson (2000) with Simard (1968) coefficients
         // Moisture content tends toward equilibrium moisture content (EMC)
-        // based on relative humidity over time
+        // based on relative humidity and temperature
 
-        // Calculate EMC from humidity (simplified)
-        // EMC ≈ 0.85 × humidity for fine fuels
-        let emc = 0.85 * humidity;
+        use crate::core_types::units::{Celsius, Percent};
+        use crate::physics::calculate_equilibrium_moisture;
+
+        // Convert humidity fraction to percentage
+        let humidity_percent = Percent::new(humidity * 100.0);
+        
+        // Use average ambient temperature (would be better to use cell-specific temps)
+        let ambient_temp_c = Celsius::new(20.0);
+        
+        // Calculate EMC using Nelson (2000) formulation with Simard (1968) coefficients
+        // Assumes adsorption (fuel gaining moisture) - for desorption, would need to track previous state
+        let emc = calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, true);
 
         // Time constant for moisture response (hours converted to seconds)
         // Fine fuels: ~1 hour, medium: ~10 hours

@@ -29,7 +29,6 @@ use super::junction_zone::JunctionZoneDetector;
 use super::quality::QualityPreset;
 use super::regime::FireRegime;
 use super::terrain_slope::TerrainFields;
-use super::vls::VLSDetector;
 use super::FieldSolver;
 use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
 use crate::core_types::units::{Gigawatts, Kelvin, Meters, MetersPerSecond, Seconds};
@@ -298,14 +297,8 @@ pub struct GpuFieldSolver {
     pyrocb_system: PyroCbSystem,
 
     // Phase 5-8: Advanced fire physics (CPU-side calculations)
-    #[expect(dead_code)]
     junction_zone_detector: JunctionZoneDetector,
-    #[expect(dead_code)]
-    vls_detector: VLSDetector,
-    #[expect(dead_code)]
     fire_regime: Vec<FireRegime>,
-    #[expect(dead_code)]
-    terrain_data: TerrainData,
 
     // Weather parameters for crown fire calculations
     wind_speed_10m_kmh: f32,
@@ -1587,9 +1580,7 @@ impl GpuFieldSolver {
             pyrocb_system: PyroCbSystem::new(),
             // Phase 5-8: Advanced fire physics
             junction_zone_detector: JunctionZoneDetector::default(),
-            vls_detector: VLSDetector::default(),
             fire_regime: vec![FireRegime::WindDriven; num_cells],
-            terrain_data: terrain.clone(),
             wind_speed_10m_kmh: 20.0,
             wind_x: 0.0,
             wind_y: 5.56, // 20 km/h north wind
@@ -2266,6 +2257,102 @@ impl GpuFieldSolver {
             ],
         })
     }
+
+    /// Read spread rate buffer from GPU (for CPU-side junction zone processing)
+    fn read_spread_rate(&self) -> Vec<f32> {
+        let buffer_size = u64::from(self.width * self.height) * std::mem::size_of::<f32>() as u64;
+
+        // Create temporary staging buffer
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Spread Rate Staging"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Copy current spread rate buffer to staging
+        let src_buffer = if self.spread_ping {
+            &self.spread_rate_a
+        } else {
+            &self.spread_rate_b
+        };
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Spread Rate Readback Encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(src_buffer, 0, &staging, 0, buffer_size);
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and read
+        let buffer_slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().unwrap().unwrap();
+
+        let data = buffer_slice.get_mapped_range();
+        let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+        drop(data);
+        staging.unmap();
+
+        result
+    }
+
+    /// Write spread rate buffer to GPU (after CPU-side junction zone processing)
+    fn write_spread_rate(&mut self, data: &[f32]) {
+        let dst_buffer = if self.spread_ping {
+            &self.spread_rate_a
+        } else {
+            &self.spread_rate_b
+        };
+        self.queue
+            .write_buffer(dst_buffer, 0, bytemuck::cast_slice(data));
+    }
+
+    /// Read fire intensity buffer from GPU (for CPU-side regime detection)
+    fn read_fire_intensity(&self) -> Vec<f32> {
+        let buffer_size = u64::from(self.width * self.height) * std::mem::size_of::<f32>() as u64;
+
+        // Create temporary staging buffer
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Fire Intensity Staging"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Fire Intensity Readback Encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(&self.fire_intensity, 0, &staging, 0, buffer_size);
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and read
+        let buffer_slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().unwrap().unwrap();
+
+        let data = buffer_slice.get_mapped_range();
+        let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+        drop(data);
+        staging.unmap();
+
+        result
+    }
 }
 
 impl FieldSolver for GpuFieldSolver {
@@ -2483,6 +2570,77 @@ impl FieldSolver for GpuFieldSolver {
 
         // Phase 5-8: Dispatch advanced physics shader (VLS and valley channeling)
         self.dispatch_advanced_physics(*dt, self.wind_x, self.wind_y);
+
+        // Phase 5: CPU-side junction zone detection (requires global analysis)
+        // Read back level_set and spread_rate from GPU for junction detection
+        let level_set_data = self.read_level_set();
+        let mut spread_rate_data = self.read_spread_rate();
+        
+        let junctions = self.junction_zone_detector.detect(
+            &level_set_data,
+            self.width as usize,
+            self.height as usize,
+            self.cell_size,
+            *dt,
+        );
+
+        // Apply junction acceleration to spread rates
+        for junction in &junctions {
+            // Apply acceleration in a radius around junction point
+            let radius = junction.distance * 0.5;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_x = (junction.position.x / self.cell_size) as usize;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_y = (junction.position.y / self.cell_size) as usize;
+
+            #[expect(clippy::cast_possible_truncation)]
+            let radius_cells = (radius / self.cell_size).ceil() as i32;
+
+            for dy in -radius_cells..=radius_cells {
+                for dx in -radius_cells..=radius_cells {
+                    let x = (center_x as i32 + dx) as usize;
+                    let y = (center_y as i32 + dy) as usize;
+
+                    if x >= self.width as usize || y >= self.height as usize {
+                        continue;
+                    }
+
+                    #[expect(clippy::cast_precision_loss)]
+                    let dist = ((dx * dx + dy * dy) as f32).sqrt() * self.cell_size;
+                    if dist > radius {
+                        continue;
+                    }
+
+                    // Acceleration falls off with distance from junction center
+                    let falloff = 1.0 - dist / radius;
+                    let local_acceleration = 1.0 + (junction.acceleration_factor - 1.0) * falloff;
+
+                    let idx = y * self.width as usize + x;
+                    if spread_rate_data[idx] > 0.0 {
+                        spread_rate_data[idx] *= local_acceleration;
+                    }
+                }
+            }
+        }
+
+        // Write modified spread rates back to GPU
+        self.write_spread_rate(&spread_rate_data);
+
+        // Phase 8: CPU-side regime detection (uses fire intensity from GPU)
+        let intensity_data = self.read_fire_intensity();
+        let wind_speed_m_s = self.wind_speed_10m_kmh / 3.6;
+        let ambient_temp_c = 20.0; // TODO: Get from weather system
+
+        for (idx, &intensity) in intensity_data.iter().enumerate() {
+            if intensity > 0.0 {
+                use super::regime::detect_regime;
+                let regime = detect_regime(intensity, wind_speed_m_s, ambient_temp_c);
+                self.fire_regime[idx] = regime;
+            } else {
+                use super::regime::FireRegime;
+                self.fire_regime[idx] = FireRegime::WindDriven;
+            }
+        }
 
         // Phase 1: Dispatch fuel layer shader (vertical heat transfer)
         self.dispatch_fuel_layers(*dt);
