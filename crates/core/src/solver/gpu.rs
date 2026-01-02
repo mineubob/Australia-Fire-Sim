@@ -2845,56 +2845,73 @@ mod tests {
         )
     }
 
+    /// Helper to initialize GPU context or panic with clear error message
+    ///
+    /// GPU tests require actual GPU hardware. This helper panics if:
+    /// - No GPU adapter found (use `--no-default-features` for CPU-only tests)
+    /// - GPU initialization failed (driver/hardware issue)
+    fn require_gpu_context() -> GpuContext {
+        match GpuContext::new() {
+            GpuInitResult::Success(ctx) => ctx,
+            GpuInitResult::NoGpuFound => {
+                panic!("GPU test requires GPU hardware. No GPU adapter found. Run CPU tests with --no-default-features instead.");
+            }
+            GpuInitResult::InitFailed {
+                adapter_name,
+                error,
+            } => {
+                panic!("GPU initialization failed for adapter '{}': {}. GPU tests require working GPU.", adapter_name, error);
+            }
+        }
+    }
+
     #[test]
     fn test_gpu_solver_creation() {
-        // Only run if GPU is available
-        if let GpuInitResult::Success(context) = GpuContext::new() {
-            let terrain = flat_terrain(1000.0, 1000.0, 10.0, 0.0);
-            let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Medium);
+        let context = require_gpu_context();
 
-            let (width, height, cell_size) = solver.dimensions();
-            assert_eq!(width, 100);
-            assert_eq!(height, 100);
-            assert_eq!(*cell_size, 10.0);
-            assert!(solver.is_gpu_accelerated());
-        }
+        let terrain = flat_terrain(1000.0, 1000.0, 10.0, 0.0);
+        let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Medium);
+
+        let (width, height, cell_size) = solver.dimensions();
+        assert_eq!(width, 100);
+        assert_eq!(height, 100);
+        assert_eq!(*cell_size, 10.0);
+        assert!(solver.is_gpu_accelerated());
     }
 
     #[test]
     fn test_gpu_solver_read_temperature() {
-        // Only run if GPU is available
-        if let GpuInitResult::Success(context) = GpuContext::new() {
-            let terrain = TerrainData::flat(
-                Meters::new(100.0),
-                Meters::new(100.0),
-                Meters::new(10.0),
-                Meters::new(0.0),
-            );
-            let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Low);
+        let context = require_gpu_context();
 
-            let temp = solver.read_temperature();
-            assert!(!temp.is_empty());
-            // Should return ambient temperature (~293.15 K)
-            assert!(temp.iter().all(|&t| (t - 293.15).abs() < 1.0));
-        }
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
+        let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Low);
+
+        let temp = solver.read_temperature();
+        assert!(!temp.is_empty());
+        // Should return ambient temperature (~293.15 K)
+        assert!(temp.iter().all(|&t| (t - 293.15).abs() < 1.0));
     }
 
     #[test]
     fn test_gpu_solver_dimensions() {
-        // Only run if GPU is available
-        if let GpuInitResult::Success(context) = GpuContext::new() {
-            let terrain = TerrainData::flat(
-                Meters::new(500.0),
-                Meters::new(300.0),
-                Meters::new(10.0),
-                Meters::new(0.0),
-            );
-            let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::High);
+        let context = require_gpu_context();
 
-            let (width, height, _cell_size) = solver.dimensions();
-            // 500m / 5m per cell = 100, 300m / 5m per cell = 60 → clamped to 64 (minimum)
-            assert_eq!(width, 100);
-            assert_eq!(height, 64); // Minimum grid size is 64
-        }
+        let terrain = TerrainData::flat(
+            Meters::new(500.0),
+            Meters::new(300.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
+        let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::High);
+
+        let (width, height, _cell_size) = solver.dimensions();
+        // 500m / 5m per cell = 100, 300m / 5m per cell = 60 → clamped to 64 (minimum)
+        assert_eq!(width, 100);
+        assert_eq!(height, 64); // Minimum grid size is 64
     }
 }
