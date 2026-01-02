@@ -618,6 +618,7 @@ impl FieldSolver for CpuFieldSolver {
         // Detect converging fire fronts and apply acceleration
         let junctions = self.junction_zone_detector.detect(
             self.level_set.as_slice(),
+            self.spread_rate.as_slice(),
             self.width,
             self.height,
             self.cell_size,

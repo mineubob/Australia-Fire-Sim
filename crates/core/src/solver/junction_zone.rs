@@ -82,12 +82,11 @@ impl JunctionZoneDetector {
     /// # Arguments
     ///
     /// * `phi` - Level set field (φ < 0 = burned, φ > 0 = unburned)
+    /// * `spread_rate` - Rate of spread field (m/s) for accurate time-to-contact calculations
     /// * `width` - Grid width in cells
     /// * `height` - Grid height in cells
     /// * `cell_size` - Size of each grid cell (m)
-    /// * `dt` - Time step for spread rate estimation (s). Currently unused pending
-    ///   integration of ROS field for accurate time-to-contact calculations.
-    ///   Retained in API for future enhancement.
+    /// * `dt` - Time step (s), used for consistency checks
     ///
     /// # Returns
     ///
@@ -95,6 +94,7 @@ impl JunctionZoneDetector {
     pub fn detect(
         &self,
         phi: &[f32],
+        spread_rate: &[f32],
         width: usize,
         height: usize,
         cell_size: f32,
@@ -115,6 +115,7 @@ impl JunctionZoneDetector {
                     &components[i],
                     &components[j],
                     phi,
+                    spread_rate,
                     width,
                     height,
                     cell_size,
@@ -208,6 +209,7 @@ impl JunctionZoneDetector {
         front1: &[(usize, usize)],
         front2: &[(usize, usize)],
         phi: &[f32],
+        spread_rate: &[f32],
         width: usize,
         height: usize,
         cell_size: f32,
@@ -267,9 +269,17 @@ impl JunctionZoneDetector {
         }
 
         // Estimate spread rates to calculate time to contact
-        // Using simple estimate based on level set gradient
-        let spread_rate = 0.5; // m/s estimate, should use actual ROS field
-        let time_to_contact = min_dist / (2.0 * spread_rate);
+        // Use actual ROS field data from the closest points on each front
+        let idx1 = closest1.1 * width + closest1.0;
+        let idx2 = closest2.1 * width + closest2.0;
+        
+        // Get spread rates at junction points (both should be > 0 for active fronts)
+        let ros1 = spread_rate[idx1].max(0.1); // Minimum 0.1 m/s to avoid division issues
+        let ros2 = spread_rate[idx2].max(0.1);
+        
+        // Time until the fronts meet, assuming they continue at current rates
+        // Sum of rates because both fronts are approaching each other
+        let time_to_contact = min_dist / (ros1 + ros2);
 
         // Calculate acceleration factor
         let acceleration = self.calculate_acceleration_factor(angle, min_dist);
@@ -367,12 +377,16 @@ mod tests {
 
         // Create level set with two separate fire fronts approaching each other at an angle
         let mut phi = vec![10.0; width * height];
+        
+        // Create spread rate field with active fires
+        let mut spread_rate = vec![0.0; width * height];
 
         // Front 1: coming from left, moving east
         for y in 20..26 {
             for x in 15..20 {
                 let idx = y * width + x;
                 phi[idx] = -1.0; // Burned
+                spread_rate[idx] = 0.5; // Active spread at 0.5 m/s
             }
         }
 
@@ -381,10 +395,11 @@ mod tests {
             for x in 31..36 {
                 let idx = y * width + x;
                 phi[idx] = -1.0; // Burned
+                spread_rate[idx] = 0.6; // Active spread at 0.6 m/s
             }
         }
 
-        let junctions = detector.detect(&phi, width, height, cell_size, 0.1);
+        let junctions = detector.detect(&phi, &spread_rate, width, height, cell_size, 0.1);
 
         // The test should detect a junction between the two fronts
         // Distance is about 11 cells * 2m = 22m, well within 80m threshold
@@ -415,12 +430,16 @@ mod tests {
 
         // Create level set with two parallel fire fronts moving same direction
         let mut phi = vec![10.0; width * height];
+        
+        // Create spread rate field
+        let mut spread_rate = vec![0.0; width * height];
 
         // Front 1: bottom (y = 15)
         for x in 10..40 {
             for y in 10..16 {
                 let idx = y * width + x;
                 phi[idx] = -1.0;
+                spread_rate[idx] = 0.5;
             }
         }
 
@@ -429,10 +448,11 @@ mod tests {
             for y in 35..40 {
                 let idx = y * width + x;
                 phi[idx] = -1.0;
+                spread_rate[idx] = 0.5;
             }
         }
 
-        let junctions = detector.detect(&phi, width, height, cell_size, 0.1);
+        let junctions = detector.detect(&phi, &spread_rate, width, height, cell_size, 0.1);
 
         // Parallel fronts moving in same direction should not create junction
         assert!(

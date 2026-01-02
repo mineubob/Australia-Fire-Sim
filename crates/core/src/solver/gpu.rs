@@ -2591,10 +2591,11 @@ impl FieldSolver for GpuFieldSolver {
 
         let junctions = self.junction_zone_detector.detect(
             &level_set_data,
+            &spread_rate_data,
             self.width as usize,
             self.height as usize,
             self.cell_size,
-            *dt,
+            dt,
         );
 
         // Apply junction acceleration to spread rates
