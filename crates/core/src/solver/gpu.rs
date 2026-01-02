@@ -185,15 +185,15 @@ struct AdvancedPhysicsParams {
     height: u32,
     cell_size: f32,
     dt: f32,
-    wind_speed: f32,              // Wind speed (m/s)
-    wind_direction: f32,          // Wind direction (degrees, 0=North, clockwise)
-    ambient_temp: f32,            // Ambient temperature (°C)
-    vls_threshold: f32,           // VLS index threshold (0.6 typical)
-    min_slope_vls: f32,           // Minimum slope for VLS (20° typical)
-    min_wind_vls: f32,            // Minimum wind for VLS (5 m/s typical)
-    valley_sample_radius: f32,    // Radius for valley detection (100m typical)
-    valley_reference_width: f32,  // Open terrain reference width (200m typical)
-    valley_head_distance: f32,    // Distance threshold for chimney effect (100m typical)
+    wind_speed: f32,             // Wind speed (m/s)
+    wind_direction: f32,         // Wind direction (degrees, 0=North, clockwise)
+    ambient_temp: f32,           // Ambient temperature (°C)
+    vls_threshold: f32,          // VLS index threshold (0.6 typical)
+    min_slope_vls: f32,          // Minimum slope for VLS (20° typical)
+    min_wind_vls: f32,           // Minimum wind for VLS (5 m/s typical)
+    valley_sample_radius: f32,   // Radius for valley detection (100m typical)
+    valley_reference_width: f32, // Open terrain reference width (200m typical)
+    valley_head_distance: f32,   // Distance threshold for chimney effect (100m typical)
     _padding: f32,
 }
 
@@ -740,13 +740,15 @@ impl GpuFieldSolver {
             height,
             cell_size,
             dt: 0.1,
-            wind_speed: 5.56,            // 20 km/h default in m/s
-            wind_direction: 0.0,         // North
-            ambient_temp: 20.0,          // 20°C
-            vls_threshold: 0.6,          // VLS activation threshold
-            min_slope_vls: 20.0,         // 20° minimum slope for VLS
-            min_wind_vls: 5.0,           // 5 m/s minimum wind for VLS
-            valley_sample_radius: 100.0, // 100m valley detection radius
+            wind_speed: 5.56,              // 20 km/h default in m/s
+            wind_direction: 0.0,           // North
+            ambient_temp: 20.0,            // 20°C
+            vls_threshold: 0.6,            // VLS activation threshold
+            min_slope_vls: 20.0,           // 20° minimum slope for VLS
+            min_wind_vls: 5.0,             // 5 m/s minimum wind for VLS
+            valley_sample_radius: 100.0,   // 100m valley detection radius
+            valley_reference_width: 200.0, // 200m open terrain reference width
+            valley_head_distance: 100.0,   // 100m distance threshold for chimney effect
             _padding: 0.0,
         };
 
@@ -1591,7 +1593,7 @@ impl GpuFieldSolver {
             fire_regime: vec![FireRegime::WindDriven; num_cells],
             wind_speed_10m_kmh: 20.0,
             wind_x: 0.0,
-            wind_y: 5.56, // 20 km/h north wind
+            wind_y: 5.56,           // 20 km/h north wind
             ambient_temp_k: 293.15, // 20°C default
             valley_sample_radius: 100.0,
             valley_reference_width: 200.0,

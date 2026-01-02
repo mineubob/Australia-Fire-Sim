@@ -188,7 +188,18 @@ impl VLSDetector {
                 let vls_index = self.calculate_vls_index(slope, aspect, wind_dir, wind_speed);
                 let is_active = vls_index > self.vls_threshold;
 
-                // Lateral direction is perpendicular to aspect (along contour)
+                // Lateral direction is perpendicular to aspect (along contour).
+                //
+                // Convention:
+                // - `terrain.aspect_at` returns the downslope azimuth in degrees,
+                //   measured clockwise from geographic north (standard GIS convention).
+                // - Lateral VLS spread is modeled along the contour as a 90° rotation
+                //   from the downslope direction.
+                //
+                // We explicitly choose a +90° (clockwise) rotation from the aspect
+                // direction, rather than -90° (counterclockwise), so that
+                // `lateral_direction` is unambiguous and consistent with the chosen
+                // terrain/wind orientation conventions.
                 let lateral_direction = (aspect + 90.0) % 360.0;
 
                 // Rate multiplier: 1.0 to 3.0 based on VLS index
@@ -223,6 +234,13 @@ impl VLSDetector {
     /// # Returns
     ///
     /// True if slope is on lee side (within 60° of downwind)
+    ///
+    /// # Scientific Basis
+    ///
+    /// The 60° tolerance (120° to 240° from wind direction) is based on
+    /// Sharples et al. (2012) observations of VLS behavior. Slopes within
+    /// this angular range experience flow separation and vortex formation
+    /// that drives lateral fire spread along contours.
     fn is_lee_slope(aspect: f32, wind_direction: f32) -> bool {
         // Lee slope faces away from wind
         // If wind blows towards 0° (north), lee slopes face towards 180° (south)

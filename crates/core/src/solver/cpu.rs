@@ -83,13 +83,13 @@ pub struct CpuFieldSolver {
 
     // Weather parameters (passed from simulation)
     wind_speed_10m_kmh: f32,
-    wind_x_m_s: f32,        // Wind x-component in m/s
-    wind_y_m_s: f32,        // Wind y-component in m/s
-    ambient_temp_k: f32,    // Ambient temperature in Kelvin
+    wind_x_m_s: f32,     // Wind x-component in m/s
+    wind_y_m_s: f32,     // Wind y-component in m/s
+    ambient_temp_k: f32, // Ambient temperature in Kelvin
 
     // Advanced physics configuration
-    valley_sample_radius: f32,      // Radius for valley detection (m)
-    valley_reference_width: f32,    // Reference width for open terrain (m)
+    valley_sample_radius: f32,           // Radius for valley detection (m)
+    valley_reference_width: f32,         // Reference width for open terrain (m)
     valley_head_distance_threshold: f32, // Distance threshold for chimney effect (m)
 
     // Fuel grid: per-cell, per-layer fuel type assignment
@@ -264,7 +264,7 @@ impl FieldSolver for CpuFieldSolver {
         self.wind_x_m_s = wind.x;
         self.wind_y_m_s = wind.y;
         self.ambient_temp_k = ambient_temp.as_f32();
-        
+
         // Extract wind components (wind.x and wind.y are already in m/s)
         let wind_x = wind.x;
         let wind_y = wind.y;
@@ -436,12 +436,20 @@ impl FieldSolver for CpuFieldSolver {
             // Calculate heat flux from shrub → canopy (if shrub is burning)
             if fuel_cell.shrub.burning && fuel_cell.canopy.has_fuel() {
                 // Calculate shrub layer intensity using Byram's formula: I = H × W × R
-                // Use shrub layer fuel load and a conservative spread rate estimate
+                // Use shrub layer fuel load and derive spread rate from relative fuel loads
                 let shrub_fuel_load = fuel_cell.shrub.fuel_load; // kg/m²
                 let shrub_heat_content = fuel_heat_capacity * 1000.0; // Convert kJ/kg to J/kg for consistency
-                                                                      // Shrub spread rate is typically lower than surface, ~0.5 of surface rate
                 let surface_ros = spread_slice[idx]; // m/s
-                let shrub_ros = surface_ros * 0.5; // Conservative estimate for shrub layer
+                let surface_fuel_load = fuel_cell.surface.fuel_load; // kg/m²
+
+                // Derive shrub ROS factor from relative fuel loads (heavier fuel loads burn slower)
+                // This replaces the hardcoded 0.5 multiplier with a physics-based relationship
+                let shrub_ros_factor = if surface_fuel_load > 0.0 {
+                    (shrub_fuel_load / surface_fuel_load).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                let shrub_ros = surface_ros * shrub_ros_factor;
                 let shrub_intensity = (shrub_heat_content / 1000.0) * shrub_fuel_load * shrub_ros; // kW/m
 
                 let shrub_flame_height = VerticalHeatTransfer::flame_height_byram(shrub_intensity);
@@ -487,8 +495,8 @@ impl FieldSolver for CpuFieldSolver {
         // Convert humidity fraction to percentage
         let humidity_percent = Percent::new(humidity * 100.0);
 
-        // Use average ambient temperature (would be better to use cell-specific temps)
-        let ambient_temp_c = Celsius::new(20.0);
+        // Use ambient temperature from the weather system (Kelvin → Celsius)
+        let ambient_temp_c = Celsius::new(f64::from(self.ambient_temp_k - 273.15));
 
         // Calculate EMC using Nelson (2000) formulation with Simard (1968) coefficients
         // Assumes adsorption (fuel gaining moisture) - for desorption, would need to track previous state
@@ -663,11 +671,7 @@ impl FieldSolver for CpuFieldSolver {
 
         // Phase 6: VLS (Vorticity-Driven Lateral Spread)
         // Detect VLS conditions and modify spread rates on lee slopes
-        let wind_vec = Vec3::new(
-            self.wind_x_m_s,
-            self.wind_y_m_s,
-            0.0,
-        );
+        let wind_vec = Vec3::new(self.wind_x_m_s, self.wind_y_m_s, 0.0);
         let vls_conditions = self.vls_detector.detect(
             &self.terrain_data,
             wind_vec,

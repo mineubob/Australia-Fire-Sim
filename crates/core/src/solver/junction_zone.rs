@@ -85,7 +85,9 @@ impl JunctionZoneDetector {
     /// * `width` - Grid width in cells
     /// * `height` - Grid height in cells
     /// * `cell_size` - Size of each grid cell (m)
-    /// * `dt` - Time step for spread rate estimation (s)
+    /// * `dt` - Time step for spread rate estimation (s). Currently unused pending
+    ///   integration of ROS field for accurate time-to-contact calculations.
+    ///   Retained in API for future enhancement.
     ///
     /// # Returns
     ///
