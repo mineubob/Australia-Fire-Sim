@@ -256,8 +256,8 @@ mod tests {
 
     #[test]
     fn test_byram_number_prevents_division_by_zero() {
-        // Zero or very low wind speed should return infinity (plume-dominated)
-        // rather than causing division by zero or using artificial clamping
+        // Zero or very low wind speed should return very large values (plume-dominated)
+        // The smooth transition (u³ + 1e-6) prevents division by zero without hard cutoffs
         let nc = byram_number(
             10000.0, // 10 kW/m
             0.0,     // Zero wind
@@ -265,21 +265,22 @@ mod tests {
         );
 
         assert!(
-            nc.is_infinite(),
-            "Zero wind should return infinity (plume-dominated)"
+            nc > 10.0,
+            "Zero wind should return very large Byram number (plume-dominated): {nc}"
         );
-        assert!(nc > 0.0, "Should return positive value");
+        assert!(!nc.is_nan(), "Should not be NaN");
 
-        // Very low wind (< 0.5 m/s) should also return infinity
+        // Very low wind (< 0.5 m/s) should also return very large values
         let nc_low = byram_number(
             10000.0, // 10 kW/m
             0.1,     // Very low wind
             20.0,    // 20°C
         );
         assert!(
-            nc_low.is_infinite(),
-            "Wind < 0.5 m/s should return infinity (plume-dominated)"
+            nc_low > 10.0,
+            "Wind < 0.5 m/s should return very large Byram number (plume-dominated): {nc_low}"
         );
+        assert!(!nc_low.is_nan(), "Should not be NaN");
     }
 
     #[test]

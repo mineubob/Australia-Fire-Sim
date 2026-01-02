@@ -141,7 +141,14 @@ if alignment > 0.0 {
 
 ## Testing
 
-42 unit tests covering:
+### CPU Tests (CI Validated)
+
+The continuous integration system validates CPU-only tests using:
+```bash
+cargo test --no-default-features
+```
+
+320+ unit tests covering:
 - Wind directionality (26x downwind vs 0.05x upwind)
 - Moisture evaporation delays
 - Vertical spread (fire climbs faster)
@@ -150,8 +157,30 @@ if alignment > 0.0 {
 - Ember physics (buoyancy, wind drift, cooling)
 - Spatial indexing
 - Fire spread simulation
+- Junction zone detection
+- Valley channeling effects
+- VLS (Vorticity-driven Lateral Spread)
+- Fire regime detection
 
-All tests passing ✅
+### GPU Tests (Local Only)
+
+GPU tests require hardware acceleration and must be run locally:
+```bash
+# Run all tests including GPU
+cargo test --all-features
+
+# Run only GPU tests
+cargo test --features gpu
+```
+
+**Note:** GitHub Actions CI runners lack GPU hardware, so GPU tests are excluded from automated testing. GPU validation must be performed manually on development machines with appropriate graphics hardware (Vulkan-compatible GPU).
+
+The GPU implementation maintains complete parity with CPU algorithms, with identical physics models implemented in WGSL shaders. Local testing should verify:
+- CPU/GPU result consistency
+- GPU-specific optimizations (compute shaders, buffer management)
+- Performance benchmarks
+
+All tests passing ✅ (CPU: automated, GPU: manual)
 
 ## License
 

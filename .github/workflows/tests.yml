@@ -56,8 +56,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  # CPU-only test suite
+  # Note: GPU tests are excluded (--no-default-features) because GitHub Actions
+  # runners do not have GPU hardware. GPU validation must be performed locally.
+  # See README.md for instructions on running GPU tests locally.
   test:
-    name: Test Suite
+    name: Test Suite (CPU Only)
     runs-on: ubuntu-latest
     needs:
       - clippy
@@ -84,7 +88,7 @@ jobs:
           shared-key: "ubuntu-latest"
           cache-on-failure: true
       
-      - name: Run tests
+      - name: Run CPU tests
         run: cargo test --no-default-features
 
   build-dev:
