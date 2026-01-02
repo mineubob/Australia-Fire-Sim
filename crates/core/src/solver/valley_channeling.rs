@@ -239,31 +239,47 @@ pub fn chimney_updraft(
 
 /// Calculate view factor for cross-valley radiant heat transfer
 ///
-/// Simplified view factor for opposing valley walls.
+/// Exact view factor for opposing valley walls modeled as parallel infinite strips.
 /// Significant when valley width < 100m.
+///
+/// Uses the Hottel crossed-string method for parallel infinite strips:
+/// F₁₋₂ = (1/2) × [√(1 + (H/D)²) - (H/D)]
+///
+/// Where:
+/// - H = valley depth (height of opposing walls)
+/// - D = valley width (distance between walls)
+///
+/// This is the exact analytical solution from Hottel & Sarofim (1967)
+/// "Radiative Transfer" for opposing parallel surfaces.
 ///
 /// # Arguments
 ///
-/// * `valley_width` - Width of valley (m)
-/// * `valley_depth` - Depth of valley (m)
+/// * `valley_width` - Width of valley (m), distance D between opposing walls
+/// * `valley_depth` - Depth of valley (m), height H of valley walls
 ///
 /// # Returns
 ///
 /// View factor (0.0 to 1.0)
+///
+/// # References
+///
+/// - Hottel, H.C. & Sarofim, A.F. (1967). Radiative Transfer. McGraw-Hill.
+/// - Modest, M.F. (2013). Radiative Heat Transfer, 3rd ed. Academic Press.
 pub fn cross_valley_view_factor(valley_width: f32, valley_depth: f32) -> f32 {
     if valley_width > 100.0 {
         return 0.0; // Negligible for wide valleys
     }
 
-    // Simplified view factor approximation
-    // View factor decreases as valley width increases
-    // For narrow valleys (width << depth), approaches 0.5
-    // For wide valleys, approaches 0
-    let aspect_ratio = valley_width / valley_depth.max(1.0);
-
-    // Empirical formula: VF = 0.5 / (1 + aspect_ratio)
-    // This gives 0.5 for width=0, 0.25 for width=depth, etc.
-    0.5 / (1.0 + aspect_ratio)
+    // Prevent division by zero
+    let depth = valley_depth.max(0.1);
+    let width = valley_width.max(0.1);
+    
+    // Hottel crossed-string method for parallel infinite strips
+    // F = (1/2) × [√(1 + (H/D)²) - (H/D)]
+    let h_over_d = depth / width;
+    let term = (1.0 + h_over_d * h_over_d).sqrt();
+    
+    0.5 * (term - h_over_d)
 }
 
 #[cfg(test)]
