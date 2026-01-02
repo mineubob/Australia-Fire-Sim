@@ -22,6 +22,12 @@ pub const LATENT_HEAT_WATER: f32 = 2260.0;
 /// Stoichiometric oxygen requirement for wood combustion (kg O₂/kg fuel)
 pub const OXYGEN_STOICHIOMETRIC_RATIO: f32 = 1.33;
 
+/// Specific heat capacity of dry woody biomass (kJ/(kg·K))
+/// Representative value for wood: range 1.3-2.0 kJ/(kg·K), using mid-range value.
+/// TODO: FUTURE - Add fuel-specific `c_p` to `FuelCombustionProps` for different vegetation types
+/// Reference: Engineering `ToolBox`, Wood thermal properties
+const WOOD_SPECIFIC_HEAT_CAPACITY: f32 = 1.6;
+
 /// Fuel-specific combustion properties
 ///
 /// These properties MUST come from the Fuel type - never hardcode them.
@@ -138,9 +144,12 @@ pub fn step_combustion_cpu(
         let ambient_temp = params.ambient_temp_k;
         let thermal_energy_kj = if t > ambient_temp {
             // Q = m × c_p × ΔT
-            // mass is in kg (fuel load × area), specific_heat from fuel properties
-            let specific_heat_kj = params.fuel_props.heat_content_kj / 1000.0; // Approximate c_p from heat content
-            mass * specific_heat_kj * (t - ambient_temp) / 1000.0 // Convert K to appropriate scale
+            // mass is in kg (fuel load × area)
+            // Using WOOD_SPECIFIC_HEAT_CAPACITY for dry woody biomass
+            // NOTE: We must NOT approximate c_p from heat_content - they are different physical properties.
+            // Heat content is total energy released by combustion (kJ/kg fuel consumed),
+            // while specific heat capacity is energy to raise temperature by 1K (kJ/(kg·K)).
+            mass * WOOD_SPECIFIC_HEAT_CAPACITY * (t - ambient_temp)
         } else {
             0.0
         };

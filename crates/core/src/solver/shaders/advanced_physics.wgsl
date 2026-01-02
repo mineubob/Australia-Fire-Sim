@@ -11,6 +11,11 @@
 // - Sharples et al. (2012): VLS index and lateral spread
 // - Butler et al. (1998), Sharples (2009): Valley wind channeling
 
+// Constants from scientific literature
+const VLS_REFERENCE_WIND_SPEED: f32 = 5.0; // Reference wind speed for VLS normalization (Sharples et al. 2012)
+const VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY: f32 = 50.0; // Characteristic updraft velocity (Butler et al. 1998)
+const G: f32 = 9.81; // Gravity (m/s²)
+
 struct AdvancedPhysicsParams {
     width: u32,
     height: u32,
@@ -66,8 +71,9 @@ fn calculate_vls_index(slope_deg: f32, aspect_deg: f32) -> f32 {
     let angle_diff_rad = angle_diff * 0.0174533;
     let sin_diff = abs(sin(angle_diff_rad));
     
-    // Wind factor (normalize to reference wind speed of 5 m/s)
-    let wind_factor = params.wind_speed / params.min_wind_vls;
+    // Wind factor - normalize to VLS_REFERENCE_WIND_SPEED per Sharples et al. (2012)
+    // This is separate from the minimum wind threshold (params.min_wind_vls)
+    let wind_factor = params.wind_speed / VLS_REFERENCE_WIND_SPEED;
     
     // VLS index
     return tan_slope * sin_diff * wind_factor;
@@ -126,18 +132,74 @@ fn detect_valley(world_x: f32, world_y: f32, center_elev: f32) -> vec4<f32> {
     let avg_ridge_elevation = sum_elevation / f32(count_samples);
     let depth = max(avg_ridge_elevation - center_elev, 0.0);
     
-    // Width estimation using opposing samples
-    // Scientific limitation: The simplified heuristic (sample_radius * 0.5) provides
-    // a reasonable first-order approximation for valley width. A more accurate
-    // implementation would march outward from the valley center in multiple directions
-    // to find ridge elevations, matching the CPU implementation's approach.
-    // This simplification trades accuracy for GPU shader efficiency.
-    let width = params.valley_sample_radius * 0.5;
+    // Width estimation - match CPU implementation exactly for CPU/GPU parity
+    // March outward in two opposing perpendicular directions to find ridges.
+    // We use the dominant valley direction (perpendicular to max gradient).
+    //
+    // Calculate gradient direction from samples to find valley axis
+    var grad_x = 0.0;
+    var grad_y = 0.0;
+    for (var i = 0u; i < num_samples; i = i + 1u) {
+        let angle = f32(i) * 6.283185 / f32(num_samples);
+        let dx = cos(angle) * params.valley_sample_radius;
+        let dy = sin(angle) * params.valley_sample_radius;
+        let sample_elev = sample_elevation(world_x + dx, world_y + dy);
+        let diff = sample_elev - center_elev;
+        grad_x = grad_x + diff * cos(angle);
+        grad_y = grad_y + diff * sin(angle);
+    }
+    let gradient_angle = atan2(grad_y, grad_x);
+    let perp_angle = gradient_angle + 1.5708; // Add 90° for perpendicular
     
-    // Distance from valley head (simplified heuristic pending proper terrain analysis)
-    // Based on depth gradient - deeper valleys further from head.
-    // See valley_channeling.rs for scientific justification of the 10.0 multiplier
-    // derived from Butler et al. (1998) field observations.
+    // March in both directions perpendicular to gradient
+    let ridge_threshold = center_elev + 10.0;
+    var width_1 = 0.0;
+    var width_2 = 0.0;
+    let step = params.cell_size;
+    
+    // Direction 1
+    var dist = step;
+    while (dist <= params.valley_sample_radius) {
+        let sample_elev = sample_elevation(
+            world_x + cos(perp_angle) * dist,
+            world_y + sin(perp_angle) * dist
+        );
+        if (sample_elev > ridge_threshold) {
+            width_1 = dist;
+            break;
+        }
+        dist = dist + step;
+    }
+    
+    // Direction 2 (opposite)
+    dist = step;
+    while (dist <= params.valley_sample_radius) {
+        let sample_elev = sample_elevation(
+            world_x - cos(perp_angle) * dist,
+            world_y - sin(perp_angle) * dist
+        );
+        if (sample_elev > ridge_threshold) {
+            width_2 = dist;
+            break;
+        }
+        dist = dist + step;
+    }
+    
+    // Calculate total width or mark as invalid if detection failed
+    var width = 0.0;
+    if (width_1 > 0.0 && width_2 > 0.0) {
+        width = width_1 + width_2;
+    } else if (width_1 > 0.0) {
+        width = width_1 * 2.0;
+    } else if (width_2 > 0.0) {
+        width = width_2 * 2.0;
+    } else {
+        // Ridge detection failed - mark as not in valley (more honest than approximation)
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+    
+    // Distance from valley head using empirical ratio (matches CPU)
+    // See VALLEY_DEPTH_TO_HEAD_DISTANCE_RATIO constant documentation
     let distance_from_head = depth * 10.0;
     
     return vec4<f32>(1.0, width, depth, distance_from_head);
@@ -160,12 +222,10 @@ fn chimney_updraft(valley_depth: f32, distance_from_head: f32, fire_temp_c: f32)
         return 0.0;
     }
     
-    // Physical constants
-    const G: f32 = 9.81;  // Gravity (m/s²)
-    
     let t_kelvin = params.ambient_temp + 273.15;
     
     // Updraft velocity: w = sqrt(2 × g × H × ΔT / T)
+    // Using global constant G defined at top of shader
     return sqrt(2.0 * G * valley_depth * delta_t / t_kelvin);
 }
 
@@ -226,10 +286,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         
         if (updraft > 0.0) {
             // Updraft enhances spread by 0-20% based on updraft velocity
-            // The divisor 50.0 m/s represents the updraft velocity at which
-            // maximum enhancement (20%) occurs. This is based on empirical
-            // observations from Butler et al. (1998) of valley wind effects.
-            let updraft_factor = 1.0 + clamp(updraft / 50.0, 0.0, 0.2);
+            // Normalized by VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY from Butler et al. (1998)
+            let updraft_factor = 1.0 + clamp(updraft / VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY, 0.0, 0.2);
             rate_multiplier = rate_multiplier * updraft_factor;
         }
     }

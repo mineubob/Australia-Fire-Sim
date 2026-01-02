@@ -70,8 +70,17 @@ pub fn byram_number(fire_intensity: f32, wind_speed: f32, ambient_temp: f32) -> 
 
     let t_kelvin = ambient_temp + 273.15;
 
-    // Prevent division by zero or very small wind speeds
-    let u_cubed = wind_speed.max(0.5).powi(3);
+    // Explicitly handle zero or effectively zero wind speed:
+    // In calm conditions (wind < 0.5 m/s), the fire is inherently plume-dominated
+    // regardless of intensity, since the plume will dominate over negligible wind.
+    // Artificial clamping to 0.5 m/s creates large errors: at 0.1 m/s actual wind,
+    // clamping gives (0.5/0.1)³ = 125× error in N_c calculation.
+    // Instead, return infinity to force PlumeDominated classification.
+    if wind_speed < 0.5 {
+        return f32::INFINITY;
+    }
+
+    let u_cubed = wind_speed.powi(3);
 
     (2.0 * G * fire_intensity) / (RHO * CP * t_kelvin * u_cubed)
 }
@@ -249,15 +258,24 @@ mod tests {
 
     #[test]
     fn test_byram_number_prevents_division_by_zero() {
-        // Very low wind speed should not cause panic
+        // Zero or very low wind speed should return infinity (plume-dominated)
+        // rather than causing division by zero or using artificial clamping
         let nc = byram_number(
             10000.0, // 10 kW/m
-            0.0,     // Zero wind (should be clamped to 0.5)
+            0.0,     // Zero wind
             20.0,    // 20°C
         );
 
-        assert!(nc.is_finite(), "Should handle zero wind speed gracefully");
+        assert!(nc.is_infinite(), "Zero wind should return infinity (plume-dominated)");
         assert!(nc > 0.0, "Should return positive value");
+        
+        // Very low wind (< 0.5 m/s) should also return infinity
+        let nc_low = byram_number(
+            10000.0, // 10 kW/m
+            0.1,     // Very low wind
+            20.0,    // 20°C
+        );
+        assert!(nc_low.is_infinite(), "Wind < 0.5 m/s should return infinity (plume-dominated)");
     }
 
     #[test]

@@ -29,6 +29,12 @@
 use crate::core_types::vec3::Vec3;
 use crate::TerrainData;
 
+/// VLS reference wind speed for normalization (m/s)
+/// Per Sharples et al. (2012), this is the characteristic wind speed
+/// at which VLS phenomena are calibrated. This is a fixed physical constant,
+/// separate from the minimum wind threshold for VLS detection.
+const VLS_REFERENCE_WIND_SPEED: f32 = 5.0;
+
 /// VLS detection parameters
 pub struct VLSDetector {
     /// Minimum slope angle for VLS (degrees)
@@ -130,8 +136,10 @@ impl VLSDetector {
         let angle_diff = (aspect_degrees - wind_direction_degrees).to_radians();
         let sin_diff = angle_diff.sin().abs();
 
-        // Wind factor
-        let wind_factor = wind_speed / self.min_wind_speed;
+        // Wind factor normalized by VLS reference wind speed (not the detection threshold)
+        // U_ref is a fixed constant from Sharples et al. (2012), representing the
+        // characteristic wind speed at which VLS phenomena are calibrated.
+        let wind_factor = wind_speed / VLS_REFERENCE_WIND_SPEED;
 
         tan_slope * sin_diff * wind_factor
     }

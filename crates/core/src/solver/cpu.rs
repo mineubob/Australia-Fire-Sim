@@ -19,7 +19,10 @@ use super::level_set::{
 use super::quality::QualityPreset;
 use super::regime::{detect_regime, FireRegime};
 use super::terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
-use super::valley_channeling::{chimney_updraft, detect_valley_geometry, valley_wind_factor};
+use super::valley_channeling::{
+    chimney_updraft, detect_valley_geometry, valley_wind_factor,
+    VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY,
+};
 use super::vertical_heat_transfer::VerticalHeatTransfer;
 use super::vls::VLSDetector;
 use super::FieldSolver;
@@ -433,20 +436,19 @@ impl FieldSolver for CpuFieldSolver {
             // Calculate heat flux from shrub → canopy (if shrub is burning)
             if fuel_cell.shrub.burning && fuel_cell.canopy.has_fuel() {
                 // Calculate shrub layer intensity using Byram's formula: I = H × W × R
-                // Use shrub layer fuel load and derive spread rate from relative fuel loads
+                // Use shrub layer fuel load and approximate shrub ROS from surface ROS
                 let shrub_fuel_load = fuel_cell.shrub.fuel_load; // kg/m²
                 let shrub_heat_content = fuel_heat_capacity * 1000.0; // Convert kJ/kg to J/kg for consistency
                 let surface_ros = spread_slice[idx]; // m/s
-                let surface_fuel_load = fuel_cell.surface.fuel_load; // kg/m²
 
-                // Derive shrub ROS factor from relative fuel loads (heavier fuel loads burn slower)
-                // This replaces the hardcoded 0.5 multiplier with a physics-based relationship
-                let shrub_ros_factor = if surface_fuel_load > 0.0 {
-                    (shrub_fuel_load / surface_fuel_load).clamp(0.0, 1.0)
-                } else {
-                    1.0
-                };
-                let shrub_ros = surface_ros * shrub_ros_factor;
+                // TODO: PHASE 9 - Explicit Shrub-Layer Fire Modeling
+                // This interim approximation uses surface ROS directly for shrub spread.
+                // A full implementation would use Rothermel (1972) for the shrub layer explicitly,
+                // accounting for shrub height, fuel bed depth, arrangement, and moisture.
+                // Reference: Anderson (1982) for shrub fuel models.
+                // Heavier fuel loads typically burn SLOWER (more heat needed to ignite),
+                // so the previous fuel load ratio was physically incorrect.
+                let shrub_ros = surface_ros; // Conservative approximation until proper model implemented
                 let shrub_intensity = (shrub_heat_content / 1000.0) * shrub_fuel_load * shrub_ros; // kW/m
 
                 let shrub_flame_height = VerticalHeatTransfer::flame_height_byram(shrub_intensity);
@@ -495,10 +497,6 @@ impl FieldSolver for CpuFieldSolver {
         // Use ambient temperature from the weather system (Kelvin → Celsius)
         let ambient_temp_c = Celsius::new(f64::from(self.ambient_temp_k - 273.15));
 
-        // Calculate EMC using Nelson (2000) formulation with Simard (1968) coefficients
-        // Assumes adsorption (fuel gaining moisture) - for desorption, would need to track previous state
-        let emc = calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, true);
-
         // Time constant for moisture response (hours converted to seconds)
         // Fine fuels: ~1 hour, medium: ~10 hours
         let time_constant = 3600.0; // 1 hour in seconds
@@ -509,7 +507,6 @@ impl FieldSolver for CpuFieldSolver {
         let level_set_slice = self.level_set.as_slice();
 
         for idx in 0..(self.width * self.height) {
-            let current_moisture = moisture_slice[idx];
             let temp = temp_slice[idx];
             let is_burning = level_set_slice[idx] < 0.0;
 
@@ -518,6 +515,21 @@ impl FieldSolver for CpuFieldSolver {
             if is_burning {
                 continue;
             }
+
+            // Calculate EMC with hysteresis: determine if fuel is adsorbing or desorbing
+            // by comparing current moisture to equilibrium moisture.
+            // Per Nelson (2000), fuels have different EMC curves for adsorption vs desorption.
+            let current_moisture = moisture_slice[idx];
+            
+            // First calculate EMC assuming adsorption to determine process direction
+            let emc_adsorb = calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, true);
+            
+            // Determine process direction: if current moisture > EMC, fuel is drying (desorption)
+            // if current moisture < EMC, fuel is gaining moisture (adsorption)
+            let is_adsorbing = current_moisture < emc_adsorb;
+            
+            // Calculate correct EMC for the actual process direction
+            let emc = calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, is_adsorbing);
 
             // Hot cells dry out faster (temperature-dependent drying)
             // Drying rate increases exponentially with temperature above 100°C
@@ -731,7 +743,9 @@ impl FieldSolver for CpuFieldSolver {
                         );
                         if updraft > 0.0 {
                             // Updraft enhances spread by 0-20% based on updraft velocity
-                            let updraft_factor = 1.0 + (updraft / 50.0).min(0.2);
+                            // Normalized by VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY (Butler et al. 1998)
+                            let updraft_factor =
+                                1.0 + (updraft / VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY).min(0.2);
                             spread_slice[idx] *= updraft_factor;
                         }
                     }
