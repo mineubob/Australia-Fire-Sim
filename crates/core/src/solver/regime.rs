@@ -266,16 +266,22 @@ mod tests {
             20.0,    // 20°C
         );
 
-        assert!(nc.is_infinite(), "Zero wind should return infinity (plume-dominated)");
+        assert!(
+            nc.is_infinite(),
+            "Zero wind should return infinity (plume-dominated)"
+        );
         assert!(nc > 0.0, "Should return positive value");
-        
+
         // Very low wind (< 0.5 m/s) should also return infinity
         let nc_low = byram_number(
             10000.0, // 10 kW/m
             0.1,     // Very low wind
             20.0,    // 20°C
         );
-        assert!(nc_low.is_infinite(), "Wind < 0.5 m/s should return infinity (plume-dominated)");
+        assert!(
+            nc_low.is_infinite(),
+            "Wind < 0.5 m/s should return infinity (plume-dominated)"
+        );
     }
 
     #[test]

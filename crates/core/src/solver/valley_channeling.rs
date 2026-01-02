@@ -292,13 +292,13 @@ pub fn cross_valley_view_factor(valley_width: f32, valley_depth: f32) -> f32 {
     // Prevent division by zero
     let depth = valley_depth.max(0.1);
     let width = valley_width.max(0.1);
-    
+
     // Siegel-Howell formula for parallel infinite strips
     // F = √((D/H)² + 1) - (D/H)
     // where D is width (separation) and H is depth (height)
     let d_over_h = width / depth;
     let term = (d_over_h * d_over_h + 1.0).sqrt();
-    
+
     term - d_over_h
 }
 

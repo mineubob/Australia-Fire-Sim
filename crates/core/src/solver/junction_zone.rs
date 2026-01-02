@@ -272,11 +272,11 @@ impl JunctionZoneDetector {
         // Use actual ROS field data from the closest points on each front
         let idx1 = closest1.1 * width + closest1.0;
         let idx2 = closest2.1 * width + closest2.0;
-        
+
         // Get spread rates at junction points (both should be > 0 for active fronts)
         let ros1 = spread_rate[idx1].max(0.1); // Minimum 0.1 m/s to avoid division issues
         let ros2 = spread_rate[idx2].max(0.1);
-        
+
         // Time until the fronts meet, assuming they continue at current rates
         // Sum of rates because both fronts are approaching each other
         let time_to_contact = min_dist / (ros1 + ros2);
@@ -377,7 +377,7 @@ mod tests {
 
         // Create level set with two separate fire fronts approaching each other at an angle
         let mut phi = vec![10.0; width * height];
-        
+
         // Create spread rate field with active fires
         let mut spread_rate = vec![0.0; width * height];
 
@@ -430,7 +430,7 @@ mod tests {
 
         // Create level set with two parallel fire fronts moving same direction
         let mut phi = vec![10.0; width * height];
-        
+
         // Create spread rate field
         let mut spread_rate = vec![0.0; width * height];
 

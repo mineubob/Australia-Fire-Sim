@@ -520,16 +520,17 @@ impl FieldSolver for CpuFieldSolver {
             // by comparing current moisture to equilibrium moisture.
             // Per Nelson (2000), fuels have different EMC curves for adsorption vs desorption.
             let current_moisture = moisture_slice[idx];
-            
+
             // First calculate EMC assuming adsorption to determine process direction
             let emc_adsorb = calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, true);
-            
+
             // Determine process direction: if current moisture > EMC, fuel is drying (desorption)
             // if current moisture < EMC, fuel is gaining moisture (adsorption)
             let is_adsorbing = current_moisture < emc_adsorb;
-            
+
             // Calculate correct EMC for the actual process direction
-            let emc = calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, is_adsorbing);
+            let emc =
+                calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, is_adsorbing);
 
             // Hot cells dry out faster (temperature-dependent drying)
             // Drying rate increases exponentially with temperature above 100°C
