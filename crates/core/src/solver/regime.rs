@@ -70,18 +70,16 @@ pub fn byram_number(fire_intensity: f32, wind_speed: f32, ambient_temp: f32) -> 
 
     let t_kelvin = ambient_temp + 273.15;
 
-    // Explicitly handle zero or effectively zero wind speed:
-    // In calm conditions (wind < 0.5 m/s), the fire is inherently plume-dominated
-    // regardless of intensity, since the plume will dominate over negligible wind.
-    // Artificial clamping to 0.5 m/s creates large errors: at 0.1 m/s actual wind,
-    // clamping gives (0.5/0.1)³ = 125× error in N_c calculation.
-    // Instead, return infinity to force PlumeDominated classification.
-    if wind_speed < 0.5 {
-        return f32::INFINITY;
-    }
-
-    let u_cubed = wind_speed.powi(3);
-
+    // Handle near-zero wind smoothly:
+    // - Physics requires N_c ∝ 1 / U³, so N_c grows rapidly as U → 0.
+    // - Direct division by U³ is numerically unstable at very small U and can
+    //   produce infinities or NaNs due to finite precision.
+    // - We therefore use the wind speed magnitude and add a very small cubic
+    //   offset to the denominator. This preserves the 1 / U³ behavior for
+    //   realistic winds while providing a smooth limit as U → 0 instead of a
+    //   hard regime cutoff (e.g. at 0.5 m/s).
+    let u = wind_speed.abs();
+    let u_cubed = u.powi(3) + 1.0e-6;
     (2.0 * G * fire_intensity) / (RHO * CP * t_kelvin * u_cubed)
 }
 
