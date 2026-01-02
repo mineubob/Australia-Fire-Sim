@@ -4,7 +4,7 @@
 //! interface for field-based fire simulation. Both CPU and GPU implementations
 //! implement this trait.
 
-use crate::core_types::units::{Kelvin, Meters, Seconds};
+use crate::core_types::units::{Kelvin, Meters};
 use crate::core_types::vec3::Vec3;
 use std::borrow::Cow;
 
@@ -20,10 +20,10 @@ pub trait FieldSolver: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Timestep
+    /// * `dt` - Timestep in seconds (f32 for FFI compatibility)
     /// * `wind` - Wind velocity vector in m/s (x, y, z components)
     /// * `ambient_temp` - Ambient temperature
-    fn step_heat_transfer(&mut self, dt: Seconds, wind: Vec3, ambient_temp: Kelvin);
+    fn step_heat_transfer(&mut self, dt: f32, wind: Vec3, ambient_temp: Kelvin);
 
     /// Advance combustion (fuel consumption, heat release)
     ///
@@ -31,8 +31,8 @@ pub trait FieldSolver: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Timestep
-    fn step_combustion(&mut self, dt: Seconds);
+    /// * `dt` - Timestep in seconds (f32 for FFI compatibility)
+    fn step_combustion(&mut self, dt: f32);
 
     /// Advance moisture (evaporation, equilibrium)
     ///
@@ -40,9 +40,9 @@ pub trait FieldSolver: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Timestep
+    /// * `dt` - Timestep in seconds (f32 for FFI compatibility)
     /// * `humidity` - Relative humidity (0.0 to 1.0)
-    fn step_moisture(&mut self, dt: Seconds, humidity: f32);
+    fn step_moisture(&mut self, dt: f32, humidity: f32);
 
     /// Advance level set (fire front propagation)
     ///
@@ -51,10 +51,10 @@ pub trait FieldSolver: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Timestep
+    /// * `dt` - Timestep in seconds (f32 for FFI compatibility)
     /// * `wind` - Wind velocity vector in m/s (x, y, z components)
     /// * `ambient_temp` - Ambient temperature for physics calculations
-    fn step_level_set(&mut self, dt: Seconds, wind: Vec3, ambient_temp: Kelvin);
+    fn step_level_set(&mut self, dt: f32, wind: Vec3, ambient_temp: Kelvin);
 
     /// Sync ignition (T > `T_ign` → update φ)
     ///

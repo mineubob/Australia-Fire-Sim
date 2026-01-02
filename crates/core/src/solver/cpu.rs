@@ -254,12 +254,7 @@ impl CpuFieldSolver {
 }
 
 impl FieldSolver for CpuFieldSolver {
-    fn step_heat_transfer(
-        &mut self,
-        dt: Seconds,
-        wind: crate::core_types::Vec3,
-        ambient_temp: Kelvin,
-    ) {
+    fn step_heat_transfer(&mut self, dt: f32, wind: crate::core_types::Vec3, ambient_temp: Kelvin) {
         // Store weather parameters for use in other methods
         self.wind_x_m_s = wind.x;
         self.wind_y_m_s = wind.y;
@@ -290,7 +285,7 @@ impl FieldSolver for CpuFieldSolver {
 
         // Use Phase 2 heat transfer physics with fuel-specific properties
         let params = HeatTransferParams {
-            dt: *dt,
+            dt,
             wind_x,
             wind_y,
             ambient_temp: ambient_temp.as_f32(),
@@ -312,7 +307,7 @@ impl FieldSolver for CpuFieldSolver {
         std::mem::swap(&mut self.temperature, &mut self.temperature_back);
     }
 
-    fn step_combustion(&mut self, dt: Seconds) {
+    fn step_combustion(&mut self, dt: f32) {
         // Get surface fuel properties from center cell as representative
         // (for bulk combustion calculations - individual cell variations handled below)
         let center_x = self.width / 2;
@@ -330,7 +325,7 @@ impl FieldSolver for CpuFieldSolver {
 
         // Use Phase 2 combustion physics with fuel-specific properties
         let params = CombustionParams {
-            dt: *dt,
+            dt,
             cell_size: self.cell_size,
             fuel_props,
         };
@@ -484,7 +479,7 @@ impl FieldSolver for CpuFieldSolver {
         }
     }
 
-    fn step_moisture(&mut self, dt: Seconds, humidity: f32) {
+    fn step_moisture(&mut self, dt: f32, humidity: f32) {
         // Moisture equilibrium model using Nelson (2000) with Simard (1968) coefficients
         // Moisture content tends toward equilibrium moisture content (EMC)
         // based on relative humidity and temperature
@@ -533,12 +528,12 @@ impl FieldSolver for CpuFieldSolver {
             };
 
             // Approach to EMC
-            let rate = (emc - current_moisture) / time_constant * (*dt) * drying_rate;
+            let rate = (emc - current_moisture) / time_constant * dt * drying_rate;
             moisture_slice[idx] = (current_moisture + rate).clamp(0.0, 1.0);
         }
     }
 
-    fn step_level_set(&mut self, dt: Seconds, _wind: Vec3, _ambient_temp: Kelvin) {
+    fn step_level_set(&mut self, dt: f32, _wind: Vec3, _ambient_temp: Kelvin) {
         // Phase 3: Level set evolution with curvature-dependent spread
 
         // Get surface fuel properties from center cell as representative
@@ -626,7 +621,7 @@ impl FieldSolver for CpuFieldSolver {
             self.width,
             self.height,
             self.cell_size,
-            *dt,
+            dt,
         );
 
         // Apply junction acceleration to spread rates
@@ -798,7 +793,7 @@ impl FieldSolver for CpuFieldSolver {
 
         // Phase 4: Atmospheric dynamics
         // Update simulation time
-        self.sim_time += *dt;
+        self.sim_time += dt;
 
         // Calculate total fire power (sum of intensities × fire front length)
         let intensity_slice = self.fire_intensity.as_slice();
@@ -879,7 +874,7 @@ impl FieldSolver for CpuFieldSolver {
 
         // Update pyroCb system and check for collapses
         self.pyrocb_system.update(
-            dt,
+            Seconds::new(dt),
             Seconds::new(self.sim_time),
             Kelvin::new(f64::from(AMBIENT_TEMP_K)),
         );
@@ -917,7 +912,7 @@ impl FieldSolver for CpuFieldSolver {
 
         // Then evolve level set using spread rate
         let params = LevelSetParams {
-            dt: *dt,
+            dt,
             cell_size: self.cell_size,
             curvature_coeff: 0.25, // Margerit 2002
             noise_amplitude: 0.05, // 5% stochastic variation
@@ -1035,7 +1030,7 @@ impl FieldSolver for CpuFieldSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_types::units::{Kelvin, Meters, Seconds};
+    use crate::core_types::units::{Kelvin, Meters};
 
     /// Helper to create flat terrain with f32 dimensions (for test convenience)
     fn flat_terrain(width: f32, height: f32, resolution: f32, elevation: f32) -> TerrainData {
@@ -1142,7 +1137,7 @@ mod tests {
 
         // Run heat transfer step
         solver.step_heat_transfer(
-            Seconds::new(1.0),
+            1.0,
             crate::core_types::Vec3::new(0.0, 0.0, 0.0),
             Kelvin::new(293.15),
         );

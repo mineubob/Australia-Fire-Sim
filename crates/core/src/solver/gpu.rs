@@ -32,6 +32,7 @@ use super::terrain_slope::TerrainFields;
 use super::FieldSolver;
 use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
 use crate::core_types::units::{Gigawatts, Kelvin, Meters, MetersPerSecond, Seconds};
+use crate::core_types::vec3::Vec3;
 use crate::TerrainData;
 use bytemuck::{Pod, Zeroable};
 use std::borrow::Cow;
@@ -2372,12 +2373,7 @@ impl GpuFieldSolver {
 }
 
 impl FieldSolver for GpuFieldSolver {
-    fn step_heat_transfer(
-        &mut self,
-        dt: Seconds,
-        wind: crate::core_types::Vec3,
-        ambient_temp: Kelvin,
-    ) {
+    fn step_heat_transfer(&mut self, dt: f32, wind: crate::core_types::Vec3, ambient_temp: Kelvin) {
         // Extract wind components (wind.x and wind.y are already in m/s)
         let wind_x = wind.x;
         let wind_y = wind.y;
@@ -2452,7 +2448,7 @@ impl FieldSolver for GpuFieldSolver {
         self.temp_ping = !self.temp_ping;
     }
 
-    fn step_combustion(&mut self, dt: Seconds) {
+    fn step_combustion(&mut self, dt: f32) {
         // Update uniform buffer
         let params = CombustionParams {
             width: self.width,
@@ -2531,13 +2527,13 @@ impl FieldSolver for GpuFieldSolver {
         self.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    fn step_moisture(&mut self, _dt: Seconds, _humidity: f32) {
+    fn step_moisture(&mut self, _dt: f32, _humidity: f32) {
         // Moisture update is handled in combustion shader
         // This is a placeholder for more advanced moisture dynamics
     }
 
-    fn step_level_set(&mut self, dt: Seconds, _wind: Vec3, _ambient_temp: Kelvin) {
-        self.time += *dt;
+    fn step_level_set(&mut self, dt: f32, _wind: Vec3, _ambient_temp: Kelvin) {
+        self.time += dt;
 
         // Update uniform buffer
         let params = LevelSetParams {
