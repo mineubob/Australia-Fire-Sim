@@ -420,11 +420,11 @@ impl FieldSolver for CpuFieldSolver {
                 // Use shrub layer fuel load and a conservative spread rate estimate
                 let shrub_fuel_load = fuel_cell.shrub.fuel_load; // kg/m²
                 let shrub_heat_content = fuel_heat_capacity * 1000.0; // Convert kJ/kg to J/kg for consistency
-                // Shrub spread rate is typically lower than surface, ~0.5 of surface rate
+                                                                      // Shrub spread rate is typically lower than surface, ~0.5 of surface rate
                 let surface_ros = spread_slice[idx]; // m/s
                 let shrub_ros = surface_ros * 0.5; // Conservative estimate for shrub layer
                 let shrub_intensity = (shrub_heat_content / 1000.0) * shrub_fuel_load * shrub_ros; // kW/m
-                
+
                 let shrub_flame_height = VerticalHeatTransfer::flame_height_byram(shrub_intensity);
                 let shrub_flux_params = FluxParams::new(
                     flame_height + shrub_flame_height, // Combined flame height
@@ -467,10 +467,10 @@ impl FieldSolver for CpuFieldSolver {
 
         // Convert humidity fraction to percentage
         let humidity_percent = Percent::new(humidity * 100.0);
-        
+
         // Use average ambient temperature (would be better to use cell-specific temps)
         let ambient_temp_c = Celsius::new(20.0);
-        
+
         // Calculate EMC using Nelson (2000) formulation with Simard (1968) coefficients
         // Assumes adsorption (fuel gaining moisture) - for desorption, would need to track previous state
         let emc = calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, true);

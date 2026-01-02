@@ -2575,7 +2575,7 @@ impl FieldSolver for GpuFieldSolver {
         // Read back level_set and spread_rate from GPU for junction detection
         let level_set_data = self.read_level_set();
         let mut spread_rate_data = self.read_spread_rate();
-        
+
         let junctions = self.junction_zone_detector.detect(
             &level_set_data,
             self.width as usize,
