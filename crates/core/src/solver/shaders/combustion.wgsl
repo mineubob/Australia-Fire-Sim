@@ -17,9 +17,9 @@ struct CombustionParams {
     heat_content_kj: f32,       // Heat content in kJ/kg
     self_heating_fraction: f32, // Fraction of heat retained (0-1)
     burn_rate_coefficient: f32, // Base burn rate coefficient
+    ambient_temp_k: f32,        // Ambient temperature in Kelvin (from WeatherSystem)
     _padding1: f32,
     _padding2: f32,
-    _padding3: f32,
 }
 
 @group(0) @binding(0) var<storage, read> temperature: array<f32>;
@@ -33,7 +33,6 @@ struct CombustionParams {
 // Constants
 const LATENT_HEAT_WATER: f32 = 2260.0;  // kJ/kg
 const OXYGEN_STOICHIOMETRIC_RATIO: f32 = 1.33;  // kg O₂/kg fuel
-const AMBIENT_TEMP: f32 = 293.15;  // K
 
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {

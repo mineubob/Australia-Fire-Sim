@@ -129,7 +129,8 @@ impl CpuFieldSolver {
         let num_cells = width * height;
 
         // Initialize fields
-        let temperature = FieldData::with_value(width, height, 293.15); // ~20°C ambient
+        // Default ambient temperature (20°C), will be updated from WeatherSystem via step_heat_transfer
+        let temperature = FieldData::with_value(width, height, 293.15);
         let temperature_back = FieldData::new(width, height);
         let mut fuel_load = FieldData::with_value(width, height, 1.0); // 1 kg/m² default
         let mut moisture = FieldData::with_value(width, height, 0.1); // 10% moisture default

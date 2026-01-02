@@ -78,9 +78,9 @@ struct CombustionParams {
     heat_content_kj: f32,       // Heat content in kJ/kg
     self_heating_fraction: f32, // Fraction of heat retained (0-1)
     burn_rate_coefficient: f32, // Base burn rate coefficient
+    ambient_temp_k: f32,        // Ambient temperature in Kelvin (from WeatherSystem)
     _padding1: f32,
     _padding2: f32,
-    _padding3: f32,
 }
 
 /// Level set shader parameters (must match WGSL struct layout)
@@ -342,7 +342,8 @@ impl GpuFieldSolver {
             TerrainFields::from_terrain_data(terrain, width as usize, height as usize, cell_size);
 
         // Initialize field data
-        let ambient_temp: f32 = 293.15; // 20°C in Kelvin
+        // Default ambient temperature (20°C), will be updated from WeatherSystem via step_heat_transfer
+        let ambient_temp: f32 = AMBIENT_TEMP_K;
         let initial_temp: Vec<f32> = vec![ambient_temp; num_cells];
         let mut initial_fuel: Vec<f32> = vec![2.0; num_cells]; // 2 kg/m²
         let mut initial_moisture: Vec<f32> = vec![0.15; num_cells]; // 15%
@@ -624,9 +625,9 @@ impl GpuFieldSolver {
             heat_content_kj: *surface_fuel.heat_content,
             self_heating_fraction: *surface_fuel.self_heating_fraction,
             burn_rate_coefficient: surface_fuel.burn_rate_coefficient,
+            ambient_temp_k: AMBIENT_TEMP_K, // Default, updated via step_heat_transfer from WeatherSystem
             _padding1: 0.0,
             _padding2: 0.0,
-            _padding3: 0.0,
         };
 
         let combustion_params_buffer =
@@ -2493,9 +2494,9 @@ impl FieldSolver for GpuFieldSolver {
                     .get_surface_fuel(center_x, center_y)
                     .burn_rate_coefficient
             },
+            ambient_temp_k: self.ambient_temp_k, // From WeatherSystem via step_heat_transfer
             _padding1: 0.0,
             _padding2: 0.0,
-            _padding3: 0.0,
         };
         self.queue.write_buffer(
             &self.combustion_params_buffer,
