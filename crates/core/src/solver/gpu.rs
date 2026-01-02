@@ -178,6 +178,24 @@ struct FireMetrics {
     _padding3: u32,
 }
 
+/// Advanced physics shader parameters (must match WGSL struct layout)
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct AdvancedPhysicsParams {
+    width: u32,
+    height: u32,
+    cell_size: f32,
+    dt: f32,
+    wind_speed: f32,           // Wind speed (m/s)
+    wind_direction: f32,       // Wind direction (degrees, 0=North, clockwise)
+    ambient_temp: f32,         // Ambient temperature (°C)
+    vls_threshold: f32,        // VLS index threshold (0.6 typical)
+    min_slope_vls: f32,        // Minimum slope for VLS (20° typical)
+    min_wind_vls: f32,         // Minimum wind for VLS (5 m/s typical)
+    valley_sample_radius: f32, // Radius for valley detection (100m typical)
+    _padding: f32,
+}
+
 /// GPU-based field solver using wgpu compute shaders
 ///
 /// Uses compute pipelines to dispatch physics computations on the GPU.
@@ -208,6 +226,7 @@ pub struct GpuFieldSolver {
     // Phase 0: Terrain slope and aspect buffers for fire spread modulation
     slope: wgpu::Buffer,
     aspect: wgpu::Buffer,
+    elevation: wgpu::Buffer, // Elevation for valley detection
 
     // Phase 1: Vertical fuel layer buffers (3 layers per cell)
     layer_fuel: wgpu::Buffer,     // kg/m² per layer
@@ -235,6 +254,7 @@ pub struct GpuFieldSolver {
     crown_fire_params_buffer: wgpu::Buffer,
     fuel_layer_params_buffer: wgpu::Buffer,
     atmosphere_params_buffer: wgpu::Buffer,
+    advanced_physics_params_buffer: wgpu::Buffer,
 
     // Compute pipelines
     heat_transfer_pipeline: wgpu::ComputePipeline,
@@ -245,6 +265,7 @@ pub struct GpuFieldSolver {
     fuel_layer_pipeline: wgpu::ComputePipeline,
     atmosphere_reduce_pipeline: wgpu::ComputePipeline,
     atmosphere_clear_pipeline: wgpu::ComputePipeline,
+    advanced_physics_pipeline: wgpu::ComputePipeline,
 
     // Bind group layouts (needed for bind group creation)
     heat_bind_group_layout: wgpu::BindGroupLayout,
@@ -254,6 +275,7 @@ pub struct GpuFieldSolver {
     crown_fire_bind_group_layout: wgpu::BindGroupLayout,
     fuel_layer_bind_group_layout: wgpu::BindGroupLayout,
     atmosphere_bind_group_layout: wgpu::BindGroupLayout,
+    advanced_physics_bind_group_layout: wgpu::BindGroupLayout,
 
     // Ping-pong state (which buffer is current)
     temp_ping: bool,
@@ -287,6 +309,8 @@ pub struct GpuFieldSolver {
 
     // Weather parameters for crown fire calculations
     wind_speed_10m_kmh: f32,
+    wind_x: f32, // Wind x component (m/s)
+    wind_y: f32, // Wind y component (m/s)
 }
 
 impl GpuFieldSolver {
@@ -434,6 +458,22 @@ impl GpuFieldSolver {
         let aspect = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Aspect"),
             contents: bytemuck::cast_slice(terrain_fields.aspect.as_slice()),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        // Copy terrain elevation at grid resolution for valley detection
+        let mut terrain_elevation: Vec<f32> = vec![0.0; num_cells];
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                let wx = usize_to_f32(x) * cell_size;
+                let wy = usize_to_f32(y) * cell_size;
+                terrain_elevation[y * width as usize + x] = *terrain.elevation_at(wx, wy);
+            }
+        }
+
+        let elevation = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Elevation"),
+            contents: bytemuck::cast_slice(&terrain_elevation),
             usage: wgpu::BufferUsages::STORAGE,
         });
 
@@ -693,6 +733,29 @@ impl GpuFieldSolver {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
+        // Phase 5-8: Advanced physics parameters
+        let advanced_physics_params = AdvancedPhysicsParams {
+            width,
+            height,
+            cell_size,
+            dt: 0.1,
+            wind_speed: 5.56,            // 20 km/h default in m/s
+            wind_direction: 0.0,         // North
+            ambient_temp: 20.0,          // 20°C
+            vls_threshold: 0.6,          // VLS activation threshold
+            min_slope_vls: 20.0,         // 20° minimum slope for VLS
+            min_wind_vls: 5.0,           // 5 m/s minimum wind for VLS
+            valley_sample_radius: 100.0, // 100m valley detection radius
+            _padding: 0.0,
+        };
+
+        let advanced_physics_params_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Advanced Physics Params"),
+                contents: bytemuck::bytes_of(&advanced_physics_params),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
         // Load shaders using wgpu::include_wgsl! macro
         let heat_shader =
             device.create_shader_module(wgpu::include_wgsl!("shaders/heat_transfer.wgsl"));
@@ -717,6 +780,10 @@ impl GpuFieldSolver {
         // Phase 4: Atmosphere reduction shader
         let atmosphere_shader =
             device.create_shader_module(wgpu::include_wgsl!("shaders/atmosphere_reduce.wgsl"));
+
+        // Phase 5-8: Advanced physics shader
+        let advanced_physics_shader =
+            device.create_shader_module(wgpu::include_wgsl!("shaders/advanced_physics.wgsl"));
 
         // Create bind group layouts
         let heat_bind_group_layout =
@@ -1222,6 +1289,80 @@ impl GpuFieldSolver {
                 ],
             });
 
+        // Phase 5-8: Advanced physics bind group layout
+        let advanced_physics_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Advanced Physics Bind Group Layout"),
+                entries: &[
+                    // params (binding 0)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // elevation (binding 1)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // slope (binding 2)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // aspect (binding 3)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // temperature (binding 4)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // spread_rate (binding 5)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
         // Create pipeline layouts
         let heat_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Heat Pipeline Layout"),
@@ -1271,6 +1412,14 @@ impl GpuFieldSolver {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Atmosphere Pipeline Layout"),
                 bind_group_layouts: &[&atmosphere_bind_group_layout],
+                immediate_size: 0,
+            });
+
+        // Phase 5-8: Advanced physics pipeline layout
+        let advanced_physics_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Advanced Physics Pipeline Layout"),
+                bind_group_layouts: &[&advanced_physics_bind_group_layout],
                 immediate_size: 0,
             });
 
@@ -1358,6 +1507,17 @@ impl GpuFieldSolver {
                 cache: None,
             });
 
+        // Phase 5-8: Advanced physics pipeline
+        let advanced_physics_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Advanced Physics Pipeline"),
+                layout: Some(&advanced_physics_pipeline_layout),
+                module: &advanced_physics_shader,
+                entry_point: Some("main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+
         Self {
             device,
             queue,
@@ -1376,6 +1536,7 @@ impl GpuFieldSolver {
             heat_release,
             slope,
             aspect,
+            elevation,
             layer_fuel,
             layer_moisture,
             layer_temp,
@@ -1393,6 +1554,7 @@ impl GpuFieldSolver {
             crown_fire_params_buffer,
             fuel_layer_params_buffer,
             atmosphere_params_buffer,
+            advanced_physics_params_buffer,
             heat_transfer_pipeline,
             combustion_pipeline,
             level_set_pipeline,
@@ -1401,6 +1563,7 @@ impl GpuFieldSolver {
             fuel_layer_pipeline,
             atmosphere_reduce_pipeline,
             atmosphere_clear_pipeline,
+            advanced_physics_pipeline,
             heat_bind_group_layout,
             combustion_bind_group_layout,
             level_set_bind_group_layout,
@@ -1408,6 +1571,7 @@ impl GpuFieldSolver {
             crown_fire_bind_group_layout,
             fuel_layer_bind_group_layout,
             atmosphere_bind_group_layout,
+            advanced_physics_bind_group_layout,
             temp_ping: true,
             phi_ping: true,
             spread_ping: true,
@@ -1427,6 +1591,8 @@ impl GpuFieldSolver {
             fire_regime: vec![FireRegime::WindDriven; num_cells],
             terrain_data: terrain.clone(),
             wind_speed_10m_kmh: 20.0,
+            wind_x: 0.0,
+            wind_y: 5.56, // 20 km/h north wind
         }
     }
 
@@ -1688,6 +1854,68 @@ impl GpuFieldSolver {
         for event in &self.pyrocb_system.active_events {
             self.downdrafts.extend(event.downdrafts.clone());
         }
+    }
+
+    /// Dispatch Phase 5-8: Advanced physics shader (VLS and valley channeling)
+    fn dispatch_advanced_physics(&mut self, dt: f32, wind_x: f32, wind_y: f32) {
+        // Calculate wind direction from components
+        let wind_speed = (wind_x * wind_x + wind_y * wind_y).sqrt();
+        let wind_direction = if wind_speed > 0.1 {
+            // atan2(x, y) gives angle from North (0=North, 90=East)
+            let angle_rad = wind_x.atan2(wind_y);
+            let angle_deg = angle_rad.to_degrees();
+            if angle_deg < 0.0 {
+                angle_deg + 360.0
+            } else {
+                angle_deg
+            }
+        } else {
+            0.0 // Default to North if no wind
+        };
+
+        // Update advanced physics params
+        let params = AdvancedPhysicsParams {
+            width: self.width,
+            height: self.height,
+            cell_size: self.cell_size,
+            dt,
+            wind_speed,
+            wind_direction,
+            ambient_temp: 20.0, // TODO: Pass from weather
+            vls_threshold: 0.6,
+            min_slope_vls: 20.0,
+            min_wind_vls: 5.0,
+            valley_sample_radius: 100.0,
+            _padding: 0.0,
+        };
+        self.queue.write_buffer(
+            &self.advanced_physics_params_buffer,
+            0,
+            bytemuck::bytes_of(&params),
+        );
+
+        let bind_group = self.create_advanced_physics_bind_group();
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Advanced Physics Encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Advanced Physics Pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&self.advanced_physics_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            let (wg_x, wg_y) = self.workgroup_count();
+            compute_pass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
     }
 
     /// Create heat transfer bind group for current ping-pong state
@@ -1992,6 +2220,52 @@ impl GpuFieldSolver {
             ],
         })
     }
+
+    /// Create advanced physics bind group for Phase 5-8
+    fn create_advanced_physics_bind_group(&self) -> wgpu::BindGroup {
+        let temp = if self.temp_ping {
+            &self.temperature_a
+        } else {
+            &self.temperature_b
+        };
+
+        let spread = if self.spread_ping {
+            &self.spread_rate_a
+        } else {
+            &self.spread_rate_b
+        };
+
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Advanced Physics Bind Group"),
+            layout: &self.advanced_physics_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.advanced_physics_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.elevation.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.slope.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.aspect.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: temp.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: spread.as_entire_binding(),
+                },
+            ],
+        })
+    }
 }
 
 impl FieldSolver for GpuFieldSolver {
@@ -2008,6 +2282,8 @@ impl FieldSolver for GpuFieldSolver {
         // Extract wind speed for crown fire calculations (convert m/s to km/h)
         let wind_magnitude_m_s = (wind_x * wind_x + wind_y * wind_y).sqrt();
         self.wind_speed_10m_kmh = wind_magnitude_m_s * 3.6;
+        self.wind_x = wind_x;
+        self.wind_y = wind_y;
 
         // Update uniform buffer with new parameters
         let params = HeatParams {
@@ -2204,6 +2480,9 @@ impl FieldSolver for GpuFieldSolver {
 
         // Phase 3: Dispatch crown fire shader (updates spread_rate and fire_intensity on GPU)
         self.dispatch_crown_fire(*dt);
+
+        // Phase 5-8: Dispatch advanced physics shader (VLS and valley channeling)
+        self.dispatch_advanced_physics(*dt, self.wind_x, self.wind_y);
 
         // Phase 1: Dispatch fuel layer shader (vertical heat transfer)
         self.dispatch_fuel_layers(*dt);
