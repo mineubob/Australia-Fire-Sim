@@ -121,7 +121,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build (dev/debug)
-        run: cargo build --no-default-features
+        run: cargo build
 
       - name: Upload dev demo-interactive binary
         uses: actions/upload-artifact@v4
@@ -165,7 +165,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build release
-        run: cargo build --release --no-default-features
+        run: cargo build --release
 
       - name: Upload release demo-interactive binary
         uses: actions/upload-artifact@v4
