@@ -242,15 +242,21 @@ pub fn chimney_updraft(
 /// Exact view factor for opposing valley walls modeled as parallel infinite strips.
 /// Significant when valley width < 100m.
 ///
-/// Uses the Hottel crossed-string method for parallel infinite strips:
-/// F₁₋₂ = (1/2) × [√(1 + (H/D)²) - (H/D)]
+/// Uses the Siegel-Howell formula for parallel infinite strips:
+/// F₁₋₂ = √((D/H)² + 1) - (D/H)
 ///
 /// Where:
-/// - H = valley depth (height of opposing walls)
-/// - D = valley width (distance between walls)
+/// - D = valley width (distance between opposing walls)
+/// - H = valley depth (height of valley walls)
 ///
-/// This is the exact analytical solution from Hottel & Sarofim (1967)
-/// "Radiative Transfer" for opposing parallel surfaces.
+/// This is the exact analytical solution from radiative heat transfer theory
+/// for opposing parallel surfaces (Siegel & Howell 2002).
+///
+/// Physical behavior:
+/// - Narrower valleys (smaller D) → Higher view factor (walls "see" more of each other)
+/// - Wider valleys (larger D) → Lower view factor (walls obscured by distance)
+/// - As D→0: F→1 (perfect view of opposing wall)
+/// - As D→∞: F→0 (no view of opposing wall)
 ///
 /// # Arguments
 ///
@@ -263,7 +269,7 @@ pub fn chimney_updraft(
 ///
 /// # References
 ///
-/// - Hottel, H.C. & Sarofim, A.F. (1967). Radiative Transfer. McGraw-Hill.
+/// - Siegel, R. & Howell, J.R. (2002). Thermal Radiation Heat Transfer, 4th ed.
 /// - Modest, M.F. (2013). Radiative Heat Transfer, 3rd ed. Academic Press.
 pub fn cross_valley_view_factor(valley_width: f32, valley_depth: f32) -> f32 {
     if valley_width > 100.0 {
@@ -274,12 +280,13 @@ pub fn cross_valley_view_factor(valley_width: f32, valley_depth: f32) -> f32 {
     let depth = valley_depth.max(0.1);
     let width = valley_width.max(0.1);
     
-    // Hottel crossed-string method for parallel infinite strips
-    // F = (1/2) × [√(1 + (H/D)²) - (H/D)]
-    let h_over_d = depth / width;
-    let term = (1.0 + h_over_d * h_over_d).sqrt();
+    // Siegel-Howell formula for parallel infinite strips
+    // F = √((D/H)² + 1) - (D/H)
+    // where D is width (separation) and H is depth (height)
+    let d_over_h = width / depth;
+    let term = (d_over_h * d_over_h + 1.0).sqrt();
     
-    0.5 * (term - h_over_d)
+    term - d_over_h
 }
 
 #[cfg(test)]
@@ -416,8 +423,12 @@ mod tests {
             "Narrower valleys should have higher view factor"
         );
         assert!(
-            (0.0..=0.5).contains(&narrow_vf),
-            "View factor should be in valid range"
+            (0.0..=1.0).contains(&narrow_vf),
+            "View factor should be in valid range [0, 1], got {narrow_vf}"
+        );
+        assert!(
+            (0.0..=1.0).contains(&wide_vf),
+            "View factor should be in valid range [0, 1], got {wide_vf}"
         );
     }
 
