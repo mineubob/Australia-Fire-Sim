@@ -38,6 +38,10 @@ use bytemuck::{Pod, Zeroable};
 use std::borrow::Cow;
 use wgpu::util::DeviceExt;
 
+/// Default ambient temperature for initialization (20°C = 293.15 K)
+/// Actual ambient temperature comes from `WeatherSystem` via `step_heat_transfer`
+const AMBIENT_TEMP_K: f32 = 293.15;
+
 // Helper to convert usize to f32, centralizing the intentional precision loss
 #[inline]
 #[expect(clippy::cast_precision_loss)]
@@ -2391,7 +2395,7 @@ impl FieldSolver for GpuFieldSolver {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
-            dt: *dt,
+            dt,
             ambient_temp: ambient_temp.as_f32(),
             wind_x,
             wind_y,
@@ -2455,7 +2459,7 @@ impl FieldSolver for GpuFieldSolver {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
-            dt: *dt,
+            dt,
             // Get surface fuel from center cell for uniform params
             ignition_temp_k: {
                 let center_x = (self.width / 2) as usize;
@@ -2541,7 +2545,7 @@ impl FieldSolver for GpuFieldSolver {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
-            dt: *dt,
+            dt,
             curvature_coeff: 0.25,
             noise_amplitude: 0.1,
             time: self.time,
@@ -2580,10 +2584,10 @@ impl FieldSolver for GpuFieldSolver {
         self.phi_ping = !self.phi_ping;
 
         // Phase 3: Dispatch crown fire shader (updates spread_rate and fire_intensity on GPU)
-        self.dispatch_crown_fire(*dt);
+        self.dispatch_crown_fire(dt);
 
         // Phase 5-8: Dispatch advanced physics shader (VLS and valley channeling)
-        self.dispatch_advanced_physics(*dt, self.wind_x, self.wind_y);
+        self.dispatch_advanced_physics(dt, self.wind_x, self.wind_y);
 
         // Phase 5: CPU-side junction zone detection (requires global analysis)
         // Read back level_set and spread_rate from GPU for junction detection
@@ -2658,10 +2662,10 @@ impl FieldSolver for GpuFieldSolver {
         }
 
         // Phase 1: Dispatch fuel layer shader (vertical heat transfer)
-        self.dispatch_fuel_layers(*dt);
+        self.dispatch_fuel_layers(dt);
 
         // Phase 4: Dispatch atmosphere reduction and update CPU-side state
-        self.dispatch_atmosphere(*dt);
+        self.dispatch_atmosphere(dt);
     }
 
     fn step_ignition_sync(&mut self) {
