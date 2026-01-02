@@ -62,6 +62,8 @@ pub struct CombustionParams {
     pub cell_size: f32,
     /// Fuel-specific combustion properties
     pub fuel_props: FuelCombustionProps,
+    /// Ambient temperature in Kelvin (from `WeatherSystem`)
+    pub ambient_temp_k: f32,
 }
 
 /// CPU implementation of combustion physics
@@ -132,7 +134,8 @@ pub fn step_combustion_cpu(
         // Q = m × c_p × ΔT (fundamental thermodynamics, no approximation)
         //
         // Use fuel-specific heat capacity (kJ/kg·K) to calculate thermal energy content
-        let ambient_temp = 293.15; // ~20°C in Kelvin
+        // Ambient temperature from WeatherSystem (not hardcoded)
+        let ambient_temp = params.ambient_temp_k;
         let thermal_energy_kj = if t > ambient_temp {
             // Q = m × c_p × ΔT
             // mass is in kg (fuel load × area), specific_heat from fuel properties
@@ -220,6 +223,7 @@ mod tests {
             dt: 1.0,
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
         };
 
         let initial_moisture = moisture[0];
@@ -260,6 +264,7 @@ mod tests {
             dt: 1.0,
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
         };
 
         let initial_fuel = fuel_load[0];
@@ -300,6 +305,7 @@ mod tests {
             dt: 1.0,
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
         };
 
         let initial_oxygen = oxygen[0];
@@ -340,6 +346,7 @@ mod tests {
             dt: 1.0,
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
         };
 
         let initial_fuel = fuel_load[0];
@@ -380,6 +387,7 @@ mod tests {
             dt: 1.0,
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
         };
 
         let heat_release = step_combustion_cpu(

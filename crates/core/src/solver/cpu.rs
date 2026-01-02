@@ -328,6 +328,7 @@ impl FieldSolver for CpuFieldSolver {
             dt,
             cell_size: self.cell_size,
             fuel_props,
+            ambient_temp_k: self.ambient_temp_k, // From WeatherSystem
         };
 
         let heat_release = step_combustion_cpu(
