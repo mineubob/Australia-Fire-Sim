@@ -187,6 +187,45 @@ pub struct Fuel {
     /// Crown fire temperature boost (0-1, stringybark=0.95)
     pub crown_fire_temp_multiplier: Fraction,
 
+    // Radiative properties for Stefan-Boltzmann heat transfer
+    /// Emissivity of unburned fuel (0-1) for radiative heat transfer
+    /// Dry grass: 0.6-0.7, Eucalyptus bark: 0.75-0.85, Charcoal: 0.8-0.95
+    /// Reference: Incropera et al. (2002) "Fundamentals of Heat and Mass Transfer"
+    pub emissivity_unburned: Fraction,
+    /// Emissivity of burning fuel/flames (0-1) for radiative heat transfer
+    /// Active flames: 0.9-0.95 (high emissivity due to soot particles)
+    /// Reference: Drysdale (2011) "An Introduction to Fire Dynamics"
+    pub emissivity_burning: Fraction,
+
+    // Combustion temperature response (fuel-specific)
+    /// Temperature range for combustion rate normalization (K above ignition temp)
+    /// Fine fuels (grass): 300-400K (rapid response)
+    /// Medium fuels (shrubs): 400-500K (moderate response)
+    /// Coarse fuels (logs): 500-700K (slow response)
+    /// Used in combustion rate calculation: `temp_factor = (T - T_ig) / response_range`
+    pub temperature_response_range: f32,
+
+    // Terrain slope response coefficients (fuel-specific)
+    #[expect(
+        clippy::doc_markdown,
+        reason = "McArthur is a scientific author name, not a code identifier"
+    )]
+    /// Base slope angle for uphill spread enhancement (degrees)
+    /// Eucalyptus: 10°, Grass: 8°, Shrubs: 12°
+    /// Reference: McArthur (1967) "Fire behaviour in eucalypt forests"
+    pub slope_uphill_factor_base: f32,
+    /// Power exponent for uphill slope effect (dimensionless)
+    /// Controls how aggressively spread increases with slope
+    /// Eucalyptus: 1.5, Grass: 1.8 (more sensitive), Heavy fuels: 1.3
+    pub slope_uphill_power: f32,
+    /// Slope angle divisor for downhill spread reduction (degrees)
+    /// Eucalyptus: 30°, Grass: 25°, Heavy fuels: 35°
+    pub slope_downhill_divisor: f32,
+    /// Minimum slope factor for downhill spread (0-1)
+    /// Prevents unrealistic spread slowdown on steep downhill
+    /// Eucalyptus: 0.3, Grass: 0.4, Heavy fuels: 0.25
+    pub slope_factor_minimum: f32,
+
     // Combustion and geometry properties (fuel-specific)
     /// Combustion efficiency (0-1) - fraction of fuel fully combusted
     pub combustion_efficiency: Fraction,
@@ -298,6 +337,19 @@ impl Fuel {
             wind_sensitivity: Fraction::new(0.6),   // Moderate wind effect (sheltered by canopy)
             crown_fire_temp_multiplier: Fraction::new(0.95), // Very hot crown fires
 
+            // Radiative properties (eucalyptus bark ~0.8-0.85 unburned)
+            emissivity_unburned: Fraction::new(0.82), // Eucalyptus bark emissivity
+            emissivity_burning: Fraction::new(0.93),   // Active flames with soot
+
+            // Combustion temperature response (coarse wood fuel)
+            temperature_response_range: 550.0, // Kelvin above ignition
+
+            // McArthur slope coefficients (eucalyptus forest)
+            slope_uphill_factor_base: 10.0,   // degrees
+            slope_uphill_power: 1.5,          // power exponent
+            slope_downhill_divisor: 30.0,     // degrees
+            slope_factor_minimum: 0.3,        // minimum factor
+
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.92), // High efficiency (dry hardwood)
             surface_area_geometry_factor: 0.12,         // Irregular bark strips increase area
@@ -379,6 +431,19 @@ impl Fuel {
             atmospheric_heat_efficiency: Fraction::new(0.75), // 75% heat to atmosphere
             wind_sensitivity: Fraction::new(0.7),   // Moderate-high wind effect
             crown_fire_temp_multiplier: Fraction::new(0.90), // Hot crown fires
+
+            // Radiative properties (smooth eucalyptus bark ~0.75-0.80)
+            emissivity_unburned: Fraction::new(0.78), // Smooth bark emissivity
+            emissivity_burning: Fraction::new(0.92),   // Active flames
+
+            // Combustion temperature response (medium wood fuel)
+            temperature_response_range: 500.0, // Kelvin above ignition
+
+            // McArthur slope coefficients (eucalyptus forest, smooth bark less ladder fuel)
+            slope_uphill_factor_base: 10.0,   // degrees
+            slope_uphill_power: 1.4,          // slightly less sensitive
+            slope_downhill_divisor: 32.0,     // degrees
+            slope_factor_minimum: 0.32,       // minimum factor
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.93), // High efficiency (dense hardwood)
@@ -463,6 +528,19 @@ impl Fuel {
             wind_sensitivity: Fraction::new(1.0),             // Maximum wind effect (fine fuel)
             crown_fire_temp_multiplier: Fraction::new(0.0),   // No crown fire (grass)
 
+            // Radiative properties (dry grass ~0.6-0.7)
+            emissivity_unburned: Fraction::new(0.65), // Dry grass/straw emissivity
+            emissivity_burning: Fraction::new(0.90),   // Grass fire flames
+
+            // Combustion temperature response (fine fuel - rapid response)
+            temperature_response_range: 350.0, // Kelvin above ignition (fast)
+
+            // Slope coefficients (grass - more slope-sensitive)
+            slope_uphill_factor_base: 8.0,    // degrees (more sensitive)
+            slope_uphill_power: 1.8,          // higher power (rapid increase)
+            slope_downhill_divisor: 25.0,     // degrees
+            slope_factor_minimum: 0.4,        // higher minimum (grass doesn't slow as much)
+
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.85), // Moderate efficiency (fast burn, incomplete)
             surface_area_geometry_factor: 0.15,         // Fine grass has high surface area
@@ -544,7 +622,18 @@ impl Fuel {
             atmospheric_heat_efficiency: Fraction::new(0.80), // 80% heat to atmosphere
             wind_sensitivity: Fraction::new(0.85),  // High wind effect (exposed)
             crown_fire_temp_multiplier: Fraction::new(0.85), // Moderate crown fires
+            // Radiative properties (mixed shrub ~0.70-0.75)
+            emissivity_unburned: Fraction::new(0.72), // Shrub/brush emissivity
+            emissivity_burning: Fraction::new(0.91),   // Shrub fire flames
 
+            // Combustion temperature response (medium fuel)
+            temperature_response_range: 450.0, // Kelvin above ignition
+
+            // Slope coefficients (shrubland)
+            slope_uphill_factor_base: 12.0,   // degrees (less sensitive than grass)
+            slope_uphill_power: 1.5,          // moderate power
+            slope_downhill_divisor: 28.0,     // degrees
+            slope_factor_minimum: 0.35,       // minimum factor
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.88), // Good efficiency (woody fuel)
             surface_area_geometry_factor: 0.10,         // Medium-sized branches
@@ -659,6 +748,17 @@ impl Fuel {
 
             // Canopy structure (grassland - ground litter)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
+
+            // Radiative heat transfer (dry dead wood/litter)
+            emissivity_unburned: Fraction::new(0.75), // Dry organic matter
+            emissivity_burning: Fraction::new(0.93),   // Active flames
+            temperature_response_range: 550.0,         // Kelvin above ignition
+
+            // Slope response (ground litter - less slope-sensitive)
+            slope_uphill_factor_base: 8.0,     // Lower base (ground fuel)
+            slope_uphill_power: 1.3,           // Gentler slope response
+            slope_downhill_divisor: 25.0,      // Moderate downhill reduction
+            slope_factor_minimum: 0.4,         // Higher minimum (insulated)
         }
     }
 
@@ -741,6 +841,17 @@ impl Fuel {
 
             // Canopy structure (grassland - low vegetation)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
+
+            // Radiative heat transfer (green vegetation)
+            emissivity_unburned: Fraction::new(0.95), // High water content
+            emissivity_burning: Fraction::new(0.92),   // Active flames (less intense)
+            temperature_response_range: 480.0,         // Kelvin above ignition (cooler)
+
+            // Slope response (green vegetation - minimal slope effect)
+            slope_uphill_factor_base: 5.0,     // Lowest base (fire-resistant)
+            slope_uphill_power: 1.0,           // Linear response
+            slope_downhill_divisor: 20.0,      // Minimal downhill effect
+            slope_factor_minimum: 0.6,         // High minimum (moisture barrier)
         }
     }
 
@@ -863,6 +974,17 @@ impl Fuel {
 
             // Canopy structure (grassland - water has no structure)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
+
+            // Radiative heat transfer (water - perfect absorber)
+            emissivity_unburned: Fraction::new(0.96), // Water is excellent emitter
+            emissivity_burning: Fraction::new(0.0),    // No burning
+            temperature_response_range: 0.0,           // N/A
+
+            // Slope response (water - no fire spread)
+            slope_uphill_factor_base: 0.0,    // No fire spread
+            slope_uphill_power: 0.0,
+            slope_downhill_divisor: 1.0,
+            slope_factor_minimum: 0.0,
         }
     }
 
@@ -938,6 +1060,17 @@ impl Fuel {
 
             // Canopy structure (grassland - rock has no structure)
             canopy_structure: crate::physics::CanopyStructure::grassland(),
+
+            // Radiative heat transfer (rock - depends on type)
+            emissivity_unburned: Fraction::new(0.90), // Most rocks ~0.88-0.95
+            emissivity_burning: Fraction::new(0.0),    // No burning
+            temperature_response_range: 0.0,           // N/A
+
+            // Slope response (rock - no fire spread)
+            slope_uphill_factor_base: 0.0,    // No fire spread
+            slope_uphill_power: 0.0,
+            slope_downhill_divisor: 1.0,
+            slope_factor_minimum: 0.0,
         }
     }
 }

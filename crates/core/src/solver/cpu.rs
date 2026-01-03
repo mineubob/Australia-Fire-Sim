@@ -282,8 +282,8 @@ impl FieldSolver for CpuFieldSolver {
         // Create fuel-specific heat transfer properties
         let heat_fuel_props = HeatTransferFuelProps {
             thermal_diffusivity: *surface_fuel.thermal_diffusivity,
-            emissivity_burning: 0.9, // Flames have high emissivity (physical constant)
-            emissivity_unburned: 0.7, // Fuel bed has lower emissivity
+            emissivity_burning: *surface_fuel.emissivity_burning, // Fuel-specific (0.90-0.93 for most)
+            emissivity_unburned: *surface_fuel.emissivity_unburned, // Fuel-specific (0.65-0.95)
             specific_heat_kj: *surface_fuel.specific_heat,
         };
 
@@ -325,6 +325,7 @@ impl FieldSolver for CpuFieldSolver {
             heat_content_kj: *surface_fuel.heat_content,
             self_heating_fraction: *surface_fuel.self_heating_fraction,
             burn_rate_coefficient: surface_fuel.burn_rate_coefficient,
+            temperature_response_range: surface_fuel.temperature_response_range,
         };
 
         // Use Phase 2 combustion physics with fuel-specific properties

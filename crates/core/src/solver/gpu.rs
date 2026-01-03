@@ -83,8 +83,8 @@ struct CombustionParams {
     self_heating_fraction: f32, // Fraction of heat retained (0-1)
     burn_rate_coefficient: f32, // Base burn rate coefficient
     ambient_temp_k: f32,        // Ambient temperature in Kelvin (from WeatherSystem)
+    temperature_response_range: f32, // Temperature range for combustion rate normalization (K)
     _padding1: f32,
-    _padding2: f32,
 }
 
 /// Level set shader parameters (must match WGSL struct layout)
@@ -608,8 +608,8 @@ impl GpuFieldSolver {
             wind_y: 0.0,
             stefan_boltzmann: 5.67e-8,
             thermal_diffusivity: *surface_fuel.thermal_diffusivity,
-            emissivity_burning: 0.9,  // Flames have high emissivity
-            emissivity_unburned: 0.7, // Fuel bed has lower emissivity
+            emissivity_burning: *surface_fuel.emissivity_burning,  // Fuel-specific
+            emissivity_unburned: *surface_fuel.emissivity_unburned, // Fuel-specific
             specific_heat_j: *surface_fuel.specific_heat * 1000.0, // kJ to J
         };
 
@@ -630,8 +630,8 @@ impl GpuFieldSolver {
             self_heating_fraction: *surface_fuel.self_heating_fraction,
             burn_rate_coefficient: surface_fuel.burn_rate_coefficient,
             ambient_temp_k: AMBIENT_TEMP_K, // Default, updated via step_heat_transfer from WeatherSystem
+            temperature_response_range: surface_fuel.temperature_response_range,
             _padding1: 0.0,
-            _padding2: 0.0,
         };
 
         let combustion_params_buffer =
@@ -2409,8 +2409,22 @@ impl FieldSolver for GpuFieldSolver {
                     .get_surface_fuel(center_x, center_y)
                     .thermal_diffusivity
             },
-            emissivity_burning: 0.9,
-            emissivity_unburned: 0.7,
+            emissivity_burning: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .emissivity_burning
+            },
+            emissivity_unburned: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .emissivity_unburned
+            },
             specific_heat_j: {
                 let center_x = (self.width / 2) as usize;
                 let center_y = (self.height / 2) as usize;
@@ -2499,8 +2513,14 @@ impl FieldSolver for GpuFieldSolver {
                     .burn_rate_coefficient
             },
             ambient_temp_k: self.ambient_temp_k, // From WeatherSystem via step_heat_transfer
+            temperature_response_range: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                self.fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .temperature_response_range
+            },
             _padding1: 0.0,
-            _padding2: 0.0,
         };
         self.queue.write_buffer(
             &self.combustion_params_buffer,
@@ -2860,7 +2880,7 @@ mod tests {
                 adapter_name,
                 error,
             } => {
-                panic!("GPU initialization failed for adapter '{}': {}. GPU tests require working GPU.", adapter_name, error);
+                panic!("GPU initialization failed for adapter '{adapter_name}': {error}. GPU tests require working GPU.");
             }
         }
     }

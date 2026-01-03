@@ -44,6 +44,8 @@ pub struct FuelCombustionProps {
     pub self_heating_fraction: f32,
     /// Base burn rate coefficient - from `Fuel.burn_rate_coefficient`
     pub burn_rate_coefficient: f32,
+    /// Temperature range for combustion rate normalization (K above ignition) - from `Fuel.temperature_response_range`
+    pub temperature_response_range: f32,
 }
 
 impl Default for FuelCombustionProps {
@@ -55,6 +57,7 @@ impl Default for FuelCombustionProps {
             heat_content_kj: 21000.0,    // kJ/kg for eucalyptus
             self_heating_fraction: 0.4,  // 40% retained
             burn_rate_coefficient: 0.08, // stringybark coefficient
+            temperature_response_range: 550.0, // Kelvin (stringybark)
         }
     }
 }
@@ -129,6 +132,7 @@ pub fn step_combustion_cpu(
         let heat_content_kj = params.fuel_props.heat_content_kj;
         let self_heating_fraction = params.fuel_props.self_heating_fraction;
         let base_burn_rate = params.fuel_props.burn_rate_coefficient;
+        let temp_response_range = params.fuel_props.temperature_response_range;
 
         // 1. CRITICAL: Moisture evaporation FIRST
         // Moisture must evaporate before temperature rises
@@ -172,8 +176,8 @@ pub fn step_combustion_cpu(
             // Moisture damping factor
             let moisture_damping = 1.0 - (m / moisture_extinction);
 
-            // Temperature factor (normalized)
-            let temp_factor = ((t - ignition_temp) / 500.0).min(1.0);
+            // Temperature factor (normalized) - fuel-specific response range
+            let temp_factor = ((t - ignition_temp) / temp_response_range).min(1.0);
 
             // Base burn rate
             burn_rate = base_burn_rate * moisture_damping * temp_factor;
