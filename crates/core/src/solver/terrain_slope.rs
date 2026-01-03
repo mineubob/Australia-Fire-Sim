@@ -208,16 +208,22 @@ impl TerrainFields {
 /// ```
 /// use fire_sim_core::solver::terrain_slope::calculate_slope_factor;
 ///
+/// // Eucalyptus default parameters
+/// let uphill_base = 10.0;
+/// let uphill_power = 1.5;
+/// let downhill_divisor = 30.0;
+/// let minimum_factor = 0.3;
+///
 /// // Flat terrain: no effect
-/// let flat = calculate_slope_factor(0.0);
+/// let flat = calculate_slope_factor(0.0, uphill_base, uphill_power, downhill_divisor, minimum_factor);
 /// assert!((flat - 1.0).abs() < 0.01);
 ///
 /// // 10° uphill: approximately 3× faster
-/// let uphill_10 = calculate_slope_factor(10.0);
+/// let uphill_10 = calculate_slope_factor(10.0, uphill_base, uphill_power, downhill_divisor, minimum_factor);
 /// assert!(uphill_10 > 2.5 && uphill_10 < 3.5);
 ///
 /// // 10° downhill: reduced spread
-/// let downhill = calculate_slope_factor(-10.0);
+/// let downhill = calculate_slope_factor(-10.0, uphill_base, uphill_power, downhill_divisor, minimum_factor);
 /// assert!(downhill < 1.0 && downhill >= 0.3);
 /// ```
 #[must_use]
