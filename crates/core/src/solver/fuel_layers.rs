@@ -206,6 +206,87 @@ impl LayeredFuelCell {
         }
     }
 
+    /// Initialize from fuel types with proper fuel loads per layer.
+    ///
+    /// Computes fuel loads from Fuel properties:
+    /// - Surface: `bulk_density` × `fuel_bed_depth` (kg/m²)
+    /// - Shrub: derived from bark ladder intensity and fuel bed depth
+    /// - Canopy: `crown_bulk_density` × (crown height - `crown_base_height`)
+    ///
+    /// # Arguments
+    /// * `surface_fuel` - Fuel type for surface layer (0-0.5m)
+    /// * `shrub_fuel` - Fuel type for shrub/ladder layer (0.5-3m)
+    /// * `canopy_fuel` - Fuel type for canopy layer (3m+)
+    /// * `ambient_temp_k` - Ambient temperature in Kelvin (default: 293.15K)
+    ///
+    /// # Scientific Basis
+    /// Fuel load (kg/m²) = bulk density (kg/m³) × fuel bed depth (m)
+    /// This follows standard fuel characterization in fire behavior modeling.
+    /// Reference: Rothermel (1972), Scott & Burgan (2005)
+    #[must_use]
+    pub fn from_fuel_types(
+        surface_fuel: &crate::core_types::Fuel,
+        shrub_fuel: &crate::core_types::Fuel,
+        canopy_fuel: &crate::core_types::Fuel,
+        ambient_temp_k: f32,
+    ) -> Self {
+        // Surface fuel load: bulk_density (kg/m³) × fuel_bed_depth (m) = kg/m²
+        let surface_load = surface_fuel.bulk_density.value() * surface_fuel.fuel_bed_depth.value();
+        let surface_moisture = surface_fuel.base_moisture.value();
+
+        // Shrub fuel load: Use bark ladder intensity as a proxy for vertical fuel structure
+        // Typical shrub layer has 0.5-2.0 kg/m² depending on understory density
+        // For stringybark with high ladder intensity, use larger values
+        let shrub_load = if shrub_fuel.bark_ladder_intensity > 0.0 {
+            // Bark ladder fuels: scale with ladder intensity and fuel bed depth
+            // Clamp to realistic range of 0.5-3.0 kg/m²
+            (shrub_fuel.bark_ladder_intensity / 200.0 * shrub_fuel.fuel_bed_depth.value())
+                .clamp(0.5, 3.0)
+        } else {
+            // Non-bark shrub fuels: use bulk density × reduced depth for shrub layer
+            // Shrub layer is typically less dense than surface litter
+            (shrub_fuel.bulk_density.value() * shrub_fuel.fuel_bed_depth.value() * 0.4)
+                .clamp(0.0, 2.0)
+        };
+        let shrub_moisture = shrub_fuel.base_moisture.value();
+
+        // Canopy fuel load: crown_bulk_density (kg/m³) × canopy depth (m)
+        // Canopy depth = typical crown depth of 7m for eucalyptus
+        // Reference: Van Wagner (1977) crown fire model
+        let canopy_depth = 7.0; // meters, typical eucalyptus crown depth
+        let canopy_load = if canopy_fuel.crown_bulk_density.value() > 0.0 {
+            canopy_fuel.crown_bulk_density.value() * canopy_depth
+        } else {
+            0.0
+        };
+        // Canopy moisture uses foliar moisture content
+        let canopy_moisture = (canopy_fuel.foliar_moisture_content.value() / 100.0).clamp(0.0, 2.0);
+
+        Self {
+            surface: LayerState {
+                fuel_load: surface_load,
+                moisture: surface_moisture,
+                temperature: ambient_temp_k,
+                burning: false,
+                heat_received: 0.0,
+            },
+            shrub: LayerState {
+                fuel_load: shrub_load,
+                moisture: shrub_moisture,
+                temperature: ambient_temp_k,
+                burning: false,
+                heat_received: 0.0,
+            },
+            canopy: LayerState {
+                fuel_load: canopy_load,
+                moisture: canopy_moisture,
+                temperature: ambient_temp_k,
+                burning: false,
+                heat_received: 0.0,
+            },
+        }
+    }
+
     /// Get layer by enum reference.
     #[must_use]
     pub fn layer(&self, layer: FuelLayer) -> &LayerState {
@@ -480,5 +561,82 @@ mod tests {
         cell.shrub.burning = false;
         cell.canopy.burning = true;
         assert!(cell.is_burning());
+    }
+
+    #[test]
+    fn from_fuel_types_initializes_all_layers() {
+        use crate::core_types::Fuel;
+
+        let surface_fuel = Fuel::dead_wood_litter();
+        let shrub_fuel = Fuel::eucalyptus_stringybark();
+        let canopy_fuel = Fuel::eucalyptus_stringybark();
+        let ambient_temp = 293.15;
+
+        let cell = LayeredFuelCell::from_fuel_types(
+            &surface_fuel,
+            &shrub_fuel,
+            &canopy_fuel,
+            ambient_temp,
+        );
+
+        // All layers should have non-zero fuel
+        assert!(
+            cell.surface.fuel_load > 0.0,
+            "Surface fuel load should be > 0, got {}",
+            cell.surface.fuel_load
+        );
+        assert!(
+            cell.shrub.fuel_load > 0.0,
+            "Shrub fuel load should be > 0, got {}",
+            cell.shrub.fuel_load
+        );
+        assert!(
+            cell.canopy.fuel_load > 0.0,
+            "Canopy fuel load should be > 0, got {}",
+            cell.canopy.fuel_load
+        );
+
+        // All layers should have proper moisture
+        assert!(
+            cell.surface.moisture >= 0.0 && cell.surface.moisture <= 1.0,
+            "Surface moisture should be in [0, 1], got {}",
+            cell.surface.moisture
+        );
+        assert!(
+            cell.shrub.moisture >= 0.0 && cell.shrub.moisture <= 1.0,
+            "Shrub moisture should be in [0, 1], got {}",
+            cell.shrub.moisture
+        );
+        // Canopy moisture can be > 1.0 due to foliar moisture content
+        assert!(
+            cell.canopy.moisture >= 0.0,
+            "Canopy moisture should be >= 0, got {}",
+            cell.canopy.moisture
+        );
+
+        // All layers should have ambient temperature
+        assert!(
+            (cell.surface.temperature - ambient_temp).abs() < 0.01,
+            "Surface temperature should be ~{} K, got {} K",
+            ambient_temp,
+            cell.surface.temperature
+        );
+        assert!(
+            (cell.shrub.temperature - ambient_temp).abs() < 0.01,
+            "Shrub temperature should be ~{} K, got {} K",
+            ambient_temp,
+            cell.shrub.temperature
+        );
+        assert!(
+            (cell.canopy.temperature - ambient_temp).abs() < 0.01,
+            "Canopy temperature should be ~{} K, got {} K",
+            ambient_temp,
+            cell.canopy.temperature
+        );
+
+        // None should be burning initially
+        assert!(!cell.surface.burning, "Surface should not be burning");
+        assert!(!cell.shrub.burning, "Shrub should not be burning");
+        assert!(!cell.canopy.burning, "Canopy should not be burning");
     }
 }

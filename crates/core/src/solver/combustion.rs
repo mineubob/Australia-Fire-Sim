@@ -22,6 +22,16 @@ pub const LATENT_HEAT_WATER: f32 = 2260.0;
 /// Stoichiometric oxygen requirement for wood combustion (kg O₂/kg fuel)
 pub const OXYGEN_STOICHIOMETRIC_RATIO: f32 = 1.33;
 
+/// Atmospheric oxygen fraction (volume/volume, dimensionless)
+/// Normal atmospheric oxygen concentration at sea level
+pub const ATMOSPHERIC_OXYGEN_FRACTION: f32 = 0.21;
+
+/// Specific heat capacity of dry woody biomass (kJ/(kg·K))
+/// Representative value for wood: range 1.3-2.0 kJ/(kg·K), using mid-range value.
+/// TODO: FUTURE - Add fuel-specific `c_p` to `FuelCombustionProps` for different vegetation types
+/// Reference: Engineering `ToolBox`, Wood thermal properties
+const WOOD_SPECIFIC_HEAT_CAPACITY: f32 = 1.6;
+
 /// Fuel-specific combustion properties
 ///
 /// These properties MUST come from the Fuel type - never hardcode them.
@@ -38,17 +48,20 @@ pub struct FuelCombustionProps {
     pub self_heating_fraction: f32,
     /// Base burn rate coefficient - from `Fuel.burn_rate_coefficient`
     pub burn_rate_coefficient: f32,
+    /// Temperature range for combustion rate normalization (K above ignition) - from `Fuel.temperature_response_range`
+    pub temperature_response_range: f32,
 }
 
 impl Default for FuelCombustionProps {
     /// Default properties based on eucalyptus stringybark
     fn default() -> Self {
         Self {
-            ignition_temp_k: 501.15,     // 228°C + 273.15K (stringybark)
-            moisture_extinction: 0.35,   // 35% for eucalyptus
-            heat_content_kj: 21000.0,    // kJ/kg for eucalyptus
-            self_heating_fraction: 0.4,  // 40% retained
-            burn_rate_coefficient: 0.08, // stringybark coefficient
+            ignition_temp_k: 501.15,           // 228°C + 273.15K (stringybark)
+            moisture_extinction: 0.35,         // 35% for eucalyptus
+            heat_content_kj: 21000.0,          // kJ/kg for eucalyptus
+            self_heating_fraction: 0.4,        // 40% retained
+            burn_rate_coefficient: 0.08,       // stringybark coefficient
+            temperature_response_range: 550.0, // Kelvin (stringybark)
         }
     }
 }
@@ -62,6 +75,12 @@ pub struct CombustionParams {
     pub cell_size: f32,
     /// Fuel-specific combustion properties
     pub fuel_props: FuelCombustionProps,
+    /// Ambient temperature in Kelvin (from `WeatherSystem`)
+    pub ambient_temp_k: f32,
+    /// Air density in kg/m³ (varies with temperature, elevation, humidity: 1.11-1.29 kg/m³)
+    pub air_density_kg_m3: f32,
+    /// Atmospheric mixing height in meters (affects oxygen availability)
+    pub atmospheric_mixing_height_m: f32,
 }
 
 /// CPU implementation of combustion physics
@@ -121,6 +140,7 @@ pub fn step_combustion_cpu(
         let heat_content_kj = params.fuel_props.heat_content_kj;
         let self_heating_fraction = params.fuel_props.self_heating_fraction;
         let base_burn_rate = params.fuel_props.burn_rate_coefficient;
+        let temp_response_range = params.fuel_props.temperature_response_range;
 
         // 1. CRITICAL: Moisture evaporation FIRST
         // Moisture must evaporate before temperature rises
@@ -128,15 +148,27 @@ pub fn step_combustion_cpu(
         let mass = f * cell_area;
         let moisture_mass = m * mass;
 
-        // Estimate available heat for evaporation from temperature above ambient
-        let ambient_temp = 293.15; // ~20°C
-        let excess_heat = if t > ambient_temp {
-            (t - ambient_temp) * 0.01 // Simplified heat available
+        // Calculate available sensible heat for evaporation using exact thermodynamic formula
+        // Q = m × c_p × ΔT (fundamental thermodynamics, no approximation)
+        //
+        // Use fuel-specific heat capacity (kJ/kg·K) to calculate thermal energy content
+        // Ambient temperature from WeatherSystem (not hardcoded)
+        let ambient_temp = params.ambient_temp_k;
+        let thermal_energy_kj = if t > ambient_temp {
+            // Q = m × c_p × ΔT
+            // mass is in kg (fuel load × area)
+            // Using WOOD_SPECIFIC_HEAT_CAPACITY for dry woody biomass
+            // NOTE: We must NOT approximate c_p from heat_content - they are different physical properties.
+            // Heat content is total energy released by combustion (kJ/kg fuel consumed),
+            // while specific heat capacity is energy to raise temperature by 1K (kJ/(kg·K)).
+            mass * WOOD_SPECIFIC_HEAT_CAPACITY * (t - ambient_temp)
         } else {
             0.0
         };
 
-        let max_evap = excess_heat / LATENT_HEAT_WATER;
+        // Maximum moisture that can evaporate given available thermal energy
+        // E_latent = m_water × L_v where L_v = 2260 kJ/kg
+        let max_evap = thermal_energy_kj / LATENT_HEAT_WATER;
         let moisture_evaporated = moisture_mass.min(max_evap);
 
         // Update moisture (this happens BEFORE combustion)
@@ -152,8 +184,8 @@ pub fn step_combustion_cpu(
             // Moisture damping factor
             let moisture_damping = 1.0 - (m / moisture_extinction);
 
-            // Temperature factor (normalized)
-            let temp_factor = ((t - ignition_temp) / 500.0).min(1.0);
+            // Temperature factor (normalized) - fuel-specific response range
+            let temp_factor = ((t - ignition_temp) / temp_response_range).min(1.0);
 
             // Base burn rate
             burn_rate = base_burn_rate * moisture_damping * temp_factor;
@@ -161,9 +193,9 @@ pub fn step_combustion_cpu(
             // 3. Oxygen limitation (stoichiometric)
             let o2_required_per_sec = burn_rate * cell_area * OXYGEN_STOICHIOMETRIC_RATIO;
 
-            // Available oxygen in cell (assuming 1m height of atmosphere)
-            let cell_volume = cell_area * 1.0; // 1m height
-            let air_density = 1.2; // kg/m³
+            // Available oxygen in cell
+            let cell_volume = cell_area * params.atmospheric_mixing_height_m;
+            let air_density = params.air_density_kg_m3;
             let o2_available = o2 * air_density * cell_volume;
 
             if o2_available < o2_required_per_sec * params.dt {
@@ -178,8 +210,8 @@ pub fn step_combustion_cpu(
 
         // Oxygen consumed (stoichiometric ratio)
         let o2_consumed = fuel_consumed * OXYGEN_STOICHIOMETRIC_RATIO;
-        let cell_volume = cell_area * 1.0; // 1m height
-        let air_density = 1.2; // kg/m³
+        let cell_volume = cell_area * params.atmospheric_mixing_height_m;
+        let air_density = params.air_density_kg_m3;
         let o2_fraction_consumed = o2_consumed / (air_density * cell_volume);
         oxygen[idx] = (o2 - o2_fraction_consumed).max(0.0);
 
@@ -205,13 +237,16 @@ mod tests {
         let temperature = vec![600.0; size]; // Hot enough to evaporate
         let mut fuel_load = vec![1.0; size]; // 1 kg/m²
         let mut moisture = vec![0.2; size]; // 20% moisture
-        let mut oxygen = vec![0.21; size]; // Normal atmospheric O₂
+        let mut oxygen = vec![ATMOSPHERIC_OXYGEN_FRACTION; size]; // Normal atmospheric O₂
         let level_set = vec![-1.0; size]; // All burning
 
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
         };
 
         let initial_moisture = moisture[0];
@@ -252,6 +287,9 @@ mod tests {
             dt: 1.0,
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
         };
 
         let initial_fuel = fuel_load[0];
@@ -291,7 +329,10 @@ mod tests {
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
         };
 
         let initial_oxygen = oxygen[0];
@@ -331,7 +372,10 @@ mod tests {
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
         };
 
         let initial_fuel = fuel_load[0];
@@ -369,9 +413,12 @@ mod tests {
         let level_set = vec![-1.0; size];
 
         let params = CombustionParams {
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
             dt: 1.0,
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
+            ambient_temp_k: 293.15, // 20°C test value
         };
 
         let heat_release = step_combustion_cpu(

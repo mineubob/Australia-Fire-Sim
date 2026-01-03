@@ -261,29 +261,47 @@ pub fn compute_spread_rate_cpu(
             continue;
         }
 
-        // Estimate heat flux from temperature gradient to neighbors
-        // Simplified: assume heat flows from hot to cold
+        // Calculate heat flux using Fourier's law of heat conduction
+        // q = -k × ∇T (Fourier 1822, "Théorie analytique de la chaleur")
+        //
+        // Compute 2D temperature gradient using central finite differences
+        // This provides exact directional heat flow, not just maximum difference
         let x = idx % width;
         let y = idx / width;
 
-        let mut max_temp_diff = 0.0_f32;
+        // Temperature gradient components (∂T/∂x, ∂T/∂y) using central differences
+        let grad_x = if x > 0 && x < width - 1 {
+            // Central difference: (T_{i+1} - T_{i-1}) / (2Δx)
+            (temperature[idx + 1] - temperature[idx - 1]) / (2.0 * cell_size)
+        } else if x > 0 {
+            // Backward difference at right boundary
+            (temperature_val - temperature[idx - 1]) / cell_size
+        } else if x < width - 1 {
+            // Forward difference at left boundary
+            (temperature[idx + 1] - temperature_val) / cell_size
+        } else {
+            0.0
+        };
 
-        // Check neighbors
-        if x > 0 {
-            max_temp_diff = max_temp_diff.max(temperature[idx - 1] - temperature_val);
-        }
-        if x < width - 1 {
-            max_temp_diff = max_temp_diff.max(temperature[idx + 1] - temperature_val);
-        }
-        if y > 0 {
-            max_temp_diff = max_temp_diff.max(temperature[idx - width] - temperature_val);
-        }
-        if y < height - 1 {
-            max_temp_diff = max_temp_diff.max(temperature[idx + width] - temperature_val);
-        }
+        let grad_y = if y > 0 && y < height - 1 {
+            // Central difference: (T_{j+1} - T_{j-1}) / (2Δy)
+            (temperature[idx + width] - temperature[idx - width]) / (2.0 * cell_size)
+        } else if y > 0 {
+            // Backward difference at top boundary
+            (temperature_val - temperature[idx - width]) / cell_size
+        } else if y < height - 1 {
+            // Forward difference at bottom boundary
+            (temperature[idx + width] - temperature_val) / cell_size
+        } else {
+            0.0
+        };
 
-        // Estimate heat flux (W/m²) using fuel-specific thermal conductivity
-        let heat_flux = thermal_conductivity * max_temp_diff / cell_size;
+        // Magnitude of temperature gradient: |∇T| = √((∂T/∂x)² + (∂T/∂y)²)
+        let grad_magnitude = (grad_x * grad_x + grad_y * grad_y).sqrt();
+
+        // Fourier's law: q = k × |∇T| (W/m²)
+        // Thermal conductivity k is fuel-specific (not hardcoded)
+        let heat_flux = thermal_conductivity * grad_magnitude;
 
         // Heat required to ignite this cell
         let mass_per_area = fuel_load_val; // kg/m²

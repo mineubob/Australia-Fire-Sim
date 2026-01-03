@@ -17,6 +17,10 @@ struct CombustionParams {
     heat_content_kj: f32,       // Heat content in kJ/kg
     self_heating_fraction: f32, // Fraction of heat retained (0-1)
     burn_rate_coefficient: f32, // Base burn rate coefficient
+    ambient_temp_k: f32,        // Ambient temperature in Kelvin (from WeatherSystem)
+    temperature_response_range: f32, // Temperature range for combustion rate normalization (K)
+    air_density_kg_m3: f32,     // Air density (kg/m³)
+    atmospheric_mixing_height_m: f32, // Atmospheric mixing height (m)
     _padding1: f32,
     _padding2: f32,
     _padding3: f32,
@@ -33,7 +37,10 @@ struct CombustionParams {
 // Constants
 const LATENT_HEAT_WATER: f32 = 2260.0;  // kJ/kg
 const OXYGEN_STOICHIOMETRIC_RATIO: f32 = 1.33;  // kg O₂/kg fuel
-const AMBIENT_TEMP: f32 = 293.15;  // K
+// Specific heat capacity of dry woody biomass (kJ/(kg·K))
+// Representative value for wood: range 1.3-2.0 kJ/(kg·K), using mid-range value.
+// Matches CPU implementation WOOD_SPECIFIC_HEAT_CAPACITY constant
+const WOOD_SPECIFIC_HEAT_CAPACITY: f32 = 1.6;
 
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -69,8 +76,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     
     // 1. CRITICAL: Moisture evaporation FIRST
     // Moisture must evaporate before temperature rises
-    let excess_heat = select(0.0, (t - AMBIENT_TEMP) * 0.01, t > AMBIENT_TEMP);
-    let max_evap = excess_heat / LATENT_HEAT_WATER;
+    // Use thermodynamically exact formula: Q = m × c_p × ΔT (matches CPU implementation)
+    // Ambient temperature from WeatherSystem (via uniform buffer)
+    let ambient_temp = params.ambient_temp_k;
+    var thermal_energy_kj = 0.0;
+    if (t > ambient_temp) {
+        // Q = m × c_p × ΔT (fundamental thermodynamics)
+        thermal_energy_kj = mass * WOOD_SPECIFIC_HEAT_CAPACITY * (t - ambient_temp);
+    }
+    
+    // Maximum moisture that can evaporate given available thermal energy
+    // E_latent = m_water × L_v where L_v = 2260 kJ/kg
+    let max_evap = thermal_energy_kj / LATENT_HEAT_WATER;
     let moisture_evaporated = min(moisture_mass, max_evap);
     
     // Update moisture (this happens BEFORE combustion)
@@ -85,19 +102,19 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (m < moisture_extinction && t > ignition_temp) {
         // Moisture damping factor
         let moisture_damping = 1.0 - (m / moisture_extinction);
-        
-        // Temperature factor (normalized)
-        let temp_factor = min(1.0, (t - ignition_temp) / 500.0);
-        
+
+        // Temperature factor (normalized) - fuel-specific response range
+        let temp_factor = min(1.0, (t - ignition_temp) / params.temperature_response_range);
+
         // Base burn rate
         burn_rate = base_burn_rate * moisture_damping * temp_factor;
         
         // 3. Oxygen limitation (stoichiometric)
         let o2_required_per_sec = burn_rate * cell_area * OXYGEN_STOICHIOMETRIC_RATIO;
         
-        // Available oxygen in cell (assuming 1m height)
-        let cell_volume = cell_area * 1.0;
-        let air_density = 1.2;  // kg/m³
+        // Available oxygen in cell
+        let cell_volume = cell_area * params.atmospheric_mixing_height_m;
+        let air_density = params.air_density_kg_m3;
         let o2_available = o2 * air_density * cell_volume;
         
         if (o2_available < o2_required_per_sec * params.dt) {
@@ -112,8 +129,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     
     // Oxygen consumed (stoichiometric ratio)
     let o2_consumed = fuel_consumed * OXYGEN_STOICHIOMETRIC_RATIO;
-    let cell_volume = cell_area * 1.0;
-    let air_density = 1.2;
+    let cell_volume = cell_area * params.atmospheric_mixing_height_m;
+    let air_density = params.air_density_kg_m3;
     let o2_fraction_consumed = o2_consumed / (air_density * cell_volume);
     oxygen[idx] = max(0.0, o2 - o2_fraction_consumed);
     

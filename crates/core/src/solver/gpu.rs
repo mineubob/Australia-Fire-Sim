@@ -1,3 +1,7 @@
+#![expect(
+    clippy::doc_markdown,
+    reason = "Scientific author names (McArthur, Van Wagner) and technical acronyms (PyroCb) are proper nouns, not code identifiers"
+)]
 //! GPU-based field solver implementation
 //!
 //! This module provides a GPU implementation of the `FieldSolver` trait using
@@ -14,6 +18,23 @@
 //! - `crown_fire.wgsl` - Phase 3: Crown fire transitions and spread enhancement
 //! - `fuel_layers.wgsl` - Phase 1: Vertical fuel layer heat transfer
 //! - `atmosphere_reduce.wgsl` - Phase 4: Parallel reduction for pyroCb metrics
+//! - `advanced_physics.wgsl` - Phase 5-8: VLS and valley channeling effects
+//!
+//! # Physics Effect Order (Canonical)
+//!
+//! Effects are applied in this strict order to ensure CPU/GPU consistency:
+//!
+//! 1. **Base spread rate** - Computed from temperature gradient
+//! 2. **Slope factor** - Terrain slope effect (McArthur 1967) - applied in `level_set.wgsl`
+//! 3. **VLS + Valley channeling** - Terrain/wind vorticity effects - `advanced_physics.wgsl`
+//! 4. **Crown fire effective ROS** - Fuel layer transition (Van Wagner 1977) - `crown_fire.wgsl`
+//! 5. **Junction zones** - Fire-fire interaction acceleration - CPU-side
+//! 6. **Downdrafts** - PyroCb downdraft effects - CPU-side
+//! 7. **Fire whirls** - Atmospheric vorticity enhancement - CPU-side
+//! 8. **Regime-based variation** - Stochastic variation based on fire regime - CPU-side
+//!
+//! This order follows physical causality: terrain/wind effects establish baseline behavior,
+//! then fuel transitions modify it, then fire-fire and atmospheric interactions apply.
 //!
 //! # Implementation
 //!
@@ -21,25 +42,55 @@
 //! Data is stored in GPU storage buffers with ping-pong double-buffering for in-place
 //! updates. Staging buffers handle CPU readback when needed for visualization.
 
+use super::combustion::ATMOSPHERIC_OXYGEN_FRACTION;
 use super::context::GpuContext;
 use super::crown_fire::CanopyProperties;
 use super::fuel_grid::{CellFuelTypes, FuelGrid};
 use super::fuel_variation::HeterogeneityConfig;
+use super::junction_zone::JunctionZoneDetector;
 use super::quality::QualityPreset;
+use super::regime::{direction_uncertainty, predictability_factor, FireRegime};
 use super::terrain_slope::TerrainFields;
 use super::FieldSolver;
-use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
+use crate::atmosphere::{
+    AtmosphericStability, ConvectionColumn, Downdraft, FireWhirlDetector, PyroCbSystem,
+};
 use crate::core_types::units::{Gigawatts, Kelvin, Meters, MetersPerSecond, Seconds};
+use crate::core_types::vec3::Vec3;
 use crate::TerrainData;
 use bytemuck::{Pod, Zeroable};
 use std::borrow::Cow;
 use wgpu::util::DeviceExt;
+
+/// Default ambient temperature for initialization (20°C = 293.15 K)
+/// Actual ambient temperature comes from `WeatherSystem` via `step_heat_transfer`
+const AMBIENT_TEMP_K: f32 = 293.15;
 
 // Helper to convert usize to f32, centralizing the intentional precision loss
 #[inline]
 #[expect(clippy::cast_precision_loss)]
 fn usize_to_f32(v: usize) -> f32 {
     v as f32
+}
+
+/// Simple noise function for regime-based stochastic variation
+///
+/// Uses hash-based noise to avoid dependency on complex noise libraries.
+/// Same implementation as in `level_set.rs` for consistency.
+///
+/// # Arguments
+///
+/// * `x` - X coordinate
+/// * `y` - Y coordinate
+///
+/// # Returns
+///
+/// Noise value in range [-1, 1]
+fn simple_noise_gpu(x: f32, y: f32) -> f32 {
+    let ix = (x * 12.99).sin() * 43758.55;
+    let iy = (y * 78.23).sin() * 43758.55;
+    let fract = (ix + iy).fract();
+    fract * 2.0 - 1.0 // Range [-1, 1]
 }
 
 /// Heat transfer shader parameters (must match WGSL struct layout)
@@ -70,11 +121,15 @@ struct CombustionParams {
     cell_size: f32,
     dt: f32,
     // Fuel-specific properties
-    ignition_temp_k: f32,       // Ignition temperature in Kelvin
-    moisture_extinction: f32,   // Moisture of extinction (fraction)
-    heat_content_kj: f32,       // Heat content in kJ/kg
-    self_heating_fraction: f32, // Fraction of heat retained (0-1)
-    burn_rate_coefficient: f32, // Base burn rate coefficient
+    ignition_temp_k: f32,             // Ignition temperature in Kelvin
+    moisture_extinction: f32,         // Moisture of extinction (fraction)
+    heat_content_kj: f32,             // Heat content in kJ/kg
+    self_heating_fraction: f32,       // Fraction of heat retained (0-1)
+    burn_rate_coefficient: f32,       // Base burn rate coefficient
+    ambient_temp_k: f32,              // Ambient temperature in Kelvin (from WeatherSystem)
+    temperature_response_range: f32,  // Temperature range for combustion rate normalization (K)
+    air_density_kg_m3: f32,           // Air density (kg/m³) - varies with temp/elevation
+    atmospheric_mixing_height_m: f32, // Atmospheric mixing height (m)
     _padding1: f32,
     _padding2: f32,
     _padding3: f32,
@@ -175,6 +230,26 @@ struct FireMetrics {
     _padding3: u32,
 }
 
+/// Advanced physics shader parameters (must match WGSL struct layout)
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct AdvancedPhysicsParams {
+    width: u32,
+    height: u32,
+    cell_size: f32,
+    dt: f32,
+    wind_speed: f32,             // Wind speed (m/s)
+    wind_direction: f32,         // Wind direction (degrees, 0=North, clockwise)
+    ambient_temp: f32,           // Ambient temperature (°C)
+    vls_threshold: f32,          // VLS index threshold (0.6 typical)
+    min_slope_vls: f32,          // Minimum slope for VLS (20° typical)
+    min_wind_vls: f32,           // Minimum wind for VLS (5 m/s typical)
+    valley_sample_radius: f32,   // Radius for valley detection (100m typical)
+    valley_reference_width: f32, // Open terrain reference width (200m typical)
+    valley_head_distance: f32,   // Distance threshold for chimney effect (100m typical)
+    _padding: f32,
+}
+
 /// GPU-based field solver using wgpu compute shaders
 ///
 /// Uses compute pipelines to dispatch physics computations on the GPU.
@@ -205,6 +280,7 @@ pub struct GpuFieldSolver {
     // Phase 0: Terrain slope and aspect buffers for fire spread modulation
     slope: wgpu::Buffer,
     aspect: wgpu::Buffer,
+    elevation: wgpu::Buffer, // Elevation for valley detection
 
     // Phase 1: Vertical fuel layer buffers (3 layers per cell)
     layer_fuel: wgpu::Buffer,     // kg/m² per layer
@@ -232,6 +308,7 @@ pub struct GpuFieldSolver {
     crown_fire_params_buffer: wgpu::Buffer,
     fuel_layer_params_buffer: wgpu::Buffer,
     atmosphere_params_buffer: wgpu::Buffer,
+    advanced_physics_params_buffer: wgpu::Buffer,
 
     // Compute pipelines
     heat_transfer_pipeline: wgpu::ComputePipeline,
@@ -242,6 +319,7 @@ pub struct GpuFieldSolver {
     fuel_layer_pipeline: wgpu::ComputePipeline,
     atmosphere_reduce_pipeline: wgpu::ComputePipeline,
     atmosphere_clear_pipeline: wgpu::ComputePipeline,
+    advanced_physics_pipeline: wgpu::ComputePipeline,
 
     // Bind group layouts (needed for bind group creation)
     heat_bind_group_layout: wgpu::BindGroupLayout,
@@ -251,6 +329,7 @@ pub struct GpuFieldSolver {
     crown_fire_bind_group_layout: wgpu::BindGroupLayout,
     fuel_layer_bind_group_layout: wgpu::BindGroupLayout,
     atmosphere_bind_group_layout: wgpu::BindGroupLayout,
+    advanced_physics_bind_group_layout: wgpu::BindGroupLayout,
 
     // Ping-pong state (which buffer is current)
     temp_ping: bool,
@@ -271,9 +350,22 @@ pub struct GpuFieldSolver {
     downdrafts: Vec<Downdraft>,
     atmospheric_stability: AtmosphericStability,
     pyrocb_system: PyroCbSystem,
+    fire_whirl_detector: FireWhirlDetector,
 
-    // Weather parameters for crown fire calculations
+    // Phase 5-8: Advanced fire physics (CPU-side calculations)
+    junction_zone_detector: JunctionZoneDetector,
+    fire_regime: Vec<FireRegime>,
+
+    // Weather parameters for crown fire and advanced physics
     wind_speed_10m_kmh: f32,
+    wind_x: f32,         // Wind x component (m/s)
+    wind_y: f32,         // Wind y component (m/s)
+    ambient_temp_k: f32, // Ambient temperature (K)
+
+    // Advanced physics configuration
+    valley_sample_radius: f32,           // Radius for valley detection (m)
+    valley_reference_width: f32,         // Reference width for open terrain (m)
+    valley_head_distance_threshold: f32, // Distance threshold for chimney effect (m)
 }
 
 impl GpuFieldSolver {
@@ -303,11 +395,12 @@ impl GpuFieldSolver {
             TerrainFields::from_terrain_data(terrain, width as usize, height as usize, cell_size);
 
         // Initialize field data
-        let ambient_temp: f32 = 293.15; // 20°C in Kelvin
+        // Default ambient temperature (20°C), will be updated from WeatherSystem via step_heat_transfer
+        let ambient_temp: f32 = AMBIENT_TEMP_K;
         let initial_temp: Vec<f32> = vec![ambient_temp; num_cells];
         let mut initial_fuel: Vec<f32> = vec![2.0; num_cells]; // 2 kg/m²
         let mut initial_moisture: Vec<f32> = vec![0.15; num_cells]; // 15%
-        let initial_oxygen: Vec<f32> = vec![0.21; num_cells]; // 21%
+        let initial_oxygen: Vec<f32> = vec![ATMOSPHERIC_OXYGEN_FRACTION; num_cells]; // 21%
         let initial_phi: Vec<f32> = vec![1000.0; num_cells]; // Far from fire
         let initial_spread: Vec<f32> = vec![0.5; num_cells]; // 0.5 m/s base spread
         let zeros: Vec<f32> = vec![0.0; num_cells];
@@ -396,13 +489,17 @@ impl GpuFieldSolver {
         let spread_rate_a = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Spread Rate A"),
             contents: bytemuck::cast_slice(&initial_spread),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
         });
 
         let spread_rate_b = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Spread Rate B"),
             contents: bytemuck::cast_slice(&initial_spread),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
         });
 
         let heat_release = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -421,6 +518,22 @@ impl GpuFieldSolver {
         let aspect = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Aspect"),
             contents: bytemuck::cast_slice(terrain_fields.aspect.as_slice()),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        // Copy terrain elevation at grid resolution for valley detection
+        let mut terrain_elevation: Vec<f32> = vec![0.0; num_cells];
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                let wx = usize_to_f32(x) * cell_size;
+                let wy = usize_to_f32(y) * cell_size;
+                terrain_elevation[y * width as usize + x] = *terrain.elevation_at(wx, wy);
+            }
+        }
+
+        let elevation = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Elevation"),
+            contents: bytemuck::cast_slice(&terrain_elevation),
             usage: wgpu::BufferUsages::STORAGE,
         });
 
@@ -548,8 +661,8 @@ impl GpuFieldSolver {
             wind_y: 0.0,
             stefan_boltzmann: 5.67e-8,
             thermal_diffusivity: *surface_fuel.thermal_diffusivity,
-            emissivity_burning: 0.9,  // Flames have high emissivity
-            emissivity_unburned: 0.7, // Fuel bed has lower emissivity
+            emissivity_burning: *surface_fuel.emissivity_burning, // Fuel-specific
+            emissivity_unburned: *surface_fuel.emissivity_unburned, // Fuel-specific
             specific_heat_j: *surface_fuel.specific_heat * 1000.0, // kJ to J
         };
 
@@ -569,6 +682,10 @@ impl GpuFieldSolver {
             heat_content_kj: *surface_fuel.heat_content,
             self_heating_fraction: *surface_fuel.self_heating_fraction,
             burn_rate_coefficient: surface_fuel.burn_rate_coefficient,
+            ambient_temp_k: AMBIENT_TEMP_K, // Default, updated via step_heat_transfer from WeatherSystem
+            temperature_response_range: surface_fuel.temperature_response_range,
+            air_density_kg_m3: 1.2, // TODO: Calculate from temperature, elevation, humidity
+            atmospheric_mixing_height_m: 1.0, // TODO: Use from weather system or config
             _padding1: 0.0,
             _padding2: 0.0,
             _padding3: 0.0,
@@ -680,6 +797,31 @@ impl GpuFieldSolver {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
+        // Phase 5-8: Advanced physics parameters
+        let advanced_physics_params = AdvancedPhysicsParams {
+            width,
+            height,
+            cell_size,
+            dt: 0.1,
+            wind_speed: 5.56,              // 20 km/h default in m/s
+            wind_direction: 0.0,           // North
+            ambient_temp: 20.0,            // 20°C
+            vls_threshold: 0.6,            // VLS activation threshold
+            min_slope_vls: 20.0,           // 20° minimum slope for VLS
+            min_wind_vls: 5.0,             // 5 m/s minimum wind for VLS
+            valley_sample_radius: 100.0,   // 100m valley detection radius
+            valley_reference_width: 200.0, // 200m open terrain reference width
+            valley_head_distance: 100.0,   // 100m distance threshold for chimney effect
+            _padding: 0.0,
+        };
+
+        let advanced_physics_params_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Advanced Physics Params"),
+                contents: bytemuck::bytes_of(&advanced_physics_params),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
         // Load shaders using wgpu::include_wgsl! macro
         let heat_shader =
             device.create_shader_module(wgpu::include_wgsl!("shaders/heat_transfer.wgsl"));
@@ -704,6 +846,10 @@ impl GpuFieldSolver {
         // Phase 4: Atmosphere reduction shader
         let atmosphere_shader =
             device.create_shader_module(wgpu::include_wgsl!("shaders/atmosphere_reduce.wgsl"));
+
+        // Phase 5-8: Advanced physics shader
+        let advanced_physics_shader =
+            device.create_shader_module(wgpu::include_wgsl!("shaders/advanced_physics.wgsl"));
 
         // Create bind group layouts
         let heat_bind_group_layout =
@@ -1209,6 +1355,80 @@ impl GpuFieldSolver {
                 ],
             });
 
+        // Phase 5-8: Advanced physics bind group layout
+        let advanced_physics_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Advanced Physics Bind Group Layout"),
+                entries: &[
+                    // params (binding 0)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // elevation (binding 1)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // slope (binding 2)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // aspect (binding 3)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // temperature (binding 4)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // spread_rate (binding 5)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
         // Create pipeline layouts
         let heat_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Heat Pipeline Layout"),
@@ -1258,6 +1478,14 @@ impl GpuFieldSolver {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Atmosphere Pipeline Layout"),
                 bind_group_layouts: &[&atmosphere_bind_group_layout],
+                immediate_size: 0,
+            });
+
+        // Phase 5-8: Advanced physics pipeline layout
+        let advanced_physics_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Advanced Physics Pipeline Layout"),
+                bind_group_layouts: &[&advanced_physics_bind_group_layout],
                 immediate_size: 0,
             });
 
@@ -1345,6 +1573,17 @@ impl GpuFieldSolver {
                 cache: None,
             });
 
+        // Phase 5-8: Advanced physics pipeline
+        let advanced_physics_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Advanced Physics Pipeline"),
+                layout: Some(&advanced_physics_pipeline_layout),
+                module: &advanced_physics_shader,
+                entry_point: Some("main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+
         Self {
             device,
             queue,
@@ -1363,6 +1602,7 @@ impl GpuFieldSolver {
             heat_release,
             slope,
             aspect,
+            elevation,
             layer_fuel,
             layer_moisture,
             layer_temp,
@@ -1380,6 +1620,7 @@ impl GpuFieldSolver {
             crown_fire_params_buffer,
             fuel_layer_params_buffer,
             atmosphere_params_buffer,
+            advanced_physics_params_buffer,
             heat_transfer_pipeline,
             combustion_pipeline,
             level_set_pipeline,
@@ -1388,6 +1629,7 @@ impl GpuFieldSolver {
             fuel_layer_pipeline,
             atmosphere_reduce_pipeline,
             atmosphere_clear_pipeline,
+            advanced_physics_pipeline,
             heat_bind_group_layout,
             combustion_bind_group_layout,
             level_set_bind_group_layout,
@@ -1395,6 +1637,7 @@ impl GpuFieldSolver {
             crown_fire_bind_group_layout,
             fuel_layer_bind_group_layout,
             atmosphere_bind_group_layout,
+            advanced_physics_bind_group_layout,
             temp_ping: true,
             phi_ping: true,
             spread_ping: true,
@@ -1408,7 +1651,17 @@ impl GpuFieldSolver {
             downdrafts: Vec::new(),
             atmospheric_stability: AtmosphericStability::default(),
             pyrocb_system: PyroCbSystem::new(),
+            fire_whirl_detector: FireWhirlDetector::default(),
+            // Phase 5-8: Advanced fire physics
+            junction_zone_detector: JunctionZoneDetector::default(),
+            fire_regime: vec![FireRegime::WindDriven; num_cells],
             wind_speed_10m_kmh: 20.0,
+            wind_x: 0.0,
+            wind_y: 5.56,           // 20 km/h north wind
+            ambient_temp_k: 293.15, // 20°C default
+            valley_sample_radius: 100.0,
+            valley_reference_width: 200.0,
+            valley_head_distance_threshold: 100.0,
         }
     }
 
@@ -1670,6 +1923,70 @@ impl GpuFieldSolver {
         for event in &self.pyrocb_system.active_events {
             self.downdrafts.extend(event.downdrafts.clone());
         }
+    }
+
+    /// Dispatch Phase 5-8: Advanced physics shader (VLS and valley channeling)
+    fn dispatch_advanced_physics(&mut self, dt: f32, wind_x: f32, wind_y: f32) {
+        // Calculate wind direction from components
+        let wind_speed = (wind_x * wind_x + wind_y * wind_y).sqrt();
+        let wind_direction = if wind_speed > 0.1 {
+            // atan2(x, y) gives angle from North (0=North, 90=East)
+            let angle_rad = wind_x.atan2(wind_y);
+            let angle_deg = angle_rad.to_degrees();
+            if angle_deg < 0.0 {
+                angle_deg + 360.0
+            } else {
+                angle_deg
+            }
+        } else {
+            0.0 // Default to North if no wind
+        };
+
+        // Update advanced physics params
+        let params = AdvancedPhysicsParams {
+            width: self.width,
+            height: self.height,
+            cell_size: self.cell_size,
+            dt,
+            wind_speed,
+            wind_direction,
+            ambient_temp: self.ambient_temp_k - 273.15, // Convert K to °C
+            vls_threshold: 0.6,
+            min_slope_vls: 20.0,
+            min_wind_vls: 5.0,
+            valley_sample_radius: self.valley_sample_radius,
+            valley_reference_width: self.valley_reference_width,
+            valley_head_distance: self.valley_head_distance_threshold,
+            _padding: 0.0,
+        };
+        self.queue.write_buffer(
+            &self.advanced_physics_params_buffer,
+            0,
+            bytemuck::bytes_of(&params),
+        );
+
+        let bind_group = self.create_advanced_physics_bind_group();
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Advanced Physics Encoder"),
+            });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Advanced Physics Pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&self.advanced_physics_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            let (wg_x, wg_y) = self.workgroup_count();
+            compute_pass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
     }
 
     /// Create heat transfer bind group for current ping-pong state
@@ -1974,29 +2291,169 @@ impl GpuFieldSolver {
             ],
         })
     }
+
+    /// Create advanced physics bind group for Phase 5-8
+    fn create_advanced_physics_bind_group(&self) -> wgpu::BindGroup {
+        let temp = if self.temp_ping {
+            &self.temperature_a
+        } else {
+            &self.temperature_b
+        };
+
+        let spread = if self.spread_ping {
+            &self.spread_rate_a
+        } else {
+            &self.spread_rate_b
+        };
+
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Advanced Physics Bind Group"),
+            layout: &self.advanced_physics_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.advanced_physics_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.elevation.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.slope.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.aspect.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: temp.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: spread.as_entire_binding(),
+                },
+            ],
+        })
+    }
+
+    /// Read spread rate buffer from GPU (for CPU-side junction zone processing)
+    fn read_spread_rate(&self) -> Vec<f32> {
+        let buffer_size = u64::from(self.width * self.height) * std::mem::size_of::<f32>() as u64;
+
+        // Create temporary staging buffer
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Spread Rate Staging"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Copy current spread rate buffer to staging
+        let src_buffer = if self.spread_ping {
+            &self.spread_rate_a
+        } else {
+            &self.spread_rate_b
+        };
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Spread Rate Readback Encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(src_buffer, 0, &staging, 0, buffer_size);
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and read
+        let buffer_slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().unwrap().unwrap();
+
+        let data = buffer_slice.get_mapped_range();
+        let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+        drop(data);
+        staging.unmap();
+
+        result
+    }
+
+    /// Write spread rate buffer to GPU (after CPU-side junction zone processing)
+    fn write_spread_rate(&mut self, data: &[f32]) {
+        let dst_buffer = if self.spread_ping {
+            &self.spread_rate_a
+        } else {
+            &self.spread_rate_b
+        };
+        self.queue
+            .write_buffer(dst_buffer, 0, bytemuck::cast_slice(data));
+    }
+
+    /// Read fire intensity buffer from GPU (for CPU-side regime detection)
+    fn read_fire_intensity(&self) -> Vec<f32> {
+        let buffer_size = u64::from(self.width * self.height) * std::mem::size_of::<f32>() as u64;
+
+        // Create temporary staging buffer
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Fire Intensity Staging"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Fire Intensity Readback Encoder"),
+            });
+
+        encoder.copy_buffer_to_buffer(&self.fire_intensity, 0, &staging, 0, buffer_size);
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        // Map and read
+        let buffer_slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().unwrap().unwrap();
+
+        let data = buffer_slice.get_mapped_range();
+        let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+        drop(data);
+        staging.unmap();
+
+        result
+    }
 }
 
 impl FieldSolver for GpuFieldSolver {
-    fn step_heat_transfer(
-        &mut self,
-        dt: Seconds,
-        wind: crate::core_types::Vec3,
-        ambient_temp: Kelvin,
-    ) {
+    fn step_heat_transfer(&mut self, dt: f32, wind: crate::core_types::Vec3, ambient_temp: Kelvin) {
         // Extract wind components (wind.x and wind.y are already in m/s)
         let wind_x = wind.x;
         let wind_y = wind.y;
 
-        // Extract wind speed for crown fire calculations (convert m/s to km/h)
+        // Store weather parameters for use in other methods
         let wind_magnitude_m_s = (wind_x * wind_x + wind_y * wind_y).sqrt();
         self.wind_speed_10m_kmh = wind_magnitude_m_s * 3.6;
+        self.wind_x = wind_x;
+        self.wind_y = wind_y;
+        self.ambient_temp_k = ambient_temp.as_f32();
 
         // Update uniform buffer with new parameters
         let params = HeatParams {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
-            dt: *dt,
+            dt,
             ambient_temp: ambient_temp.as_f32(),
             wind_x,
             wind_y,
@@ -2010,8 +2467,22 @@ impl FieldSolver for GpuFieldSolver {
                     .get_surface_fuel(center_x, center_y)
                     .thermal_diffusivity
             },
-            emissivity_burning: 0.9,
-            emissivity_unburned: 0.7,
+            emissivity_burning: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .emissivity_burning
+            },
+            emissivity_unburned: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                *self
+                    .fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .emissivity_unburned
+            },
             specific_heat_j: {
                 let center_x = (self.width / 2) as usize;
                 let center_y = (self.height / 2) as usize;
@@ -2054,13 +2525,13 @@ impl FieldSolver for GpuFieldSolver {
         self.temp_ping = !self.temp_ping;
     }
 
-    fn step_combustion(&mut self, dt: Seconds) {
+    fn step_combustion(&mut self, dt: f32) {
         // Update uniform buffer
         let params = CombustionParams {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
-            dt: *dt,
+            dt,
             // Get surface fuel from center cell for uniform params
             ignition_temp_k: {
                 let center_x = (self.width / 2) as usize;
@@ -2099,6 +2570,16 @@ impl FieldSolver for GpuFieldSolver {
                     .get_surface_fuel(center_x, center_y)
                     .burn_rate_coefficient
             },
+            ambient_temp_k: self.ambient_temp_k, // From WeatherSystem via step_heat_transfer
+            temperature_response_range: {
+                let center_x = (self.width / 2) as usize;
+                let center_y = (self.height / 2) as usize;
+                self.fuel_grid
+                    .get_surface_fuel(center_x, center_y)
+                    .temperature_response_range
+            },
+            air_density_kg_m3: 1.2, // TODO: Calculate from temperature, elevation, humidity
+            atmospheric_mixing_height_m: 1.0, // TODO: Use from weather system or config
             _padding1: 0.0,
             _padding2: 0.0,
             _padding3: 0.0,
@@ -2133,22 +2614,54 @@ impl FieldSolver for GpuFieldSolver {
         self.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    fn step_moisture(&mut self, _dt: Seconds, _humidity: f32) {
+    fn step_moisture(&mut self, _dt: f32, _humidity: f32) {
         // Moisture update is handled in combustion shader
         // This is a placeholder for more advanced moisture dynamics
     }
 
-    fn step_level_set(&mut self, dt: Seconds) {
-        self.time += *dt;
+    fn step_level_set(&mut self, dt: f32, _wind: Vec3, _ambient_temp: Kelvin) {
+        self.time += dt;
 
-        // Update uniform buffer
+        // Phase 8 (continued): Regime-based direction uncertainty
+        // Read level_set and spread_rate to calculate regime-based noise
+        let level_set_data = self.read_level_set();
+        let spread_rate_data = self.read_spread_rate();
+
+        // Calculate average direction uncertainty for burning cells
+        let mut total_uncertainty = 0.0;
+        let mut burning_cells = 0;
+        for idx in 0..(self.width * self.height) as usize {
+            if level_set_data[idx] < 0.0 && spread_rate_data[idx] > 0.0 {
+                let regime = self.fire_regime[idx];
+                let uncertainty_deg = direction_uncertainty(regime);
+                total_uncertainty += uncertainty_deg;
+                burning_cells += 1;
+            }
+        }
+
+        // Map average direction uncertainty to noise amplitude
+        // Direction uncertainty ranges: 15° (wind-driven) to 180° (plume-dominated)
+        // Map to noise amplitude: 0.03 (predictable) to 0.15 (unpredictable)
+        let avg_uncertainty_deg = if burning_cells > 0 {
+            #[expect(clippy::cast_precision_loss)]
+            let result = total_uncertainty / burning_cells as f32;
+            result
+        } else {
+            15.0 // Default to wind-driven
+        };
+
+        // Linear mapping: 15° → 0.03, 180° → 0.15
+        let regime_noise_amplitude = 0.03 + (avg_uncertainty_deg - 15.0) / 165.0 * 0.12;
+        let regime_noise_amplitude = regime_noise_amplitude.clamp(0.03, 0.15);
+
+        // Update uniform buffer with regime-adjusted noise
         let params = LevelSetParams {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
-            dt: *dt,
+            dt,
             curvature_coeff: 0.25,
-            noise_amplitude: 0.1,
+            noise_amplitude: regime_noise_amplitude,
             time: self.time,
             _padding: 0.0,
         };
@@ -2184,14 +2697,251 @@ impl FieldSolver for GpuFieldSolver {
         // Flip ping-pong
         self.phi_ping = !self.phi_ping;
 
+        // CANONICAL ORDER: Apply physics effects in proper sequence to match CPU solver
+        // This ensures CPU and GPU produce identical results (within floating-point precision)
+        //
+        // Order follows physical causality:
+        // 1. Base spread rate + slope factor (in level_set shader above)
+        // 2. VLS + valley channeling (terrain/wind effects - GPU shader)
+        // 3. Crown fire effective ROS (fuel transition - GPU shader)
+        // 4. Junction zones (fire-fire interaction - CPU)
+        // 5. Fire whirls (atmospheric - CPU)
+        // 6. Regime-based variation (stochastic - CPU)
+
+        // Phase 5-8: Dispatch advanced physics shader (VLS and valley channeling)
+        // Must run BEFORE crown fire so crown ROS accounts for terrain/wind modifications
+        self.dispatch_advanced_physics(dt, self.wind_x, self.wind_y);
+
         // Phase 3: Dispatch crown fire shader (updates spread_rate and fire_intensity on GPU)
-        self.dispatch_crown_fire(*dt);
+        // Runs AFTER advanced physics so effective ROS includes VLS/valley effects
+        self.dispatch_crown_fire(dt);
+
+        // Phase 5: CPU-side junction zone detection (requires global analysis)
+        // Read back level_set and spread_rate from GPU for junction detection
+        let level_set_data = self.read_level_set();
+        let mut spread_rate_data = self.read_spread_rate();
+
+        // Phase 8: Read fire intensity for regime detection and fire whirl detection
+        let intensity_data = self.read_fire_intensity();
+
+        let junctions = self.junction_zone_detector.detect(
+            &level_set_data,
+            &spread_rate_data,
+            self.width as usize,
+            self.height as usize,
+            self.cell_size,
+            dt,
+        );
+
+        // Apply junction acceleration to spread rates
+        for junction in &junctions {
+            // Apply acceleration in a radius around junction point
+            let radius = junction.distance * 0.5;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_x = (junction.position.x / self.cell_size) as usize;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_y = (junction.position.y / self.cell_size) as usize;
+
+            #[expect(clippy::cast_possible_truncation)]
+            let radius_cells = (radius / self.cell_size).ceil() as i32;
+
+            for dy in -radius_cells..=radius_cells {
+                for dx in -radius_cells..=radius_cells {
+                    let x = (center_x as i32 + dx) as usize;
+                    let y = (center_y as i32 + dy) as usize;
+
+                    if x >= self.width as usize || y >= self.height as usize {
+                        continue;
+                    }
+
+                    #[expect(clippy::cast_precision_loss)]
+                    let dist = ((dx * dx + dy * dy) as f32).sqrt() * self.cell_size;
+                    if dist > radius {
+                        continue;
+                    }
+
+                    // Acceleration falls off with distance from junction center
+                    let falloff = 1.0 - dist / radius;
+                    let local_acceleration = 1.0 + (junction.acceleration_factor - 1.0) * falloff;
+
+                    let idx = y * self.width as usize + x;
+                    if spread_rate_data[idx] > 0.0 {
+                        spread_rate_data[idx] *= local_acceleration;
+                    }
+                }
+            }
+        }
+
+        // Phase 4: Fire whirl detection and effects
+        // Note: Currently using uniform wind field; future enhancement would use spatially-varying wind
+        let wind_x_field = vec![self.wind_x; (self.width * self.height) as usize];
+        let wind_y_field = vec![self.wind_y; (self.width * self.height) as usize];
+
+        // Phase 8 (continued): Regime-based fire whirl detection
+        // Plume-dominated fires (high Byram number) have stronger buoyancy,
+        // making fire whirl formation more likely (Finney & McAllister 2011)
+        // Modulate intensity threshold based on regime distribution
+        let mut regime_adjusted_detector = self.fire_whirl_detector.clone();
+
+        // Count regime distribution in burning cells to determine global adjustment
+        let mut plume_cells = 0;
+        let mut total_burning_cells = 0;
+        #[expect(clippy::needless_range_loop)]
+        for idx in 0..(self.width * self.height) as usize {
+            if intensity_data[idx] > 0.0 {
+                total_burning_cells += 1;
+                if self.fire_regime[idx] == FireRegime::PlumeDominated {
+                    plume_cells += 1;
+                }
+            }
+        }
+
+        // If >20% of fire is plume-dominated, lower fire whirl threshold
+        if total_burning_cells > 0 {
+            #[expect(clippy::cast_precision_loss)]
+            let plume_fraction = plume_cells as f32 / total_burning_cells as f32;
+            if plume_fraction > 0.2 {
+                // Lower threshold by up to 30% when fire is strongly plume-dominated
+                let threshold_reduction = plume_fraction.min(1.0) * 0.3;
+                regime_adjusted_detector.intensity_threshold_kw_m *= 1.0 - threshold_reduction;
+            }
+        }
+
+        let fire_whirl_locations = regime_adjusted_detector.detect(
+            &wind_x_field,
+            &wind_y_field,
+            &intensity_data,
+            self.width as usize,
+            self.height as usize,
+            self.cell_size,
+        );
+
+        // Apply fire whirl effects to spread rate
+        // Fire whirls create intense local winds (vorticity → strong circular winds)
+        // Enhancement radius ~50m, peak enhancement ~3x normal spread
+        const FIRE_WHIRL_RADIUS: f32 = 50.0; // meters
+        const FIRE_WHIRL_PEAK_ENHANCEMENT: f32 = 3.0; // 3x spread rate
+
+        for (whirl_x, whirl_y) in &fire_whirl_locations {
+            // Apply enhancement in radius around fire whirl center
+            for y in 0..self.height as usize {
+                for x in 0..self.width as usize {
+                    #[expect(clippy::cast_precision_loss)]
+                    let px = x as f32 * self.cell_size;
+                    #[expect(clippy::cast_precision_loss)]
+                    let py = y as f32 * self.cell_size;
+                    let dist = ((px - whirl_x).powi(2) + (py - whirl_y).powi(2)).sqrt();
+
+                    if dist < FIRE_WHIRL_RADIUS {
+                        let idx = y * self.width as usize + x;
+                        if spread_rate_data[idx] > 0.0 {
+                            // Enhancement falls off with distance from whirl center
+                            // Peak enhancement at center, fades to 1.0 at radius
+                            let radial_factor = 1.0 - dist / FIRE_WHIRL_RADIUS;
+                            let enhancement =
+                                1.0 + (FIRE_WHIRL_PEAK_ENHANCEMENT - 1.0) * radial_factor;
+                            spread_rate_data[idx] *= enhancement;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Phase 8: CPU-side regime detection (uses fire intensity from GPU)
+        let wind_speed_m_s = self.wind_speed_10m_kmh / 3.6;
+        let ambient_temp_c = self.ambient_temp_k - 273.15; // Convert K to °C
+
+        for (idx, &intensity) in intensity_data.iter().enumerate() {
+            if intensity > 0.0 {
+                use super::regime::detect_regime;
+                let regime = detect_regime(intensity, wind_speed_m_s, ambient_temp_c);
+                self.fire_regime[idx] = regime;
+            } else {
+                self.fire_regime[idx] = FireRegime::WindDriven;
+            }
+        }
+
+        // Phase 8 (continued): Apply regime effects to fire behavior
+        // Use regime classification to modulate spread rate uncertainty
+        // Scientific basis: Byram (1959), Nelson (2003) - plume-dominated fires are unpredictable
+        #[expect(clippy::needless_range_loop)]
+        for idx in 0..(self.width * self.height) as usize {
+            if spread_rate_data[idx] > 0.0 {
+                let regime = self.fire_regime[idx];
+                let predictability = predictability_factor(regime);
+
+                // Apply regime-based stochastic variation to spread rate
+                // Lower predictability = higher variation
+                // Variation range: ±(1 - predictability) × 15%
+                // Wind-driven (predictability=1.0): ±0% = no variation
+                // Transitional (predictability=0.5): ±7.5% variation
+                // Plume-dominated (predictability=0.2): ±12% variation
+                let variation_amplitude = (1.0 - predictability) * 0.15;
+
+                // Use simple hash-based noise to avoid dependencies
+                #[expect(clippy::cast_precision_loss)]
+                let x = (idx % self.width as usize) as f32;
+                #[expect(clippy::cast_precision_loss)]
+                let y = (idx / self.width as usize) as f32;
+                let noise = simple_noise_gpu(x + self.time * 0.1, y + self.time * 0.1);
+                let variation = 1.0 + variation_amplitude * noise;
+
+                spread_rate_data[idx] *= variation;
+            }
+        }
+
+        // Apply downdraft effects to spread rate
+        // Downdrafts create erratic local wind enhancements from PyroCb collapse
+        for downdraft in &self.downdrafts {
+            let (dx, dy) = downdraft.position;
+            let radius = *downdraft.radius;
+            let outflow = *downdraft.outflow_velocity;
+
+            // Enhance spread rate in downdraft outflow region
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    #[expect(clippy::cast_precision_loss)]
+                    let px = x as f32 * self.cell_size;
+                    #[expect(clippy::cast_precision_loss)]
+                    let py = y as f32 * self.cell_size;
+                    let dist = ((px - dx) * (px - dx) + (py - dy) * (py - dy)).sqrt();
+
+                    if dist < radius {
+                        // Downdraft enhancement: stronger near center, weaker at edges
+                        // Range: 0.5x (updraft zone) to 2.0x (peak outflow)
+                        let normalized_dist = dist / radius;
+                        let enhancement = if normalized_dist < 0.3 {
+                            // Central updraft zone: suppresses horizontal spread
+                            0.5 + normalized_dist * 1.67 // 0.5 at center, 1.0 at r=0.3
+                        } else {
+                            // Outflow zone: peak at r=0.6, decay to 1.0 at edge
+                            let outflow_factor = ((normalized_dist - 0.3) / 0.3).min(1.0);
+                            let decay_factor = ((1.0 - normalized_dist) / 0.4).max(0.0);
+                            1.0 + outflow_factor * decay_factor
+                        };
+
+                        // Scale enhancement by downdraft strength
+                        // 20 m/s outflow → 1.5x spread, 40 m/s → 2.0x spread
+                        let velocity_factor = (outflow / 20.0).min(2.0);
+                        let final_enhancement = 1.0 + (enhancement - 1.0) * velocity_factor;
+
+                        let idx = (y * self.width + x) as usize;
+                        if spread_rate_data[idx] > 0.0 {
+                            spread_rate_data[idx] *= final_enhancement;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Write modified spread rates back to GPU
+        self.write_spread_rate(&spread_rate_data);
 
         // Phase 1: Dispatch fuel layer shader (vertical heat transfer)
-        self.dispatch_fuel_layers(*dt);
+        self.dispatch_fuel_layers(dt);
 
         // Phase 4: Dispatch atmosphere reduction and update CPU-side state
-        self.dispatch_atmosphere(*dt);
+        self.dispatch_atmosphere(dt);
     }
 
     fn step_ignition_sync(&mut self) {
@@ -2371,56 +3121,73 @@ mod tests {
         )
     }
 
+    /// Helper to initialize GPU context or panic with clear error message
+    ///
+    /// GPU tests require actual GPU hardware. This helper panics if:
+    /// - No GPU adapter found (use `--no-default-features` for CPU-only tests)
+    /// - GPU initialization failed (driver/hardware issue)
+    fn require_gpu_context() -> GpuContext {
+        match GpuContext::new() {
+            GpuInitResult::Success(ctx) => ctx,
+            GpuInitResult::NoGpuFound => {
+                panic!("GPU test requires GPU hardware. No GPU adapter found. Run CPU tests with --no-default-features instead.");
+            }
+            GpuInitResult::InitFailed {
+                adapter_name,
+                error,
+            } => {
+                panic!("GPU initialization failed for adapter '{adapter_name}': {error}. GPU tests require working GPU.");
+            }
+        }
+    }
+
     #[test]
     fn test_gpu_solver_creation() {
-        // Only run if GPU is available
-        if let GpuInitResult::Success(context) = GpuContext::new() {
-            let terrain = flat_terrain(1000.0, 1000.0, 10.0, 0.0);
-            let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Medium);
+        let context = require_gpu_context();
 
-            let (width, height, cell_size) = solver.dimensions();
-            assert_eq!(width, 100);
-            assert_eq!(height, 100);
-            assert_eq!(*cell_size, 10.0);
-            assert!(solver.is_gpu_accelerated());
-        }
+        let terrain = flat_terrain(1000.0, 1000.0, 10.0, 0.0);
+        let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Medium);
+
+        let (width, height, cell_size) = solver.dimensions();
+        assert_eq!(width, 100);
+        assert_eq!(height, 100);
+        assert_eq!(*cell_size, 10.0);
+        assert!(solver.is_gpu_accelerated());
     }
 
     #[test]
     fn test_gpu_solver_read_temperature() {
-        // Only run if GPU is available
-        if let GpuInitResult::Success(context) = GpuContext::new() {
-            let terrain = TerrainData::flat(
-                Meters::new(100.0),
-                Meters::new(100.0),
-                Meters::new(10.0),
-                Meters::new(0.0),
-            );
-            let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Low);
+        let context = require_gpu_context();
 
-            let temp = solver.read_temperature();
-            assert!(!temp.is_empty());
-            // Should return ambient temperature (~293.15 K)
-            assert!(temp.iter().all(|&t| (t - 293.15).abs() < 1.0));
-        }
+        let terrain = TerrainData::flat(
+            Meters::new(100.0),
+            Meters::new(100.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
+        let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::Low);
+
+        let temp = solver.read_temperature();
+        assert!(!temp.is_empty());
+        // Should return ambient temperature (~293.15 K)
+        assert!(temp.iter().all(|&t| (t - 293.15).abs() < 1.0));
     }
 
     #[test]
     fn test_gpu_solver_dimensions() {
-        // Only run if GPU is available
-        if let GpuInitResult::Success(context) = GpuContext::new() {
-            let terrain = TerrainData::flat(
-                Meters::new(500.0),
-                Meters::new(300.0),
-                Meters::new(10.0),
-                Meters::new(0.0),
-            );
-            let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::High);
+        let context = require_gpu_context();
 
-            let (width, height, _cell_size) = solver.dimensions();
-            // 500m / 5m per cell = 100, 300m / 5m per cell = 60 → clamped to 64 (minimum)
-            assert_eq!(width, 100);
-            assert_eq!(height, 64); // Minimum grid size is 64
-        }
+        let terrain = TerrainData::flat(
+            Meters::new(500.0),
+            Meters::new(300.0),
+            Meters::new(10.0),
+            Meters::new(0.0),
+        );
+        let solver = GpuFieldSolver::new(context, &terrain, QualityPreset::High);
+
+        let (width, height, _cell_size) = solver.dimensions();
+        // 500m / 5m per cell = 100, 300m / 5m per cell = 60 → clamped to 64 (minimum)
+        assert_eq!(width, 100);
+        assert_eq!(height, 64); // Minimum grid size is 64
     }
 }

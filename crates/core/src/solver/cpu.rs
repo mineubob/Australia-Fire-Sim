@@ -1,26 +1,59 @@
+#![expect(
+    clippy::doc_markdown,
+    reason = "Scientific author names (McArthur, Sharples, Butler, Van Wagner, Byram) and technical acronyms (PyroCb) are proper nouns, not code identifiers"
+)]
 //! CPU-based field solver implementation
 //!
 //! This module provides a CPU implementation of the `FieldSolver` trait using
 //! `Vec<f32>` arrays and Rayon for parallelism. This backend is always available
 //! and serves as a fallback when GPU acceleration is not available.
+//!
+//! # Physics Effect Order (Canonical)
+//!
+//! Effects are applied in this strict order to ensure CPU/GPU consistency:
+//!
+//! 1. **Base spread rate** - Computed from temperature gradient
+//! 2. **Slope factor** - Terrain slope effect (McArthur 1967)
+//! 3. **VLS** - Vorticity-Driven Lateral Spread (Sharples et al. 2012)
+//! 4. **Valley channeling** - Wind acceleration + chimney updraft (Butler et al. 1998)
+//! 5. **Crown fire effective ROS** - Fuel layer transition (Van Wagner 1977)
+//! 6. **Junction zones** - Fire-fire interaction acceleration
+//! 7. **Downdrafts** - PyroCb downdraft effects
+//! 8. **Fire whirls** - Atmospheric vorticity enhancement
+//! 9. **Regime-based variation** - Stochastic variation based on fire regime (Byram 1959)
+//!
+//! This order follows physical causality: terrain/wind effects establish baseline behavior,
+//! then fuel transitions modify it, then fire-fire and atmospheric interactions apply.
 
-use super::combustion::{step_combustion_cpu, CombustionParams, FuelCombustionProps};
+use super::combustion::{
+    step_combustion_cpu, CombustionParams, FuelCombustionProps, ATMOSPHERIC_OXYGEN_FRACTION,
+};
 use super::crown_fire::{CanopyProperties, CrownFirePhysics, CrownFireState};
 use super::fields::FieldData;
 use super::fuel_grid::FuelGrid;
 use super::fuel_layers::LayeredFuelCell;
 use super::fuel_variation::HeterogeneityConfig;
 use super::heat_transfer::{step_heat_transfer_cpu, HeatTransferFuelProps, HeatTransferParams};
+use super::junction_zone::JunctionZoneDetector;
 use super::level_set::{
     compute_spread_rate_cpu, step_ignition_sync_cpu, step_level_set_cpu, LevelSetParams,
     SpreadRateFuelProps,
 };
 use super::quality::QualityPreset;
+use super::regime::{detect_regime, direction_uncertainty, predictability_factor, FireRegime};
 use super::terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
+use super::valley_channeling::{
+    chimney_updraft, detect_valley_geometry, valley_wind_factor,
+    VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY,
+};
 use super::vertical_heat_transfer::VerticalHeatTransfer;
+use super::vls::VLSDetector;
 use super::FieldSolver;
-use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
+use crate::atmosphere::{
+    AtmosphericStability, ConvectionColumn, Downdraft, FireWhirlDetector, PyroCbSystem,
+};
 use crate::core_types::units::{Gigawatts, Kelvin, Meters, MetersPerSecond, Seconds};
+use crate::core_types::vec3::Vec3;
 use crate::TerrainData;
 use std::borrow::Cow;
 
@@ -29,6 +62,26 @@ use std::borrow::Cow;
 #[expect(clippy::cast_precision_loss)]
 fn usize_to_f32(v: usize) -> f32 {
     v as f32
+}
+
+/// Simple noise function for regime-based stochastic variation
+///
+/// Uses hash-based noise to avoid dependency on complex noise libraries.
+/// Same implementation as in `level_set.rs` for consistency.
+///
+/// # Arguments
+///
+/// * `x` - X coordinate
+/// * `y` - Y coordinate
+///
+/// # Returns
+///
+/// Noise value in range [-1, 1]
+fn simple_noise_cpu(x: f32, y: f32) -> f32 {
+    let ix = (x * 12.99).sin() * 43758.55;
+    let iy = (y * 78.23).sin() * 43758.55;
+    let fract = (ix + iy).fract();
+    fract * 2.0 - 1.0 // Range [-1, 1]
 }
 
 /// CPU-based field solver using Rayon for parallelism
@@ -54,22 +107,12 @@ pub struct CpuFieldSolver {
     // Fire intensity field (kW/m) for crown fire evaluation
     fire_intensity: FieldData,
 
-    // Static fields (don't change during simulation)
-    #[expect(dead_code)]
-    fuel_type: Vec<u8>,
-    #[expect(dead_code)]
-    terrain_height: Vec<f32>,
-
     // Phase 0: Terrain slope and aspect for fire spread modulation
     terrain_fields: TerrainFields,
 
     // Phase 1: Vertical fuel layers (surface, shrub, canopy)
     fuel_layers: Vec<LayeredFuelCell>,
     vertical_heat_transfer: VerticalHeatTransfer,
-
-    // Phase 2: Fuel heterogeneity configuration (stored for potential runtime queries)
-    #[expect(dead_code)]
-    heterogeneity_config: HeterogeneityConfig,
 
     // Phase 3: Crown fire state per cell
     crown_fire_state: Vec<CrownFireState>,
@@ -80,9 +123,23 @@ pub struct CpuFieldSolver {
     downdrafts: Vec<Downdraft>,
     atmospheric_stability: AtmosphericStability,
     pyrocb_system: PyroCbSystem,
+    fire_whirl_detector: FireWhirlDetector,
 
-    // Weather parameters (for crown fire and atmosphere calculations)
+    // Phase 5-8: Advanced fire physics
+    junction_zone_detector: JunctionZoneDetector,
+    vls_detector: VLSDetector,
+    fire_regime: Vec<FireRegime>, // Per-cell regime classification
+
+    // Weather parameters (passed from simulation)
     wind_speed_10m_kmh: f32,
+    wind_x_m_s: f32,     // Wind x-component in m/s
+    wind_y_m_s: f32,     // Wind y-component in m/s
+    ambient_temp_k: f32, // Ambient temperature in Kelvin
+
+    // Advanced physics configuration
+    valley_sample_radius: f32,           // Radius for valley detection (m)
+    valley_reference_width: f32,         // Reference width for open terrain (m)
+    valley_head_distance_threshold: f32, // Distance threshold for chimney effect (m)
 
     // Fuel grid: per-cell, per-layer fuel type assignment
     fuel_grid: FuelGrid,
@@ -94,6 +151,9 @@ pub struct CpuFieldSolver {
     width: usize,
     height: usize,
     cell_size: f32,
+
+    // Terrain reference for valley/VLS detection
+    terrain_data: TerrainData,
 }
 
 impl CpuFieldSolver {
@@ -118,17 +178,15 @@ impl CpuFieldSolver {
         let num_cells = width * height;
 
         // Initialize fields
-        let temperature = FieldData::with_value(width, height, 293.15); // ~20°C ambient
+        // Default ambient temperature (20°C), will be updated from WeatherSystem via step_heat_transfer
+        let temperature = FieldData::with_value(width, height, 293.15);
         let temperature_back = FieldData::new(width, height);
         let mut fuel_load = FieldData::with_value(width, height, 1.0); // 1 kg/m² default
         let mut moisture = FieldData::with_value(width, height, 0.1); // 10% moisture default
         let level_set = FieldData::with_value(width, height, f32::MAX); // All unburned initially
         let level_set_back = FieldData::new(width, height);
-        let oxygen = FieldData::with_value(width, height, 0.21); // Atmospheric O₂ fraction
+        let oxygen = FieldData::with_value(width, height, ATMOSPHERIC_OXYGEN_FRACTION); // Atmospheric O₂ fraction
         let spread_rate = FieldData::new(width, height); // Computed from temperature
-
-        // Initialize static fields
-        let fuel_type = vec![0_u8; num_cells]; // Default fuel type
 
         // Phase 0: Initialize terrain slope/aspect from elevation data
         let terrain_fields = TerrainFields::from_terrain_data(terrain, width, height, cell_size);
@@ -176,9 +234,37 @@ impl CpuFieldSolver {
             }
         }
 
+        // Create fuel grid with per-cell, per-layer fuel types
+        // Default to eucalyptus forest (Australian conditions)
+        let mut fuel_grid = FuelGrid::eucalyptus_forest(width, height);
+
+        // Initialize fuel grid from terrain elevation for spatial variation
+        fuel_grid.initialize_from_elevation(&terrain_height);
+
         // Phase 1: Initialize layered fuel cells (surface, shrub, canopy)
-        let fuel_layers: Vec<LayeredFuelCell> =
-            (0..num_cells).map(|_| LayeredFuelCell::default()).collect();
+        // Use actual fuel properties from fuel_grid instead of default zeros
+        let ambient_temp_k = 293.15; // ~20°C ambient temperature
+        let fuel_table = fuel_grid.fuel_table();
+        let fuel_layers: Vec<LayeredFuelCell> = (0..num_cells)
+            .map(|idx| {
+                let x = idx % width;
+                let y = idx / width;
+                let cell_fuel_types = fuel_grid.get_cell_fuel_types(x, y);
+
+                // Get Fuel instances for each layer
+                let surface_fuel = fuel_table.get(cell_fuel_types.surface);
+                let shrub_fuel = fuel_table.get(cell_fuel_types.shrub);
+                let canopy_fuel = fuel_table.get(cell_fuel_types.canopy);
+
+                // Initialize with proper fuel loads from Fuel properties
+                LayeredFuelCell::from_fuel_types(
+                    surface_fuel,
+                    shrub_fuel,
+                    canopy_fuel,
+                    ambient_temp_k,
+                )
+            })
+            .collect();
         let vertical_heat_transfer = VerticalHeatTransfer::default();
 
         // Phase 3: Initialize crown fire state (all surface initially)
@@ -190,16 +276,15 @@ impl CpuFieldSolver {
         let downdrafts = Vec::new();
         let atmospheric_stability = AtmosphericStability::default();
         let pyrocb_system = PyroCbSystem::new();
+        let fire_whirl_detector = FireWhirlDetector::default();
 
         // Fire intensity field (computed during simulation)
         let fire_intensity = FieldData::new(width, height);
 
-        // Create fuel grid with per-cell, per-layer fuel types
-        // Default to eucalyptus forest (Australian conditions)
-        let mut fuel_grid = FuelGrid::eucalyptus_forest(width, height);
-
-        // Initialize fuel grid from terrain elevation for spatial variation
-        fuel_grid.initialize_from_elevation(&terrain_height);
+        // Phase 5-8: Initialize advanced fire physics detectors
+        let junction_zone_detector = JunctionZoneDetector::default();
+        let vls_detector = VLSDetector::default();
+        let fire_regime = vec![FireRegime::WindDriven; num_cells];
 
         Self {
             temperature,
@@ -211,35 +296,43 @@ impl CpuFieldSolver {
             oxygen,
             spread_rate,
             fire_intensity,
-            fuel_type,
-            terrain_height,
             terrain_fields,
             fuel_layers,
             vertical_heat_transfer,
-            heterogeneity_config,
             crown_fire_state,
             canopy_properties,
             convection_columns,
             downdrafts,
             atmospheric_stability,
             pyrocb_system,
+            fire_whirl_detector,
+            junction_zone_detector,
+            vls_detector,
+            fire_regime,
             wind_speed_10m_kmh: 20.0, // Default 20 km/h wind
+            wind_x_m_s: 0.0,
+            wind_y_m_s: 0.0,
+            ambient_temp_k: 293.15, // Default 20°C
+            valley_sample_radius: 100.0,
+            valley_reference_width: 200.0,
+            valley_head_distance_threshold: 100.0,
             fuel_grid,
             sim_time: 0.0,
             width,
             height,
             cell_size,
+            terrain_data: terrain.clone(),
         }
     }
 }
 
 impl FieldSolver for CpuFieldSolver {
-    fn step_heat_transfer(
-        &mut self,
-        dt: Seconds,
-        wind: crate::core_types::Vec3,
-        ambient_temp: Kelvin,
-    ) {
+    fn step_heat_transfer(&mut self, dt: f32, wind: crate::core_types::Vec3, ambient_temp: Kelvin) {
+        // Store weather parameters for use in other methods
+        self.wind_x_m_s = wind.x;
+        self.wind_y_m_s = wind.y;
+        self.ambient_temp_k = ambient_temp.as_f32();
+
         // Extract wind components (wind.x and wind.y are already in m/s)
         let wind_x = wind.x;
         let wind_y = wind.y;
@@ -258,14 +351,14 @@ impl FieldSolver for CpuFieldSolver {
         // Create fuel-specific heat transfer properties
         let heat_fuel_props = HeatTransferFuelProps {
             thermal_diffusivity: *surface_fuel.thermal_diffusivity,
-            emissivity_burning: 0.9, // Flames have high emissivity (physical constant)
-            emissivity_unburned: 0.7, // Fuel bed has lower emissivity
+            emissivity_burning: *surface_fuel.emissivity_burning, // Fuel-specific (0.90-0.93 for most)
+            emissivity_unburned: *surface_fuel.emissivity_unburned, // Fuel-specific (0.65-0.95)
             specific_heat_kj: *surface_fuel.specific_heat,
         };
 
         // Use Phase 2 heat transfer physics with fuel-specific properties
         let params = HeatTransferParams {
-            dt: *dt,
+            dt,
             wind_x,
             wind_y,
             ambient_temp: ambient_temp.as_f32(),
@@ -287,7 +380,7 @@ impl FieldSolver for CpuFieldSolver {
         std::mem::swap(&mut self.temperature, &mut self.temperature_back);
     }
 
-    fn step_combustion(&mut self, dt: Seconds) {
+    fn step_combustion(&mut self, dt: f32) {
         // Get surface fuel properties from center cell as representative
         // (for bulk combustion calculations - individual cell variations handled below)
         let center_x = self.width / 2;
@@ -301,13 +394,17 @@ impl FieldSolver for CpuFieldSolver {
             heat_content_kj: *surface_fuel.heat_content,
             self_heating_fraction: *surface_fuel.self_heating_fraction,
             burn_rate_coefficient: surface_fuel.burn_rate_coefficient,
+            temperature_response_range: surface_fuel.temperature_response_range,
         };
 
         // Use Phase 2 combustion physics with fuel-specific properties
         let params = CombustionParams {
-            dt: *dt,
+            dt,
             cell_size: self.cell_size,
             fuel_props,
+            ambient_temp_k: self.ambient_temp_k, // From WeatherSystem
+            air_density_kg_m3: 1.2, // TODO: Calculate from temperature, elevation, humidity
+            atmospheric_mixing_height_m: 1.0, // TODO: Use from weather system or config
         };
 
         let heat_release = step_combustion_cpu(
@@ -351,6 +448,7 @@ impl FieldSolver for CpuFieldSolver {
 
         let level_set_slice = self.level_set.as_slice();
         let intensity_slice = self.fire_intensity.as_slice();
+        let spread_slice = self.spread_rate.as_slice();
 
         for idx in 0..(self.width * self.height) {
             // Only process burning cells
@@ -409,8 +507,22 @@ impl FieldSolver for CpuFieldSolver {
 
             // Calculate heat flux from shrub → canopy (if shrub is burning)
             if fuel_cell.shrub.burning && fuel_cell.canopy.has_fuel() {
-                // Shrub layer intensity (simplified - proportional to fuel load and burning state)
-                let shrub_intensity = surface_intensity * 0.5; // Shrub contributes additional intensity
+                // Calculate shrub layer intensity using Byram's formula: I = H × W × R
+                // Use shrub layer fuel load and approximate shrub ROS from surface ROS
+                let shrub_fuel_load = fuel_cell.shrub.fuel_load; // kg/m²
+                let shrub_heat_content = fuel_heat_capacity * 1000.0; // Convert kJ/kg to J/kg for consistency
+                let surface_ros = spread_slice[idx]; // m/s
+
+                // TODO: PHASE 9 - Explicit Shrub-Layer Fire Modeling
+                // This interim approximation uses surface ROS directly for shrub spread.
+                // A full implementation would use Rothermel (1972) for the shrub layer explicitly,
+                // accounting for shrub height, fuel bed depth, arrangement, and moisture.
+                // Reference: Anderson (1982) for shrub fuel models.
+                // Heavier fuel loads typically burn SLOWER (more heat needed to ignite),
+                // so the previous fuel load ratio was physically incorrect.
+                let shrub_ros = surface_ros; // Conservative approximation until proper model implemented
+                let shrub_intensity = (shrub_heat_content / 1000.0) * shrub_fuel_load * shrub_ros; // kW/m
+
                 let shrub_flame_height = VerticalHeatTransfer::flame_height_byram(shrub_intensity);
                 let shrub_flux_params = FluxParams::new(
                     flame_height + shrub_flame_height, // Combined flame height
@@ -443,14 +555,19 @@ impl FieldSolver for CpuFieldSolver {
         }
     }
 
-    fn step_moisture(&mut self, dt: Seconds, humidity: f32) {
-        // Moisture equilibrium model (simplified Nelson 2000)
+    fn step_moisture(&mut self, dt: f32, humidity: f32) {
+        // Moisture equilibrium model using Nelson (2000) with Simard (1968) coefficients
         // Moisture content tends toward equilibrium moisture content (EMC)
-        // based on relative humidity over time
+        // based on relative humidity and temperature
 
-        // Calculate EMC from humidity (simplified)
-        // EMC ≈ 0.85 × humidity for fine fuels
-        let emc = 0.85 * humidity;
+        use crate::core_types::units::{Celsius, Percent};
+        use crate::physics::calculate_equilibrium_moisture;
+
+        // Convert humidity fraction to percentage
+        let humidity_percent = Percent::new(humidity * 100.0);
+
+        // Use ambient temperature from the weather system (Kelvin → Celsius)
+        let ambient_temp_c = Celsius::new(f64::from(self.ambient_temp_k - 273.15));
 
         // Time constant for moisture response (hours converted to seconds)
         // Fine fuels: ~1 hour, medium: ~10 hours
@@ -462,7 +579,6 @@ impl FieldSolver for CpuFieldSolver {
         let level_set_slice = self.level_set.as_slice();
 
         for idx in 0..(self.width * self.height) {
-            let current_moisture = moisture_slice[idx];
             let temp = temp_slice[idx];
             let is_burning = level_set_slice[idx] < 0.0;
 
@@ -471,6 +587,22 @@ impl FieldSolver for CpuFieldSolver {
             if is_burning {
                 continue;
             }
+
+            // Calculate EMC with hysteresis: determine if fuel is adsorbing or desorbing
+            // by comparing current moisture to equilibrium moisture.
+            // Per Nelson (2000), fuels have different EMC curves for adsorption vs desorption.
+            let current_moisture = moisture_slice[idx];
+
+            // First calculate EMC assuming adsorption to determine process direction
+            let emc_adsorb = calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, true);
+
+            // Determine process direction: if current moisture > EMC, fuel is drying (desorption)
+            // if current moisture < EMC, fuel is gaining moisture (adsorption)
+            let is_adsorbing = current_moisture < emc_adsorb;
+
+            // Calculate correct EMC for the actual process direction
+            let emc =
+                calculate_equilibrium_moisture(ambient_temp_c, humidity_percent, is_adsorbing);
 
             // Hot cells dry out faster (temperature-dependent drying)
             // Drying rate increases exponentially with temperature above 100°C
@@ -483,12 +615,20 @@ impl FieldSolver for CpuFieldSolver {
             };
 
             // Approach to EMC
-            let rate = (emc - current_moisture) / time_constant * (*dt) * drying_rate;
+            let rate = (emc - current_moisture) / time_constant * dt * drying_rate;
             moisture_slice[idx] = (current_moisture + rate).clamp(0.0, 1.0);
         }
     }
 
-    fn step_level_set(&mut self, dt: Seconds) {
+    /// Advance level set field using spread rate and curvature-dependent advection.
+    ///
+    /// # Arguments
+    ///
+    /// * `_wind` - Reserved for future wind-field coupling in level set advection.
+    ///   Currently wind effects are applied via spread rate calculation.
+    /// * `_ambient_temp` - Reserved for future temperature-dependent level set evolution.
+    ///   Currently temperature effects are applied via ignition sync.
+    fn step_level_set(&mut self, dt: f32, _wind: Vec3, _ambient_temp: Kelvin) {
         // Phase 3: Level set evolution with curvature-dependent spread
 
         // Get surface fuel properties from center cell as representative
@@ -562,16 +702,105 @@ impl FieldSolver for CpuFieldSolver {
                     let effective_slope =
                         calculate_effective_slope(slope, aspect, spread_direction_degrees);
 
-                    // Apply slope factor (McArthur 1967)
-                    let slope_factor = calculate_slope_factor(effective_slope);
+                    // Get surface fuel properties for slope calculation
+                    let surface_fuel = self.fuel_grid.get_surface_fuel(x, y);
+
+                    // Apply fuel-specific slope factor (McArthur 1967)
+                    let slope_factor = calculate_slope_factor(
+                        effective_slope,
+                        surface_fuel.slope_uphill_factor_base.value(),
+                        surface_fuel.slope_uphill_power,
+                        surface_fuel.slope_downhill_divisor.value(),
+                        surface_fuel.slope_factor_minimum.value(),
+                    );
                     spread_slice[idx] *= slope_factor;
                 }
             }
         }
 
-        // Phase 3: Calculate fire intensity and apply crown fire dynamics
-        // Byram's formula: I = H × W × R (kJ/kg × kg/m² × m/s = kW/m)
-        // Heat content from fuel type (not hardcoded)
+        // Phase 5: VLS (Vorticity-Driven Lateral Spread)
+        // Detect VLS conditions and modify spread rates on lee slopes
+        let wind_vec = Vec3::new(self.wind_x_m_s, self.wind_y_m_s, 0.0);
+        let vls_conditions = self.vls_detector.detect(
+            &self.terrain_data,
+            wind_vec,
+            self.width,
+            self.height,
+            self.cell_size,
+        );
+
+        // Apply VLS effects to spread rates
+        let spread_slice = self.spread_rate.as_mut_slice();
+        for (y, row) in vls_conditions.iter().enumerate() {
+            for (x, vls) in row.iter().enumerate() {
+                if vls.is_active {
+                    let idx = y * self.width + x;
+                    if spread_slice[idx] > 0.0 {
+                        spread_slice[idx] *= vls.rate_multiplier;
+                        // Note: Direction modification would require changing the level set velocity field
+                        // For now, we just apply the rate multiplier
+                    }
+                }
+            }
+        }
+
+        // Phase 7: Valley Channeling Effects
+        // Apply wind acceleration and chimney effects in valleys
+        let spread_slice = self.spread_rate.as_mut_slice();
+        let temp_slice = self.temperature.as_slice();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                #[expect(clippy::cast_precision_loss)]
+                let world_x = x as f32 * self.cell_size;
+                #[expect(clippy::cast_precision_loss)]
+                let world_y = y as f32 * self.cell_size;
+
+                // Detect valley geometry at this position
+                let valley_geometry = detect_valley_geometry(
+                    &self.terrain_data,
+                    world_x,
+                    world_y,
+                    self.valley_sample_radius,
+                    5.0, // Valley wall elevation threshold (m)
+                    self.cell_size,
+                );
+
+                if valley_geometry.in_valley {
+                    let idx = y * self.width + x;
+                    if spread_slice[idx] > 0.0 {
+                        // Apply valley wind acceleration
+                        let wind_factor =
+                            valley_wind_factor(&valley_geometry, self.valley_reference_width);
+                        spread_slice[idx] *= wind_factor;
+
+                        // Chimney updraft effect increases spread near valley head
+                        let fire_temp_c = temp_slice[idx] - 273.15;
+                        let ambient_temp_c = self.ambient_temp_k - 273.15;
+                        let updraft = chimney_updraft(
+                            &valley_geometry,
+                            fire_temp_c,
+                            ambient_temp_c,
+                            self.valley_head_distance_threshold,
+                        );
+                        if updraft > 0.0 {
+                            // Updraft enhancement scales with chimney velocity and saturates at a 20% ROS boost once updrafts are ~10 m/s.
+                            // Normalized by VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY (Butler et al. 1998)
+                            let updraft_factor =
+                                1.0 + (updraft / VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY).min(0.2);
+                            spread_slice[idx] *= updraft_factor;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Phase 3: Evaluate crown fire transitions and calculate total intensity
+        // This phase:
+        // 1. Calculates surface fire intensity
+        // 2. Evaluates crown fire state (Van Wagner 1977)
+        // 3. Calculates effective ROS (including crown contribution)
+        // 4. Recalculates total intensity including crown fuel consumption
+
         let heat_content_kj_kg = *surface_fuel.heat_content;
         let spread_slice = self.spread_rate.as_slice();
         let fuel_slice = self.fuel_load.as_slice();
@@ -579,26 +808,27 @@ impl FieldSolver for CpuFieldSolver {
         let moisture_slice = self.moisture.as_slice();
         let intensity_slice = self.fire_intensity.as_mut_slice();
 
+        // First pass: Calculate surface intensity and evaluate crown fire state
         for idx in 0..(self.width * self.height) {
             // Only calculate intensity for burning cells (level_set < 0)
             if level_set_slice[idx] < 0.0 && spread_slice[idx] > 0.0 {
                 let fuel_load = fuel_slice[idx]; // kg/m²
-                let ros = spread_slice[idx]; // m/s
-                let intensity = heat_content_kj_kg * fuel_load * ros; // kW/m
-                intensity_slice[idx] = intensity;
+                let surface_ros = spread_slice[idx]; // m/s
+                let surface_intensity = heat_content_kj_kg * fuel_load * surface_ros; // kW/m
 
                 // Evaluate crown fire transition using Van Wagner (1977)
-                let crown_state =
-                    CrownFirePhysics::evaluate_transition(intensity, ros, &self.canopy_properties);
+                let crown_state = CrownFirePhysics::evaluate_transition(
+                    surface_intensity,
+                    surface_ros,
+                    &self.canopy_properties,
+                );
                 self.crown_fire_state[idx] = crown_state;
             } else {
-                intensity_slice[idx] = 0.0;
                 self.crown_fire_state[idx] = CrownFireState::Surface;
             }
         }
 
-        // Apply effective ROS based on crown fire state
-        // This modifies spread rate for passive (1.5x) and active (crown ROS) fires
+        // Second pass: Apply effective ROS based on crown fire state
         let spread_slice = self.spread_rate.as_mut_slice();
         for idx in 0..(self.width * self.height) {
             if spread_slice[idx] > 0.0 {
@@ -616,9 +846,129 @@ impl FieldSolver for CpuFieldSolver {
             }
         }
 
+        // Third pass: Calculate total fire intensity including crown contributions
+        // Uses crown-enhanced ROS and includes canopy fuel for active crown fires
+        let spread_slice = self.spread_rate.as_slice();
+        for idx in 0..(self.width * self.height) {
+            if level_set_slice[idx] < 0.0 && spread_slice[idx] > 0.0 {
+                let fuel_load = fuel_slice[idx]; // kg/m²
+                let effective_ros = spread_slice[idx]; // m/s (now includes crown enhancement)
+                let surface_intensity = heat_content_kj_kg * fuel_load * effective_ros; // kW/m
+                let crown_state = self.crown_fire_state[idx];
+
+                // Calculate total intensity including crown fuel contribution
+                let total_intensity = match crown_state {
+                    CrownFireState::Active | CrownFireState::Passive => {
+                        // Use CrownFirePhysics::total_intensity to include canopy fuel
+                        CrownFirePhysics::total_intensity(
+                            surface_intensity,
+                            &self.canopy_properties,
+                            effective_ros,
+                        )
+                    }
+                    CrownFireState::Surface => surface_intensity,
+                };
+
+                intensity_slice[idx] = total_intensity;
+
+                // Phase 8: Regime Detection (Byram number)
+                // Classify fire regime based on total intensity (including crown)
+                let wind_speed_m_s = self.wind_speed_10m_kmh / 3.6;
+                let ambient_temp_c = self.ambient_temp_k - 273.15;
+                let regime = detect_regime(total_intensity, wind_speed_m_s, ambient_temp_c);
+                self.fire_regime[idx] = regime;
+            } else {
+                intensity_slice[idx] = 0.0;
+                self.fire_regime[idx] = FireRegime::WindDriven;
+            }
+        }
+
+        // Phase 6: Junction Zone Detection and Acceleration
+        // Detect converging fire fronts and apply acceleration
+        // Scientific basis: Viegas (2012), Sullivan (2009)
+        // Junction zones should see crown-enhanced ROS for realistic interactions
+        let junctions = self.junction_zone_detector.detect(
+            self.level_set.as_slice(),
+            self.spread_rate.as_slice(),
+            self.width,
+            self.height,
+            self.cell_size,
+            dt,
+        );
+
+        // Apply junction acceleration to spread rates
+        let spread_slice = self.spread_rate.as_mut_slice();
+        for junction in &junctions {
+            // Apply acceleration in a radius around junction point
+            let radius = junction.distance * 0.5;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_x = (junction.position.x / self.cell_size) as usize;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_y = (junction.position.y / self.cell_size) as usize;
+
+            #[expect(clippy::cast_possible_truncation)]
+            let radius_cells = (radius / self.cell_size).ceil() as i32;
+
+            for dy in -radius_cells..=radius_cells {
+                for dx in -radius_cells..=radius_cells {
+                    let x = (center_x as i32 + dx) as usize;
+                    let y = (center_y as i32 + dy) as usize;
+
+                    if x >= self.width || y >= self.height {
+                        continue;
+                    }
+
+                    #[expect(clippy::cast_precision_loss)]
+                    let dist = ((dx * dx + dy * dy) as f32).sqrt() * self.cell_size;
+                    if dist > radius {
+                        continue;
+                    }
+
+                    // Acceleration falls off with distance from junction center
+                    let falloff = 1.0 - dist / radius;
+                    let local_acceleration = 1.0 + (junction.acceleration_factor - 1.0) * falloff;
+
+                    let idx = y * self.width + x;
+                    if spread_slice[idx] > 0.0 {
+                        spread_slice[idx] *= local_acceleration;
+                    }
+                }
+            }
+        }
+
+        // Phase 8 (continued): Apply regime effects to fire behavior
+        // Use regime classification to modulate spread rate uncertainty
+        // Scientific basis: Byram (1959), Nelson (2003) - plume-dominated fires are unpredictable
+        let spread_slice = self.spread_rate.as_mut_slice();
+        #[expect(clippy::needless_range_loop)]
+        for idx in 0..(self.width * self.height) {
+            if spread_slice[idx] > 0.0 {
+                let regime = self.fire_regime[idx];
+                let predictability = predictability_factor(regime);
+
+                // Apply regime-based stochastic variation to spread rate
+                // Lower predictability = higher variation
+                // Variation range: ±(1 - predictability) × 15%
+                // Wind-driven (predictability=1.0): ±0% = no variation
+                // Transitional (predictability=0.5): ±7.5% variation
+                // Plume-dominated (predictability=0.2): ±12% variation
+                let variation_amplitude = (1.0 - predictability) * 0.15;
+
+                // Use simple hash-based noise to avoid dependencies
+                #[expect(clippy::cast_precision_loss)]
+                let x = (idx % self.width) as f32;
+                #[expect(clippy::cast_precision_loss)]
+                let y = (idx / self.width) as f32;
+                let noise = simple_noise_cpu(x + self.sim_time * 0.1, y + self.sim_time * 0.1);
+                let variation = 1.0 + variation_amplitude * noise;
+
+                spread_slice[idx] *= variation;
+            }
+        }
+
         // Phase 4: Atmospheric dynamics
         // Update simulation time
-        self.sim_time += *dt;
+        self.sim_time += dt;
 
         // Calculate total fire power (sum of intensities × fire front length)
         let intensity_slice = self.fire_intensity.as_slice();
@@ -699,7 +1049,7 @@ impl FieldSolver for CpuFieldSolver {
 
         // Update pyroCb system and check for collapses
         self.pyrocb_system.update(
-            dt,
+            Seconds::new(dt),
             Seconds::new(self.sim_time),
             Kelvin::new(f64::from(AMBIENT_TEMP_K)),
         );
@@ -735,13 +1085,119 @@ impl FieldSolver for CpuFieldSolver {
             }
         }
 
+        // Phase 4: Fire whirl detection and effects
+        // Detect fire whirls based on vorticity and intensity
+        // Note: Currently using uniform wind field; future enhancement would use spatially-varying wind
+        let wind_x_field = vec![self.wind_x_m_s; self.width * self.height];
+        let wind_y_field = vec![self.wind_y_m_s; self.width * self.height];
+
+        // Phase 8 (continued): Regime-based fire whirl detection
+        // Plume-dominated fires (high Byram number) have stronger buoyancy,
+        // making fire whirl formation more likely (Finney & McAllister 2011)
+        // Modulate intensity threshold based on regime distribution
+        let mut regime_adjusted_detector = self.fire_whirl_detector.clone();
+
+        // Count regime distribution in burning cells to determine global adjustment
+        let mut plume_cells = 0;
+        let mut total_burning_cells = 0;
+        #[expect(clippy::needless_range_loop)]
+        for idx in 0..(self.width * self.height) {
+            if intensity_slice[idx] > 0.0 {
+                total_burning_cells += 1;
+                if self.fire_regime[idx] == FireRegime::PlumeDominated {
+                    plume_cells += 1;
+                }
+            }
+        }
+
+        // If >20% of fire is plume-dominated, lower fire whirl threshold
+        if total_burning_cells > 0 {
+            #[expect(clippy::cast_precision_loss)]
+            let plume_fraction = plume_cells as f32 / total_burning_cells as f32;
+            if plume_fraction > 0.2 {
+                // Lower threshold by up to 30% when fire is strongly plume-dominated
+                let threshold_reduction = plume_fraction.min(1.0) * 0.3;
+                regime_adjusted_detector.intensity_threshold_kw_m *= 1.0 - threshold_reduction;
+            }
+        }
+
+        let fire_whirl_locations = regime_adjusted_detector.detect(
+            &wind_x_field,
+            &wind_y_field,
+            intensity_slice,
+            self.width,
+            self.height,
+            self.cell_size,
+        );
+
+        // Apply fire whirl effects to spread rate
+        // Fire whirls create intense local winds (vorticity → strong circular winds)
+        // Enhancement radius ~50m, peak enhancement ~3x normal spread
+        const FIRE_WHIRL_RADIUS: f32 = 50.0; // meters
+        const FIRE_WHIRL_PEAK_ENHANCEMENT: f32 = 3.0; // 3x spread rate
+
+        let spread_slice = self.spread_rate.as_mut_slice();
+        for (whirl_x, whirl_y) in &fire_whirl_locations {
+            // Apply enhancement in radius around fire whirl center
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    let px = usize_to_f32(x) * self.cell_size;
+                    let py = usize_to_f32(y) * self.cell_size;
+                    let dist = ((px - whirl_x).powi(2) + (py - whirl_y).powi(2)).sqrt();
+
+                    if dist < FIRE_WHIRL_RADIUS && spread_slice[y * self.width + x] > 0.0 {
+                        // Enhancement falls off with distance from whirl center
+                        // Peak enhancement at center, fades to 1.0 at radius
+                        let radial_factor = 1.0 - dist / FIRE_WHIRL_RADIUS;
+                        let enhancement = 1.0 + (FIRE_WHIRL_PEAK_ENHANCEMENT - 1.0) * radial_factor;
+                        spread_slice[y * self.width + x] *= enhancement;
+                    }
+                }
+            }
+        }
+
+        // Phase 8 (continued): Regime-based direction uncertainty
+        // Calculate average direction uncertainty for burning cells
+        // This modulates level set noise amplitude based on fire regime
+        let mut total_uncertainty = 0.0;
+        let mut burning_cells = 0;
+        let level_set_slice = self.level_set.as_slice();
+        for (idx, (&phi, &spread_rate)) in level_set_slice
+            .iter()
+            .zip(spread_slice.iter())
+            .enumerate()
+            .take(self.width * self.height)
+        {
+            if phi < 0.0 && spread_rate > 0.0 {
+                let regime = self.fire_regime[idx];
+                let uncertainty_deg = direction_uncertainty(regime);
+                total_uncertainty += uncertainty_deg;
+                burning_cells += 1;
+            }
+        }
+
+        // Map average direction uncertainty to noise amplitude
+        // Direction uncertainty ranges: 15° (wind-driven) to 180° (plume-dominated)
+        // Map to noise amplitude: 0.03 (predictable) to 0.15 (unpredictable)
+        let avg_uncertainty_deg = if burning_cells > 0 {
+            #[expect(clippy::cast_precision_loss)]
+            let result = total_uncertainty / burning_cells as f32;
+            result
+        } else {
+            15.0 // Default to wind-driven
+        };
+
+        // Linear mapping: 15° → 0.03, 180° → 0.15
+        let regime_noise_amplitude = 0.03 + (avg_uncertainty_deg - 15.0) / 165.0 * 0.12;
+        let regime_noise_amplitude = regime_noise_amplitude.clamp(0.03, 0.15);
+
         // Then evolve level set using spread rate
         let params = LevelSetParams {
-            dt: *dt,
+            dt,
             cell_size: self.cell_size,
-            curvature_coeff: 0.25, // Margerit 2002
-            noise_amplitude: 0.05, // 5% stochastic variation
-            time: 0.0,             // TODO: Track simulation time
+            curvature_coeff: 0.25,                   // Margerit 2002
+            noise_amplitude: regime_noise_amplitude, // Regime-based stochastic variation
+            time: self.sim_time,                     // Use actual simulation time
         };
 
         step_level_set_cpu(
@@ -855,7 +1311,7 @@ impl FieldSolver for CpuFieldSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_types::units::{Kelvin, Meters, Seconds};
+    use crate::core_types::units::{Kelvin, Meters};
 
     /// Helper to create flat terrain with f32 dimensions (for test convenience)
     fn flat_terrain(width: f32, height: f32, resolution: f32, elevation: f32) -> TerrainData {
@@ -962,7 +1418,7 @@ mod tests {
 
         // Run heat transfer step
         solver.step_heat_transfer(
-            Seconds::new(1.0),
+            1.0,
             crate::core_types::Vec3::new(0.0, 0.0, 0.0),
             Kelvin::new(293.15),
         );

@@ -107,11 +107,10 @@ impl FieldSimulation {
         );
 
         // 2. GPU/CPU compute passes
-        self.solver
-            .step_heat_transfer(Seconds::new(dt), wind, ambient_temp);
-        self.solver.step_combustion(Seconds::new(dt));
-        self.solver.step_moisture(Seconds::new(dt), humidity);
-        self.solver.step_level_set(Seconds::new(dt));
+        self.solver.step_heat_transfer(dt, wind, ambient_temp);
+        self.solver.step_combustion(dt);
+        self.solver.step_moisture(dt, humidity);
+        self.solver.step_level_set(dt, wind, ambient_temp);
         self.solver.step_ignition_sync();
 
         // 3. CPU-side sparse updates

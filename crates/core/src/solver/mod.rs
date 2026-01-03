@@ -39,15 +39,19 @@ pub mod fuel_grid;
 pub mod fuel_layers;
 pub mod fuel_variation;
 mod heat_transfer;
+pub mod junction_zone;
 mod level_set;
 pub mod marching_squares;
 pub mod noise;
 pub mod profiler;
 mod quality;
+pub mod regime;
 pub mod terrain_slope;
 #[allow(clippy::module_name_repetitions)]
 mod r#trait;
+pub mod valley_channeling;
 pub mod vertical_heat_transfer;
+pub mod vls;
 
 #[cfg(feature = "gpu")]
 mod gpu;
@@ -63,15 +67,24 @@ pub use fuel_variation::{
     apply_fuel_heterogeneity, apply_heterogeneity_single, calculate_aspect_moisture_factor,
     HeterogeneityConfig,
 };
+pub use junction_zone::{JunctionZone, JunctionZoneDetector};
 pub use marching_squares::{extract_fire_front, FireFront};
 pub use noise::{NoiseGenerator, NoiseOctave};
 pub use profiler::{FrameTimer, ProfilerScope};
 pub use quality::QualityPreset;
 pub use r#trait::FieldSolver;
+pub use regime::{
+    byram_number, detect_regime, direction_uncertainty, predictability_factor, FireRegime,
+};
 pub use terrain_slope::{calculate_effective_slope, calculate_slope_factor, TerrainFields};
+pub use valley_channeling::{
+    chimney_updraft, cross_valley_view_factor, detect_valley_geometry, valley_wind_factor,
+    ValleyGeometry,
+};
 pub use vertical_heat_transfer::{
     FluxParams, VerticalHeatTransfer, LATENT_HEAT_WATER, STEFAN_BOLTZMANN,
 };
+pub use vls::{VLSCondition, VLSDetector};
 
 #[cfg(feature = "gpu")]
 pub use context::GpuContext;
