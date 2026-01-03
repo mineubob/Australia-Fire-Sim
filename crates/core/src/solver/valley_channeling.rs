@@ -32,9 +32,9 @@ pub const VALLEY_UPDRAFT_CHARACTERISTIC_VELOCITY: f32 = 50.0;
 /// Empirical constant derived from typical valley morphology ratios observed
 /// in field studies by Butler et al. (1998). Typical valleys have head distance
 /// approximately 10× their depth.
-/// TODO: PHASE 10 - Valley Head Detection & Upstream Tracing
-/// A full implementation would trace upstream from the valley point to find
-/// the actual valley head via geomorphological analysis (watershed delineation).
+/// Future work: valley head detection and upstream tracing.
+/// A more complete geomorphological analysis would trace upstream from the valley
+/// point to find the actual valley head (e.g., via watershed delineation).
 const VALLEY_DEPTH_TO_HEAD_DISTANCE_RATIO: f32 = 10.0;
 
 /// Valley geometry at a position
@@ -76,6 +76,7 @@ impl Default for ValleyGeometry {
 /// * `y` - Y position in world coordinates (m)
 /// * `sample_radius` - Radius to sample for valley detection (m)
 /// * `wall_elevation_threshold` - Minimum elevation above center to count as valley wall (m)
+/// * `cell_size` - Grid cell size (m) for sampling resolution
 ///
 /// # Returns
 ///
@@ -86,6 +87,7 @@ pub fn detect_valley_geometry(
     y: f32,
     sample_radius: f32,
     wall_elevation_threshold: f32,
+    cell_size: f32,
 ) -> ValleyGeometry {
     let center_elevation = *terrain.elevation_at(x, y);
 
@@ -144,8 +146,9 @@ pub fn detect_valley_geometry(
         let dy = perpendicular.sin() * offset;
 
         // Sample progressively further until we find higher terrain
+        // Step size adapts to grid resolution for consistent sampling
         let mut distance = 0.0;
-        let step = 10.0; // 10m steps
+        let step = cell_size;
         while distance < sample_radius {
             distance += step;
             let sample_x = x + dx * distance;
@@ -318,7 +321,7 @@ mod tests {
             Meters::new(100.0),
         );
 
-        let geometry = detect_valley_geometry(&terrain, 100.0, 100.0, 50.0, 5.0);
+        let geometry = detect_valley_geometry(&terrain, 100.0, 100.0, 50.0, 5.0, 10.0);
 
         assert!(!geometry.in_valley, "Flat terrain should not be a valley");
     }
@@ -335,7 +338,7 @@ mod tests {
         );
 
         // At peak of hill (center)
-        let geometry = detect_valley_geometry(&terrain, 100.0, 100.0, 50.0, 5.0);
+        let geometry = detect_valley_geometry(&terrain, 100.0, 100.0, 50.0, 5.0, 10.0);
 
         assert!(
             !geometry.in_valley,
