@@ -627,8 +627,17 @@ impl FieldSolver for CpuFieldSolver {
                     let effective_slope =
                         calculate_effective_slope(slope, aspect, spread_direction_degrees);
 
-                    // Apply slope factor (McArthur 1967)
-                    let slope_factor = calculate_slope_factor(effective_slope);
+                    // Get surface fuel properties for slope calculation
+                    let surface_fuel = self.fuel_grid.get_surface_fuel(x, y);
+
+                    // Apply fuel-specific slope factor (McArthur 1967)
+                    let slope_factor = calculate_slope_factor(
+                        effective_slope,
+                        surface_fuel.slope_uphill_factor_base.value(),
+                        surface_fuel.slope_uphill_power,
+                        surface_fuel.slope_downhill_divisor.value(),
+                        surface_fuel.slope_factor_minimum.value(),
+                    );
                     spread_slice[idx] *= slope_factor;
                 }
             }

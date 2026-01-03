@@ -221,19 +221,21 @@ impl TerrainFields {
 /// assert!(downhill < 1.0 && downhill >= 0.3);
 /// ```
 #[must_use]
-pub fn calculate_slope_factor(effective_slope: f32) -> f32 {
+pub fn calculate_slope_factor(
+    effective_slope: f32,
+    uphill_base: f32,
+    uphill_power: f32,
+    downhill_divisor: f32,
+    minimum_factor: f32,
+) -> f32 {
     if effective_slope > 0.0 {
         // Uphill: exponential increase following McArthur's empirical relationship
-        // Fire spread approximately doubles for every 10° of uphill slope
-        // Using power law: 1.0 + (slope/10)^1.5 * 2.0
-        // At 10°: 1.0 + 1.0^1.5 * 2.0 = 3.0 (2× increase over flat)
-        // At 20°: 1.0 + 2.0^1.5 * 2.0 ≈ 6.66 (approximately 4× over 10°)
-        1.0 + (effective_slope / 10.0).powf(1.5) * 2.0
+        // Using fuel-specific power law: 1.0 + (slope/base)^power * 2.0
+        1.0 + (effective_slope / uphill_base).powf(uphill_power) * 2.0
     } else if effective_slope < 0.0 {
-        // Downhill: gradual reduction to minimum of 0.3
-        // Linear decrease with gentler slope to avoid abrupt transitions
-        // At -30°: factor = 1.0 + (-30/30) = 0.0 → clamped to 0.3
-        (1.0 + effective_slope / 30.0).max(0.3)
+        // Downhill: gradual reduction to fuel-specific minimum
+        // Linear decrease with fuel-specific divisor
+        (1.0 + effective_slope / downhill_divisor).max(minimum_factor)
     } else {
         // Flat terrain: no slope effect
         1.0
@@ -339,7 +341,7 @@ mod tests {
     /// which represents a 2× increase over the base rate of 1.0.
     #[test]
     fn slope_factor_uphill_10_degrees() {
-        let factor = calculate_slope_factor(10.0);
+        let factor = calculate_slope_factor(10.0, 10.0, 1.5, 30.0, 0.3);
 
         // Expected: 1.0 + (10/10)^1.5 * 2.0 = 1.0 + 1.0 * 2.0 = 3.0
         assert!(
@@ -363,8 +365,8 @@ mod tests {
     /// greater effects. At 20°, the factor should be roughly 4× that of 10°.
     #[test]
     fn slope_factor_uphill_20_degrees() {
-        let factor_10 = calculate_slope_factor(10.0);
-        let factor_20 = calculate_slope_factor(20.0);
+        let factor_10 = calculate_slope_factor(10.0, 10.0, 1.5, 30.0, 0.3);
+        let factor_20 = calculate_slope_factor(20.0, 10.0, 1.5, 30.0, 0.3);
 
         // Expected: 1.0 + (20/10)^1.5 * 2.0 = 1.0 + 2.828... * 2.0 ≈ 6.66
         let expected_20 = 1.0 + (2.0_f32).powf(1.5) * 2.0;
@@ -392,7 +394,7 @@ mod tests {
     #[test]
     fn slope_factor_downhill() {
         // Mild downhill: gradual reduction
-        let factor_10_down = calculate_slope_factor(-10.0);
+        let factor_10_down = calculate_slope_factor(-10.0, 10.0, 1.5, 30.0, 0.3);
         assert!(
             factor_10_down < 1.0,
             "Downhill should reduce factor below 1.0"
@@ -405,14 +407,14 @@ mod tests {
         );
 
         // Steep downhill: should hit minimum
-        let factor_30_down = calculate_slope_factor(-30.0);
+        let factor_30_down = calculate_slope_factor(-30.0, 10.0, 1.5, 30.0, 0.3);
         assert!(
             (factor_30_down - 0.3).abs() < 0.01,
             "30° downhill should give minimum factor 0.3, got {factor_30_down}"
         );
 
         // Very steep downhill: still clamped to minimum
-        let factor_45_down = calculate_slope_factor(-45.0);
+        let factor_45_down = calculate_slope_factor(-45.0, 10.0, 1.5, 30.0, 0.3);
         assert!(
             (factor_45_down - 0.3).abs() < 0.01,
             "45° downhill should be clamped to 0.3, got {factor_45_down}"
@@ -434,7 +436,7 @@ mod tests {
         );
 
         // Factor for zero effective slope should be 1.0
-        let factor = calculate_slope_factor(effective);
+        let factor = calculate_slope_factor(effective, 10.0, 1.5, 30.0, 0.3);
         assert!(
             (factor - 1.0).abs() < 0.01,
             "Cross-slope factor should be ~1.0, got {factor}"
@@ -532,7 +534,7 @@ mod tests {
             "Flat terrain should have zero effective slope"
         );
 
-        let factor = calculate_slope_factor(effective);
+        let factor = calculate_slope_factor(effective, 10.0, 1.5, 30.0, 0.3);
         assert!(
             (factor - 1.0).abs() < 0.001,
             "Flat terrain should have factor 1.0"

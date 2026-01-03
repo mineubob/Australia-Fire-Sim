@@ -25,8 +25,8 @@
 //! - Cheney et al. (2012). "Predicting fire behaviour in dry eucalypt forest"
 
 use crate::core_types::units::{
-    Celsius, Fraction, HeatTransferCoefficient, Hours, KgPerCubicMeter, KjPerKg, KjPerKgK, Meters,
-    Percent, RatePerSecond, SurfaceAreaToVolume, ThermalConductivity, ThermalDiffusivity,
+    Celsius, Degrees, Fraction, HeatTransferCoefficient, Hours, KgPerCubicMeter, KjPerKg, KjPerKgK,
+    Meters, Percent, RatePerSecond, SurfaceAreaToVolume, ThermalConductivity, ThermalDiffusivity,
 };
 use crate::core_types::Fuel;
 
@@ -468,10 +468,10 @@ pub fn blend_fuels(fuels: &[(&Fuel, f32)]) -> Fuel {
         emissivity_unburned: blend_wrapped!(emissivity_unburned, Fraction, new),
         emissivity_burning: blend_wrapped!(emissivity_burning, Fraction, new),
         temperature_response_range: blend_f32!(temperature_response_range),
-        slope_uphill_factor_base: blend_f32!(slope_uphill_factor_base),
+        slope_uphill_factor_base: blend_wrapped!(slope_uphill_factor_base, Degrees, new),
         slope_uphill_power: blend_f32!(slope_uphill_power),
-        slope_downhill_divisor: blend_f32!(slope_downhill_divisor),
-        slope_factor_minimum: blend_f32!(slope_factor_minimum),
+        slope_downhill_divisor: blend_wrapped!(slope_downhill_divisor, Degrees, new),
+        slope_factor_minimum: blend_wrapped!(slope_factor_minimum, Fraction, new),
         combustion_efficiency: blend_wrapped!(combustion_efficiency, Fraction, new),
         surface_area_geometry_factor: blend_f32!(surface_area_geometry_factor),
         flame_area_coefficient: blend_f32!(flame_area_coefficient),

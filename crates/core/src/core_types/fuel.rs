@@ -1,6 +1,6 @@
 use super::units::{
-    Celsius, Fraction, HeatTransferCoefficient, Hours, KgPerCubicMeter, KjPerKg, KjPerKgK, Meters,
-    Percent, RatePerSecond, SurfaceAreaToVolume, ThermalConductivity, ThermalDiffusivity,
+    Celsius, Degrees, Fraction, HeatTransferCoefficient, Hours, KgPerCubicMeter, KjPerKg, KjPerKgK,
+    Meters, Percent, RatePerSecond, SurfaceAreaToVolume, ThermalConductivity, ThermalDiffusivity,
 };
 use serde::{Deserialize, Serialize};
 
@@ -213,18 +213,18 @@ pub struct Fuel {
     /// Base slope angle for uphill spread enhancement (degrees)
     /// Eucalyptus: 10°, Grass: 8°, Shrubs: 12°
     /// Reference: McArthur (1967) "Fire behaviour in eucalypt forests"
-    pub slope_uphill_factor_base: f32,
+    pub slope_uphill_factor_base: Degrees,
     /// Power exponent for uphill slope effect (dimensionless)
     /// Controls how aggressively spread increases with slope
     /// Eucalyptus: 1.5, Grass: 1.8 (more sensitive), Heavy fuels: 1.3
     pub slope_uphill_power: f32,
     /// Slope angle divisor for downhill spread reduction (degrees)
     /// Eucalyptus: 30°, Grass: 25°, Heavy fuels: 35°
-    pub slope_downhill_divisor: f32,
+    pub slope_downhill_divisor: Degrees,
     /// Minimum slope factor for downhill spread (0-1)
     /// Prevents unrealistic spread slowdown on steep downhill
     /// Eucalyptus: 0.3, Grass: 0.4, Heavy fuels: 0.25
-    pub slope_factor_minimum: f32,
+    pub slope_factor_minimum: Fraction,
 
     // Combustion and geometry properties (fuel-specific)
     /// Combustion efficiency (0-1) - fraction of fuel fully combusted
@@ -345,10 +345,10 @@ impl Fuel {
             temperature_response_range: 550.0, // Kelvin above ignition
 
             // McArthur slope coefficients (eucalyptus forest)
-            slope_uphill_factor_base: 10.0, // degrees
-            slope_uphill_power: 1.5,        // power exponent
-            slope_downhill_divisor: 30.0,   // degrees
-            slope_factor_minimum: 0.3,      // minimum factor
+            slope_uphill_factor_base: Degrees::new(10.0), // degrees
+            slope_uphill_power: 1.5,                      // power exponent
+            slope_downhill_divisor: Degrees::new(30.0),   // degrees
+            slope_factor_minimum: Fraction::new(0.3),     // minimum factor
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.92), // High efficiency (dry hardwood)
@@ -440,10 +440,10 @@ impl Fuel {
             temperature_response_range: 500.0, // Kelvin above ignition
 
             // McArthur slope coefficients (eucalyptus forest, smooth bark less ladder fuel)
-            slope_uphill_factor_base: 10.0, // degrees
-            slope_uphill_power: 1.4,        // slightly less sensitive
-            slope_downhill_divisor: 32.0,   // degrees
-            slope_factor_minimum: 0.32,     // minimum factor
+            slope_uphill_factor_base: Degrees::new(10.0), // degrees
+            slope_uphill_power: 1.4,                      // slightly less sensitive
+            slope_downhill_divisor: Degrees::new(32.0),   // degrees
+            slope_factor_minimum: Fraction::new(0.32),    // minimum factor
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.93), // High efficiency (dense hardwood)
@@ -536,10 +536,10 @@ impl Fuel {
             temperature_response_range: 350.0, // Kelvin above ignition (fast)
 
             // Slope coefficients (grass - more slope-sensitive)
-            slope_uphill_factor_base: 8.0, // degrees (more sensitive)
-            slope_uphill_power: 1.8,       // higher power (rapid increase)
-            slope_downhill_divisor: 25.0,  // degrees
-            slope_factor_minimum: 0.4,     // higher minimum (grass doesn't slow as much)
+            slope_uphill_factor_base: Degrees::new(8.0), // degrees (more sensitive)
+            slope_uphill_power: 1.8,                     // higher power (rapid increase)
+            slope_downhill_divisor: Degrees::new(25.0),  // degrees
+            slope_factor_minimum: Fraction::new(0.4), // higher minimum (grass doesn't slow as much)
 
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.85), // Moderate efficiency (fast burn, incomplete)
@@ -630,10 +630,10 @@ impl Fuel {
             temperature_response_range: 450.0, // Kelvin above ignition
 
             // Slope coefficients (shrubland)
-            slope_uphill_factor_base: 12.0, // degrees (less sensitive than grass)
-            slope_uphill_power: 1.5,        // moderate power
-            slope_downhill_divisor: 28.0,   // degrees
-            slope_factor_minimum: 0.35,     // minimum factor
+            slope_uphill_factor_base: Degrees::new(12.0), // degrees (less sensitive than grass)
+            slope_uphill_power: 1.5,                      // moderate power
+            slope_downhill_divisor: Degrees::new(28.0),   // degrees
+            slope_factor_minimum: Fraction::new(0.35),    // minimum factor
             // Combustion and geometry
             combustion_efficiency: Fraction::new(0.88), // Good efficiency (woody fuel)
             surface_area_geometry_factor: 0.10,         // Medium-sized branches
@@ -755,10 +755,10 @@ impl Fuel {
             temperature_response_range: 550.0,        // Kelvin above ignition
 
             // Slope response (ground litter - less slope-sensitive)
-            slope_uphill_factor_base: 8.0, // Lower base (ground fuel)
-            slope_uphill_power: 1.3,       // Gentler slope response
-            slope_downhill_divisor: 25.0,  // Moderate downhill reduction
-            slope_factor_minimum: 0.4,     // Higher minimum (insulated)
+            slope_uphill_factor_base: Degrees::new(8.0), // Lower base (ground fuel)
+            slope_uphill_power: 1.3,                     // Gentler slope response
+            slope_downhill_divisor: Degrees::new(25.0),  // Moderate downhill reduction
+            slope_factor_minimum: Fraction::new(0.4),    // Higher minimum (insulated)
         }
     }
 
@@ -848,10 +848,10 @@ impl Fuel {
             temperature_response_range: 480.0,        // Kelvin above ignition (cooler)
 
             // Slope response (green vegetation - minimal slope effect)
-            slope_uphill_factor_base: 5.0, // Lowest base (fire-resistant)
-            slope_uphill_power: 1.0,       // Linear response
-            slope_downhill_divisor: 20.0,  // Minimal downhill effect
-            slope_factor_minimum: 0.6,     // High minimum (moisture barrier)
+            slope_uphill_factor_base: Degrees::new(5.0), // Lowest base (fire-resistant)
+            slope_uphill_power: 1.0,                     // Linear response
+            slope_downhill_divisor: Degrees::new(20.0),  // Minimal downhill effect
+            slope_factor_minimum: Fraction::new(0.6),    // High minimum (moisture barrier)
         }
     }
 
@@ -981,10 +981,10 @@ impl Fuel {
             temperature_response_range: 0.0,          // N/A
 
             // Slope response (water - no fire spread)
-            slope_uphill_factor_base: 0.0, // No fire spread
+            slope_uphill_factor_base: Degrees::new(0.0), // No fire spread
             slope_uphill_power: 0.0,
-            slope_downhill_divisor: 1.0,
-            slope_factor_minimum: 0.0,
+            slope_downhill_divisor: Degrees::new(1.0),
+            slope_factor_minimum: Fraction::new(0.0),
         }
     }
 
@@ -1067,10 +1067,10 @@ impl Fuel {
             temperature_response_range: 0.0,          // N/A
 
             // Slope response (rock - no fire spread)
-            slope_uphill_factor_base: 0.0, // No fire spread
+            slope_uphill_factor_base: Degrees::new(0.0), // No fire spread
             slope_uphill_power: 0.0,
-            slope_downhill_divisor: 1.0,
-            slope_factor_minimum: 0.0,
+            slope_downhill_divisor: Degrees::new(1.0),
+            slope_factor_minimum: Fraction::new(0.0),
         }
     }
 }
