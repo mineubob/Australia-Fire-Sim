@@ -729,6 +729,7 @@ impl FieldSolver for CpuFieldSolver {
                     world_y,
                     self.valley_sample_radius,
                     5.0, // Valley wall elevation threshold (m)
+                    self.cell_size,
                 );
 
                 if valley_geometry.in_valley {

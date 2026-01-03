@@ -155,6 +155,7 @@ fn detect_valley(world_x: f32, world_y: f32, center_elev: f32) -> vec4<f32> {
     let ridge_threshold = center_elev + 10.0;
     var width_1 = 0.0;
     var width_2 = 0.0;
+    // Step size adapts to grid resolution (matches CPU implementation)
     let step = params.cell_size;
     
     // Direction 1
