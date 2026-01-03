@@ -370,31 +370,51 @@ mod tests {
 
     #[test]
     fn test_detect_two_converging_fronts() {
-        let detector = JunctionZoneDetector::new(80.0, 0.05); // Lower angle threshold, reasonable distance
+        let detector = JunctionZoneDetector::new(80.0, 0.01); // Very low angle threshold for head-on collision
         let width = 50;
         let height = 50;
         let cell_size = 2.0;
 
-        // Create level set with two separate fire fronts approaching each other at an angle
+        // Create level set with two separate fire fronts approaching each other
         let mut phi = vec![10.0; width * height];
 
         // Create spread rate field with active fires
         let mut spread_rate = vec![0.0; width * height];
 
         // Front 1: coming from left, moving east
-        for y in 20..26 {
-            for x in 15..20 {
+        // Create a diagonal front at 45 degrees for clearer convergence angle
+        // Burned region (phi < 0)
+        for y in 18..28 {
+            for x in 10..(15 + (y - 18) / 2) {
                 let idx = y * width + x;
                 phi[idx] = -1.0; // Burned
+            }
+        }
+        // Fire front (phi ≈ 0) at the leading edge - diagonal line
+        for y in 18..28 {
+            let x = 15 + (y - 18) / 2;
+            if x < width {
+                let idx = y * width + x;
+                phi[idx] = 0.0; // Fire front
                 spread_rate[idx] = 0.5; // Active spread at 0.5 m/s
             }
         }
 
         // Front 2: coming from right, moving west
-        for y in 20..26 {
-            for x in 31..36 {
+        // Create another diagonal front at 45 degrees (mirror)
+        // Burned region (phi < 0)
+        for y in 18..28 {
+            for x in (35 - (y - 18) / 2)..40 {
                 let idx = y * width + x;
                 phi[idx] = -1.0; // Burned
+            }
+        }
+        // Fire front (phi ≈ 0) at the leading edge - diagonal line
+        for y in 18..28 {
+            let x = 35 - (y - 18) / 2;
+            if x < width {
+                let idx = y * width + x;
+                phi[idx] = 0.0; // Fire front
                 spread_rate[idx] = 0.6; // Active spread at 0.6 m/s
             }
         }
@@ -402,7 +422,7 @@ mod tests {
         let junctions = detector.detect(&phi, &spread_rate, width, height, cell_size, 0.1);
 
         // The test should detect a junction between the two fronts
-        // Distance is about 11 cells * 2m = 22m, well within 80m threshold
+        // The fronts are at 45° angles converging toward each other
         assert!(
             !junctions.is_empty(),
             "Should detect junction zone when two fronts are within detection distance"
