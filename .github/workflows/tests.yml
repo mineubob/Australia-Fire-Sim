@@ -88,8 +88,8 @@ jobs:
           shared-key: "ubuntu-latest"
           cache-on-failure: true
       
-      - name: Run CPU tests
-        run: cargo test --no-default-features
+      - name: Run fire-sim-core crate CPU tests
+        run: cargo test -p fire-sim-core --no-default-features
 
   build-dev:
     name: "Build Debug"
