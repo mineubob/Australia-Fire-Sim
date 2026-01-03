@@ -207,7 +207,7 @@ impl JunctionZoneDetector {
     /// # Arguments
     ///
     /// * `_dt` - Reserved for future time-dependent junction dynamics calculations.
-    ///           Currently unused as junction detection is based on spatial geometry only.
+    ///   Currently unused as junction detection is based on spatial geometry only.
     #[expect(clippy::too_many_arguments)]
     fn analyze_junction(
         &self,
