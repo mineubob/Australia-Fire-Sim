@@ -22,6 +22,10 @@ pub const LATENT_HEAT_WATER: f32 = 2260.0;
 /// Stoichiometric oxygen requirement for wood combustion (kg O₂/kg fuel)
 pub const OXYGEN_STOICHIOMETRIC_RATIO: f32 = 1.33;
 
+/// Atmospheric oxygen fraction (volume/volume, dimensionless)
+/// Normal atmospheric oxygen concentration at sea level
+pub const ATMOSPHERIC_OXYGEN_FRACTION: f32 = 0.21;
+
 /// Specific heat capacity of dry woody biomass (kJ/(kg·K))
 /// Representative value for wood: range 1.3-2.0 kJ/(kg·K), using mid-range value.
 /// TODO: FUTURE - Add fuel-specific `c_p` to `FuelCombustionProps` for different vegetation types
@@ -73,6 +77,10 @@ pub struct CombustionParams {
     pub fuel_props: FuelCombustionProps,
     /// Ambient temperature in Kelvin (from `WeatherSystem`)
     pub ambient_temp_k: f32,
+    /// Air density in kg/m³ (varies with temperature, elevation, humidity: 1.11-1.29 kg/m³)
+    pub air_density_kg_m3: f32,
+    /// Atmospheric mixing height in meters (affects oxygen availability)
+    pub atmospheric_mixing_height_m: f32,
 }
 
 /// CPU implementation of combustion physics
@@ -185,9 +193,9 @@ pub fn step_combustion_cpu(
             // 3. Oxygen limitation (stoichiometric)
             let o2_required_per_sec = burn_rate * cell_area * OXYGEN_STOICHIOMETRIC_RATIO;
 
-            // Available oxygen in cell (assuming 1m height of atmosphere)
-            let cell_volume = cell_area * 1.0; // 1m height
-            let air_density = 1.2; // kg/m³
+            // Available oxygen in cell
+            let cell_volume = cell_area * params.atmospheric_mixing_height_m;
+            let air_density = params.air_density_kg_m3;
             let o2_available = o2 * air_density * cell_volume;
 
             if o2_available < o2_required_per_sec * params.dt {
@@ -202,8 +210,8 @@ pub fn step_combustion_cpu(
 
         // Oxygen consumed (stoichiometric ratio)
         let o2_consumed = fuel_consumed * OXYGEN_STOICHIOMETRIC_RATIO;
-        let cell_volume = cell_area * 1.0; // 1m height
-        let air_density = 1.2; // kg/m³
+        let cell_volume = cell_area * params.atmospheric_mixing_height_m;
+        let air_density = params.air_density_kg_m3;
         let o2_fraction_consumed = o2_consumed / (air_density * cell_volume);
         oxygen[idx] = (o2 - o2_fraction_consumed).max(0.0);
 
@@ -229,7 +237,7 @@ mod tests {
         let temperature = vec![600.0; size]; // Hot enough to evaporate
         let mut fuel_load = vec![1.0; size]; // 1 kg/m²
         let mut moisture = vec![0.2; size]; // 20% moisture
-        let mut oxygen = vec![0.21; size]; // Normal atmospheric O₂
+        let mut oxygen = vec![ATMOSPHERIC_OXYGEN_FRACTION; size]; // Normal atmospheric O₂
         let level_set = vec![-1.0; size]; // All burning
 
         let params = CombustionParams {
@@ -237,6 +245,8 @@ mod tests {
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
             ambient_temp_k: 293.15, // 20°C test value
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
         };
 
         let initial_moisture = moisture[0];
@@ -278,6 +288,8 @@ mod tests {
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),
             ambient_temp_k: 293.15, // 20°C test value
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
         };
 
         let initial_fuel = fuel_load[0];
@@ -317,6 +329,8 @@ mod tests {
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
             fuel_props: FuelCombustionProps::default(),
             ambient_temp_k: 293.15, // 20°C test value
         };
@@ -358,6 +372,8 @@ mod tests {
         let params = CombustionParams {
             dt: 1.0,
             cell_size: 10.0,
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
             fuel_props: FuelCombustionProps::default(),
             ambient_temp_k: 293.15, // 20°C test value
         };
@@ -397,6 +413,8 @@ mod tests {
         let level_set = vec![-1.0; size];
 
         let params = CombustionParams {
+            air_density_kg_m3: 1.2,
+            atmospheric_mixing_height_m: 1.0,
             dt: 1.0,
             cell_size: 10.0,
             fuel_props: FuelCombustionProps::default(),

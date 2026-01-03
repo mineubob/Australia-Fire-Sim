@@ -21,6 +21,7 @@
 //! Data is stored in GPU storage buffers with ping-pong double-buffering for in-place
 //! updates. Staging buffers handle CPU readback when needed for visualization.
 
+use super::combustion::ATMOSPHERIC_OXYGEN_FRACTION;
 use super::context::GpuContext;
 use super::crown_fire::CanopyProperties;
 use super::fuel_grid::{CellFuelTypes, FuelGrid};
@@ -84,7 +85,11 @@ struct CombustionParams {
     burn_rate_coefficient: f32, // Base burn rate coefficient
     ambient_temp_k: f32,        // Ambient temperature in Kelvin (from WeatherSystem)
     temperature_response_range: f32, // Temperature range for combustion rate normalization (K)
+    air_density_kg_m3: f32,     // Air density (kg/m³) - varies with temp/elevation
+    atmospheric_mixing_height_m: f32, // Atmospheric mixing height (m)
     _padding1: f32,
+    _padding2: f32,
+    _padding3: f32,
 }
 
 /// Level set shader parameters (must match WGSL struct layout)
@@ -351,7 +356,7 @@ impl GpuFieldSolver {
         let initial_temp: Vec<f32> = vec![ambient_temp; num_cells];
         let mut initial_fuel: Vec<f32> = vec![2.0; num_cells]; // 2 kg/m²
         let mut initial_moisture: Vec<f32> = vec![0.15; num_cells]; // 15%
-        let initial_oxygen: Vec<f32> = vec![0.21; num_cells]; // 21%
+        let initial_oxygen: Vec<f32> = vec![ATMOSPHERIC_OXYGEN_FRACTION; num_cells]; // 21%
         let initial_phi: Vec<f32> = vec![1000.0; num_cells]; // Far from fire
         let initial_spread: Vec<f32> = vec![0.5; num_cells]; // 0.5 m/s base spread
         let zeros: Vec<f32> = vec![0.0; num_cells];
@@ -631,7 +636,11 @@ impl GpuFieldSolver {
             burn_rate_coefficient: surface_fuel.burn_rate_coefficient,
             ambient_temp_k: AMBIENT_TEMP_K, // Default, updated via step_heat_transfer from WeatherSystem
             temperature_response_range: surface_fuel.temperature_response_range,
+            air_density_kg_m3: 1.2, // TODO: Calculate from temperature, elevation, humidity
+            atmospheric_mixing_height_m: 1.0, // TODO: Use from weather system or config
             _padding1: 0.0,
+            _padding2: 0.0,
+            _padding3: 0.0,
         };
 
         let combustion_params_buffer =
@@ -2520,7 +2529,11 @@ impl FieldSolver for GpuFieldSolver {
                     .get_surface_fuel(center_x, center_y)
                     .temperature_response_range
             },
+            air_density_kg_m3: 1.2, // TODO: Calculate from temperature, elevation, humidity
+            atmospheric_mixing_height_m: 1.0, // TODO: Use from weather system or config
             _padding1: 0.0,
+            _padding2: 0.0,
+            _padding3: 0.0,
         };
         self.queue.write_buffer(
             &self.combustion_params_buffer,

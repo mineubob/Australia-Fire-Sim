@@ -75,6 +75,7 @@ impl Default for ValleyGeometry {
 /// * `x` - X position in world coordinates (m)
 /// * `y` - Y position in world coordinates (m)
 /// * `sample_radius` - Radius to sample for valley detection (m)
+/// * `wall_elevation_threshold` - Minimum elevation above center to count as valley wall (m)
 ///
 /// # Returns
 ///
@@ -84,6 +85,7 @@ pub fn detect_valley_geometry(
     x: f32,
     y: f32,
     sample_radius: f32,
+    wall_elevation_threshold: f32,
 ) -> ValleyGeometry {
     let center_elevation = *terrain.elevation_at(x, y);
 
@@ -109,7 +111,7 @@ pub fn detect_valley_geometry(
     // Check if surrounded by higher terrain (valley condition)
     let num_higher = elevations
         .iter()
-        .filter(|&&e| e > center_elevation + 5.0)
+        .filter(|&&e| e > center_elevation + wall_elevation_threshold)
         .count();
 
     // Need at least 3 directions with higher terrain to consider it a valley
@@ -316,7 +318,7 @@ mod tests {
             Meters::new(100.0),
         );
 
-        let geometry = detect_valley_geometry(&terrain, 100.0, 100.0, 50.0);
+        let geometry = detect_valley_geometry(&terrain, 100.0, 100.0, 50.0, 5.0);
 
         assert!(!geometry.in_valley, "Flat terrain should not be a valley");
     }
@@ -333,7 +335,7 @@ mod tests {
         );
 
         // At peak of hill (center)
-        let geometry = detect_valley_geometry(&terrain, 100.0, 100.0, 50.0);
+        let geometry = detect_valley_geometry(&terrain, 100.0, 100.0, 50.0, 5.0);
 
         assert!(
             !geometry.in_valley,

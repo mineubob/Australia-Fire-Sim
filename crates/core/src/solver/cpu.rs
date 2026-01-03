@@ -4,7 +4,9 @@
 //! `Vec<f32>` arrays and Rayon for parallelism. This backend is always available
 //! and serves as a fallback when GPU acceleration is not available.
 
-use super::combustion::{step_combustion_cpu, CombustionParams, FuelCombustionProps};
+use super::combustion::{
+    step_combustion_cpu, CombustionParams, FuelCombustionProps, ATMOSPHERIC_OXYGEN_FRACTION,
+};
 use super::crown_fire::{CanopyProperties, CrownFirePhysics, CrownFireState};
 use super::fields::FieldData;
 use super::fuel_grid::FuelGrid;
@@ -139,7 +141,7 @@ impl CpuFieldSolver {
         let mut moisture = FieldData::with_value(width, height, 0.1); // 10% moisture default
         let level_set = FieldData::with_value(width, height, f32::MAX); // All unburned initially
         let level_set_back = FieldData::new(width, height);
-        let oxygen = FieldData::with_value(width, height, 0.21); // Atmospheric O₂ fraction
+        let oxygen = FieldData::with_value(width, height, ATMOSPHERIC_OXYGEN_FRACTION); // Atmospheric O₂ fraction
         let spread_rate = FieldData::new(width, height); // Computed from temperature
 
         // Phase 0: Initialize terrain slope/aspect from elevation data
@@ -334,6 +336,8 @@ impl FieldSolver for CpuFieldSolver {
             cell_size: self.cell_size,
             fuel_props,
             ambient_temp_k: self.ambient_temp_k, // From WeatherSystem
+            air_density_kg_m3: 1.2, // TODO: Calculate from temperature, elevation, humidity
+            atmospheric_mixing_height_m: 1.0, // TODO: Use from weather system or config
         };
 
         let heat_release = step_combustion_cpu(
@@ -724,6 +728,7 @@ impl FieldSolver for CpuFieldSolver {
                     world_x,
                     world_y,
                     self.valley_sample_radius,
+                    5.0, // Valley wall elevation threshold (m)
                 );
 
                 if valley_geometry.in_valley {

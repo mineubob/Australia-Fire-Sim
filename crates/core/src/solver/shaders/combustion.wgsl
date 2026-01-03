@@ -19,7 +19,11 @@ struct CombustionParams {
     burn_rate_coefficient: f32, // Base burn rate coefficient
     ambient_temp_k: f32,        // Ambient temperature in Kelvin (from WeatherSystem)
     temperature_response_range: f32, // Temperature range for combustion rate normalization (K)
+    air_density_kg_m3: f32,     // Air density (kg/m³)
+    atmospheric_mixing_height_m: f32, // Atmospheric mixing height (m)
     _padding1: f32,
+    _padding2: f32,
+    _padding3: f32,
 }
 
 @group(0) @binding(0) var<storage, read> temperature: array<f32>;
@@ -108,9 +112,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // 3. Oxygen limitation (stoichiometric)
         let o2_required_per_sec = burn_rate * cell_area * OXYGEN_STOICHIOMETRIC_RATIO;
         
-        // Available oxygen in cell (assuming 1m height)
-        let cell_volume = cell_area * 1.0;
-        let air_density = 1.2;  // kg/m³
+        // Available oxygen in cell
+        let cell_volume = cell_area * params.atmospheric_mixing_height_m;
+        let air_density = params.air_density_kg_m3;
         let o2_available = o2 * air_density * cell_volume;
         
         if (o2_available < o2_required_per_sec * params.dt) {
@@ -125,8 +129,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     
     // Oxygen consumed (stoichiometric ratio)
     let o2_consumed = fuel_consumed * OXYGEN_STOICHIOMETRIC_RATIO;
-    let cell_volume = cell_area * 1.0;
-    let air_density = 1.2;
+    let cell_volume = cell_area * params.atmospheric_mixing_height_m;
+    let air_density = params.air_density_kg_m3;
     let o2_fraction_consumed = o2_consumed / (air_density * cell_volume);
     oxygen[idx] = max(0.0, o2 - o2_fraction_consumed);
     
