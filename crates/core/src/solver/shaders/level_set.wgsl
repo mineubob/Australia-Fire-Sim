@@ -3,6 +3,13 @@
 // Implements Hamilton-Jacobi evolution equation: ∂φ/∂t + R|∇φ| = 0
 // with curvature-dependent spread rate for realistic fire front tracking.
 //
+// CANONICAL ORDER: This shader applies steps 1-2 of the physics effect sequence:
+// 1. Base spread rate (from temperature gradient - computed upstream)
+// 2. Slope factor (terrain effect - applied inline in this shader)
+//
+// Subsequent effects (VLS, valley, crown fire, etc.) are applied in later shader passes.
+// See gpu.rs module documentation for complete effect order and rationale.
+//
 // Physics:
 // - Godunov upwind scheme for |∇φ| computation
 // - Curvature calculation: κ = (φ_xx φ_y² - 2φ_x φ_y φ_xy + φ_yy φ_x²) / (φ_x² + φ_y²)^(3/2)

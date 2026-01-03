@@ -4,6 +4,15 @@
 // - Phase 6: VLS (Vorticity-Driven Lateral Spread) on lee slopes
 // - Phase 7: Valley channeling with wind acceleration
 //
+// CANONICAL ORDER: This shader applies steps 3-4 of the physics effect sequence:
+// 3. VLS (Vorticity-Driven Lateral Spread)
+// 4. Valley channeling (wind acceleration + chimney updraft)
+//
+// Input spread_rate already has base rate + slope factor applied (from level_set shader).
+// Crown fire effective ROS is applied AFTER this shader (crown_fire.wgsl).
+// Junction zones, fire whirls, and regime variation are applied CPU-side after GPU passes.
+// See gpu.rs module documentation for complete effect order and rationale.
+//
 // Phase 5 (Junction zones) and Phase 8 (Regime detection) require global
 // analysis and are handled CPU-side after metrics readback.
 //

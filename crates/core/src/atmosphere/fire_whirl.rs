@@ -137,6 +137,77 @@ impl FireWhirlDetector {
 
         (vort_factor * int_factor).min(1.0)
     }
+
+    /// Detect fire whirl locations across the grid.
+    ///
+    /// Scans the wind field and fire intensity field to identify cells
+    /// where vorticity and intensity thresholds are exceeded.
+    ///
+    /// # Arguments
+    ///
+    /// * `wind_x` - Wind u-component field (m/s)
+    /// * `wind_y` - Wind v-component field (m/s)
+    /// * `intensity_field` - Fire intensity field (kW/m)
+    /// * `width` - Grid width
+    /// * `height` - Grid height
+    /// * `cell_size` - Cell size in meters
+    ///
+    /// # Returns
+    ///
+    /// Vector of (x, y) positions in world coordinates where fire whirls are detected
+    #[must_use]
+    pub fn detect(
+        &self,
+        wind_x: &[f32],
+        wind_y: &[f32],
+        intensity_field: &[f32],
+        width: usize,
+        height: usize,
+        cell_size: f32,
+    ) -> Vec<(f32, f32)> {
+        let mut whirl_locations = Vec::new();
+        let cell_size_meters = Meters::new(cell_size);
+
+        // Scan interior cells (exclude edges where we can't compute gradients)
+        for y in 1..(height - 1) {
+            for x in 1..(width - 1) {
+                let idx = y * width + x;
+                let intensity = intensity_field[idx];
+
+                // Skip if intensity is below threshold
+                if intensity < self.intensity_threshold_kw_m {
+                    continue;
+                }
+
+                // Get neighboring wind components
+                let idx_up = (y - 1) * width + x;
+                let idx_down = (y + 1) * width + x;
+                let idx_left = y * width + (x - 1);
+                let idx_right = y * width + (x + 1);
+
+                let u_up = MetersPerSecond::new(wind_x[idx_up]);
+                let u_down = MetersPerSecond::new(wind_x[idx_down]);
+                let v_left = MetersPerSecond::new(wind_y[idx_left]);
+                let v_right = MetersPerSecond::new(wind_y[idx_right]);
+
+                // Calculate vorticity
+                let vorticity =
+                    Self::calculate_vorticity(u_up, u_down, v_left, v_right, cell_size_meters);
+
+                // Check if conditions are met
+                if self.check_conditions(vorticity, intensity) {
+                    // Convert cell coordinates to world position
+                    #[expect(clippy::cast_precision_loss)]
+                    let world_x = x as f32 * cell_size;
+                    #[expect(clippy::cast_precision_loss)]
+                    let world_y = y as f32 * cell_size;
+                    whirl_locations.push((world_x, world_y));
+                }
+            }
+        }
+
+        whirl_locations
+    }
 }
 
 #[cfg(test)]

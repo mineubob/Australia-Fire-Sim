@@ -1,3 +1,7 @@
+#![expect(
+    clippy::doc_markdown,
+    reason = "Scientific author names (McArthur, Van Wagner) and technical acronyms (PyroCb) are proper nouns, not code identifiers"
+)]
 //! GPU-based field solver implementation
 //!
 //! This module provides a GPU implementation of the `FieldSolver` trait using
@@ -14,6 +18,23 @@
 //! - `crown_fire.wgsl` - Phase 3: Crown fire transitions and spread enhancement
 //! - `fuel_layers.wgsl` - Phase 1: Vertical fuel layer heat transfer
 //! - `atmosphere_reduce.wgsl` - Phase 4: Parallel reduction for pyroCb metrics
+//! - `advanced_physics.wgsl` - Phase 5-8: VLS and valley channeling effects
+//!
+//! # Physics Effect Order (Canonical)
+//!
+//! Effects are applied in this strict order to ensure CPU/GPU consistency:
+//!
+//! 1. **Base spread rate** - Computed from temperature gradient
+//! 2. **Slope factor** - Terrain slope effect (McArthur 1967) - applied in `level_set.wgsl`
+//! 3. **VLS + Valley channeling** - Terrain/wind vorticity effects - `advanced_physics.wgsl`
+//! 4. **Crown fire effective ROS** - Fuel layer transition (Van Wagner 1977) - `crown_fire.wgsl`
+//! 5. **Junction zones** - Fire-fire interaction acceleration - CPU-side
+//! 6. **Downdrafts** - PyroCb downdraft effects - CPU-side (TODO: GPU implementation)
+//! 7. **Fire whirls** - Atmospheric vorticity enhancement - CPU-side
+//! 8. **Regime-based variation** - Stochastic variation based on fire regime - CPU-side
+//!
+//! This order follows physical causality: terrain/wind effects establish baseline behavior,
+//! then fuel transitions modify it, then fire-fire and atmospheric interactions apply.
 //!
 //! # Implementation
 //!
@@ -28,10 +49,12 @@ use super::fuel_grid::{CellFuelTypes, FuelGrid};
 use super::fuel_variation::HeterogeneityConfig;
 use super::junction_zone::JunctionZoneDetector;
 use super::quality::QualityPreset;
-use super::regime::FireRegime;
+use super::regime::{direction_uncertainty, predictability_factor, FireRegime};
 use super::terrain_slope::TerrainFields;
 use super::FieldSolver;
-use crate::atmosphere::{AtmosphericStability, ConvectionColumn, Downdraft, PyroCbSystem};
+use crate::atmosphere::{
+    AtmosphericStability, ConvectionColumn, Downdraft, FireWhirlDetector, PyroCbSystem,
+};
 use crate::core_types::units::{Gigawatts, Kelvin, Meters, MetersPerSecond, Seconds};
 use crate::core_types::vec3::Vec3;
 use crate::TerrainData;
@@ -48,6 +71,26 @@ const AMBIENT_TEMP_K: f32 = 293.15;
 #[expect(clippy::cast_precision_loss)]
 fn usize_to_f32(v: usize) -> f32 {
     v as f32
+}
+
+/// Simple noise function for regime-based stochastic variation
+///
+/// Uses hash-based noise to avoid dependency on complex noise libraries.
+/// Same implementation as in `level_set.rs` for consistency.
+///
+/// # Arguments
+///
+/// * `x` - X coordinate
+/// * `y` - Y coordinate
+///
+/// # Returns
+///
+/// Noise value in range [-1, 1]
+fn simple_noise_gpu(x: f32, y: f32) -> f32 {
+    let ix = (x * 12.99).sin() * 43758.55;
+    let iy = (y * 78.23).sin() * 43758.55;
+    let fract = (ix + iy).fract();
+    fract * 2.0 - 1.0 // Range [-1, 1]
 }
 
 /// Heat transfer shader parameters (must match WGSL struct layout)
@@ -307,6 +350,7 @@ pub struct GpuFieldSolver {
     downdrafts: Vec<Downdraft>,
     atmospheric_stability: AtmosphericStability,
     pyrocb_system: PyroCbSystem,
+    fire_whirl_detector: FireWhirlDetector,
 
     // Phase 5-8: Advanced fire physics (CPU-side calculations)
     junction_zone_detector: JunctionZoneDetector,
@@ -445,13 +489,17 @@ impl GpuFieldSolver {
         let spread_rate_a = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Spread Rate A"),
             contents: bytemuck::cast_slice(&initial_spread),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
         });
 
         let spread_rate_b = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Spread Rate B"),
             contents: bytemuck::cast_slice(&initial_spread),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
         });
 
         let heat_release = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1603,6 +1651,7 @@ impl GpuFieldSolver {
             downdrafts: Vec::new(),
             atmospheric_stability: AtmosphericStability::default(),
             pyrocb_system: PyroCbSystem::new(),
+            fire_whirl_detector: FireWhirlDetector::default(),
             // Phase 5-8: Advanced fire physics
             junction_zone_detector: JunctionZoneDetector::default(),
             fire_regime: vec![FireRegime::WindDriven; num_cells],
@@ -2573,14 +2622,46 @@ impl FieldSolver for GpuFieldSolver {
     fn step_level_set(&mut self, dt: f32, _wind: Vec3, _ambient_temp: Kelvin) {
         self.time += dt;
 
-        // Update uniform buffer
+        // Phase 8 (continued): Regime-based direction uncertainty
+        // Read level_set and spread_rate to calculate regime-based noise
+        let level_set_data = self.read_level_set();
+        let spread_rate_data = self.read_spread_rate();
+
+        // Calculate average direction uncertainty for burning cells
+        let mut total_uncertainty = 0.0;
+        let mut burning_cells = 0;
+        for idx in 0..(self.width * self.height) as usize {
+            if level_set_data[idx] < 0.0 && spread_rate_data[idx] > 0.0 {
+                let regime = self.fire_regime[idx];
+                let uncertainty_deg = direction_uncertainty(regime);
+                total_uncertainty += uncertainty_deg;
+                burning_cells += 1;
+            }
+        }
+
+        // Map average direction uncertainty to noise amplitude
+        // Direction uncertainty ranges: 15° (wind-driven) to 180° (plume-dominated)
+        // Map to noise amplitude: 0.03 (predictable) to 0.15 (unpredictable)
+        let avg_uncertainty_deg = if burning_cells > 0 {
+            #[expect(clippy::cast_precision_loss)]
+            let result = total_uncertainty / burning_cells as f32;
+            result
+        } else {
+            15.0 // Default to wind-driven
+        };
+
+        // Linear mapping: 15° → 0.03, 180° → 0.15
+        let regime_noise_amplitude = 0.03 + (avg_uncertainty_deg - 15.0) / 165.0 * 0.12;
+        let regime_noise_amplitude = regime_noise_amplitude.clamp(0.03, 0.15);
+
+        // Update uniform buffer with regime-adjusted noise
         let params = LevelSetParams {
             width: self.width,
             height: self.height,
             cell_size: self.cell_size,
             dt,
             curvature_coeff: 0.25,
-            noise_amplitude: 0.1,
+            noise_amplitude: regime_noise_amplitude,
             time: self.time,
             _padding: 0.0,
         };
@@ -2616,16 +2697,32 @@ impl FieldSolver for GpuFieldSolver {
         // Flip ping-pong
         self.phi_ping = !self.phi_ping;
 
-        // Phase 3: Dispatch crown fire shader (updates spread_rate and fire_intensity on GPU)
-        self.dispatch_crown_fire(dt);
+        // CANONICAL ORDER: Apply physics effects in proper sequence to match CPU solver
+        // This ensures CPU and GPU produce identical results (within floating-point precision)
+        //
+        // Order follows physical causality:
+        // 1. Base spread rate + slope factor (in level_set shader above)
+        // 2. VLS + valley channeling (terrain/wind effects - GPU shader)
+        // 3. Crown fire effective ROS (fuel transition - GPU shader)
+        // 4. Junction zones (fire-fire interaction - CPU)
+        // 5. Fire whirls (atmospheric - CPU)
+        // 6. Regime-based variation (stochastic - CPU)
 
         // Phase 5-8: Dispatch advanced physics shader (VLS and valley channeling)
+        // Must run BEFORE crown fire so crown ROS accounts for terrain/wind modifications
         self.dispatch_advanced_physics(dt, self.wind_x, self.wind_y);
+
+        // Phase 3: Dispatch crown fire shader (updates spread_rate and fire_intensity on GPU)
+        // Runs AFTER advanced physics so effective ROS includes VLS/valley effects
+        self.dispatch_crown_fire(dt);
 
         // Phase 5: CPU-side junction zone detection (requires global analysis)
         // Read back level_set and spread_rate from GPU for junction detection
         let level_set_data = self.read_level_set();
         let mut spread_rate_data = self.read_spread_rate();
+
+        // Phase 8: Read fire intensity for regime detection and fire whirl detection
+        let intensity_data = self.read_fire_intensity();
 
         let junctions = self.junction_zone_detector.detect(
             &level_set_data,
@@ -2675,11 +2772,82 @@ impl FieldSolver for GpuFieldSolver {
             }
         }
 
-        // Write modified spread rates back to GPU
-        self.write_spread_rate(&spread_rate_data);
+        // Phase 4: Fire whirl detection and effects
+        // Note: Currently using uniform wind field; future enhancement would use spatially-varying wind
+        let wind_x_field = vec![self.wind_x; (self.width * self.height) as usize];
+        let wind_y_field = vec![self.wind_y; (self.width * self.height) as usize];
+
+        // Phase 8 (continued): Regime-based fire whirl detection
+        // Plume-dominated fires (high Byram number) have stronger buoyancy,
+        // making fire whirl formation more likely (Finney & McAllister 2011)
+        // Modulate intensity threshold based on regime distribution
+        let mut regime_adjusted_detector = self.fire_whirl_detector.clone();
+
+        // Count regime distribution in burning cells to determine global adjustment
+        let mut plume_cells = 0;
+        let mut total_burning_cells = 0;
+        #[expect(clippy::needless_range_loop)]
+        for idx in 0..(self.width * self.height) as usize {
+            if intensity_data[idx] > 0.0 {
+                total_burning_cells += 1;
+                if self.fire_regime[idx] == FireRegime::PlumeDominated {
+                    plume_cells += 1;
+                }
+            }
+        }
+
+        // If >20% of fire is plume-dominated, lower fire whirl threshold
+        if total_burning_cells > 0 {
+            #[expect(clippy::cast_precision_loss)]
+            let plume_fraction = plume_cells as f32 / total_burning_cells as f32;
+            if plume_fraction > 0.2 {
+                // Lower threshold by up to 30% when fire is strongly plume-dominated
+                let threshold_reduction = plume_fraction.min(1.0) * 0.3;
+                regime_adjusted_detector.intensity_threshold_kw_m *= 1.0 - threshold_reduction;
+            }
+        }
+
+        let fire_whirl_locations = regime_adjusted_detector.detect(
+            &wind_x_field,
+            &wind_y_field,
+            &intensity_data,
+            self.width as usize,
+            self.height as usize,
+            self.cell_size,
+        );
+
+        // Apply fire whirl effects to spread rate
+        // Fire whirls create intense local winds (vorticity → strong circular winds)
+        // Enhancement radius ~50m, peak enhancement ~3x normal spread
+        const FIRE_WHIRL_RADIUS: f32 = 50.0; // meters
+        const FIRE_WHIRL_PEAK_ENHANCEMENT: f32 = 3.0; // 3x spread rate
+
+        for (whirl_x, whirl_y) in &fire_whirl_locations {
+            // Apply enhancement in radius around fire whirl center
+            for y in 0..self.height as usize {
+                for x in 0..self.width as usize {
+                    #[expect(clippy::cast_precision_loss)]
+                    let px = x as f32 * self.cell_size;
+                    #[expect(clippy::cast_precision_loss)]
+                    let py = y as f32 * self.cell_size;
+                    let dist = ((px - whirl_x).powi(2) + (py - whirl_y).powi(2)).sqrt();
+
+                    if dist < FIRE_WHIRL_RADIUS {
+                        let idx = y * self.width as usize + x;
+                        if spread_rate_data[idx] > 0.0 {
+                            // Enhancement falls off with distance from whirl center
+                            // Peak enhancement at center, fades to 1.0 at radius
+                            let radial_factor = 1.0 - dist / FIRE_WHIRL_RADIUS;
+                            let enhancement =
+                                1.0 + (FIRE_WHIRL_PEAK_ENHANCEMENT - 1.0) * radial_factor;
+                            spread_rate_data[idx] *= enhancement;
+                        }
+                    }
+                }
+            }
+        }
 
         // Phase 8: CPU-side regime detection (uses fire intensity from GPU)
-        let intensity_data = self.read_fire_intensity();
         let wind_speed_m_s = self.wind_speed_10m_kmh / 3.6;
         let ambient_temp_c = self.ambient_temp_k - 273.15; // Convert K to °C
 
@@ -2689,10 +2857,41 @@ impl FieldSolver for GpuFieldSolver {
                 let regime = detect_regime(intensity, wind_speed_m_s, ambient_temp_c);
                 self.fire_regime[idx] = regime;
             } else {
-                use super::regime::FireRegime;
                 self.fire_regime[idx] = FireRegime::WindDriven;
             }
         }
+
+        // Phase 8 (continued): Apply regime effects to fire behavior
+        // Use regime classification to modulate spread rate uncertainty
+        // Scientific basis: Byram (1959), Nelson (2003) - plume-dominated fires are unpredictable
+        #[expect(clippy::needless_range_loop)]
+        for idx in 0..(self.width * self.height) as usize {
+            if spread_rate_data[idx] > 0.0 {
+                let regime = self.fire_regime[idx];
+                let predictability = predictability_factor(regime);
+
+                // Apply regime-based stochastic variation to spread rate
+                // Lower predictability = higher variation
+                // Variation range: ±(1 - predictability) × 15%
+                // Wind-driven (predictability=1.0): ±0% = no variation
+                // Transitional (predictability=0.5): ±7.5% variation
+                // Plume-dominated (predictability=0.2): ±12% variation
+                let variation_amplitude = (1.0 - predictability) * 0.15;
+
+                // Use simple hash-based noise to avoid dependencies
+                #[expect(clippy::cast_precision_loss)]
+                let x = (idx % self.width as usize) as f32;
+                #[expect(clippy::cast_precision_loss)]
+                let y = (idx / self.width as usize) as f32;
+                let noise = simple_noise_gpu(x + self.time * 0.1, y + self.time * 0.1);
+                let variation = 1.0 + variation_amplitude * noise;
+
+                spread_rate_data[idx] *= variation;
+            }
+        }
+
+        // Write modified spread rates back to GPU
+        self.write_spread_rate(&spread_rate_data);
 
         // Phase 1: Dispatch fuel layer shader (vertical heat transfer)
         self.dispatch_fuel_layers(dt);

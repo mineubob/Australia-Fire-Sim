@@ -3,6 +3,22 @@
 // Implements Van Wagner (1977) crown fire initiation criterion and
 // Cruz et al. (2005) Australian crown fire spread rates.
 //
+// CANONICAL ORDER: This shader applies step 5 of the physics effect sequence:
+// 5. Crown fire effective ROS (fuel layer transition)
+//
+// Input spread_rate already has:
+//   - Base rate (from temperature gradient)
+//   - Slope factor (from level_set shader)
+//   - VLS multiplier (from advanced_physics shader)
+//   - Valley channeling (from advanced_physics shader)
+//
+// This shader evaluates crown fire transitions and calculates effective ROS
+// accounting for all upstream terrain/wind modifications.
+//
+// Junction zones, downdrafts, fire whirls, and regime variation are applied
+// CPU-side after this shader. See gpu.rs module documentation for complete
+// effect order and rationale.
+//
 // Physics:
 // - Fire intensity: I = R × W × H (Byram's intensity)
 // - Crown ignition: Van Wagner I_critical = (0.010 × CBH × (460 + 25.9 × FMC))^1.5
@@ -129,13 +145,22 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         spread_rate_out[idx] = effective_ros;
         crown_state[idx] = STATE_ACTIVE;
         
-        // Update intensity to include crown fuel
-        let crown_intensity = params.canopy_heat_content * params.canopy_fuel_load * crown_ros;
-        fire_intensity[idx] = surface_intensity + crown_intensity;
+        // Calculate total intensity including crown fuel contribution
+        // Total = Surface intensity (with effective ROS) + Crown fuel contribution
+        let effective_surface_intensity = params.surface_heat_content * fuel * effective_ros;
+        let crown_intensity = params.canopy_heat_content * params.canopy_fuel_load * effective_ros;
+        fire_intensity[idx] = effective_surface_intensity + crown_intensity;
     } else {
         // Passive crown fire (torching) - ~1.5x surface spread enhancement
         let passive_factor = 1.0 + 0.5 * params.canopy_cover_fraction;
-        spread_rate_out[idx] = surface_ros * passive_factor;
+        let effective_ros = surface_ros * passive_factor;
+        spread_rate_out[idx] = effective_ros;
         crown_state[idx] = STATE_PASSIVE;
+        
+        // Calculate total intensity including crown fuel contribution
+        // Passive fires still consume canopy fuel (torching trees)
+        let effective_surface_intensity = params.surface_heat_content * fuel * effective_ros;
+        let crown_intensity = params.canopy_heat_content * params.canopy_fuel_load * effective_ros;
+        fire_intensity[idx] = effective_surface_intensity + crown_intensity;
     }
 }
