@@ -193,7 +193,10 @@ pub fn detect_valley_geometry(
 
     // Estimate distance from valley head using empirical depth-to-distance ratio
     // VALLEY_DEPTH_TO_HEAD_DISTANCE_RATIO is documented above with scientific justification.
-    // TODO: PHASE 10 for proper upstream valley head detection via terrain tracing.
+    // TODO (Roadmap PHASE 10): Replace this empirical depth-to-distance heuristic with proper
+    // upstream valley head detection via terrain tracing / geomorphological analysis (e.g.
+    // watershed-based head identification). See docs/roadmap.md "Valley Channeling PHASE 10"
+    // for the full specification of this enhancement.
     let distance_from_head = depth * VALLEY_DEPTH_TO_HEAD_DISTANCE_RATIO;
 
     ValleyGeometry {
