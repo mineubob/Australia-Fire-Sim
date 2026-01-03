@@ -148,7 +148,7 @@ The continuous integration system validates CPU-only tests using:
 cargo test --no-default-features
 ```
 
-320+ unit tests covering:
+321 unit tests covering:
 - Wind directionality (26x downwind vs 0.05x upwind)
 - Moisture evaporation delays
 - Vertical spread (fire climbs faster)
