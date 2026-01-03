@@ -29,7 +29,7 @@
 //! 3. **VLS + Valley channeling** - Terrain/wind vorticity effects - `advanced_physics.wgsl`
 //! 4. **Crown fire effective ROS** - Fuel layer transition (Van Wagner 1977) - `crown_fire.wgsl`
 //! 5. **Junction zones** - Fire-fire interaction acceleration - CPU-side
-//! 6. **Downdrafts** - PyroCb downdraft effects - CPU-side (TODO: GPU implementation)
+//! 6. **Downdrafts** - PyroCb downdraft effects - CPU-side
 //! 7. **Fire whirls** - Atmospheric vorticity enhancement - CPU-side
 //! 8. **Regime-based variation** - Stochastic variation based on fire regime - CPU-side
 //!
@@ -2887,6 +2887,50 @@ impl FieldSolver for GpuFieldSolver {
                 let variation = 1.0 + variation_amplitude * noise;
 
                 spread_rate_data[idx] *= variation;
+            }
+        }
+
+        // Apply downdraft effects to spread rate
+        // Downdrafts create erratic local wind enhancements from PyroCb collapse
+        for downdraft in &self.downdrafts {
+            let (dx, dy) = downdraft.position;
+            let radius = *downdraft.radius;
+            let outflow = *downdraft.outflow_velocity;
+
+            // Enhance spread rate in downdraft outflow region
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    #[expect(clippy::cast_precision_loss)]
+                    let px = x as f32 * self.cell_size;
+                    #[expect(clippy::cast_precision_loss)]
+                    let py = y as f32 * self.cell_size;
+                    let dist = ((px - dx) * (px - dx) + (py - dy) * (py - dy)).sqrt();
+
+                    if dist < radius {
+                        // Downdraft enhancement: stronger near center, weaker at edges
+                        // Range: 0.5x (updraft zone) to 2.0x (peak outflow)
+                        let normalized_dist = dist / radius;
+                        let enhancement = if normalized_dist < 0.3 {
+                            // Central updraft zone: suppresses horizontal spread
+                            0.5 + normalized_dist * 1.67 // 0.5 at center, 1.0 at r=0.3
+                        } else {
+                            // Outflow zone: peak at r=0.6, decay to 1.0 at edge
+                            let outflow_factor = ((normalized_dist - 0.3) / 0.3).min(1.0);
+                            let decay_factor = ((1.0 - normalized_dist) / 0.4).max(0.0);
+                            1.0 + outflow_factor * decay_factor
+                        };
+
+                        // Scale enhancement by downdraft strength
+                        // 20 m/s outflow → 1.5x spread, 40 m/s → 2.0x spread
+                        let velocity_factor = (outflow / 20.0).min(2.0);
+                        let final_enhancement = 1.0 + (enhancement - 1.0) * velocity_factor;
+
+                        let idx = (y * self.width + x) as usize;
+                        if spread_rate_data[idx] > 0.0 {
+                            spread_rate_data[idx] *= final_enhancement;
+                        }
+                    }
+                }
             }
         }
 

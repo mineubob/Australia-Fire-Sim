@@ -14,10 +14,10 @@
 //!
 //! 1. **Base spread rate** - Computed from temperature gradient
 //! 2. **Slope factor** - Terrain slope effect (McArthur 1967)
-//! 3. **Junction zones** - Fire-fire interaction acceleration
-//! 4. **VLS** - Vorticity-Driven Lateral Spread (Sharples et al. 2012)
-//! 5. **Valley channeling** - Wind acceleration + chimney updraft (Butler et al. 1998)
-//! 6. **Crown fire effective ROS** - Fuel layer transition (Van Wagner 1977)
+//! 3. **VLS** - Vorticity-Driven Lateral Spread (Sharples et al. 2012)
+//! 4. **Valley channeling** - Wind acceleration + chimney updraft (Butler et al. 1998)
+//! 5. **Crown fire effective ROS** - Fuel layer transition (Van Wagner 1977)
+//! 6. **Junction zones** - Fire-fire interaction acceleration
 //! 7. **Downdrafts** - PyroCb downdraft effects
 //! 8. **Fire whirls** - Atmospheric vorticity enhancement
 //! 9. **Regime-based variation** - Stochastic variation based on fire regime (Byram 1959)
@@ -710,58 +710,7 @@ impl FieldSolver for CpuFieldSolver {
             }
         }
 
-        // Phase 5: Junction Zone Detection and Acceleration
-        // Detect converging fire fronts and apply acceleration
-        let junctions = self.junction_zone_detector.detect(
-            self.level_set.as_slice(),
-            self.spread_rate.as_slice(),
-            self.width,
-            self.height,
-            self.cell_size,
-            dt,
-        );
-
-        // Apply junction acceleration to spread rates
-        let spread_slice = self.spread_rate.as_mut_slice();
-        for junction in &junctions {
-            // Apply acceleration in a radius around junction point
-            let radius = junction.distance * 0.5;
-            #[expect(clippy::cast_possible_truncation)]
-            let center_x = (junction.position.x / self.cell_size) as usize;
-            #[expect(clippy::cast_possible_truncation)]
-            let center_y = (junction.position.y / self.cell_size) as usize;
-
-            #[expect(clippy::cast_possible_truncation)]
-            let radius_cells = (radius / self.cell_size).ceil() as i32;
-
-            for dy in -radius_cells..=radius_cells {
-                for dx in -radius_cells..=radius_cells {
-                    let x = (center_x as i32 + dx) as usize;
-                    let y = (center_y as i32 + dy) as usize;
-
-                    if x >= self.width || y >= self.height {
-                        continue;
-                    }
-
-                    #[expect(clippy::cast_precision_loss)]
-                    let dist = ((dx * dx + dy * dy) as f32).sqrt() * self.cell_size;
-                    if dist > radius {
-                        continue;
-                    }
-
-                    // Acceleration falls off with distance from junction center
-                    let falloff = 1.0 - dist / radius;
-                    let local_acceleration = 1.0 + (junction.acceleration_factor - 1.0) * falloff;
-
-                    let idx = y * self.width + x;
-                    if spread_slice[idx] > 0.0 {
-                        spread_slice[idx] *= local_acceleration;
-                    }
-                }
-            }
-        }
-
-        // Phase 6: VLS (Vorticity-Driven Lateral Spread)
+        // Phase 5: VLS (Vorticity-Driven Lateral Spread)
         // Detect VLS conditions and modify spread rates on lee slopes
         let wind_vec = Vec3::new(self.wind_x_m_s, self.wind_y_m_s, 0.0);
         let vls_conditions = self.vls_detector.detect(
@@ -923,6 +872,59 @@ impl FieldSolver for CpuFieldSolver {
             } else {
                 intensity_slice[idx] = 0.0;
                 self.fire_regime[idx] = FireRegime::WindDriven;
+            }
+        }
+
+        // Phase 6: Junction Zone Detection and Acceleration
+        // Detect converging fire fronts and apply acceleration
+        // Scientific basis: Viegas (2012), Sullivan (2009)
+        // Junction zones should see crown-enhanced ROS for realistic interactions
+        let junctions = self.junction_zone_detector.detect(
+            self.level_set.as_slice(),
+            self.spread_rate.as_slice(),
+            self.width,
+            self.height,
+            self.cell_size,
+            dt,
+        );
+
+        // Apply junction acceleration to spread rates
+        let spread_slice = self.spread_rate.as_mut_slice();
+        for junction in &junctions {
+            // Apply acceleration in a radius around junction point
+            let radius = junction.distance * 0.5;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_x = (junction.position.x / self.cell_size) as usize;
+            #[expect(clippy::cast_possible_truncation)]
+            let center_y = (junction.position.y / self.cell_size) as usize;
+
+            #[expect(clippy::cast_possible_truncation)]
+            let radius_cells = (radius / self.cell_size).ceil() as i32;
+
+            for dy in -radius_cells..=radius_cells {
+                for dx in -radius_cells..=radius_cells {
+                    let x = (center_x as i32 + dx) as usize;
+                    let y = (center_y as i32 + dy) as usize;
+
+                    if x >= self.width || y >= self.height {
+                        continue;
+                    }
+
+                    #[expect(clippy::cast_precision_loss)]
+                    let dist = ((dx * dx + dy * dy) as f32).sqrt() * self.cell_size;
+                    if dist > radius {
+                        continue;
+                    }
+
+                    // Acceleration falls off with distance from junction center
+                    let falloff = 1.0 - dist / radius;
+                    let local_acceleration = 1.0 + (junction.acceleration_factor - 1.0) * falloff;
+
+                    let idx = y * self.width + x;
+                    if spread_slice[idx] > 0.0 {
+                        spread_slice[idx] *= local_acceleration;
+                    }
+                }
             }
         }
 
