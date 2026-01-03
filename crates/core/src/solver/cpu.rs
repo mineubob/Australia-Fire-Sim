@@ -620,6 +620,14 @@ impl FieldSolver for CpuFieldSolver {
         }
     }
 
+    /// Advance level set field using spread rate and curvature-dependent advection.
+    ///
+    /// # Arguments
+    ///
+    /// * `_wind` - Reserved for future wind-field coupling in level set advection.
+    ///             Currently wind effects are applied via spread rate calculation.
+    /// * `_ambient_temp` - Reserved for future temperature-dependent level set evolution.
+    ///                     Currently temperature effects are applied via ignition sync.
     fn step_level_set(&mut self, dt: f32, _wind: Vec3, _ambient_temp: Kelvin) {
         // Phase 3: Level set evolution with curvature-dependent spread
 

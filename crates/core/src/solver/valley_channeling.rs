@@ -180,7 +180,16 @@ pub fn detect_valley_geometry(
     // Estimate valley depth (difference between center and average ridge height)
     #[expect(clippy::cast_precision_loss)]
     let avg_ridge_elevation = elevations.iter().sum::<f32>() / elevations.len() as f32;
-    let depth = (avg_ridge_elevation - center_elevation).max(0.0);
+    let depth = avg_ridge_elevation - center_elevation;
+
+    // If center is not below the average surroundings, this is not a valley (peak or ridge)
+    // Return in_valley=false rather than clamping negative depth to zero
+    if depth <= 0.0 {
+        return ValleyGeometry {
+            in_valley: false,
+            ..Default::default()
+        };
+    }
 
     // Estimate distance from valley head using empirical depth-to-distance ratio
     // VALLEY_DEPTH_TO_HEAD_DISTANCE_RATIO is documented above with scientific justification.

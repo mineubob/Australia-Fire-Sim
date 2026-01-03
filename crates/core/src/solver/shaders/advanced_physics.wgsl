@@ -209,7 +209,8 @@ fn detect_valley(world_x: f32, world_y: f32, center_elev: f32) -> vec4<f32> {
     }
     
     // Distance from valley head using empirical ratio (matches CPU)
-    // See VALLEY_DEPTH_TO_HEAD_DISTANCE_RATIO constant documentation
+    // This hardcoded 10.0 matches VALLEY_DEPTH_TO_HEAD_DISTANCE_RATIO constant in valley_channeling.rs
+    // Empirical constant from Butler et al. (1998): typical valleys have head distance ~10× their depth
     let distance_from_head = depth * 10.0;
     
     return vec4<f32>(1.0, width, depth, distance_from_head);
