@@ -56,11 +56,11 @@ impl Default for FuelCombustionProps {
     /// Default properties based on eucalyptus stringybark
     fn default() -> Self {
         Self {
-            ignition_temp_k: 501.15,     // 228°C + 273.15K (stringybark)
-            moisture_extinction: 0.35,   // 35% for eucalyptus
-            heat_content_kj: 21000.0,    // kJ/kg for eucalyptus
-            self_heating_fraction: 0.4,  // 40% retained
-            burn_rate_coefficient: 0.08, // stringybark coefficient
+            ignition_temp_k: 501.15,           // 228°C + 273.15K (stringybark)
+            moisture_extinction: 0.35,         // 35% for eucalyptus
+            heat_content_kj: 21000.0,          // kJ/kg for eucalyptus
+            self_heating_fraction: 0.4,        // 40% retained
+            burn_rate_coefficient: 0.08,       // stringybark coefficient
             temperature_response_range: 550.0, // Kelvin (stringybark)
         }
     }

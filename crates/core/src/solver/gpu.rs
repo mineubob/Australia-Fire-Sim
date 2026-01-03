@@ -78,14 +78,14 @@ struct CombustionParams {
     cell_size: f32,
     dt: f32,
     // Fuel-specific properties
-    ignition_temp_k: f32,       // Ignition temperature in Kelvin
-    moisture_extinction: f32,   // Moisture of extinction (fraction)
-    heat_content_kj: f32,       // Heat content in kJ/kg
-    self_heating_fraction: f32, // Fraction of heat retained (0-1)
-    burn_rate_coefficient: f32, // Base burn rate coefficient
-    ambient_temp_k: f32,        // Ambient temperature in Kelvin (from WeatherSystem)
-    temperature_response_range: f32, // Temperature range for combustion rate normalization (K)
-    air_density_kg_m3: f32,     // Air density (kg/m³) - varies with temp/elevation
+    ignition_temp_k: f32,             // Ignition temperature in Kelvin
+    moisture_extinction: f32,         // Moisture of extinction (fraction)
+    heat_content_kj: f32,             // Heat content in kJ/kg
+    self_heating_fraction: f32,       // Fraction of heat retained (0-1)
+    burn_rate_coefficient: f32,       // Base burn rate coefficient
+    ambient_temp_k: f32,              // Ambient temperature in Kelvin (from WeatherSystem)
+    temperature_response_range: f32,  // Temperature range for combustion rate normalization (K)
+    air_density_kg_m3: f32,           // Air density (kg/m³) - varies with temp/elevation
     atmospheric_mixing_height_m: f32, // Atmospheric mixing height (m)
     _padding1: f32,
     _padding2: f32,
@@ -613,7 +613,7 @@ impl GpuFieldSolver {
             wind_y: 0.0,
             stefan_boltzmann: 5.67e-8,
             thermal_diffusivity: *surface_fuel.thermal_diffusivity,
-            emissivity_burning: *surface_fuel.emissivity_burning,  // Fuel-specific
+            emissivity_burning: *surface_fuel.emissivity_burning, // Fuel-specific
             emissivity_unburned: *surface_fuel.emissivity_unburned, // Fuel-specific
             specific_heat_j: *surface_fuel.specific_heat * 1000.0, // kJ to J
         };
